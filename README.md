@@ -32,6 +32,8 @@ https://zackees.github.io/fastled-wasm/
 pip install fastled-wasm
 ```
 
+**Note that you may need to install x86 docker emulation on Mac-m1 and later, as this is an x86 only image at the prsent.**
+
 # Use
 
 Change to the directory where the sketch lives and run
