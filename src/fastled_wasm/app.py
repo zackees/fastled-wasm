@@ -45,6 +45,11 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         help="Additional patterns to exclude from file watching",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Pull the latest build image before compiling",
+    )
 
     args = parser.parse_args()
     if args.watch:
@@ -58,7 +63,7 @@ def main() -> int:
     open_web_browser = not args.no_open
 
     # Initial compilation
-    result = compile(args.directory, args.reuse)
+    result = compile(args.directory, args.reuse, force_update=args.update)
     if result.return_code != 0:
         print("\nInitial compilation failed.")
         return result.return_code
@@ -92,7 +97,7 @@ def main() -> int:
             changed_files = watcher.get_all_changes()
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
-                result = compile(args.directory, args.reuse)
+                result = compile(args.directory, args.reuse, force_update=args.update)
                 if result.return_code != 0:
                     print("\nRecompilation failed.")
                 else:

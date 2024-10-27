@@ -64,15 +64,29 @@ class DockerManager:
             print(f"Error starting Docker: {str(e)}")
         return False
 
-    def ensure_image_exists(self) -> bool:
-        """Check if local image exists, pull from remote if not."""
+    def ensure_image_exists(self, force_update: bool = False) -> bool:
+        """Check if local image exists, pull from remote if not or if update requested."""
         try:
+            if force_update:
+                print("Forcing image update...")
+                # Remove both tagged versions of the image
+                subprocess.run(
+                    ["docker", "rmi", f"{self.container_name}:latest"],
+                    capture_output=True,
+                    check=False,
+                )
+                subprocess.run(
+                    ["docker", "rmi", "niteris/fastled-wasm:latest"],
+                    capture_output=True,
+                    check=False,
+                )
+
             result = subprocess.run(
                 ["docker", "image", "inspect", f"{self.container_name}:latest"],
                 capture_output=True,
                 check=False,
             )
-            if result.returncode != 0:
+            if result.returncode != 0 or force_update:
                 print("Local image not found. Pulling from niteris/fastled-wasm...")
                 subprocess.run(
                     ["docker", "pull", "niteris/fastled-wasm:latest"], check=True

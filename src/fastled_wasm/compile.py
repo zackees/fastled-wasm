@@ -36,10 +36,29 @@ def check_is_code_directory(directory: Path) -> bool:
     return False
 
 
-def compile(directory: str, reuse: bool = False) -> CompiledResult:
-    """Compile the FastLED sketch using Docker."""
+def compile(
+    directory: str, reuse: bool = False, force_update: bool = False
+) -> CompiledResult:
+    """Compile the FastLED sketch using Docker.
+
+    Args:
+        directory: Path to the directory containing the FastLED sketch
+        reuse: Whether to reuse an existing container
+        force_update: Whether to force update even if container exists
+    """
     absolute_directory = os.path.abspath(directory)
     volume_changed = CONFIG.last_volume_path != absolute_directory
+
+    # Handle force update first
+    if force_update:
+        print("Update...")
+        if DOCKER.container_exists():
+            if not DOCKER.remove_container():
+                print("Failed to remove existing container")
+                return CompiledResult(return_code=1, fastled_js="")
+        # Remove the image to force a fresh download
+        subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
+        print("All clean")
 
     # Update and save the current directory to settings
     CONFIG.last_volume_path = absolute_directory
