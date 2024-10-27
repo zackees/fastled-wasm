@@ -70,6 +70,7 @@ CRGB leds[NUM_LEDS];
 XYMap xyMap = XYMap::constructRectangularGrid(MATRIX_WIDTH, MATRIX_HEIGHT);
 NoisePalette noisePalette = NoisePalette(xyMap);
 
+
 Slider brightness("Brightness", 255, 0, 255);
 Slider speed("Speed", 15, 1, 50);
 Checkbox isOff("Set Black", false);

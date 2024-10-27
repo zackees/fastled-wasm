@@ -1,6 +1,7 @@
 """File system watcher implementation using watchdog
 """
 
+import hashlib
 import queue
 import threading
 import time
@@ -13,18 +14,33 @@ from watchdog.observers.api import BaseObserver
 
 
 class MyEventHandler(FileSystemEventHandler):
-    def __init__(self, change_queue: queue.Queue, excluded_patterns: Set[str]) -> None:
+    def __init__(
+        self,
+        change_queue: queue.Queue,
+        excluded_patterns: Set[str],
+        file_hashes: Dict[str, str],
+    ) -> None:
         super().__init__()
         self.change_queue = change_queue
         self.excluded_patterns = excluded_patterns
+        self.file_hashes = file_hashes
+
+    def _get_file_hash(self, filepath: str) -> str:
+        try:
+            with open(filepath, "rb") as f:
+                return hashlib.md5(f.read()).hexdigest()
+        except Exception:  # pylint: disable=broad-except
+            return ""
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
             path = Path(event.src_path)
             # Check if any part of the path matches excluded patterns
             if not any(part in self.excluded_patterns for part in path.parts):
-                print(f"Storing change: {event.src_path}")
-                self.change_queue.put(event.src_path)
+                new_hash = self._get_file_hash(event.src_path)
+                if new_hash and new_hash != self.file_hashes.get(event.src_path):
+                    self.file_hashes[event.src_path] = new_hash
+                    self.change_queue.put(event.src_path)
 
 
 class FileChangedNotifier(threading.Thread):
@@ -55,6 +71,7 @@ class FileChangedNotifier(threading.Thread):
         self.stopped = threading.Event()
         self.change_queue: queue.Queue = queue.Queue()
         self.last_notification: Dict[str, float] = {}
+        self.file_hashes: Dict[str, str] = {}
         self.debounce_seconds = debounce_seconds
 
     def stop(self) -> None:
@@ -68,7 +85,9 @@ class FileChangedNotifier(threading.Thread):
 
     def run(self) -> None:
         """Thread main loop - starts watching for changes"""
-        self.event_handler = MyEventHandler(self.change_queue, self.excluded_patterns)
+        self.event_handler = MyEventHandler(
+            self.change_queue, self.excluded_patterns, self.file_hashes
+        )
         self.observer = Observer()
         self.observer.schedule(self.event_handler, self.path, recursive=True)
         self.observer.start()
