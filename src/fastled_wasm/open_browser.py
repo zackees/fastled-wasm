@@ -7,7 +7,7 @@ from shutil import which
 PORT = 8081
 
 
-def open_browser_live_server(fastled_js: Path, port: int) -> None:
+def _open_browser_live_server(fastled_js: Path, port: int) -> None:
     """Start live-server in the fastled_js directory"""
     print(f"\nStarting live-server in {fastled_js}")
     print("\nStarting live-server...")
@@ -19,7 +19,7 @@ def open_browser_live_server(fastled_js: Path, port: int) -> None:
         print(f"Error starting live-server: {err}")
 
 
-def open_browser_python(fastled_js: Path, port: int) -> None:
+def _open_browser_python(fastled_js: Path, port: int) -> None:
     """Start HTTP server in the fastled_js directory"""
     print(f"\nStarting HTTP server in {fastled_js}")
     print("\nStarting Python's built-in HTTP server...")
@@ -39,6 +39,6 @@ def open_browser(fastled_js: Path, port: int | None = None) -> None:
     port = port if port is not None else PORT
     # Check if live-server is available
     if which("live-server"):
-        open_browser_live_server(fastled_js, port)
+        _open_browser_live_server(fastled_js, port)
     else:
-        open_browser_python(fastled_js, port)
+        _open_browser_python(fastled_js, port)
