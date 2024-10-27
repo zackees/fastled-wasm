@@ -7,11 +7,16 @@ KEYRING_USERNAME = "settings"
 
 
 class Config:
-    def __init__(self, last_volume_path: str = "") -> None:
-        json_data = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
-        if json_data:
-            self.__dict__.update(json.loads(json_data))
-        self.last_volume_path = last_volume_path
+    def __init__(self) -> None:
+        try:
+            json_data = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+            if json_data:
+                data = json.loads(json_data)
+                self.__dict__.update(data)
+                self.last_volume_path = data.get("last_volume_path", "")
+        except Exception as e:
+            print(f"Error loading settings, keyring might not be available: {e}")
+            self.last_volume_path = ""
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
@@ -22,9 +27,12 @@ class Config:
 
     def save(self) -> None:
         """Save config to keyring"""
-        keyring.set_password(
-            KEYRING_SERVICE, KEYRING_USERNAME, json.dumps(self.to_dict())
-        )
+        try:
+            keyring.set_password(
+                KEYRING_SERVICE, KEYRING_USERNAME, json.dumps(self.to_dict())
+            )
+        except Exception:
+            pass
 
     def load(self) -> None:
         """Load config from keyring"""
