@@ -39,15 +39,27 @@ class DockerManager:
                 print("Unknown platform. Cannot auto-launch Docker.")
                 return False
 
-            # Wait for Docker to start up
-            print("Waiting for Docker to start...")
-            for _ in range(10):
+            # Wait for Docker to start up with increasing delays
+            print("Waiting for Docker Desktop to start...")
+            attempts = 0
+            max_attempts = 20  # Increased max wait time
+            while attempts < max_attempts:
+                attempts += 1
                 if self.is_running():
                     print("Docker started successfully.")
                     return True
-                time.sleep(3)
+
+                # Gradually increase wait time between checks
+                wait_time = min(5, 1 + attempts * 0.5)
+                print(
+                    f"Docker not ready yet, waiting {wait_time:.1f}s... (attempt {attempts}/{max_attempts})"
+                )
+                time.sleep(wait_time)
 
             print("Failed to start Docker within the expected time.")
+            print(
+                "Please try starting Docker Desktop manually and run this command again."
+            )
         except Exception as e:
             print(f"Error starting Docker: {str(e)}")
         return False
