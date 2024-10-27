@@ -12,45 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install Docker on Windows
-      run: |
-        choco install docker-cli -y
-        choco install docker-desktop -y
-        # Start Docker Desktop (it runs in the background)
-        Start-Process 'C:\Program Files\Docker\Docker\Docker Desktop.exe' 
-        # Wait for Docker to start
-        $retries = 0
-        while ($retries -lt 10) {
-          try {
-            docker info | Out-Null
-            Write-Output "Docker is ready!"
-            break
-          } catch {
-            Write-Output "Waiting for Docker to start..."
-            Start-Sleep -Seconds 10
-            $retries++
-          }
-        }
-
-    - name: Pull Docker Image
-      run: |
-        docker pull niteris/fastled-wasm
-
-    - name: Install dependencies
-      run: |
-        ./install
-
-    - name: Run Test in Docker
-      run: |
-        docker run --rm --privileged niteris/fastled-wasm ./test
-
-    - name: Install dependencies
-      run: bash install
-    - name: Run Test
-      run: bash test
+    - name: Windows Docker Test is not available because of licensing issues between Docker and Github.
+      run: echo "Windows Docker Test is not available because of licensing issues between Docker and Github"
         
