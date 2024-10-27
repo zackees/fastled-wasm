@@ -37,7 +37,7 @@ pip install fastled-wasm
 Change to the directory where the sketch lives and run
 
 ```bash
-fastled-wasm --watch  # watches for changes in the ino/src file changes and re-compiles automatically.
+fastled-wasm --just-compile  # Don't open a browser
 ```
 
 The compiler should download, compile the target and then launch a web-browser.
