@@ -6,7 +6,7 @@ import os
 import unittest
 from pathlib import Path
 
-COMMAND = "fastled-wasm"
+COMMAND = "fastled-wasm --no-open"
 
 
 HERE = Path(__file__).parent

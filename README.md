@@ -42,3 +42,9 @@ The compiler should download, compile the target and then launch a web-browser.
 Pre-processing is done to your source files. A fake Arduino.h will be inserted into your source files that will
 provide shims for most of the common api points.
 
+
+
+# Revisions
+
+  1.0.1 - Re-use is no longer the default, due to problems.
+  1.0.0 - Initial release.

@@ -117,35 +117,29 @@ class DockerManager:
             return False
 
     def run_container(self, volume_path: str, base_name: str) -> Optional[int]:
-        """Run the Docker container with the specified volume."""
+        """Run the Docker container with the specified volume.
+
+        Args:
+            volume_path: Path to the volume to mount
+            base_name: Base name for the mounted volume
+        """
         try:
-            container_exists_flag = self.container_exists()
+            print("Creating new container...")
+            docker_command = ["docker", "run"]
 
-            if container_exists_flag:
-                print("Reusing existing container...")
-                docker_command = [
-                    "docker",
-                    "start",
-                    "-a",
+            if sys.stdout.isatty():
+                docker_command.append("-it")
+            docker_command.extend(
+                [
+                    "--name",
                     self.container_name,
+                    "--platform",
+                    "linux/amd64",
+                    "-v",
+                    f"{volume_path}:/mapped/{base_name}",
+                    f"{self.container_name}:latest",
                 ]
-            else:
-                print("Creating new container...")
-                docker_command = ["docker", "run"]
-
-                if sys.stdout.isatty():
-                    docker_command.append("-it")
-                docker_command.extend(
-                    [
-                        "--name",
-                        self.container_name,
-                        "--platform",
-                        "linux/amd64",
-                        "-v",
-                        f"{volume_path}:/mapped/{base_name}",
-                        f"{self.container_name}:latest",
-                    ]
-                )
+            )
 
             print(f"Running command: {' '.join(docker_command)}")
             process = subprocess.Popen(

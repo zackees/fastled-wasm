@@ -6,6 +6,7 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 
 import argparse
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,10 +30,16 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing the FastLED sketch to compile",
     )
     parser.add_argument(
-        "--open",
+        "--no-open",
         action="store_true",
-        help="Open the compiled sketch in a web browser",
+        help="Just compile, skip the step where the browser is opened.",
     )
+    parser.add_argument(
+        "--reuse",
+        action="store_true",
+        help="Reuse the existing container if it exists.",
+    )
+
     return parser.parse_args()
 
 
@@ -55,7 +62,7 @@ def check_is_code_directory(directory: Path) -> bool:
 
 def main() -> int:
     args = parse_args()
-    open_browser_after_compile = args.open
+    open_browser_after_compile = args.no_open is False
     directory = args.directory
     absolute_directory = os.path.abspath(directory)
 
@@ -86,15 +93,34 @@ def main() -> int:
         print("Failed to ensure Docker image exists. Exiting.")
         return 1
 
-    # Check if we need to recreate the container due to volume path change
-    if DOCKER.container_exists() and volume_changed:
-        print("Volume path changed, removing existing container...")
-        if not DOCKER.remove_container():
-            print("Failed to remove existing container")
-            return 1
-
-    # Run the container
-    return_code = DOCKER.run_container(absolute_directory, base_name)
+    # Handle container reuse logic
+    if DOCKER.container_exists():
+        if volume_changed or not args.reuse:
+            if not DOCKER.remove_container():
+                print("Failed to remove existing container")
+                return 1
+            return_code = DOCKER.run_container(absolute_directory, base_name)
+        else:
+            print("Reusing existing container...")
+            docker_command = [
+                "docker",
+                "start",
+                "-a",
+                CONTAINER_NAME,
+            ]
+            process = subprocess.Popen(
+                docker_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            assert process.stdout
+            for line in process.stdout:
+                print(line, end="")
+            process.wait()
+            return_code = process.returncode
+    else:
+        return_code = DOCKER.run_container(absolute_directory, base_name)
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
         return return_code if return_code is not None else 1
