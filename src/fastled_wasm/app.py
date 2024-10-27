@@ -135,7 +135,7 @@ def main() -> int:
         open_browser(Path(fastled_js))
     else:
         print(
-            "If you want to open the compiled sketch in a web browser, run this command with --open flag."
+            "\nIf you want to open the compiled sketch in a web browser, run this command with --open flag."
         )
     return 0
 
