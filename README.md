@@ -47,6 +47,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  1.0.4 - Implemented `--watch` which will watch for changes and then re-launch the compilation step.
   1.0.3 - Integrated `live-server` to launch when available.
   1.0.2 - Small bug with new installs.
   1.0.1 - Re-use is no longer the default, due to problems.
