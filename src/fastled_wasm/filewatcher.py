@@ -4,7 +4,8 @@
 import queue
 import threading
 import time
-from typing import Dict, Optional
+from pathlib import Path
+from typing import Dict, Set
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -12,29 +13,45 @@ from watchdog.observers.api import BaseObserver
 
 
 class MyEventHandler(FileSystemEventHandler):
-    def __init__(self, change_queue: queue.Queue) -> None:
+    def __init__(self, change_queue: queue.Queue, excluded_patterns: Set[str]) -> None:
         super().__init__()
         self.change_queue = change_queue
+        self.excluded_patterns = excluded_patterns
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            self.change_queue.put(event.src_path)
+            path = Path(event.src_path)
+            # Check if any part of the path matches excluded patterns
+            if not any(part in self.excluded_patterns for part in path.parts):
+                print(f"Storing change: {event.src_path}")
+                self.change_queue.put(event.src_path)
 
 
 class FileChangedNotifier(threading.Thread):
     """Watches a directory for file changes and queues notifications"""
 
-    def __init__(self, path: str, debounce_seconds: float = 0.1) -> None:
+    def __init__(
+        self,
+        path: str,
+        debounce_seconds: float = 2.0,
+        excluded_patterns: list[str] | None = None,
+    ) -> None:
         """Initialize the notifier with a path to watch
 
         Args:
             path: Directory path to watch for changes
             debounce_seconds: Minimum time between notifications for the same file
+            excluded_patterns: List of directory/file patterns to exclude from watching
         """
         super().__init__()
         self.path = path
         self.observer: BaseObserver | None = None
         self.event_handler: MyEventHandler | None = None
+
+        # Combine default and user-provided patterns
+        self.excluded_patterns = (
+            set(excluded_patterns) if excluded_patterns is not None else set()
+        )
         self.stopped = threading.Event()
         self.change_queue: queue.Queue = queue.Queue()
         self.last_notification: Dict[str, float] = {}
@@ -51,7 +68,7 @@ class FileChangedNotifier(threading.Thread):
 
     def run(self) -> None:
         """Thread main loop - starts watching for changes"""
-        self.event_handler = MyEventHandler(self.change_queue)
+        self.event_handler = MyEventHandler(self.change_queue, self.excluded_patterns)
         self.observer = Observer()
         self.observer.schedule(self.event_handler, self.path, recursive=True)
         self.observer.start()
@@ -62,7 +79,7 @@ class FileChangedNotifier(threading.Thread):
         finally:
             self.stop()
 
-    def get_next_change(self, timeout: float = 0.1) -> Optional[str]:
+    def get_next_change(self, timeout: float = 0.001) -> str | None:
         """Get the next file change event from the queue
 
         Args:
@@ -84,3 +101,22 @@ class FileChangedNotifier(threading.Thread):
             return filepath
         except queue.Empty:
             return None
+
+    def get_all_changes(self, timeout: float = 0.001) -> list[str]:
+        """Get all file change events from the queue
+
+        Args:
+            timeout: How long to wait for next change in seconds
+
+        Returns:
+            List of changed filepaths
+        """
+        changed_files = []
+        while True:
+            changed_file = self.get_next_change(timeout=timeout)
+            if changed_file is None:
+                break
+            changed_files.append(changed_file)
+        # clear all the changes from the queue
+        self.change_queue.queue.clear()
+        return changed_files

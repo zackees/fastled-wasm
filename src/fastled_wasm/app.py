@@ -40,6 +40,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Watch for file changes and recompile automatically.",
     )
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        nargs="+",
+        help="Additional patterns to exclude from file watching",
+    )
 
     args = parser.parse_args()
     if args.watch:
@@ -86,14 +92,15 @@ def main() -> int:
 
     # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
-    watcher = FileChangedNotifier(args.directory)
+    watcher = FileChangedNotifier(args.directory, excluded_patterns=["fastled_js"])
     watcher.start()
 
     try:
         while True:
-            changed_file = watcher.get_next_change()
-            if changed_file:
-                print(f"\nFile changed: {changed_file}")
+            # changed_file = watcher.get_next_change()
+            changed_files = watcher.get_all_changes()
+            if changed_files:
+                print(f"\nChanges detected in {changed_files}")
                 result = compile(args.directory, args.reuse)
                 if result.return_code != 0:
                     print("\nRecompilation failed.")
