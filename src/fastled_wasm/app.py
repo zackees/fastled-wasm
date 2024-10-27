@@ -1,14 +1,7 @@
 """
 Uses the latest wasm compiler image to compile the FastLED sketch.
 
-Probably an unfortunate name.
 
-Push instructions:
-  1. docker login
-  2. ./wasm (builds the image and then runs a container)
-    a. This will create an image tagged by fastled-wasm-compiler
-  3. docker tag fastled-wasm-compiler:latest niteris/fastled-wasm:latest
-  4. docker push niteris/fastled-wasm:latest
 """
 
 import argparse
@@ -20,7 +13,9 @@ from pathlib import Path
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 
-config: Config = Config()
+CONTAINER_NAME = "fastled-wasm-compiler"
+DOCKER = DockerManager(container_name=CONTAINER_NAME)
+CONFIG: Config = Config()
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,21 +59,19 @@ def main() -> int:
     directory = args.directory
     absolute_directory = os.path.abspath(directory)
 
-    volume_changed = config.last_volume_path != absolute_directory
+    volume_changed = CONFIG.last_volume_path != absolute_directory
 
     # Update and save the current directory to settings
-    config.last_volume_path = absolute_directory
-    config.save()
+    CONFIG.last_volume_path = absolute_directory
+    CONFIG.save()
     base_name = os.path.basename(absolute_directory)
 
     if not check_is_code_directory(Path(absolute_directory)):
         print(f"Directory '{absolute_directory}' does not contain a FastLED sketch.")
         return 1
 
-    docker_manager = DockerManager()
-
-    if not docker_manager.is_running():
-        if docker_manager.start():
+    if not DOCKER.is_running():
+        if DOCKER.start():
             print("Docker is now running.")
         else:
             print("Docker could not be started. Exiting.")
@@ -89,19 +82,19 @@ def main() -> int:
         return 1
 
     # Ensure the image exists (pull if needed)
-    if not docker_manager.ensure_image_exists():
+    if not DOCKER.ensure_image_exists():
         print("Failed to ensure Docker image exists. Exiting.")
         return 1
 
     # Check if we need to recreate the container due to volume path change
-    if docker_manager.container_exists() and volume_changed:
+    if DOCKER.container_exists() and volume_changed:
         print("Volume path changed, removing existing container...")
-        if not docker_manager.remove_container():
+        if not DOCKER.remove_container():
             print("Failed to remove existing container")
             return 1
 
     # Run the container
-    return_code = docker_manager.run_container(absolute_directory, base_name)
+    return_code = DOCKER.run_container(absolute_directory, base_name)
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
         return return_code if return_code is not None else 1

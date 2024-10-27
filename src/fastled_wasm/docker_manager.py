@@ -11,7 +11,7 @@ import docker  # type: ignore
 class DockerManager:
     """Manages Docker operations for FastLED WASM compiler."""
 
-    def __init__(self, container_name: str = "fastled-wasm-compiler"):
+    def __init__(self, container_name: str):
         self.container_name = container_name
 
     def is_running(self) -> bool:
@@ -56,7 +56,7 @@ class DockerManager:
         """Check if local image exists, pull from remote if not."""
         try:
             result = subprocess.run(
-                ["docker", "image", "inspect", "fastled-wasm-compiler:latest"],
+                ["docker", "image", "inspect", f"{self.container_name}:latest"],
                 capture_output=True,
                 check=False,
             )
@@ -70,7 +70,7 @@ class DockerManager:
                         "docker",
                         "tag",
                         "niteris/fastled-wasm:latest",
-                        "fastled-wasm-compiler:latest",
+                        f"{self.container_name}:latest",
                     ],
                     check=True,
                 )
@@ -131,7 +131,7 @@ class DockerManager:
                         "linux/amd64",
                         "-v",
                         f"{volume_path}:/mapped/{base_name}",
-                        "fastled-wasm-compiler:latest",
+                        f"{self.container_name}:latest",
                     ]
                 )
 
