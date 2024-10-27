@@ -7,11 +7,11 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 import argparse
 import os
 import sys
-import webbrowser
 from pathlib import Path
 
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
+from fastled_wasm.open_browser import open_browser
 
 CONTAINER_NAME = "fastled-wasm-compiler"
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
@@ -55,7 +55,7 @@ def check_is_code_directory(directory: Path) -> bool:
 
 def main() -> int:
     args = parse_args()
-    open_browser = args.open
+    open_browser_after_compile = args.open
     directory = args.directory
     absolute_directory = os.path.abspath(directory)
 
@@ -99,19 +99,8 @@ def main() -> int:
         print(f"Container execution failed with code {return_code}.")
         return return_code if return_code is not None else 1
 
-    if open_browser:
-        # Start HTTP server in the fastled_js directory
-        output_dir = os.path.join(absolute_directory, "fastled_js")
-        if os.path.exists(output_dir):
-            print(f"\nStarting HTTP server in {output_dir}")
-            os.chdir(output_dir)
-
-            # Start Python's built-in HTTP server
-            print("\nStarting HTTP server...")
-            webbrowser.open("http://localhost:8000")
-            os.system("python -m http.server")
-        else:
-            print(f"\nOutput directory {output_dir} not found")
+    if open_browser_after_compile:
+        open_browser(Path(absolute_directory))
     return 0
 
 
