@@ -25,19 +25,14 @@ def parse_args() -> argparse.Namespace:
         help="Directory containing the FastLED sketch to compile",
     )
     parser.add_argument(
-        "--no-open",
+        "--just-compile",
         action="store_true",
-        help="Just compile, skip the step where the browser is opened.",
+        help="Just compile, skip opening the browser and watching for changes.",
     )
     parser.add_argument(
         "--reuse",
         action="store_true",
         help="Reuse the existing container if it exists.",
-    )
-    parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Watch for file changes and recompile automatically.",
     )
     parser.add_argument(
         "--exclude",
@@ -52,15 +47,13 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
-    if args.watch:
-        args.no_open = False
 
     return args
 
 
 def main() -> int:
     args = parse_args()
-    open_web_browser = not args.no_open
+    open_web_browser = not args.just_compile
 
     # Initial compilation
     result = compile(args.directory, args.reuse, force_update=args.update)
@@ -68,22 +61,16 @@ def main() -> int:
         print("\nInitial compilation failed.")
         return result.return_code
 
-    if result.return_code == 0 and open_web_browser:
-        open_browser_thread(Path(result.fastled_js))
-        if not args.watch:
-            print("\nPress Ctrl+C to exit...")
-            try:
-                while True:
-                    pass
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                return 0
-    elif result.return_code == 0:
-        print(
-            "\nIf you want to open the compiled sketch in a web browser, run this command with --open flag."
-        )
+    if result.return_code == 0:
+        if open_web_browser:
+            open_browser_thread(Path(result.fastled_js))
+        else:
+            print(
+                "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
+            )
+            return 0
 
-    if not args.watch:
+    if args.just_compile:
         return result.return_code
 
     # Watch mode
