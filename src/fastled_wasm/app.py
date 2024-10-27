@@ -132,6 +132,11 @@ def parse_args() -> argparse.Namespace:
         default=os.getcwd(),
         help="Directory containing the FastLED sketch to compile",
     )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the compiled sketch in a web browser",
+    )
     return parser.parse_args()
 
 
@@ -146,13 +151,19 @@ def check_is_code_directory(directory: Path) -> bool:
     ino_file = list(directory.glob("*.ino"))
     if ino_file:
         return True
+    cpp_files = list(directory.glob("*.cpp"))
+    if cpp_files:
+        return True
     return False
 
 
 def main() -> int:
     args = parse_args()
+    open_browser = args.open
     directory = args.directory
     absolute_directory = os.path.abspath(directory)
+
+    volume_changed = config.last_volume_path != absolute_directory
 
     # Update and save the current directory to settings
     config.last_volume_path = absolute_directory
@@ -181,11 +192,9 @@ def main() -> int:
         print("Failed to ensure Docker image exists. Exiting.")
         return 1
 
-    # Check if we need to recreate the container due to volume path change
-    previous_path = config.last_volume_path
     container_exists_flag = container_exists(container_name)
-
-    if container_exists_flag and previous_path != absolute_directory:
+    # Check if we need to recreate the container due to volume path change
+    if container_exists_flag and volume_changed:
         print("Volume path changed, removing existing container...")
         if not remove_container(container_name):
             print("Failed to remove existing container")
@@ -194,7 +203,7 @@ def main() -> int:
 
     # Launch or start the Docker container if Docker is running
     try:
-        if container_exists_flag and previous_path == absolute_directory:
+        if container_exists_flag:
             print("Reusing existing container...")
             # Start existing container
             docker_command = [
@@ -211,7 +220,6 @@ def main() -> int:
                 "run",
             ]
 
-        if not container_exists_flag:
             # Only add these flags for 'docker run'
             if sys.stdout.isatty():
                 docker_command.append("-it")
@@ -243,24 +251,29 @@ def main() -> int:
 
         print("\nContainer execution completed.")
 
-        # Start HTTP server in the fastled_js directory
-        output_dir = os.path.join(absolute_directory, "fastled_js")
-        if os.path.exists(output_dir):
-            print(f"\nStarting HTTP server in {output_dir}")
-            os.chdir(output_dir)
+        if process.returncode != 0:
+            print(f"Container execution failed with code {process.returncode}.")
+            return process.returncode
 
-            # Start Python's built-in HTTP server
-            print("\nStarting HTTP server...")
-            webbrowser.open("http://localhost:8000")
-            os.system("python -m http.server")
-        else:
-            print(f"\nOutput directory {output_dir} not found")
+        if open_browser:
+            # Start HTTP server in the fastled_js directory
+            output_dir = os.path.join(absolute_directory, "fastled_js")
+            if os.path.exists(output_dir):
+                print(f"\nStarting HTTP server in {output_dir}")
+                os.chdir(output_dir)
 
+                # Start Python's built-in HTTP server
+                print("\nStarting HTTP server...")
+                webbrowser.open("http://localhost:8000")
+                os.system("python -m http.server")
+            else:
+                print(f"\nOutput directory {output_dir} not found")
     except subprocess.CalledProcessError as e:
         print(f"Failed to run Docker container: {e}")
+        return 1
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
-
+        return 1
     return 0
 
 

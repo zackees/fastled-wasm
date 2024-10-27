@@ -4,8 +4,13 @@ Unit test file.
 
 import os
 import unittest
+from pathlib import Path
 
 COMMAND = "fastled-wasm"
+
+
+HERE = Path(__file__).parent
+TEST_DIR = HERE / "test_ino" / "wasm"
 
 
 class MainTester(unittest.TestCase):
@@ -13,6 +18,7 @@ class MainTester(unittest.TestCase):
 
     def test_imports(self) -> None:
         """Test command line interface (CLI)."""
+        os.chdir(str(TEST_DIR))
         rtn = os.system(COMMAND)
         self.assertEqual(0, rtn)
 
