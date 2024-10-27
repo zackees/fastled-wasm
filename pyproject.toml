@@ -15,7 +15,7 @@ dependencies = [
     "keyring",
 ]
 # Change this with the version number bump.
-version = "1.0.1"
+version = "1.0.2"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

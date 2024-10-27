@@ -50,5 +50,6 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  1.0.2 - Small bug with new installs.
   1.0.1 - Re-use is no longer the default, due to problems.
   1.0.0 - Initial release.
