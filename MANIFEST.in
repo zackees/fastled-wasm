@@ -1,0 +1,3 @@
+include pyproject.toml
+include requirements.testing.txt
+include template_python_cmd/assets/example.txt

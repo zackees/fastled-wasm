@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -e
+. ./activate
+echo "Running unittests"
+pytest -n auto tests -v

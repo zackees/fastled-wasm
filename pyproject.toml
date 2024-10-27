@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=65.5.1", "setuptools-scm", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastled_wasm"
+readme = "README.md"
+description = "FastLED Wasm Compiler"
+requires-python = ">=3.7"
+keywords = ["template-python-cmd"]
+license = { text = "BSD 3-Clause License" }
+classifiers = ["Programming Language :: Python :: 3"]
+dependencies = [
+
+]
+# Change this with the version number bump.
+version = "1.0.0"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.ruff]
+line-length = 200
+
+[tool.pylint."MESSAGES CONTROL"]
+good-names = [
+    "c",
+    "i",
+    "ok",
+    "id",
+    "e",
+    "f"
+]
+disable = [
+    "missing-function-docstring",
+    "missing-module-docstring"
+]
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+
+[project.scripts]
+fastled-wasm = "fastled_wasm.cli:main"

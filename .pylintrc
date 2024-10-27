@@ -1,0 +1,2 @@
+[MESSAGES CONTROL]
+disable=missing-module-docstring,missing-class-docstring,missing-function-docstring,line-too-long,raise-missing-from,too-few-public-methods,too-many-return-statements,fixme,too-many-locals,too-many-branches,too-many-statements,too-many-arguments,too-many-instance-attributes,too-many-ancestors,too-many-lines,too-many-public-methods,too-many-boolean-expressions,too-many-locals,too-many-branches,too-many-statements,too-many-arguments,too-many-instance-attributes,too-many-ancestors,too-many-lines,too-many-public-methods,too-many-boolean-expressions,R0801
