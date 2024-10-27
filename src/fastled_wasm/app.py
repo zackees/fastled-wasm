@@ -41,12 +41,17 @@ def main() -> int:
     args = parse_args()
     result = compile(args.directory, args.reuse)
 
+    if result.return_code != 0:
+        print("\nCompilation failed.")
+        return result.return_code
+
     if result.return_code == 0 and not args.no_open:
         open_browser(Path(result.fastled_js))
     elif result.return_code == 0:
         print(
             "\nIf you want to open the compiled sketch in a web browser, run this command with --open flag."
         )
+
     return result.return_code
 
 
