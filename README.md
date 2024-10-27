@@ -1,20 +1,22 @@
-# template-python-cmd
-A template for quickly making a python lib that has a command line program attached
+# FastLED wasm compiler
+
+Compiles an Arduino/Platformio sketch into a wasm binary that can be run directly in the web browser.
 
 [![Linting](https://github.com/zackees/fastled-wasm/actions/workflows/lint.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/lint.yml)
 [![MacOS_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_macos.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_macos.yml)
 [![Ubuntu_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_ubuntu.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_ubuntu.yml)
 [![Win_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml)
 
-Replace `template-python-cmd` and `template_python_cmd` with your command. Run tox until it's
-correct.
+# Install
 
-To develop software, run `. ./activate.sh`
+`pip install fastled-wasm`
 
-# Windows
+# Use
 
-This environment requires you to use `git-bash`.
+Change to the directory where the sketch lives and run
 
-# Linting
+```bash
+fastled-wasm --open
+```
 
-Run `./lint.sh` to find linting errors using `pylint`, `flake8` and `mypy`.
+The compiler should download, compile the target and then launch a webbrowser.
