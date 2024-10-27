@@ -99,8 +99,18 @@ def main() -> int:
         print(f"Container execution failed with code {return_code}.")
         return return_code if return_code is not None else 1
 
+    fastled_js = os.path.join(absolute_directory, "fastled_js")
+    if not os.path.exists(fastled_js):
+        print(f"ERROR: Output directory '{fastled_js}' not found.")
+        return 1
+    print(f"Successfully compiled sketch in {fastled_js}")
+
     if open_browser_after_compile:
-        open_browser(Path(absolute_directory))
+        open_browser(Path(fastled_js))
+    else:
+        print(
+            "If you want to open the compiled sketch in a web browser, run this command with --open flag."
+        )
     return 0
 
 
