@@ -21,6 +21,10 @@ from pathlib import Path
 
 import docker  # type: ignore
 
+from fastled_wasm.config import Config
+
+config: Config = Config()
+
 
 def is_docker_running():
     """Check if Docker is running by pinging the Docker daemon."""
@@ -105,6 +109,19 @@ def container_exists(container_name):
         return False
 
 
+def remove_container(container_name):
+    """Remove a container if it exists."""
+    try:
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            capture_output=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="FastLED WASM Compiler")
@@ -136,6 +153,10 @@ def main() -> int:
     args = parse_args()
     directory = args.directory
     absolute_directory = os.path.abspath(directory)
+
+    # Update and save the current directory to settings
+    config.last_volume_path = absolute_directory
+    config.save()
     base_name = os.path.basename(absolute_directory)
 
     if not check_is_code_directory(Path(absolute_directory)):
@@ -160,12 +181,21 @@ def main() -> int:
         print("Failed to ensure Docker image exists. Exiting.")
         return 1
 
-    # Check if container exists
+    # Check if we need to recreate the container due to volume path change
+    previous_path = config.last_volume_path
     container_exists_flag = container_exists(container_name)
+
+    if container_exists_flag and previous_path != absolute_directory:
+        print("Volume path changed, removing existing container...")
+        if not remove_container(container_name):
+            print("Failed to remove existing container")
+            return 1
+        container_exists_flag = False
 
     # Launch or start the Docker container if Docker is running
     try:
-        if container_exists_flag:
+        if container_exists_flag and previous_path == absolute_directory:
+            print("Reusing existing container...")
             # Start existing container
             docker_command = [
                 "docker",
@@ -174,6 +204,7 @@ def main() -> int:
                 container_name,
             ]
         else:
+            print("Creating new container...")
             # Create new container
             docker_command = [
                 "docker",

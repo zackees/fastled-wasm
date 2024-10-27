@@ -140,3 +140,6 @@ activate
 **/.DS_Store
 uv.lock
 fastled_js
+.aider*
+!.aider.conf.yml
+!.aiderignore

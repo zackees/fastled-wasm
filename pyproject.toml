@@ -12,7 +12,7 @@ license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "docker",
-
+    "keyring",
 ]
 # Change this with the version number bump.
 version = "1.0.0"
