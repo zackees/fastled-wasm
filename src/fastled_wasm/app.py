@@ -11,6 +11,7 @@ Push instructions:
   4. docker push niteris/fastled-wasm:latest
 """
 
+import argparse
 import os
 import subprocess
 import sys
@@ -19,11 +20,6 @@ import webbrowser
 from pathlib import Path
 
 import docker  # type: ignore
-
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE_WASM = PROJECT_ROOT / "examples" / "wasm"
-# Relative to the current driectory
-DEFAULT_WASM_PROJECT_DIR: str = str(EXAMPLE_WASM.relative_to(Path.cwd()))
 
 
 def is_docker_running():
@@ -109,29 +105,60 @@ def container_exists(container_name):
         return False
 
 
-def main():
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="FastLED WASM Compiler")
+    parser.add_argument(
+        "directory",
+        type=str,
+        nargs="?",
+        default=os.getcwd(),
+        help="Directory containing the FastLED sketch to compile",
+    )
+    return parser.parse_args()
+
+
+def check_is_code_directory(directory: Path) -> bool:
+    """Check if the current directory is a code directory."""
+    platformio_exists = (directory / "platformio.ini").exists()
+    if platformio_exists:
+        return True
+    src_dir = directory / "src"
+    if src_dir.exists():
+        return check_is_code_directory(src_dir)
+    ino_file = list(directory.glob("*.ino"))
+    if ino_file:
+        return True
+    return False
+
+
+def main() -> int:
+    args = parse_args()
+    directory = args.directory
+    absolute_directory = os.path.abspath(directory)
+    base_name = os.path.basename(absolute_directory)
+
+    if not check_is_code_directory(Path(absolute_directory)):
+        print(f"Directory '{absolute_directory}' does not contain a FastLED sketch.")
+        return 1
+
     if not is_docker_running():
         if start_docker():
             print("Docker is now running.")
         else:
             print("Docker could not be started. Exiting.")
-            sys.exit(1)
-
-    # Get the directory to mount
-    directory = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_WASM_PROJECT_DIR
-    absolute_directory = os.path.abspath(directory)
-    base_name = os.path.basename(absolute_directory)
+            return 1
 
     if not os.path.isdir(absolute_directory):
         print(f"ERROR: Directory '{absolute_directory}' does not exist.")
-        sys.exit(1)
+        return 1
 
     container_name = "fastled-wasm-compiler"
 
     # Ensure the image exists (pull if needed)
     if not ensure_image_exists():
         print("Failed to ensure Docker image exists. Exiting.")
-        sys.exit(1)
+        return 1
 
     # Check if container exists
     container_exists_flag = container_exists(container_name)
@@ -174,6 +201,8 @@ def main():
             docker_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
 
+        assert process.stdout
+
         # Stream the output
         for line in process.stdout:
             print(line, end="")
@@ -201,6 +230,8 @@ def main():
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
