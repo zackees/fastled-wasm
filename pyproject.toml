@@ -13,6 +13,7 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "docker",
     "keyring",
+    "watchdog",
 ]
 # Change this with the version number bump.
 version = "1.0.3"
