@@ -4,24 +4,37 @@ on: [push]
 
 jobs:
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: macos-latest
     strategy:
       matrix:
         python-version: [3.11]
-        os: [macos-latest]
-    services:
-        docker:
-            image: niteris/fastled-wasm
-            options: --privileged
+    
     steps:
     - uses: actions/checkout@v4
+    
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
+    
+    - name: Install Docker on MacOS
+      run: |
+        brew install --cask docker
+        open /Applications/Docker.app
+        # Wait for Docker to start
+        while ! docker info > /dev/null 2>&1; do
+          echo "Waiting for Docker to start..."
+          sleep 5
+        done
+    
+    - name: Pull Docker Image
+      run: |
+        docker pull niteris/fastled-wasm
+    
     - name: Install dependencies
       run: |
         ./install
-    - name: Run Test
+    
+    - name: Run Test in Docker
       run: |
-        ./test
+        docker run --rm --privileged niteris/fastled-wasm ./test
