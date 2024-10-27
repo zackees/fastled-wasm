@@ -9,6 +9,10 @@ jobs:
       matrix:
         python-version: [3.11]
         os: [windows-latest]
+    services:
+        docker:
+            image: docker:20.10.16-dind
+            options: --privileged
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}

@@ -15,8 +15,10 @@ class Config:
                 self.__dict__.update(data)
                 self.last_volume_path = data.get("last_volume_path", "")
         except Exception as e:
-            print(f"Error loading settings, keyring might not be available: {e}")
-            self.last_volume_path = ""
+            print(
+                f"Error loading settings, keyring might not be available: {e}, the compiler will not remember the last volume path and will re-deploy the docker container always."
+            )
+            self.last_volume_path = "COULD-NOT-LOAD-KEYRING-MIGHT-BE-UNAVAILABLE"
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
