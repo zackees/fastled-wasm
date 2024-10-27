@@ -21,6 +21,10 @@ This works on Windows/Linux/Mac(arm/x64).
 Docker is required.
 
 
+https://github.com/user-attachments/assets/bde26ddd-d24d-4a78-90b6-ac05359677fa
+
+
+
 # Install
 
 `pip install fastled-wasm`
