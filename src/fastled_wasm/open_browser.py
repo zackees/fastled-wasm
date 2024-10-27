@@ -1,44 +1,45 @@
-import os
-import subprocess
+import asyncio
+import threading
 import webbrowser
 from pathlib import Path
-from shutil import which
 
-PORT = 8081
+from livereload import Server
 
-
-def _open_browser_live_server(fastled_js: Path, port: int) -> None:
-    """Start live-server in the fastled_js directory"""
-    print(f"\nStarting live-server in {fastled_js}")
-    print("\nStarting live-server...")
-    try:
-        subprocess.run(
-            ["live-server", f"--port={port}"], check=True, shell=True, cwd=fastled_js
-        )
-    except subprocess.CalledProcessError as err:
-        print(f"Error starting live-server: {err}")
+DEFAULT_PORT = 8081
 
 
 def _open_browser_python(fastled_js: Path, port: int) -> None:
-    """Start HTTP server in the fastled_js directory"""
-    print(f"\nStarting HTTP server in {fastled_js}")
-    print("\nStarting Python's built-in HTTP server...")
-    webbrowser.open(f"http://localhost:{port}")
-    subprocess.run(
-        ["python", "-m", "http.server", f"{port}"],
-        check=True,
-        shell=True,
-        cwd=fastled_js,
+    """Start livereload server in the fastled_js directory and open browser"""
+    print(f"\nStarting livereload server in {fastled_js} on port {port}")
+    # Set up the event loop for this thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    server = Server()
+    server.watch(str(fastled_js))
+
+    # Open browser after a short delay
+    def open_browser():
+        webbrowser.open(f"http://localhost:{port}")
+
+    # server.application.on_after_start = open_browser
+    open_browser()
+
+    try:
+        server.serve(port=port, root=str(fastled_js), debug=True)
+    except OSError as e:
+        print(f"Error starting server: {e}")
+        if "Address already in use" in str(e):
+            print(f"Port {port} is already in use. Try a different port.")
+        raise
+
+
+def open_browser_thread(fastled_js: Path, port: int | None = None) -> threading.Thread:
+    """Start HTTP server in the fastled_js directory and return the started thread"""
+    if port is None:
+        port = DEFAULT_PORT
+
+    thread = threading.Thread(
+        target=_open_browser_python, args=(fastled_js, port), daemon=True
     )
-
-
-def open_browser(fastled_js: Path, port: int | None = None) -> None:
-    """Start HTTP server in the fastled_js directory"""
-    if not os.path.exists(fastled_js):
-        raise FileNotFoundError(f"Output directory {fastled_js} not found")
-    port = port if port is not None else PORT
-    # Check if live-server is available
-    if which("live-server"):
-        _open_browser_live_server(fastled_js, port)
-    else:
-        _open_browser_python(fastled_js, port)
+    thread.start()
+    return thread

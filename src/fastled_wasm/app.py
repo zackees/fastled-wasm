@@ -7,12 +7,11 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 import argparse
 import os
 import sys
-import threading
 from pathlib import Path
 
 from fastled_wasm.compile import compile
 from fastled_wasm.filewatcher import FileChangedNotifier
-from fastled_wasm.open_browser import open_browser
+from fastled_wasm.open_browser import open_browser_thread
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,14 +53,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def open_browser_threaded(fastled_js: Path) -> None:
-    """Opens browser in a daemon thread"""
-    browser_thread = threading.Thread(
-        target=open_browser, args=(fastled_js,), daemon=True
-    )
-    browser_thread.start()
-
-
 def main() -> int:
     args = parse_args()
     open_web_browser = not args.no_open
@@ -73,7 +64,7 @@ def main() -> int:
         return result.return_code
 
     if result.return_code == 0 and open_web_browser:
-        open_browser_threaded(Path(result.fastled_js))
+        open_browser_thread(Path(result.fastled_js))
         if not args.watch:
             print("\nPress Ctrl+C to exit...")
             try:

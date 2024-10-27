@@ -14,6 +14,7 @@ dependencies = [
     "docker",
     "keyring",
     "watchdog",
+    "livereload",
 ]
 # Change this with the version number bump.
 version = "1.0.3"
