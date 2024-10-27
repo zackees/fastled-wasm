@@ -17,7 +17,7 @@ dependencies = [
     "livereload",
 ]
 # Change this with the version number bump.
-version = "1.0.4"
+version = "1.0.5"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
