@@ -509,13 +509,11 @@ class GraphicsManagerThreeJS {
         const __screenHeight = this.SCREEN_HEIGHT;
 
         function calcXPosition(x) {
-            const x2 = (x - screenMap.absMin[0]) / width * __screenWidth - __screenWidth / 2;
-            return x2 * .9;
+            return (x - screenMap.absMin[0]) / width * __screenWidth - __screenWidth / 2;
         }
 
         function calcYPosition(y) {
-            const y2 = -((y - screenMap.absMin[1]) / height * __screenHeight - __screenHeight / 2);
-            return y2 * .9;
+            return -((y - screenMap.absMin[1]) / height * __screenHeight - __screenHeight / 2);
         }
         return { calcXPosition, calcYPosition };
     }
