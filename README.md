@@ -44,6 +44,10 @@ fastled-wasm --just-compile  # Don't open a browser
 
 The compiler should download, compile the target and then launch a web-browser.
 
+# Data
+
+If you want to embed data, then do so in the `data/` directory at the project root. The files will appear in the `data/` director of any spawned FileSystem or SDCard.
+
 
 
 ### About the compilation.
