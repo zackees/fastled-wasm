@@ -39,10 +39,16 @@ pip install fastled-wasm
 Change to the directory where the sketch lives and run
 
 ```bash
-fastled-wasm --just-compile  # Don't open a browser
+fastled-wasm
 ```
 
 The compiler should download, compile the target and then launch a web-browser.
+
+# Hot reload by default
+
+Once launched, the compiler will remain open, listening to changes and recompiling as necessary and hot-reloading the sketch into the current browser.
+
+This style of development should be familiar to those doing web development.
 
 # Data
 
