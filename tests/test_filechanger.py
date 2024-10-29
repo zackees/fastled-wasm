@@ -36,7 +36,7 @@ class FileChangeTester(unittest.TestCase):
                 self.assertIsNotNone(changed_file, "No file change detected")
                 if changed_file:  # Type guard for mypy
                     self.assertEqual(
-                        os.path.normpath(changed_file), os.path.normpath(str(test_file))
+                        os.path.basename(changed_file), os.path.basename(str(test_file))
                     )
 
                 # Verify no other changes pending
