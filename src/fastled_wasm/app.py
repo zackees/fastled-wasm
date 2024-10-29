@@ -6,12 +6,18 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 
 import argparse
 import os
+import platform
+import subprocess
 import sys
 from pathlib import Path
 
-from fastled_wasm.compile import compile
-from fastled_wasm.filewatcher import FileChangedNotifier
-from fastled_wasm.open_browser import open_browser_thread
+from fastled_wasm.config import Config
+from fastled_wasm.docker_manager import DockerManager
+from fastled_wasm.open_browser import open_browser
+
+CONTAINER_NAME = "fastled-wasm-compiler"
+DOCKER = DockerManager(container_name=CONTAINER_NAME)
+CONFIG: Config = Config()
 
 
 def parse_args() -> argparse.Namespace:

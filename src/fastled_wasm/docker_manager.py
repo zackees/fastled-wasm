@@ -147,8 +147,6 @@ class DockerManager:
                 [
                     "--name",
                     self.container_name,
-                    "--platform",
-                    "linux/amd64",
                     "-v",
                     f"{volume_path}:/mapped/{base_name}",
                     f"{self.container_name}:latest",
