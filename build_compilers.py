@@ -120,8 +120,12 @@ def main():
             print(f"Failed to list Docker containers: {e}")
         print("Verifying Docker image exists locally...")
         try:
+            cmd = ["docker", "image", "inspect", image_tag]
+            cmd_str = subprocess.list2cmdline(cmd)
+
+            print(f"Running command: {cmd_str}")
             subprocess.run(
-                ["docker", "image", "inspect", image_tag],
+                cmd,
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
