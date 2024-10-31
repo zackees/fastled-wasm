@@ -56,6 +56,8 @@ def main():
         if not dockerfile_path.exists():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
+
+        os.system("ls")
         
 
         
