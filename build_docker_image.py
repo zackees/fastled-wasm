@@ -18,6 +18,12 @@ def is_arm_architecture():
     print('machine_arch:', machine_arch)
     return any(arch in machine_arch for arch in ['arm', 'aarch64', 'arm64'])
 
+def get_image_name() -> str:
+    if is_arm_architecture():
+        return f"{DOCKER_USERNAME}/fastled-wasm-arm64:latest"
+    else:
+        return f"{DOCKER_USERNAME}/fastled-wasm-amd64:latest"
+
 def clone_fastled_repo():
     """Clone the FastLED repository from GitHub."""
     print(f"Is arm? {is_arm_architecture()}")
@@ -66,10 +72,7 @@ def main():
         print("Docker login successful.")
 
         print("Starting Docker image build process...")
-        if is_arm_architecture():
-            image_tag = f"{DOCKER_USERNAME}/fastled-wasm-arm64:latest"
-        else:
-            image_tag = f"{DOCKER_USERNAME}/fastled-wasm-amd64:latest"
+        image_tag = get_image_name()
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
