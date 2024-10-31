@@ -1,4 +1,4 @@
-name: Build Conmpiler for Docker amd64
+name: Build Compiler for Docker amd64
 
 on: [push]
 
