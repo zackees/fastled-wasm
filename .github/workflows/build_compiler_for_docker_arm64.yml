@@ -8,9 +8,8 @@ jobs:
     strategy:
       matrix:
         python-version: [3.11]
-        include:
-            - os: ubuntu-latest
-              arch: arm64
+        os: [macos-latest-xlarge]
+
 
     steps:
     - uses: actions/checkout@v4
