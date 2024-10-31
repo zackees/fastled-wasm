@@ -44,11 +44,8 @@ def main():
         )
         print("Docker login successful.")
 
-        # Generate timestamp for image tagging
-        timestamp = subprocess.check_output(["date", "+%s"]).strip().decode('utf-8')
-
         # Build the Docker image
-        image_tag = f"niteris/fastled-wasm:{timestamp}"
+        image_tag = f"niteris/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
