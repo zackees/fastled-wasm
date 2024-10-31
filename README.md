@@ -3,8 +3,8 @@
 Compiles an Arduino/Platformio sketch into a wasm binary that can be run directly in the web browser.
 
 [![Linting](https://github.com/zackees/fastled-wasm/actions/workflows/lint.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/lint.yml)
-[![MacOS_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_macos.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_macos.yml)
-[![Ubuntu_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_ubuntu.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_ubuntu.yml)
+[![Build Compiler for Docker amd64](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_amd64.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_amd64.yml)
+[![Build Compiler for Docker arm64](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_arm64.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_arm64.yml)
 [![Win_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml)
 
 
