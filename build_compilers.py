@@ -81,8 +81,5 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"An error occurred: {e}")
 
-    clone_fastled_repo()
-
 if __name__ == "__main__":
     main()
-    clone_fastled_repo()
