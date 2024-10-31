@@ -97,44 +97,19 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Failed to build Docker image: {e}")
             sys.exit(1)
-        print(f"Docker image build process completed. Checking if the image exists locally with tag: {image_tag}")
+        print("Docker image build process completed. Listing all Docker images...")
 
-        # List all Docker images for debugging
-        print("Listing all Docker images...")
+        # List all Docker images
         try:
-            subprocess.run(
-                ["docker", "images"],
-                check=True
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to list Docker images: {e}")
-
-        # List all Docker containers for debugging
-        print("Listing all Docker containers...")
-        try:
-            subprocess.run(
-                ["docker", "ps", "-a"],
-                check=True
-            )
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to list Docker containers: {e}")
-        print("Verifying Docker image exists locally...")
-        try:
-            cmd = ["docker", "image", "inspect", image_tag]
-            cmd_str = subprocess.list2cmdline(cmd)
-
-            print(f"Running command: {cmd_str}")
-            subprocess.run(
-                cmd,
+            result = subprocess.run(
+                ["docker", "images", "--all"],
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            print(f"Docker image {image_tag} exists locally.")
+            print(f"All Docker images:\n{result.stdout.decode()}")
         except subprocess.CalledProcessError as e:
-            print(f"Error details: {e.stderr.decode()}")
-            print(f"Docker image {image_tag} does not exist locally. Cannot push.")
-            sys.exit(1)
+            print(f"Failed to list Docker images: {e.stderr.decode()}")
         print("Attempting to push Docker image...")
         try:
             subprocess.run(
