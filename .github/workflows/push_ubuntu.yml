@@ -26,5 +26,5 @@ jobs:
         bash install
     - name: Run python build_compilers.py w/ credentials
       run: |
-        python build_compilers.py --docker-user ${{ secrets.DOCKER_PASSWORD }} --docker-pass ${{ secrets.DOCKER_USERNAME }}
+        python build_compilers.py --docker-user ${{ secrets.DOCKER_USERNAME }} --docker-pass ${{ secrets.DOCKER_PASSWORD }}
       
