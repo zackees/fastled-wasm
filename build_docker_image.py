@@ -7,26 +7,12 @@ import platform
 
 DOCKER_USERNAME = "niteris"
 
-def is_arm_architecture():
-    """
-    Checks if the current machine is using an ARM architecture.
 
-    Returns:
-        bool: True if the machine is ARM-based, False otherwise.
-    """
-    machine_arch = platform.machine().lower()
-    print('machine_arch:', machine_arch)
-    return any(arch in machine_arch for arch in ['arm', 'aarch64', 'arm64'])
-
-def get_image_name() -> str:
-    if is_arm_architecture():
-        return f"{DOCKER_USERNAME}/fastled-wasm-arm64:latest"
-    else:
-        return f"{DOCKER_USERNAME}/fastled-wasm-amd64:latest"
+def get_image_name(arch: str) -> str:
+    return f"{DOCKER_USERNAME}/fastled-wasm-{arch}:latest"
 
 def clone_fastled_repo():
     """Clone the FastLED repository from GitHub."""
-    print(f"Is arm? {is_arm_architecture()}")
     repo_url = "https://github.com/fastled/fastled"
     repo_dir = "tmp"
     if os.path.exists(repo_dir):
@@ -49,6 +35,7 @@ def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Build compilers script.")
     parser.add_argument("--docker-password", type=str, help="Docker password")
+    parser.add_argument("--arch", type=str, required=True, help="Target architecture (e.g., arm64, amd64)")
     return parser.parse_args()
 
 def main():
@@ -62,17 +49,18 @@ def main():
         os.chdir(str(tmp))
         print(f"Current working directory: {os.getcwd()}")
         print("Attempting to log in to Docker Hub...")
-        subprocess.run(
-            ["docker", "login", "--username", DOCKER_USERNAME, "--password-stdin"],
-            input=args.docker_password.encode(),
-            check=True,
-            stdout=sys.stdout,
-            stderr=sys.stderr
-        )
+        if args.docker_password:
+            subprocess.run(
+                ["docker", "login", "--username", DOCKER_USERNAME, "--password-stdin"],
+                input=args.docker_password.encode(),
+                check=True,
+                stdout=sys.stdout,
+                stderr=sys.stderr
+            )
         print("Docker login successful.")
 
         print("Starting Docker image build process...")
-        image_tag = get_image_name()
+        image_tag = get_image_name(args.arch)
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
@@ -98,7 +86,7 @@ def main():
             print(f"Error details: {e.stderr.decode()}")
             sys.exit(1)
 
-        cmd = ["docker", "build", ".", "--file", dockerfile_path, "--tag", image_tag]
+        cmd = ["docker", "buildx", "build", ".", "--file", dockerfile_path, "--tag", image_tag, "--platform", f"linux/{args.arch}"]
         cmd_str = subprocess.list2cmdline(cmd)
         print(f"Building Docker image with command: {cmd_str}")
         try:
