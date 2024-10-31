@@ -31,11 +31,12 @@ jobs:
     - name: Install dependencies And run.
       run: |
         bash install
+        brew upgrade
         brew install docker
         brew install colima
         brew install ./qemu.rb
-        colima nerdctl install
-        export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
         colima delete
+        curl -OSL https://raw.githubusercontent.com/Homebrew/homebrew-core/dc0669eca9479e9eeb495397ba3a7480aaa45c2e/Formula/qemu.rb brew install ./qemu.rb
+        brew link --overwrite qemu
         colima start
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
