@@ -20,18 +20,17 @@ jobs:
     - uses: docker-practice/actions-setup-docker@master
       timeout-minutes: 25
 
+
+
     - name: Print platform and cpu arch
       run: |
         echo "platform=$(uname -s)"
         echo "cpu_arch=$(uname -m)"
         echo "cpu_arch=$(uname -m)"
 
-    - name: Install dependencies
+    - name: Install dependencies And run.
       run: |
         bash install
-        pip install docker
-    - name: Run python build_compiler.py w/ credentials
-      run: |
+        brew install docker
+        colima start
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
-    - name: Now make the executable
-      run: uv run build_compiler_exe.py
