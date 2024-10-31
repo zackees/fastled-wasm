@@ -10,11 +10,6 @@ jobs:
         python-version: [3.11]
         os: [ubuntu-latest]
 
-    services:
-        docker:
-            image: niteris/fastled-wasm
-            options: --privileged
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
