@@ -10,7 +10,7 @@ jobs:
         python-version: [3.11]
         include:
             - os: ubuntu-latest
-              arch: amd64
+              arch: arm64
 
     steps:
     - uses: actions/checkout@v4
