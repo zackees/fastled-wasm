@@ -39,6 +39,7 @@ def main():
     try:
         tmp = Path("tmp")
         os.chdir(str(tmp))
+        print(f"Current working directory: {os.getcwd()}")
         print("Attempting to log in to Docker Hub...")
         subprocess.run(
             ["docker", "login", "--username", args.docker_user, "--password-stdin"],
@@ -65,12 +66,17 @@ def main():
         cmd_str = subprocess.list2cmdline(cmd)
         print(f"Building Docker image with command: {cmd_str}")
         try:
-            subprocess.run(
+            result = subprocess.run(
                 cmd,
                 shell=True,
                 check=True
             )
-            print(f"Docker image built with tag: {image_tag}")
+            if result.returncode == 0:
+                print(f"Docker image built with tag: {image_tag}")
+            else:
+                print(f"Build failed with return code: {result.returncode}")
+                print(f"Build stdout: {result.stdout.decode()}")
+                print(f"Build stderr: {result.stderr.decode()}")
         except subprocess.CalledProcessError as e:
             print(f"Failed to build Docker image: {e}")
             sys.exit(1)
