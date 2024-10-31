@@ -4,6 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
+DOCKER_USERNAME = "niteris"
+
 def clone_fastled_repo():
     """Clone the FastLED repository from GitHub."""
     repo_url = "https://github.com/fastled/fastled"
@@ -27,14 +29,13 @@ def clone_fastled_repo():
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Build compilers script.")
-    parser.add_argument("--docker-user", type=str, help="Docker username", default="niteris")
     parser.add_argument("--docker-password", type=str, help="Docker password")
     return parser.parse_args()
 
 def main():
     """Main function to execute the script."""
     args = parse_arguments()
-    print(f"Docker User: {args.docker_user}")
+    print(f"Docker User: {DOCKER_USERNAME}")
     clone_fastled_repo()
     try:
         tmp = Path("tmp")
@@ -42,7 +43,7 @@ def main():
         print(f"Current working directory: {os.getcwd()}")
         print("Attempting to log in to Docker Hub...")
         subprocess.run(
-            ["docker", "login", "--username", args.docker_user, "--password-stdin"],
+            ["docker", "login", "--username", DOCKER_USERNAME, "--password-stdin"],
             input=args.docker_password.encode(),
             check=True,
             stdout=sys.stdout,
@@ -51,7 +52,7 @@ def main():
         print("Docker login successful.")
 
         print("Starting Docker image build process...")
-        image_tag = f"{args.docker_user}/fastled-wasm:latest"
+        image_tag = f"{DOCKER_USERNAME}/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
