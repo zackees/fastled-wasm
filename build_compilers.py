@@ -76,7 +76,19 @@ def main():
             sys.exit(1)
         print(f"Docker image built with tag: {image_tag}")
 
-        # Push the Docker image
+        # Verify the Docker image exists locally
+        print("Verifying Docker image exists locally...")
+        try:
+            subprocess.run(
+                ["docker", "image", "inspect", image_tag],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            print(f"Docker image {image_tag} exists locally.")
+        except subprocess.CalledProcessError:
+            print(f"Docker image {image_tag} does not exist locally. Cannot push.")
+            sys.exit(1)
         print("Attempting to push Docker image...")
         try:
             subprocess.run(
