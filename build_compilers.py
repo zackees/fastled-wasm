@@ -76,7 +76,25 @@ def main():
             sys.exit(1)
         print(f"Docker image build process completed. Checking if the image exists locally with tag: {image_tag}")
 
-        # Verify the Docker image exists locally
+        # List all Docker images for debugging
+        print("Listing all Docker images...")
+        try:
+            subprocess.run(
+                ["docker", "images"],
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to list Docker images: {e}")
+
+        # List all Docker containers for debugging
+        print("Listing all Docker containers...")
+        try:
+            subprocess.run(
+                ["docker", "ps", "-a"],
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to list Docker containers: {e}")
         print("Verifying Docker image exists locally...")
         try:
             subprocess.run(
