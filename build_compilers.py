@@ -88,10 +88,6 @@ def main():
             )
             print(f"Build stdout: {result.stdout.decode()}")
             print(f"Build stderr: {result.stderr.decode()}")
-                cmd,
-                shell=True,
-                check=True
-            )
             if result.returncode == 0:
                 print(f"Docker image built with tag: {image_tag}")
             else:
