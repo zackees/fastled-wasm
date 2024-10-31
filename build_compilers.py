@@ -53,7 +53,7 @@ def main():
 
         def run_and_print(command):
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
-            print(f"Command: {command}\nOutput:\n{result.stdout}\nError:\n{result.stderr}")
+            print(f"Command: {command}\nOutput:\n{result.stdout}")
 
         run_and_print("pwd")
         run_and_print("ls tmp")
@@ -61,7 +61,7 @@ def main():
         run_and_print("ls tmp/src/platforms")
         run_and_print("ls tmp/src/platforms/wasm")
         run_and_print("ls tmp/src/platforms/wasm/compiler")
-        run_and_print("ls tmp/src/platforms/wasm/compiler/Dockerfile")
+        run_and_print("cat tmp/src/platforms/wasm/compiler/Dockerfile")
 
         #if not os.path.exists(dockerfile_path):
        #     raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
