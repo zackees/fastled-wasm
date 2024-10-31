@@ -28,11 +28,11 @@ jobs:
         bash install
     - name: Run python build_compiler.py w/ credentials
       run: |
+        export DOCKER_DEFAULT_PLATFORM=linux/arm64
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
       
     - name: Now make the executable
       run: |
-        export DOCKER_DEFAULT_PLATFORM=linux/arm64
         uv run build_compiler_exe.py
       
     - name: Generate timestamp and random hex
