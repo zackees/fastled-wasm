@@ -33,5 +33,7 @@ jobs:
         bash install
         brew install docker
         brew install colima
+        colima nerdctl install
+        export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
         colima start
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
