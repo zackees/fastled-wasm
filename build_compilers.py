@@ -1,6 +1,7 @@
 import os
 import subprocess
 import argparse
+import sys
 from pathlib import Path
 
 def clone_fastled_repo():
@@ -38,7 +39,7 @@ def main():
     try:
         tmp = Path("tmp")
         os.chdir(str(tmp))
-        # Log in to Docker Hub
+        print("Attempting to log in to Docker Hub...")
         subprocess.run(
             ["docker", "login", "--username", args.docker_user, "--password-stdin"],
             input=args.docker_password.encode(),
@@ -46,7 +47,7 @@ def main():
         )
         print("Docker login successful.")
 
-        # Build the Docker image
+        print("Starting Docker image build process...")
         image_tag = f"niteris/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
@@ -63,22 +64,33 @@ def main():
         cmd = ["docker", "build", ".", "--file", dockerfile_path, "--tag", image_tag]
         cmd_str = subprocess.list2cmdline(cmd)
         print(f"Building Docker image with command: {cmd_str}")
-        subprocess.run(
-            cmd,
-            shell=True,
-            check=True
-        )
+        try:
+            subprocess.run(
+                cmd,
+                shell=True,
+                check=True
+            )
+            print(f"Docker image built with tag: {image_tag}")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to build Docker image: {e}")
+            sys.exit(1)
         print(f"Docker image built with tag: {image_tag}")
 
         # Push the Docker image
-        subprocess.run(
-            ["docker", "push", image_tag],
-            check=True
-        )
-        print(f"Docker image pushed: {image_tag}")
+        print("Attempting to push Docker image...")
+        try:
+            subprocess.run(
+                ["docker", "push", image_tag],
+                check=True
+            )
+            print(f"Docker image pushed: {image_tag}")
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to push Docker image: {e}")
+            sys.exit(1)
 
     except subprocess.CalledProcessError as e:
         print(f"An error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
