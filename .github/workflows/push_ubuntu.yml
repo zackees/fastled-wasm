@@ -1,4 +1,4 @@
-name: Ubuntu_Tests
+name: Build wasm compiler for amd64
 
 on: [push]
 
