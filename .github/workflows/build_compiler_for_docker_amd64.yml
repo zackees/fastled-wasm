@@ -19,7 +19,7 @@ jobs:
     - name: Install dependencies
       run: |
         bash install
-    - name: Run python build_compilers.py w/ credentials
+    - name: Run python build_compiler.py w/ credentials
       run: |
-        python build_compilers.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
+        python build_compiler.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
       
