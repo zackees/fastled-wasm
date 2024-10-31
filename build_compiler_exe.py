@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 
 IMAGE_NAME = get_image_name()
 
-BUILD_FULL_EXE = False
+BUILD_FULL_EXE = True
 
 def _move_files_to_dist(full: bool = False) -> None:
     suffix = "-full" if full else ""
