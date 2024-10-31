@@ -142,4 +142,7 @@ uv.lock
 fastled_js
 .aider*
 !.aider.conf.yml
+!.aiderignorerun.py
+run.sh
 !.aiderignore
+tmp
