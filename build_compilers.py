@@ -48,7 +48,7 @@ def main():
         print("Docker login successful.")
 
         print("Starting Docker image build process...")
-        image_tag = f"niteris/fastled-wasm:latest"
+        image_tag = f"{args.docker_user}/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
@@ -74,7 +74,7 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Failed to build Docker image: {e}")
             sys.exit(1)
-        print(f"Docker image built with tag: {image_tag}")
+        print(f"Docker image build process completed. Checking if the image exists locally with tag: {image_tag}")
 
         # Verify the Docker image exists locally
         print("Verifying Docker image exists locally...")
@@ -86,7 +86,8 @@ def main():
                 stderr=subprocess.PIPE
             )
             print(f"Docker image {image_tag} exists locally.")
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            print(f"Error details: {e.stderr.decode()}")
             print(f"Docker image {image_tag} does not exist locally. Cannot push.")
             sys.exit(1)
         print("Attempting to push Docker image...")
