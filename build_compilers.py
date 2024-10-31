@@ -81,7 +81,6 @@ def main():
         try:
             result = subprocess.run(
                 cmd,
-                shell=True,
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
