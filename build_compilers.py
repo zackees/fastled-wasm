@@ -51,12 +51,25 @@ def main():
         image_tag = f"niteris/fastled-wasm:{timestamp}"
         dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
 
+        print("Current working directory:")
         os.system("pwd")
+
+        print("Contents of tmp directory:")
         os.system("ls tmp")
+
+        print("Contents of tmp/src directory:")
         os.system("ls tmp/src")
+
+        print("Contents of tmp/src/platforms directory:")
         os.system("ls tmp/src/platforms")
+
+        print("Contents of tmp/src/platforms/wasm directory:")
         os.system("ls tmp/src/platforms/wasm")
+
+        print("Contents of tmp/src/platforms/wasm/compiler directory:")
         os.system("ls tmp/src/platforms/wasm/compiler")
+
+        print("Contents of tmp/src/platforms/wasm/compiler/Dockerfile directory:")
         os.system("ls tmp/src/platforms/wasm/compiler/Dockerfile")
 
         #if not os.path.exists(dockerfile_path):
