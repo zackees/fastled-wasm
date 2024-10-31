@@ -26,6 +26,10 @@ jobs:
     - name: Install dependencies
       run: |
         bash install
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
     - name: Run python build_compiler.py w/ credentials
       run: |
         python build_docker_image.py --arch arm64 --docker-pass ${{ secrets.DOCKER_PASSWORD }}
