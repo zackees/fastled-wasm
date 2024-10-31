@@ -52,6 +52,11 @@ def main():
         dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
 
         os.system("pwd")
+        os.system("ls tmp")
+        os.system("ls tmp/src")
+        os.system("ls tmp/src/platforms")
+        os.system("ls tmp/src/platforms/wasm")
+        os.system("ls tmp/src/platforms/wasm/compiler")
         os.system("ls tmp/src/platforms/wasm/compiler/Dockerfile")
 
         #if not os.path.exists(dockerfile_path):
