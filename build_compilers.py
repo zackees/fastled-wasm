@@ -3,11 +3,24 @@ import subprocess
 import argparse
 import sys
 from pathlib import Path
+import platform
 
 DOCKER_USERNAME = "niteris"
 
+def is_arm_architecture():
+    """
+    Checks if the current machine is using an ARM architecture.
+
+    Returns:
+        bool: True if the machine is ARM-based, False otherwise.
+    """
+    machine_arch = platform.machine().lower()
+    print('machine_arch:', machine_arch)
+    return any(arch in machine_arch for arch in ['arm', 'aarch64', 'arm64'])
+
 def clone_fastled_repo():
     """Clone the FastLED repository from GitHub."""
+    print(f"Is arm? {is_arm_architecture()}")
     repo_url = "https://github.com/fastled/fastled"
     repo_dir = "tmp"
     if os.path.exists(repo_dir):
@@ -38,6 +51,7 @@ def main():
     print(f"Docker User: {DOCKER_USERNAME}")
     clone_fastled_repo()
     try:
+        print("switch path to the root of FastLED repository: tmp/")
         tmp = Path("tmp")
         os.chdir(str(tmp))
         print(f"Current working directory: {os.getcwd()}")
