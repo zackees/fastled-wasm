@@ -23,3 +23,16 @@ jobs:
       run: |
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
       
+    - name: Now make the executable
+      run: uv run build_compiler_exe.py
+      
+    - name: Generate timestamp and random hex
+      id: generate_id
+      run: |
+        echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+
+    - name: Upload dist folder
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-${{ steps.generate_id.outputs.timestamp }}-${{ github.sha }}
+        path: dist/
