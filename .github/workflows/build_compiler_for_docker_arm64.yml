@@ -29,6 +29,7 @@ jobs:
     - name: Install dependencies
       run: |
         bash install
+        pip install docker
     - name: Run python build_compiler.py w/ credentials
       run: |
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
