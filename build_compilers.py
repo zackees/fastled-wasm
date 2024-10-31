@@ -51,13 +51,16 @@ def main():
         image_tag = f"niteris/fastled-wasm:{timestamp}"
         dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
 
+        os.system("pwd")
+        os.system("ls")
+
         #if not os.path.exists(dockerfile_path):
        #     raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
         if not dockerfile_path.exists():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
 
-        os.system("ls")
+
         
 
         
