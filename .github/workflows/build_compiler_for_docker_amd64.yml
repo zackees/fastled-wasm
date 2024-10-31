@@ -1,4 +1,4 @@
-name: Build wasm compiler for amd64
+name: Build Conmpiler for Docker amd64
 
 on: [push]
 
