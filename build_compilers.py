@@ -55,7 +55,7 @@ def main():
        #     raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
         if not dockerfile_path.exists():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
-        dockerfile_path = dockerfile_path.relative_to("tmp")
+        dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
         
 
         
