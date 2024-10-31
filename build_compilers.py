@@ -100,11 +100,13 @@ def main():
         try:
             result = subprocess.run(
                 ["docker", "images", "--all"],
-                check=True
+                check=True,
+                text=True,
+                capture_output=True
             )
-            print(f"All Docker images:\n{result.stdout.decode()}")
+            print(f"All Docker images:\n{result.stdout}")
         except subprocess.CalledProcessError as e:
-            print(f"Failed to list Docker images: {e.stderr.decode()}")
+            print(f"Failed to list Docker images: {e.stderr}")
         print("Attempting to push Docker image...")
         try:
             subprocess.run(
