@@ -62,11 +62,32 @@ def main():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
         
+        # Ensure the Docker daemon is running
+        print("Checking Docker daemon status...")
+        try:
+            subprocess.run(
+                ["docker", "info"],
+                check=True
+            )
+            print("Docker daemon is running.")
+        except subprocess.CalledProcessError as e:
+            print("Docker daemon is not running or not accessible.")
+            print(f"Error details: {e.stderr.decode()}")
+            sys.exit(1)
+
         cmd = ["docker", "build", ".", "--file", dockerfile_path, "--tag", image_tag]
         cmd_str = subprocess.list2cmdline(cmd)
         print(f"Building Docker image with command: {cmd_str}")
         try:
             result = subprocess.run(
+                cmd,
+                shell=True,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            print(f"Build stdout: {result.stdout.decode()}")
+            print(f"Build stderr: {result.stderr.decode()}")
                 cmd,
                 shell=True,
                 check=True
