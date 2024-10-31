@@ -44,7 +44,9 @@ def main():
         subprocess.run(
             ["docker", "login", "--username", args.docker_user, "--password-stdin"],
             input=args.docker_password.encode(),
-            check=True
+            check=True,
+            stdout=sys.stdout,
+            stderr=sys.stderr
         )
         print("Docker login successful.")
 
@@ -82,17 +84,13 @@ def main():
             result = subprocess.run(
                 cmd,
                 check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stdout=sys.stdout,
+                stderr=sys.stderr
             )
-            print(f"Build stdout: {result.stdout.decode()}")
-            print(f"Build stderr: {result.stderr.decode()}")
             if result.returncode == 0:
                 print(f"Docker image built with tag: {image_tag}")
             else:
                 print(f"Build failed with return code: {result.returncode}")
-                print(f"Build stdout: {result.stdout.decode()}")
-                print(f"Build stderr: {result.stderr.decode()}")
         except subprocess.CalledProcessError as e:
             print(f"Failed to build Docker image: {e}")
             sys.exit(1)
@@ -102,9 +100,7 @@ def main():
         try:
             result = subprocess.run(
                 ["docker", "images", "--all"],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                check=True
             )
             print(f"All Docker images:\n{result.stdout.decode()}")
         except subprocess.CalledProcessError as e:
