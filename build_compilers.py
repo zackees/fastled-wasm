@@ -49,7 +49,22 @@ def main():
 
         # Build the Docker image
         image_tag = f"niteris/fastled-wasm:{timestamp}"
-        dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
+        # Check common locations for the Dockerfile
+        possible_paths = [
+            Path("tmp/src/platforms/wasm/compiler/Dockerfile"),
+            Path("tmp/src/platforms/wasm/Dockerfile"),
+            Path("tmp/src/Dockerfile"),
+            Path("Dockerfile")
+        ]
+
+        dockerfile_path = None
+        for path in possible_paths:
+            if path.exists():
+                dockerfile_path = path
+                break
+
+        if dockerfile_path is None:
+            raise FileNotFoundError("Dockerfile not found in any of the expected locations.")
 
         def run_and_print(command):
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
