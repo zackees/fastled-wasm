@@ -66,7 +66,10 @@ def main():
         print("Docker login successful.")
 
         print("Starting Docker image build process...")
-        image_tag = f"{DOCKER_USERNAME}/fastled-wasm:latest"
+        if is_arm_architecture():
+            image_tag = f"{DOCKER_USERNAME}/fastled-wasm-arm:latest"
+        else:
+            image_tag = f"{DOCKER_USERNAME}/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
