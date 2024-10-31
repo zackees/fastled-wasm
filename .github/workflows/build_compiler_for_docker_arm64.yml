@@ -1,0 +1,25 @@
+name: Build Conmpiler for Docker arm64
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: [3.11]
+        os: [ubuntu-latest, arm64]
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        bash install
+    - name: Run python build_compilers.py w/ credentials
+      run: |
+        python build_compilers.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
+      
