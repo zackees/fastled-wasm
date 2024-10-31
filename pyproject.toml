@@ -15,6 +15,7 @@ dependencies = [
     "keyring",
     "watchdog",
     "livereload",
+    "download",
 ]
 # Change this with the version number bump.
 version = "1.0.6"

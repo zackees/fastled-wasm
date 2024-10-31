@@ -146,3 +146,5 @@ fastled_js
 run.sh
 !.aiderignore
 tmp/
+cache/
+dist/
