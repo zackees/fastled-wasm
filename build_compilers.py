@@ -52,7 +52,7 @@ def main():
         dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
 
         os.system("pwd")
-        os.system("ls")
+        os.system("ls tmp/src/platforms/wasm/compiler/Dockerfile")
 
         #if not os.path.exists(dockerfile_path):
        #     raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
