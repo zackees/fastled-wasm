@@ -32,5 +32,6 @@ jobs:
       run: |
         bash install
         brew install docker
+        brew install colima
         colima start
         python build_docker_image.py --docker-pass ${{ secrets.DOCKER_PASSWORD }}
