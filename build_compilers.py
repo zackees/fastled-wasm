@@ -6,7 +6,7 @@ from pathlib import Path
 def clone_fastled_repo():
     """Clone the FastLED repository from GitHub."""
     repo_url = "https://github.com/fastled/fastled"
-    repo_dir = "tmp/src/platforms/wasm/compiler"
+    repo_dir = "tmp"
     if os.path.exists(repo_dir):
         print("Repository directory exists, resetting and updating repository.")
         try:
