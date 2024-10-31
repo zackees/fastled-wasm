@@ -27,7 +27,7 @@ def clone_fastled_repo():
 def parse_arguments():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Build compilers script.")
-    parser.add_argument("--docker-user", type=str, help="Docker username")
+    parser.add_argument("--docker-user", type=str, help="Docker username", default="niteris")
     parser.add_argument("--docker-password", type=str, help="Docker password")
     return parser.parse_args()
 
