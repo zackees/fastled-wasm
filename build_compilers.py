@@ -36,6 +36,8 @@ def main():
     print(f"Docker User: {args.docker_user}")
     clone_fastled_repo()
     try:
+        tmp = Path("tmp")
+        os.chdir(str(tmp))
         # Log in to Docker Hub
         subprocess.run(
             ["docker", "login", "--username", args.docker_user, "--password-stdin"],
@@ -48,7 +50,7 @@ def main():
         image_tag = f"niteris/fastled-wasm:latest"
         # Check common locations for the Dockerfile
 
-        dockerfile_path = Path("tmp/src/platforms/wasm/compiler/Dockerfile")
+        dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
         if not dockerfile_path.exists():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
 
@@ -60,11 +62,9 @@ def main():
         
         cmd = ["docker", "build", ".", "--file", dockerfile_path, "--tag", image_tag]
         cmd_str = subprocess.list2cmdline(cmd)
-        cwd = Path(os.getcwd())/"tmp"
-        print(f"Building Docker image with command: {cmd_str} at cwd={cwd}")
+        print(f"Building Docker image with command: {cmd_str}")
         subprocess.run(
             cmd,
-            cwd=str(cwd),
             shell=True,
             check=True
         )
