@@ -1,5 +1,3 @@
-import argparse
-
 import os
 import shutil
 import subprocess
@@ -41,8 +39,8 @@ def _move_files_to_dist(full: bool = False) -> None:
             print(f"Warning: {src_path} was expected to exist but does not.")
 
 
-def setup_docker2exe() -> None:
-    image_name = get_image_name("amd64")
+def setup_docker2exe(arch: str) -> None:
+    image_name = get_image_name("arch")
     platform = ""
     if sys.platform == "win32":
         platform = "windows"
@@ -93,7 +91,3 @@ def setup_docker2exe() -> None:
         )
         _move_files_to_dist(full=True)
     print("Docker2exe done.")
-
-
-if __name__ == "__main__":
-    setup_docker2exe()
