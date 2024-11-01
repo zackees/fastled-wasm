@@ -31,7 +31,7 @@ jobs:
         python build_docker_image.py --arch amd64 --docker-pass ${{ secrets.DOCKER_PASSWORD }}
       
     - name: Now make the executable
-      run: uv run build_compiler_exe.py
+      run: uv run build_compiler_exe.py  --arch amd64
       
     - name: Generate timestamp and random hex
       id: generate_id
