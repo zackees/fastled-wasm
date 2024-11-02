@@ -70,12 +70,6 @@ def run(args: argparse.Namespace) -> None:
         dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
         if not dockerfile_path.exists():
             raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
-
-        #if not os.path.exists(dockerfile_path):
-       #     raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
-        if not dockerfile_path.exists():
-            raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
-        dockerfile_path = Path("src/platforms/wasm/compiler/Dockerfile")
         
         # Ensure the Docker daemon is running
         print("Checking Docker daemon status...")
