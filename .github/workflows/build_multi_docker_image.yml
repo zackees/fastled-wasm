@@ -43,6 +43,8 @@ jobs:
         with:
           repository: fastled/fastled
           path: .
+      - name: Recusrively list all files
+        run: ls -R
       - name: Copy Dockerfile to root
         run: cp src/platforms/wasm/compiler/Dockerfile .
       - name: Build and push by digest
