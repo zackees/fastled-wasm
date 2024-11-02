@@ -46,7 +46,7 @@ jobs:
       - name: Recusrively list all files
         run: find
       - name: Copy Dockerfile to root
-        run: cp src/platforms/wasm/compiler/Dockerfile .
+        run: cp src/platforms/wasm/compiler/Dockerfile ./Dockerfile
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
