@@ -26,6 +26,14 @@ jobs:
     - name: Install dependencies
       run: |
         bash install
+
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Run python build_compiler.py w/ credentials
       run: |
         python build_docker_image.py --arch amd64 --docker-pass ${{ secrets.DOCKER_PASSWORD }}

@@ -17,6 +17,12 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+
+    - name: Cache Docker images.
+      uses: ScribeMD/docker-cache@0.5.0
+      with:
+        key: docker-${{ runner.os }}-
+
     - name: Print platform and cpu arch
       run: |
         echo "platform=$(uname -s)"
@@ -27,8 +33,11 @@ jobs:
       run: |
         bash install
 
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3
 
     - name: Run python build_compiler.py w/ credentials
       run: |
