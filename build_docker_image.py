@@ -3,9 +3,21 @@ import subprocess
 import argparse
 import sys
 from pathlib import Path
-import platform
 
 DOCKER_USERNAME = "niteris"
+
+ARCH_CHOICES = [
+    "amd64",
+    "arm64",
+]
+
+
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="Build compilers script.")
+    parser.add_argument("--docker-password", type=str, help="Docker password")
+    parser.add_argument("--arch", type=str, required=True, help="Target architecture", choices=ARCH_CHOICES)
+    return parser.parse_args()
 
 
 def get_image_name(arch: str) -> str:
@@ -31,16 +43,8 @@ def clone_fastled_repo():
         except subprocess.CalledProcessError as e:
             print(f"An error occurred while cloning the repository: {e}")
 
-def parse_arguments():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Build compilers script.")
-    parser.add_argument("--docker-password", type=str, help="Docker password")
-    parser.add_argument("--arch", type=str, required=True, help="Target architecture (e.g., arm64, amd64)")
-    return parser.parse_args()
 
-def main():
-    """Main function to execute the script."""
-    args = parse_arguments()
+def run(args: argparse.Namespace) -> None:
     print(f"Docker User: {DOCKER_USERNAME}")
     clone_fastled_repo()
     try:
@@ -86,9 +90,10 @@ def main():
             print(f"Error details: {e.stderr.decode()}")
             sys.exit(1)
 
-        cmd = ["docker", "buildx", "build", ".", "--file", dockerfile_path, "--tag", image_tag, "--platform", f"linux/{args.arch}"]
+        cmd = ["docker", "buildx", "build", ".", "--file", f"{dockerfile_path}", "--tag", image_tag, "--platform", f"linux/{args.arch}"]
         cmd_str = subprocess.list2cmdline(cmd)
         print(f"Building Docker image with command: {cmd_str}")
+        result: subprocess.CompletedProcess
         try:
             result = subprocess.run(
                 cmd,
@@ -110,8 +115,8 @@ def main():
             result = subprocess.run(
                 ["docker", "images", "--all"],
                 check=True,
-                text=True,
-                capture_output=True
+                capture_output=True,
+                text=True
             )
             print(f"All Docker images:\n{result.stdout}")
         except subprocess.CalledProcessError as e:
@@ -130,6 +135,11 @@ def main():
     except subprocess.CalledProcessError as e:
         print(f"An error occurred: {e}")
         sys.exit(1)
+
+def main():
+    """Main function to execute the script."""
+    args = parse_arguments()
+    run(args)
 
 if __name__ == "__main__":
     main()
