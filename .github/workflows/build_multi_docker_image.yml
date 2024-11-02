@@ -42,16 +42,16 @@ jobs:
         uses: actions/checkout@v3
         with:
           repository: fastled/fastled
-          path: .
-      - name: Recusrively list all files
-        run: find
+          path: fastled
       - name: Copy Dockerfile to root
-        run: cp src/platforms/wasm/compiler/Dockerfile ./Dockerfile
+        run: cp fastled/src/platforms/wasm/compiler/Dockerfile ./Dockerfile/fastled
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
+          context: https://github.com/fastled/fastled.git
+          file: src/platforms/wasm/compiler/Dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
