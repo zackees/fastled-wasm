@@ -20,101 +20,36 @@ jobs:
           - linux/arm/v7
           - linux/arm64
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
 
-      - name: Clone FastLED Repository
+      - name: Prepare
         run: |
-          git clone https://github.com/fastled/fastled tmp
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV          
+      
 
-      - name: Prepare Environment Variables
-        run: |
-          platform="${{ matrix.platform }}"
-          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
-
-      - name: Docker Metadata
+      - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-          tags: |
-            type=raw,value=${{ env.PLATFORM_PAIR }}
+
+
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
+      
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}  # Set in your repository secrets
-          password: ${{ secrets.DOCKER_PASSWORD }}  # Set in your repository secrets
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Docker Image
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: tmp
-          file: tmp/src/platforms/wasm/compiler/Dockerfile
-          platforms: ${{ matrix.platform }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ steps.meta.outputs.tags }},push-by-digest=true
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
-      - name: Export Digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          echo "${digest}" > "/tmp/digests/${{ env.PLATFORM_PAIR }}.txt"
 
-      - name: Upload Digest Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-${{ env.PLATFORM_PAIR }}
-          path: /tmp/digests/${{ env.PLATFORM_PAIR }}.txt
-          retention-days: 1
-
-  merge:
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    steps:
-      - name: Download Digest Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: digest-*
-          path: /tmp/digests
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Docker Metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY_IMAGE }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      - name: Create and Push Manifest List
-        run: |
-          IMAGES=""
-          for digest_file in /tmp/digests/*.txt; do
-            PLATFORM_PAIR=$(basename "${digest_file}" .txt)
-            DIGEST=$(cat "${digest_file}")
-            IMAGES="${IMAGES} ${{ env.REGISTRY_IMAGE }}:${PLATFORM_PAIR}@${DIGEST}"
-          done
-          docker buildx imagetools create \
-            --tag ${{ env.REGISTRY_IMAGE }}:latest \
-            ${IMAGES}
-
-      - name: Inspect Pushed Image
-        run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:latest
+        
