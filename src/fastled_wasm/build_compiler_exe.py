@@ -64,7 +64,7 @@ def setup_docker2exe(arch: str) -> None:
         "darwin",
     ]
     for platform in platforms:
-        docker2exe_path = cache_dir / "docker2exe"
+        docker2exe_path = str(cache_dir / "docker2exe")
         if platform == "windows":
             docker2exe_path = docker2exe_path + ".exe"
         if not docker2exe_path.exists():
