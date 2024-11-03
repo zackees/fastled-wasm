@@ -13,12 +13,13 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "docker",
     "keyring",
+    "keyrings.alt; platform_system == 'Linux'",
     "watchdog",
     "livereload",
     "download",
 ]
 # Change this with the version number bump.
-version = "1.0.6"
+version = "1.0.7"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

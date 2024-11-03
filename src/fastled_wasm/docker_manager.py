@@ -7,6 +7,8 @@ from typing import Optional
 
 import docker  # type: ignore
 
+TAG = "main"
+
 
 class DockerManager:
     """Manages Docker operations for FastLED WASM compiler."""
@@ -71,32 +73,32 @@ class DockerManager:
                 print("Forcing image update...")
                 # Remove both tagged versions of the image
                 subprocess.run(
-                    ["docker", "rmi", f"{self.container_name}:latest"],
+                    ["docker", "rmi", f"{self.container_name}:{TAG}"],
                     capture_output=True,
                     check=False,
                 )
                 subprocess.run(
-                    ["docker", "rmi", "niteris/fastled-wasm:latest"],
+                    ["docker", "rmi", f"niteris/fastled-wasm:{TAG}"],
                     capture_output=True,
                     check=False,
                 )
 
             result = subprocess.run(
-                ["docker", "image", "inspect", f"{self.container_name}:latest"],
+                ["docker", "image", "inspect", f"{self.container_name}:{TAG}"],
                 capture_output=True,
                 check=False,
             )
             if result.returncode != 0 or force_update:
                 print("Local image not found. Pulling from niteris/fastled-wasm...")
                 subprocess.run(
-                    ["docker", "pull", "niteris/fastled-wasm:latest"], check=True
+                    ["docker", "pull", f"niteris/fastled-wasm:{TAG}"], check=True
                 )
                 subprocess.run(
                     [
                         "docker",
                         "tag",
-                        "niteris/fastled-wasm:latest",
-                        f"{self.container_name}:latest",
+                        f"niteris/fastled-wasm:{TAG}",
+                        f"{self.container_name}:{TAG}",
                     ],
                     check=True,
                 )
@@ -149,7 +151,7 @@ class DockerManager:
                     self.container_name,
                     "-v",
                     f"{volume_path}:/mapped/{base_name}",
-                    f"{self.container_name}:latest",
+                    f"{self.container_name}:{TAG}",
                 ]
             )
 
