@@ -51,7 +51,6 @@ jobs:
             PLATFORM_TAG=${{ matrix.platform == 'linux/arm64' && '-arm64' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max,compression=zstd
-          tags: niteris/fastled-wasm:latest
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
