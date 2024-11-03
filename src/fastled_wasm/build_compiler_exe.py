@@ -47,16 +47,30 @@ def _move_files_to_dist(full: bool = False) -> None:
 
 def setup_docker2exe(arch: str) -> None:
     image_name = get_image_name()
-    platform = ""
+    this_platform = ""
     if sys.platform == "win32":
-        platform = "windows"
+        this_platform = "windows"
     elif sys.platform == "darwin":
-        platform = "darwin"
+        this_platform = "darwin"
     elif sys.platform == "linux":
-        platform = "linux"
+        this_platform = "linux"
 
     cache_dir = PROJECT_ROOT / "cache"
     cache_dir.mkdir(exist_ok=True)
+
+    docker2exe_path = cache_dir / "docker2exe"
+    if this_platform == "windows":
+        docker2exe_path = cache_dir / "docker2exe.exe"
+    print(f"Downloading docker2exe for {this_platform}... {docker2exe_path}")
+    if not docker2exe_path.exists():
+        download_link = _get_download_link(this_platform)
+        download.download(
+            download_link,
+            str(docker2exe_path),
+        )
+        docker2exe_path.chmod(0o755)
+    else:
+        print("docker2exe.exe already exists, skipping download.")
 
     platforms = [
         "windows",
@@ -64,19 +78,6 @@ def setup_docker2exe(arch: str) -> None:
         "darwin",
     ]
     for platform in platforms:
-        docker2exe_path = cache_dir / "docker2exe"
-        if platform == "windows":
-            docker2exe_path = cache_dir / "docker2exe.exe"
-        print(f"Downloading docker2exe for {platform}... {docker2exe_path}")
-        if not docker2exe_path.exists():
-            download_link = _get_download_link(platform)
-            download.download(
-                download_link,
-                str(docker2exe_path),
-            )
-            docker2exe_path.chmod(0o755)
-        else:
-            print("docker2exe.exe already exists, skipping download.")
 
         print(f"Using docker2exe at {docker2exe_path}")
 
