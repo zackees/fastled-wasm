@@ -16,40 +16,11 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-
-
-
     - name: Install UV
       run: pip install uv
 
     - name: Install
       run: ./install && ./test
-
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Docker meta
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-          images: ${{ env.REGISTRY_IMAGE }}
-
-    - name: Login to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    - uses: crazy-max/ghaction-setup-docker@v3
-      timeout-minutes: 20
-      with:
-        daemon-config: |
-          {
-            "debug": true,
-            "features": {
-              "containerd-snapshotter": true
-            }
-          }
-    - run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
-      shell: bash
+    
+    - name: Windows does not support docker in a github runner.
+      run: Sorry, we can't do anything beyond running the unit test on Windows.

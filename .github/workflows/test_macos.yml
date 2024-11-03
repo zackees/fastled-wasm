@@ -4,12 +4,23 @@ on: [push]
 
 jobs:
   test:
-    runs-on: macos-latest
+    runs-on: windows-latest
     strategy:
       matrix:
         python-version: [3.11]
     
     steps:
-    - name: MacOS Docker Test is not available because of licensing issues between Docker and Github.
-      run: echo "MacOS Docker Test is not available because of licensing issues between Docker and Github"
-        
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install UV
+      run: pip install uv
+
+    - name: Install
+      run: ./install && ./test
+    
+    - name: Windows does not support docker in a github runner.
+      run: Sorry, we can't do anything beyond running the unit test on MacOS.
