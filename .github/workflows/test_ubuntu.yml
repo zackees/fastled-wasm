@@ -1,4 +1,4 @@
-name: Win_Tests
+name: Ubuntu_Tests
 
 on: [push]
 
@@ -11,6 +11,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install UV
+      run: pip install uv
 
     - name: Unit tests
       run: ./test
