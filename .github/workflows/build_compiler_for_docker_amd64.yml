@@ -34,10 +34,6 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Run python build_compiler.py w/ credentials
-      run: |
-        python build_docker_image.py --arch amd64 --docker-pass ${{ secrets.DOCKER_PASSWORD }}
-      
     - name: Now make the executable
       run: uv run build_compiler_exe.py  --arch amd64
       

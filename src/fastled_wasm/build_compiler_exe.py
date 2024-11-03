@@ -26,6 +26,7 @@ def _move_files_to_dist(full: bool = False) -> None:
     for src, dest in files:
         src_path = PROJECT_ROOT / "dist" / src
         dest_path = PROJECT_ROOT / "dist" / dest
+        print(f"Evaluating {src_path} -> {dest_path}")
         if not os.path.exists(src_path):
             print(f"Skipping {src} as it does not exist.")
             continue
