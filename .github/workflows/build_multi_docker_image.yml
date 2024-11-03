@@ -45,6 +45,8 @@ jobs:
           file: src/platforms/wasm/compiler/Dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            PLATFORM_TAG=${{ matrix.platform == 'linux/arm64' && '-arm64' || '' }}
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
