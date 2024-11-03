@@ -7,6 +7,8 @@ Compiles an Arduino/Platformio sketch into a wasm binary that can be run directl
 [![Build Compiler for Docker arm64](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_arm64.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_compiler_for_docker_arm64.yml)
 [![Win_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/push_win.yml)
 
+[![Build and Push Multi Docker Image](https://github.com/zackees/fastled-wasm/actions/workflows/build_multi_docker_image.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_multi_docker_image.yml)
+
 
 # About
 
