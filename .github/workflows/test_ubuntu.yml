@@ -25,8 +25,5 @@ jobs:
     - name: Unit tests
       run: ./test
 
-    - name: Install tool from pyp
-      run: pip install fastled-wasm
-
     - name: live run
-      run: cd tests/test_ino && rm -rf fastled_js && fastled-wasm
+      run: pip install . && cd tests/test_ino && rm -rf fastled_js && fastled-wasm
