@@ -5,10 +5,17 @@ import sys
 
 import download  # type: ignore
 
-from build_docker_image import get_image_name
 from fastled_wasm.paths import PROJECT_ROOT
 
 BUILD_FULL_EXE = True
+
+DOCKER_USERNAME = "niteris"
+IMAGE_NAME = "fastled-wasm"
+TAG = "main"
+
+
+def get_image_name() -> str:
+    return f"{DOCKER_USERNAME}/{IMAGE_NAME}:{TAG}"
 
 
 def _get_download_link(platform: str) -> str:
@@ -41,7 +48,7 @@ def _move_files_to_dist(full: bool = False) -> None:
 
 
 def setup_docker2exe(arch: str) -> None:
-    image_name = get_image_name("arch")
+    image_name = get_image_name()
     platform = ""
     if sys.platform == "win32":
         platform = "windows"
@@ -73,7 +80,7 @@ def setup_docker2exe(arch: str) -> None:
         "--module",
         "github.com/FastLED/FastLED",
         "--target",
-        f"{platform}/amd64",
+        f"{platform}/{arch}",
     ]
     full_cmd = slim_cmd + ["--embed"]
 
