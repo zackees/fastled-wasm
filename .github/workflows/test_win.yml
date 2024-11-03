@@ -17,8 +17,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
 
 
-    - name: Set up Docker
-      uses: crazy-max/ghaction-setup-docker@v3
+
 
     - name: Install UV
       run: pip install uv
@@ -26,9 +25,8 @@ jobs:
     - name: Install
       run: ./install
 
-    - name: Unit tests
-      run: ./test
 
-    - name: live run
-      run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
+    - uses: crazy-max/ghaction-setup-docker@v3
+      timeout-minutes: 20
+    - run: ./test && pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
       shell: bash
