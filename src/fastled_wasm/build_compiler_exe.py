@@ -67,6 +67,7 @@ def setup_docker2exe(arch: str) -> None:
         docker2exe_path = cache_dir / "docker2exe"
         if platform == "windows":
             docker2exe_path = cache_dir / "docker2exe.exe"
+        print(f"Downloading docker2exe for {platform}... {docker2exe_path}")
         if not docker2exe_path.exists():
             download_link = _get_download_link(platform)
             download.download(
@@ -76,6 +77,8 @@ def setup_docker2exe(arch: str) -> None:
             docker2exe_path.chmod(0o755)
         else:
             print("docker2exe.exe already exists, skipping download.")
+
+        print(f"Using docker2exe at {docker2exe_path}")
 
         slim_cmd = [
             str(docker2exe_path),
