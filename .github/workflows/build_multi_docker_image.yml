@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main  # Adjust this to your default branch
+  schedule:
+    - cron: '0 12 * * *'  # Executes every day at 4:00 AM Pacific Time
 
 env:
   REGISTRY_IMAGE: niteris/fastled-wasm  # Replace with your Docker Hub username and repository
@@ -90,7 +92,7 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
-          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $(jq -cr '.tags | map("-t latest") | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Inspect image
