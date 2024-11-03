@@ -12,6 +12,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Windows Docker Test is not available because of licensing issues between Docker and Github.
-      run: echo "Windows Docker Test is not available because of licensing issues between Docker and Github"
-        
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+
+    - name: Set up Docker
+      uses: crazy-max/ghaction-setup-docker@v3
+
+    - name: Install UV
+      run: pip install uv
+
+    - name: Install
+      run: ./install
+
+    - name: Unit tests
+      run: ./test
+
+    - name: live run
+      run: pip install . && cd tests/test_ino/wasm && sudo rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
