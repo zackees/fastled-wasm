@@ -23,10 +23,10 @@ jobs:
       run: pip install uv
 
     - name: Install
-      run: ./install
+      run: ./install && ./test
 
 
     - uses: crazy-max/ghaction-setup-docker@v3
       timeout-minutes: 20
-    - run: ./test && pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
+    - run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
       shell: bash
