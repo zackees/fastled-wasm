@@ -23,4 +23,4 @@ jobs:
       run: ./install && ./test
     
     - name: Windows does not support docker in a github runner.
-      run: Sorry, we can't do anything beyond running the unit test on Windows.
+      run: echo "Sorry, we can't do anything beyond running the unit test on Windows."
