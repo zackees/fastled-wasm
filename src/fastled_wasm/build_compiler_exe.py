@@ -7,7 +7,7 @@ import download  # type: ignore
 
 from fastled_wasm.paths import PROJECT_ROOT
 
-BUILD_FULL_EXE = True
+BUILD_FULL_EXE = False
 
 DOCKER_USERNAME = "niteris"
 IMAGE_NAME = "fastled-wasm"
@@ -33,9 +33,7 @@ def _move_files_to_dist(full: bool = False) -> None:
     for src, dest in files:
         src_path = PROJECT_ROOT / "dist" / src
         dest_path = PROJECT_ROOT / "dist" / dest
-        print(f"Evaluating {src_path} -> {dest_path}")
         if not os.path.exists(src_path):
-            print(f"Skipping {src} as it does not exist.")
             continue
         if dest_path.exists():
             dest_path.unlink()
@@ -60,42 +58,48 @@ def setup_docker2exe(arch: str) -> None:
     cache_dir = PROJECT_ROOT / "cache"
     cache_dir.mkdir(exist_ok=True)
 
-    docker2exe_path = cache_dir / "docker2exe.exe"
-    if not docker2exe_path.exists():
-        download_link = _get_download_link(platform)
-        download.download(
-            download_link,
-            str(docker2exe_path),
-        )
-        docker2exe_path.chmod(0o755)
-    else:
-        print("docker2exe.exe already exists, skipping download.")
-
-    slim_cmd = [
-        str(docker2exe_path),
-        "--name",
-        "fastled",
-        "--image",
-        image_name,
-        "--module",
-        "github.com/FastLED/FastLED",
-        "--target",
-        f"{platform}/{arch}",
+    platforms = [
+        "windows",
+        "linux",
+        "darwin",
     ]
-    full_cmd = slim_cmd + ["--embed"]
+    for platform in platforms:
+        docker2exe_path = cache_dir / "docker2exe.exe"
+        if not docker2exe_path.exists():
+            download_link = _get_download_link(platform)
+            download.download(
+                download_link,
+                str(docker2exe_path),
+            )
+            docker2exe_path.chmod(0o755)
+        else:
+            print("docker2exe.exe already exists, skipping download.")
 
-    print("Building wasm web command...")
-    subprocess.run(
-        slim_cmd,
-        check=True,
-    )
-    _move_files_to_dist(full=False)
+        slim_cmd = [
+            str(docker2exe_path),
+            "--name",
+            "fastled",
+            "--image",
+            image_name,
+            "--module",
+            "github.com/FastLED/FastLED",
+            "--target",
+            f"{platform}/{arch}",
+        ]
+        full_cmd = slim_cmd + ["--embed"]
 
-    if BUILD_FULL_EXE:
-        print("Building wasm full command with no dependencies...")
+        print("Building wasm web command...")
         subprocess.run(
-            full_cmd,
+            slim_cmd,
             check=True,
         )
-        _move_files_to_dist(full=True)
+        _move_files_to_dist(full=False)
+
+        if BUILD_FULL_EXE:
+            print("Building wasm full command with no dependencies...")
+            subprocess.run(
+                full_cmd,
+                check=True,
+            )
+            _move_files_to_dist(full=True)
     print("Docker2exe done.")
