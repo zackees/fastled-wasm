@@ -24,4 +24,7 @@ jobs:
 
     - name: Unit tests
       run: ./test
+
+    - name: Build Comiler
+      run: uv run build_compiler_exe.py --arch amd64
         
