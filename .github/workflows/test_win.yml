@@ -28,5 +28,13 @@ jobs:
 
     - uses: crazy-max/ghaction-setup-docker@v3
       timeout-minutes: 20
+      with:
+        daemon-config: |
+          {
+            "debug": true,
+            "features": {
+              "containerd-snapshotter": true
+            }
+          }
     - run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
       shell: bash
