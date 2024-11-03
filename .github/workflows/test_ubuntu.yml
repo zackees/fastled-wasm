@@ -25,19 +25,5 @@ jobs:
     - name: Unit tests
       run: ./test
 
-    - name: Build Compiler
-      run: uv run build_compiler_exe.py --arch amd64
-
-    - name: Generate timestamp and random hex
-      id: generate_id
-      run: |
-        echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
-
-
-    - name: Upload dist folder
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist-${{ steps.generate_id.outputs.timestamp }}-${{ github.sha }}
-        path: dist/
-
-        
+    - name: live run
+      run: cd tests/test_ino && fastled-wasm
