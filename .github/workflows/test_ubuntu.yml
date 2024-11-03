@@ -19,8 +19,8 @@ jobs:
     - name: Install UV
       run: pip install uv
 
-    - name: Install Test Dependences at requirements.testing.txt
-      run: uv install -r requirements.testing.txt
+    - name: Install
+      run: ./install
 
     - name: Unit tests
       run: ./test
