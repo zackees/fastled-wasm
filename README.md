@@ -20,7 +20,7 @@ This works on Windows/Linux/Mac(arm/x64).
 
 Docker is required.
 
-https://github.com/user-attachments/assets/bde26ddd-d24d-4a78-90b6-ac05359677fa
+https://github.com/user-attachments/assets/64ae0e6c-5f8b-4830-ab87-dcc25bc61218
 
 
 # Demo
