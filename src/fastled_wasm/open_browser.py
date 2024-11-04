@@ -1,4 +1,5 @@
 import asyncio
+import socket
 import threading
 import webbrowser
 from pathlib import Path
@@ -24,19 +25,35 @@ def _open_browser_python(fastled_js: Path, port: int) -> None:
     # server.application.on_after_start = open_browser
     open_browser()
 
-    try:
-        server.serve(port=port, root=str(fastled_js), debug=True)
-    except OSError as e:
-        print(f"Error starting server: {e}")
-        if "Address already in use" in str(e):
-            print(f"Port {port} is already in use. Try a different port.")
-        raise
+    while True:
+        try:
+            server.serve(port=port, root=str(fastled_js), debug=True)
+            break
+        except OSError as e:
+            print(f"Error starting server: {e}")
+            if "Address already in use" in str(e):
+                print(f"Port {port} is already in use. Trying next port.")
+                port += 1
+            else:
+                raise
+
+
+def _find_open_port(start_port: int) -> int:
+    """Find an open port starting from start_port."""
+    port = start_port
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex(("localhost", port)) != 0:
+                return port
+            port += 1
 
 
 def open_browser_thread(fastled_js: Path, port: int | None = None) -> threading.Thread:
-    """Start HTTP server in the fastled_js directory and return the started thread"""
+    """Start livereload server in the fastled_js directory and return the started thread"""
     if port is None:
         port = DEFAULT_PORT
+
+    port = _find_open_port(port)
 
     thread = threading.Thread(
         target=_open_browser_python, args=(fastled_js, port), daemon=True
