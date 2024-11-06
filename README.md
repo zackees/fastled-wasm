@@ -65,6 +65,7 @@ provide shims for most of the common api points.
 
 
 
+
 # Revisions
 
   * 1.0.8 - Allow more than one fastled-wasm browser instances to co-exist by searching for unused ports after 8081.
