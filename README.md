@@ -57,7 +57,6 @@ This style of development should be familiar to those doing web development.
 If you want to embed data, then do so in the `data/` directory at the project root. The files will appear in the `data/` director of any spawned FileSystem or SDCard.
 
 
-
 ### About the compilation.
 
 Pre-processing is done to your source files. A fake Arduino.h will be inserted into your source files that will
