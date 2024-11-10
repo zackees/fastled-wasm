@@ -13,6 +13,7 @@ from pathlib import Path
 import requests
 
 DEFAULT_HOST = "https://fastled.onrender.com"
+ENDPOINT_COMPILED_WASM = "compile/wasm"
 
 
 def web_compile(directory: Path, host: str = DEFAULT_HOST) -> bytes:
@@ -37,7 +38,9 @@ def web_compile(directory: Path, host: str = DEFAULT_HOST) -> bytes:
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
 
             response = requests.post(
-                f"{host}/compile", files=files, headers={"accept": "application/json"}
+                f"{host}/{ENDPOINT_COMPILED_WASM}",
+                files=files,
+                headers={"accept": "application/json"},
             )
 
             response.raise_for_status()
