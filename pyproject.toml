@@ -13,6 +13,7 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "docker",
     "keyring",
+    "requests",
     "keyrings.alt; platform_system == 'Linux'",
     "watchdog",
     "livereload",
