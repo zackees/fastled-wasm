@@ -82,7 +82,7 @@ def compile_local(
 
     # Ensure the image exists (pull if needed)
     if not DOCKER.ensure_image_exists():
-        print("Failed to ensure Docker image exists. Exiting.")
+        print("Failed to ensure Docker image exists..")
         return CompiledResult(success=False, fastled_js="")
 
     # Handle container reuse logic

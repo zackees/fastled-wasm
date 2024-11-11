@@ -130,24 +130,23 @@ def main() -> int:
         )
         args.web = True
 
-    # Choose between web and local compilation
-    if args.web:
+    def _run_web_compiler() -> CompiledResult:
+        return run_web_compiler(args.directory, args.web_host)
 
-        def _run_web_compiler() -> CompiledResult:
-            return run_web_compiler(args.directory, args.web_host)
+    def _compile_local() -> CompiledResult:
+        return compile_local(args.directory, args.reuse, force_update=args.update)
 
-        compile_function = _run_web_compiler  # type: ignore
-    else:
-
-        def _compile_local() -> CompiledResult:
-            return compile_local(args.directory, args.reuse, force_update=args.update)
-
-        compile_function = _compile_local  # type: ignore
+    compiler_type = "web" if args.web else "local"
+    compile_function = _run_web_compiler if args.web else _compile_local  # type: ignore
 
     result: CompiledResult = compile_function()
 
+    if not result.success and compiler_type == "local":
+        print("Failed to run local compiler. Trying web compiler instead...")
+        result = _run_web_compiler()
+
     if not result.success:
-        print("\nWeb compilation failed.")
+        print("\nCompilation failed.")
         return 1
 
     if open_web_browser:

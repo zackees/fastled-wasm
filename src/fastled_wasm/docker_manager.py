@@ -88,18 +88,15 @@ class DockerManager:
                 # Remove both tagged versions of the image
                 subprocess.run(
                     ["docker", "rmi", f"{self.container_name}:{TAG}"],
-                    capture_output=True,
                     check=False,
                 )
                 subprocess.run(
                     ["docker", "rmi", f"niteris/fastled-wasm:{TAG}"],
-                    capture_output=True,
                     check=False,
                 )
 
             result = subprocess.run(
                 ["docker", "image", "inspect", f"{self.container_name}:{TAG}"],
-                capture_output=True,
                 check=False,
             )
             if result.returncode != 0 or force_update:
