@@ -36,7 +36,7 @@ def check_is_code_directory(directory: Path) -> bool:
     return False
 
 
-def compile(
+def compile_local(
     directory: str, reuse: bool = False, force_update: bool = False
 ) -> CompiledResult:
     """Compile the FastLED sketch using Docker.

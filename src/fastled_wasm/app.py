@@ -13,12 +13,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastled_wasm.compile import compile
+from fastled_wasm.compile import compile_local
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 from fastled_wasm.filewatcher import FileChangedNotifier
 from fastled_wasm.open_browser import open_browser_thread
-from fastled_wasm.web_compile import web_compile
+from fastled_wasm.web_compile import WebCompileResult, web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
@@ -88,44 +88,49 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def run_web_compiler(directory: Path, host: str) -> WebCompileResult:
+    input_dir = Path(directory)
+    output_dir = input_dir / "fastled_js"
+    start = time.time()
+    web_result = web_compile(input_dir, host)
+    diff = time.time() - start
+    if not web_result:
+        print("\nWeb compilation failed:")
+        print(f"Time taken: {diff:.2f} seconds")
+        print(web_result.stdout)
+        return web_result
+
+    # Extract zip contents to fastled_js directory
+    output_dir.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        temp_zip = temp_path / "result.zip"
+        temp_zip.write_bytes(web_result.zip_bytes)
+
+        # Clear existing contents
+        shutil.rmtree(output_dir, ignore_errors=True)
+        output_dir.mkdir(exist_ok=True)
+
+        # Extract zip contents
+        shutil.unpack_archive(temp_zip, output_dir, "zip")
+
+    print(web_result.stdout)
+    print(f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}")
+    return web_result
+
+
 def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
     # Choose between web and local compilation
     if args.web:
-        host = args.web_host
-        input_dir = Path(args.directory)
-        output_dir = input_dir / "fastled_js"
-        start = time.time()
-        web_result = web_compile(input_dir, host)
-        diff = time.time() - start
-        if not web_result:
-            print("\nWeb compilation failed:")
-            print(f"Time taken: {diff:.2f} seconds")
-            print(web_result.stdout)
+        web_result = run_web_compiler(args.directory, args.web_host)
+        if not web_result.success:
+            print("\nWeb compilation failed.")
             return 1
-
-        # Extract zip contents to fastled_js directory
-        output_dir.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            temp_zip = temp_path / "result.zip"
-            temp_zip.write_bytes(web_result.zip_bytes)
-
-            # Clear existing contents
-            shutil.rmtree(output_dir, ignore_errors=True)
-            output_dir.mkdir(exist_ok=True)
-
-            # Extract zip contents
-            shutil.unpack_archive(temp_zip, output_dir, "zip")
-
-        print(web_result.stdout)
-        print(
-            f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}"
-        )
         if open_web_browser:
-            open_browser_thread(output_dir)
+            open_browser_thread(Path(args.directory) / "fastled_js")
             try:
                 while True:
                     time.sleep(1)
@@ -135,7 +140,7 @@ def main() -> int:
         return 0
 
     # Compile the sketch locally.
-    result = compile(args.directory, args.reuse, force_update=args.update)
+    result = compile_local(args.directory, args.reuse, force_update=args.update)
     if result.return_code != 0:
         print("\nCompilation failed.")
         return result.return_code
@@ -166,7 +171,9 @@ def main() -> int:
                 changed_files = []
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
-                result = compile(args.directory, args.reuse, force_update=args.update)
+                result = compile_local(
+                    args.directory, args.reuse, force_update=args.update
+                )
                 if result.return_code != 0:
                     print("\nRecompilation failed.")
                 else:
