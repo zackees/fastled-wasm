@@ -53,8 +53,11 @@ def web_compile(
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create wasm subdirectory
             wasm_dir = Path(temp_dir) / "wasm"
-            # Copy all files from source to wasm subdirectory
-            shutil.copytree(directory, wasm_dir)
+            # Copy all files from source to wasm subdirectory, excluding fastled_js
+            def ignore_fastled_js(dir, files):
+                return [f for f in files if 'fastled_js' in str(Path(dir) / f)]
+
+            shutil.copytree(directory, wasm_dir, ignore=ignore_fastled_js)
             # Create zip archive from the temp directory
             shutil.make_archive(tmp_zip.name[:-4], "zip", temp_dir)
 

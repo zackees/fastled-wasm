@@ -83,7 +83,6 @@ def parse_args() -> argparse.Namespace:
             parser.error("--reuse cannot be used with --web")
         if args.exclude:
             parser.error("--exclude cannot be used with --web")
-        args.just_compile = True
 
     return args
 
@@ -121,6 +120,13 @@ def main() -> int:
         print(f"\nWeb compilation successful, output at: {output_dir}")
         if open_web_browser:
             open_browser_thread(output_dir)
+            try:
+                while True:
+                    import time
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                return 0
         return 0
 
     # Compile the sketch locally.
