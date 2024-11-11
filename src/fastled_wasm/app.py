@@ -108,8 +108,8 @@ def main() -> int:
             # Extract zip contents
             shutil.unpack_archive(temp_zip, output_dir, "zip")
 
-        print("\nWeb compilation successful:")
         print(web_result.stdout)
+        print(f"\nWeb compilation successful, output at: {output_dir}")
         if open_web_browser:
             open_browser_thread(output_dir)
         return 0

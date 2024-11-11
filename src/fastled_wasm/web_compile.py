@@ -48,7 +48,7 @@ def web_compile(
             # Create zip archive from the temp directory
             shutil.make_archive(tmp_zip.name[:-4], "zip", temp_dir)
 
-    print(f"Uploading to {host}...")
+    print(f"Web compiling on {host}...")
 
     try:
         with open(tmp_zip.name, "rb") as zip_file:
