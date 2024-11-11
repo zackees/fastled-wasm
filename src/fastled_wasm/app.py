@@ -15,6 +15,7 @@ from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 from fastled_wasm.filewatcher import FileChangedNotifier
 from fastled_wasm.open_browser import open_browser_thread
+from fastled_wasm.web_compile import web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
@@ -42,15 +43,21 @@ def parse_args() -> argparse.Namespace:
         help="Just compile, skip opening the browser and watching for changes.",
     )
     parser.add_argument(
+        "--web",
+        "-w",
+        action="store_true",
+        help="Use web compiler instead of local Docker. Implies --just-compile and disables --reuse and --exclude",
+    )
+    parser.add_argument(
         "--reuse",
         action="store_true",
-        help="Reuse the existing container if it exists.",
+        help="Reuse the existing container if it exists. (Not available with --web)",
     )
     parser.add_argument(
         "--exclude",
         type=str,
         nargs="+",
-        help="Additional patterns to exclude from file watching",
+        help="Additional patterns to exclude from file watching (Not available with --web)",
     )
     parser.add_argument(
         "--update",
@@ -60,6 +67,14 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
+    # Handle --web implications
+    if args.web:
+        if args.reuse:
+            parser.error("--reuse cannot be used with --web")
+        if args.exclude:
+            parser.error("--exclude cannot be used with --web")
+        args.just_compile = True
+
     return args
 
 
@@ -67,7 +82,18 @@ def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
-    # Initial compilation
+    # Choose between web and local compilation
+    if args.web:
+        web_result = web_compile(Path(args.directory))
+        if not web_result:
+            print("\nWeb compilation failed:")
+            print(web_result.stdout)
+            return 1
+        print("\nWeb compilation successful:")
+        print(web_result.stdout)
+        return 0
+
+    # Compile the sketch locally.
     result = compile(args.directory, args.reuse, force_update=args.update)
     if result.return_code != 0:
         print("\nInitial compilation failed.")
