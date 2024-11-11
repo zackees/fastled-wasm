@@ -73,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.0.11 - `--web` compile will automatically be enabled if the local build using docker fails.
   * 1.0.10 - Watching files is now available for `--web`
   * 1.0.9 - Enabled web compile. Access it with `--web` or `--web-host`
   * 1.0.8 - Allow more than one fastled-wasm browser instances to co-exist by searching for unused ports after 8081.
