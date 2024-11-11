@@ -123,6 +123,7 @@ def main() -> int:
             try:
                 while True:
                     import time
+
                     time.sleep(1)
             except KeyboardInterrupt:
                 print("\nExiting...")

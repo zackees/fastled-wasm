@@ -1,11 +1,3 @@
-"""
-curl -X 'POST' \
-  'https://fastled.onrender.com/compile/' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'file=@wasm.zip;type=application/x-zip-compressed'
-"""
-
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -53,9 +45,10 @@ def web_compile(
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create wasm subdirectory
             wasm_dir = Path(temp_dir) / "wasm"
+
             # Copy all files from source to wasm subdirectory, excluding fastled_js
             def ignore_fastled_js(dir, files):
-                return [f for f in files if 'fastled_js' in str(Path(dir) / f)]
+                return [f for f in files if "fastled_js" in str(Path(dir) / f)]
 
             shutil.copytree(directory, wasm_dir, ignore=ignore_fastled_js)
             # Create zip archive from the temp directory
