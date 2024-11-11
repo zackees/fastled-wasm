@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastled_wasm.compile import compile_local
+from fastled_wasm.compile import CompiledResult, compile_local
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 from fastled_wasm.filewatcher import FileChangedNotifier
@@ -123,30 +123,30 @@ def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
+    result: WebCompileResult | CompiledResult
+
     # Choose between web and local compilation
     if args.web:
-        web_result = run_web_compiler(args.directory, args.web_host)
-        if not web_result.success:
-            print("\nWeb compilation failed.")
-            return 1
-        if open_web_browser:
-            open_browser_thread(Path(args.directory) / "fastled_js")
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                print("\nExiting...")
-                return 0
-        return 0
+        # result = run_web_compiler(args.directory, args.web_host)
+        def _run_web_compiler() -> WebCompileResult:
+            return run_web_compiler(args.directory, args.web_host)
 
-    # Compile the sketch locally.
-    result = compile_local(args.directory, args.reuse, force_update=args.update)
+        compile_function = _run_web_compiler  # type: ignore
+    else:
+        # result = compile_local(args.directory, args.reuse, force_update=args.update)
+        def _compile_local() -> CompiledResult:
+            return compile_local(args.directory, args.reuse, force_update=args.update)
+
+        compile_function = _compile_local  # type: ignore
+
+    result = compile_function()
+
     if not result.success:
-        print("\nCompilation failed.")
+        print("\nWeb compilation failed.")
         return 1
 
     if open_web_browser:
-        open_browser_thread(Path(result.fastled_js))
+        open_browser_thread(Path(args.directory) / "fastled_js")
     else:
         print(
             "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
@@ -170,9 +170,7 @@ def main() -> int:
                 changed_files = []
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
-                result = compile_local(
-                    args.directory, args.reuse, force_update=args.update
-                )
+                result = compile_function()
                 if not result.success:
                     print("\nRecompilation failed.")
                 else:
