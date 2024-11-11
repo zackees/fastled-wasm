@@ -110,6 +110,8 @@ def main() -> int:
 
         print("\nWeb compilation successful:")
         print(web_result.stdout)
+        if open_web_browser:
+            open_browser_thread(output_dir)
         return 0
 
     # Compile the sketch locally.

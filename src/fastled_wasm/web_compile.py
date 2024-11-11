@@ -61,7 +61,7 @@ def web_compile(
                 response = client.post(
                     f"{host}/{ENDPOINT_COMPILED_WASM}",
                     files=files,
-                    headers={"accept": "application/json"},
+                    headers={"accept": "application/json", "authorization": auth_token},
                 )
 
                 response.raise_for_status()
