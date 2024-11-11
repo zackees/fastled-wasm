@@ -1,7 +1,6 @@
 import asyncio
 import socket
 import threading
-import webbrowser
 from pathlib import Path
 
 from livereload import Server
@@ -18,16 +17,11 @@ def _open_browser_python(fastled_js: Path, port: int) -> None:
     server = Server()
     server.watch(str(fastled_js))
 
-    # Open browser after a short delay
-    def open_browser():
-        webbrowser.open(f"http://localhost:{port}")
-
-    # server.application.on_after_start = open_browser
-    open_browser()
-
     while True:
         try:
-            server.serve(port=port, root=str(fastled_js), debug=True)
+            server.serve(
+                port=port, root=str(fastled_js), debug=False, open_url_delay=0.5
+            )
             break
         except OSError as e:
             print(f"Error starting server: {e}")

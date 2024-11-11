@@ -10,6 +10,7 @@ import platform
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from fastled_wasm.compile import compile
@@ -96,9 +97,12 @@ def main() -> int:
         host = args.web_host
         input_dir = Path(args.directory)
         output_dir = input_dir / "fastled_js"
+        start = time.time()
         web_result = web_compile(input_dir, host)
+        diff = time.time() - start
         if not web_result:
             print("\nWeb compilation failed:")
+            print(f"Time taken: {diff:.2f} seconds")
             print(web_result.stdout)
             return 1
 
@@ -117,13 +121,13 @@ def main() -> int:
             shutil.unpack_archive(temp_zip, output_dir, "zip")
 
         print(web_result.stdout)
-        print(f"\nWeb compilation successful, output at: {output_dir}")
+        print(
+            f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}"
+        )
         if open_web_browser:
             open_browser_thread(output_dir)
             try:
                 while True:
-                    import time
-
                     time.sleep(1)
             except KeyboardInterrupt:
                 print("\nExiting...")
@@ -155,7 +159,11 @@ def main() -> int:
 
     try:
         while True:
-            changed_files = watcher.get_all_changes()
+            try:
+                changed_files = watcher.get_all_changes()
+            except Exception as e:
+                print(f"Error getting changes: {e}")
+                changed_files = []
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
                 result = compile(args.directory, args.reuse, force_update=args.update)
@@ -163,6 +171,7 @@ def main() -> int:
                     print("\nRecompilation failed.")
                 else:
                     print("\nRecompilation successful.")
+            time.sleep(0.3)
     except KeyboardInterrupt:
         watcher.stop()
         print("\nStopping watch mode...")

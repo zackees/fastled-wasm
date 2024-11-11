@@ -14,7 +14,6 @@
 #include "fx/fx_engine.h"
 
 #include "fx/2d/animartrix.hpp"
-#include "platforms/wasm/js.h"
 
 #include "ui.h"
 
