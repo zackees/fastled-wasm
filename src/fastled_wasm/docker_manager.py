@@ -80,9 +80,31 @@ class DockerManager:
             print(f"Error starting Docker: {str(e)}")
         return False
 
+    def ensure_linux_containers(self) -> bool:
+        """Ensure Docker is using Linux containers on Windows."""
+        if sys.platform == "win32":
+            try:
+                # Check if we're already in Linux container mode
+                result = subprocess.run(
+                    ["docker", "info"], capture_output=True, text=True, check=True
+                )
+                if "linux" in result.stdout.lower():
+                    return True
+
+                print("Switching to Linux containers...")
+                subprocess.run(["cmd", "/c", "docker context ls"], check=True)
+                subprocess.run(["cmd", "/c", "docker context use default"], check=True)
+                return True
+            except subprocess.CalledProcessError as e:
+                print(f"Failed to switch to Linux containers: {e}")
+                return False
+        return True  # Non-Windows platforms don't need this
+
     def ensure_image_exists(self, force_update: bool = False) -> bool:
         """Check if local image exists, pull from remote if not or if update requested."""
         try:
+            if not self.ensure_linux_containers():
+                return False
             if force_update:
                 print("Forcing image update...")
                 # Remove both tagged versions of the image
