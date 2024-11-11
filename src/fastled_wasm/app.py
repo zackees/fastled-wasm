@@ -123,15 +123,22 @@ def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
+    # If not explicitly using web compiler, check Docker installation
+    if not args.web and not DOCKER.is_docker_installed():
+        print(
+            "\nDocker is not installed on this system - switching to web compiler instead."
+        )
+        args.web = True
+
     # Choose between web and local compilation
     if args.web:
-        # result = run_web_compiler(args.directory, args.web_host)
+
         def _run_web_compiler() -> CompiledResult:
             return run_web_compiler(args.directory, args.web_host)
 
         compile_function = _run_web_compiler  # type: ignore
     else:
-        # result = compile_local(args.directory, args.reuse, force_update=args.update)
+
         def _compile_local() -> CompiledResult:
             return compile_local(args.directory, args.reuse, force_update=args.update)
 

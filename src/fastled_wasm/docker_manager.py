@@ -16,6 +16,20 @@ class DockerManager:
     def __init__(self, container_name: str):
         self.container_name = container_name
 
+    @staticmethod
+    def is_docker_installed() -> bool:
+        """Check if Docker is installed on the system."""
+        try:
+            subprocess.run(["docker", "--version"], capture_output=True, check=True)
+            print("Docker is installed.")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Docker command failed: {str(e)}")
+            return False
+        except FileNotFoundError:
+            print("Docker is not installed.")
+            return False
+
     def is_running(self) -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
         try:
