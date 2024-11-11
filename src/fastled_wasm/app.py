@@ -123,8 +123,6 @@ def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
-    result: CompiledResult
-
     # Choose between web and local compilation
     if args.web:
         # result = run_web_compiler(args.directory, args.web_host)
@@ -139,7 +137,7 @@ def main() -> int:
 
         compile_function = _compile_local  # type: ignore
 
-    result = compile_function()
+    result: CompiledResult = compile_function()
 
     if not result.success:
         print("\nWeb compilation failed.")
