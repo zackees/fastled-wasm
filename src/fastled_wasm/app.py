@@ -7,7 +7,9 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 import argparse
 import os
 import platform
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from fastled_wasm.compile import compile
@@ -84,11 +86,28 @@ def main() -> int:
 
     # Choose between web and local compilation
     if args.web:
-        web_result = web_compile(Path(args.directory))
+        input_dir = Path(args.directory)
+        output_dir = input_dir / "fastled_js"
+        web_result = web_compile(input_dir)
         if not web_result:
             print("\nWeb compilation failed:")
             print(web_result.stdout)
             return 1
+
+        # Extract zip contents to fastled_js directory
+        output_dir.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            temp_zip = temp_path / "result.zip"
+            temp_zip.write_bytes(web_result.zip_bytes)
+
+            # Clear existing contents
+            shutil.rmtree(output_dir, ignore_errors=True)
+            output_dir.mkdir(exist_ok=True)
+
+            # Extract zip contents
+            shutil.unpack_archive(temp_zip, output_dir, "zip")
+
         print("\nWeb compilation successful:")
         print(web_result.stdout)
         return 0
@@ -96,7 +115,7 @@ def main() -> int:
     # Compile the sketch locally.
     result = compile(args.directory, args.reuse, force_update=args.update)
     if result.return_code != 0:
-        print("\nInitial compilation failed.")
+        print("\nCompilation failed.")
         return result.return_code
 
     if result.return_code == 0:
@@ -118,7 +137,6 @@ def main() -> int:
 
     try:
         while True:
-            # changed_file = watcher.get_next_change()
             changed_files = watcher.get_all_changes()
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
