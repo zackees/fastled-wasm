@@ -8,31 +8,31 @@ curl -X 'POST' \
 
 import shutil
 import tempfile
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
+_TIMEOUT = 60 * 4  # 2 mins timeout
+_AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 
 @dataclass
 class WebCompileResult:
     success: bool
-    message: str
-    wasm: bytes
+    stdout: str
+    zip_bytes: bytes
 
     def __bool__(self) -> bool:
         return self.success
 
-    def __str__(self) -> str:
-        return self.message
-
 
 def web_compile(
     directory: Path, host: str | None = None, auth_token: str | None = None
-) -> bytes:
+) -> WebCompileResult:
     host = host or DEFAULT_HOST
+    auth_token = auth_token or _AUTH_TOKEN
     # zip up the files
     print("Zipping files...")
 
@@ -54,8 +54,8 @@ def web_compile(
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
 
             with httpx.Client(
-                transport=httpx.HTTPTransport(local_address="0.0.0.0"),
-                timeout=60.0,  # 60 seconds timeout
+                transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
+                timeout=_TIMEOUT,  # 60 seconds timeout
             ) as client:
                 response = client.post(
                     f"{host}/{ENDPOINT_COMPILED_WASM}",
@@ -65,10 +65,27 @@ def web_compile(
 
                 response.raise_for_status()
 
-                return response.content
+                # Create a temporary directory to extract the zip
+                with tempfile.TemporaryDirectory() as extract_dir:
+                    extract_path = Path(extract_dir)
+
+                    # Write the response content to a temporary zip file
+                    temp_zip = extract_path / "response.zip"
+                    temp_zip.write_bytes(response.content)
+
+                    # Extract the zip
+                    shutil.unpack_archive(temp_zip, extract_path, "zip")
+
+                    # Read stdout from out.txt if it exists
+                    stdout_file = extract_path / "out.txt"
+                    stdout = stdout_file.read_text() if stdout_file.exists() else ""
+
+                    return WebCompileResult(
+                        success=True, stdout=stdout, zip_bytes=response.content
+                    )
     except httpx.HTTPError as e:
         print(f"Error: {e}")
-        raise
+        return WebCompileResult(success=False, stdout=str(e), zip_bytes=b"")
     finally:
         try:
             Path(tmp_zip.name).unlink()

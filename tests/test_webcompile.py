@@ -18,19 +18,20 @@ class WebCompileTester(unittest.TestCase):
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
         start = time.time()
-        zip_bytes = web_compile(TEST_DIR, host=_HOST)
+        result = web_compile(TEST_DIR, host=_HOST)
         diff = time.time() - start
         print(f"Time taken: {diff:.2f} seconds")
-        print(len(zip_bytes))
 
-        # Verify the response structure
-        # self.assertTrue('success' in result)
-        # self.assertTrue('message' in result)
-        # self.assertTrue('wasm' in result)
+        # Verify we got a successful result
+        self.assertTrue(result.success)
 
         # Verify we got actual WASM data back
-        # self.assertTrue(len(result['wasm']) > 0)
-        print("did it")
+        self.assertTrue(len(result.zip_bytes) > 0)
+
+        # Print compilation output for debugging
+        print(f"Compilation stdout:\n{result.stdout}")
+
+        print(f"Zip size: {len(result.zip_bytes)} bytes")
 
     def test_invalid_directory(self) -> None:
         """Test handling of invalid directory."""
