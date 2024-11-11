@@ -45,7 +45,7 @@ fastled-wasm
 
 The compiler should download, compile the target and then launch a web-browser.
 
-# Hot reload by default
+# Hot reload by default (not enabled for --web compiler)
 
 Once launched, the compiler will remain open, listening to changes and recompiling as necessary and hot-reloading the sketch into the current browser.
 
