@@ -9,11 +9,24 @@ curl -X 'POST' \
 import shutil
 import tempfile
 from pathlib import Path
+from dataclasses import dataclass
 
-import requests
+import httpx
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
+
+@dataclass
+class WebCompileResult:
+    success: bool
+    message: str
+    wasm: bytes
+
+    def __bool__(self) -> bool:
+        return self.success
+
+    def __str__(self) -> str:
+        return self.message
 
 
 def web_compile(
@@ -40,18 +53,20 @@ def web_compile(
         with open(tmp_zip.name, "rb") as zip_file:
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
 
-            response = requests.post(
-                f"{host}/{ENDPOINT_COMPILED_WASM}",
-                files=files,
-                headers={"accept": "application/json"},
-            )
+            with httpx.Client(
+                transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+                timeout=60.0,  # 60 seconds timeout
+            ) as client:
+                response = client.post(
+                    f"{host}/{ENDPOINT_COMPILED_WASM}",
+                    files=files,
+                    headers={"accept": "application/json"},
+                )
 
-            response.raise_for_status()
+                response.raise_for_status()
 
-            # Return the raw response content instead of parsing as JSON
-            return response.content
-    # catch
-    except requests.RequestException as e:
+                return response.content
+    except httpx.HTTPError as e:
         print(f"Error: {e}")
         raise
     finally:

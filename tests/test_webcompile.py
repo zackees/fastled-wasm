@@ -1,3 +1,4 @@
+import time
 import unittest
 from pathlib import Path
 
@@ -16,7 +17,10 @@ class WebCompileTester(unittest.TestCase):
     def test_compile(self) -> None:
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
+        start = time.time()
         zip_bytes = web_compile(TEST_DIR, host=_HOST)
+        diff = time.time() - start
+        print(f"Time taken: {diff:.2f} seconds")
         print(len(zip_bytes))
 
         # Verify the response structure
