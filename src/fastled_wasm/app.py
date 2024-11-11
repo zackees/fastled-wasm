@@ -51,6 +51,11 @@ def parse_args() -> argparse.Namespace:
         help="Use web compiler instead of local Docker. Implies --just-compile and disables --reuse and --exclude",
     )
     parser.add_argument(
+        "--web-host",
+        type=str,
+        help="Host URL for the web compiler (default: https://fastled.onrender.com), implies --web",
+    )
+    parser.add_argument(
         "--reuse",
         action="store_true",
         help="Reuse the existing container if it exists. (Not available with --web)",
@@ -69,6 +74,9 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
+    if args.web_host:
+        args.web = True
+
     # Handle --web implications
     if args.web:
         if args.reuse:
@@ -86,9 +94,10 @@ def main() -> int:
 
     # Choose between web and local compilation
     if args.web:
+        host = args.web_host
         input_dir = Path(args.directory)
         output_dir = input_dir / "fastled_js"
-        web_result = web_compile(input_dir)
+        web_result = web_compile(input_dir, host)
         if not web_result:
             print("\nWeb compilation failed:")
             print(web_result.stdout)

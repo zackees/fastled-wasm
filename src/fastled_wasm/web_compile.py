@@ -29,10 +29,20 @@ class WebCompileResult:
         return self.success
 
 
+def _sanitize_host(host: str) -> str:
+    if host.startswith("http"):
+        return host
+    is_local_host = "localhost" in host or "127.0.0.1" in host or "0.0.0.0" in host
+    use_https = not is_local_host
+    if use_https:
+        return host if host.startswith("https://") else f"https://{host}"
+    return host if host.startswith("http://") else f"http://{host}"
+
+
 def web_compile(
     directory: Path, host: str | None = None, auth_token: str | None = None
 ) -> WebCompileResult:
-    host = host or DEFAULT_HOST
+    host = _sanitize_host(host or DEFAULT_HOST)
     auth_token = auth_token or _AUTH_TOKEN
     # zip up the files
     print("Zipping files...")
