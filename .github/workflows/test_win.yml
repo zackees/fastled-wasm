@@ -26,5 +26,5 @@ jobs:
       run: ./test
 
     - name: live run
-      run: pip install . && cd tests/test_ino/wasm && sudo rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
+      run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
       shell: bash -l {0}
