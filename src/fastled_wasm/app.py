@@ -141,21 +141,20 @@ def main() -> int:
 
     # Compile the sketch locally.
     result = compile_local(args.directory, args.reuse, force_update=args.update)
-    if result.return_code != 0:
+    if not result.success:
         print("\nCompilation failed.")
-        return result.return_code
+        return 1
 
-    if result.return_code == 0:
-        if open_web_browser:
-            open_browser_thread(Path(result.fastled_js))
-        else:
-            print(
-                "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
-            )
-            return 0
+    if open_web_browser:
+        open_browser_thread(Path(result.fastled_js))
+    else:
+        print(
+            "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
+        )
+        return 0
 
     if args.just_compile:
-        return result.return_code
+        return 0 if result.success else 1
 
     # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
@@ -174,7 +173,7 @@ def main() -> int:
                 result = compile_local(
                     args.directory, args.reuse, force_update=args.update
                 )
-                if result.return_code != 0:
+                if not result.success:
                     print("\nRecompilation failed.")
                 else:
                     print("\nRecompilation successful.")
