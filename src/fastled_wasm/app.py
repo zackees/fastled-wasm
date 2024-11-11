@@ -18,7 +18,7 @@ from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 from fastled_wasm.filewatcher import FileChangedNotifier
 from fastled_wasm.open_browser import open_browser_thread
-from fastled_wasm.web_compile import WebCompileResult, web_compile
+from fastled_wasm.web_compile import web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
@@ -88,7 +88,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def run_web_compiler(directory: Path, host: str) -> WebCompileResult:
+def run_web_compiler(directory: Path, host: str) -> CompiledResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
@@ -98,7 +98,7 @@ def run_web_compiler(directory: Path, host: str) -> WebCompileResult:
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
-        return web_result
+        return CompiledResult(success=False, fastled_js="")
 
     # Extract zip contents to fastled_js directory
     output_dir.mkdir(exist_ok=True)
@@ -116,19 +116,19 @@ def run_web_compiler(directory: Path, host: str) -> WebCompileResult:
 
     print(web_result.stdout)
     print(f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}")
-    return web_result
+    return CompiledResult(success=True, fastled_js=str(output_dir))
 
 
 def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
 
-    result: WebCompileResult | CompiledResult
+    result: CompiledResult
 
     # Choose between web and local compilation
     if args.web:
         # result = run_web_compiler(args.directory, args.web_host)
-        def _run_web_compiler() -> WebCompileResult:
+        def _run_web_compiler() -> CompiledResult:
             return run_web_compiler(args.directory, args.web_host)
 
         compile_function = _run_web_compiler  # type: ignore
