@@ -74,8 +74,14 @@ def web_compile(
                     headers={"accept": "application/json", "authorization": auth_token},
                 )
 
-                response.raise_for_status()
+                if response.status_code != 200:
+                    print("Compilation failed:")
+                    print(response.text)
+                    json_response = response.json()
+                    detail = json_response.get("detail", "Could not compile")
+                    return WebCompileResult(success=False, stdout=detail, zip_bytes=b"")
 
+                print(f"Response status code: {response}")
                 # Create a temporary directory to extract the zip
                 with tempfile.TemporaryDirectory() as extract_dir:
                     extract_path = Path(extract_dir)
