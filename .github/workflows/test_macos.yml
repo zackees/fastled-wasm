@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: macos-latest
     strategy:
       matrix:
         python-version: [3.11]
@@ -20,7 +20,10 @@ jobs:
       run: pip install uv
 
     - name: Install
-      run: ./install && ./test
-    
-    - name: Windows does not support docker in a github runner.
-      run: echo "Sorry, we can't do anything beyond running the unit test on MacOS."
+      run: ./install
+
+    - name: Unit tests
+      run: ./test
+
+    - name: live run
+      run: pip install . && cd tests/test_ino/wasm && sudo rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort
