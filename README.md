@@ -40,12 +40,20 @@ pip install fastled-wasm
 Change to the directory where the sketch lives and run
 
 ```bash
+cd <SKETCH-DIRECTORY>
 fastled-wasm
 ```
 
-The compiler should download, compile the target and then launch a web-browser.
+Or if you don't have docker then use our web compiler
 
-# Hot reload by default (not enabled for --web compiler)
+```bash
+cd <SKETCH-DIRECTORY>
+fastled-wasm --web
+```
+
+After compilation a web browser windows will pop up.
+
+# Hot reload by default
 
 Once launched, the compiler will remain open, listening to changes and recompiling as necessary and hot-reloading the sketch into the current browser.
 
@@ -65,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.0.10 - Watching files is now available for `--web`
   * 1.0.9 - Enabled web compile. Access it with `--web` or `--web-host`
   * 1.0.8 - Allow more than one fastled-wasm browser instances to co-exist by searching for unused ports after 8081.
   * 1.0.7 - Docker multi image build implemented, tool now points to new docker image compile.
