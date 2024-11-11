@@ -105,10 +105,12 @@ def main() -> int:
         watcher.stop()
         print("\nStopping watch mode...")
         return 0
+    except Exception as e:
+        watcher.stop()
+        print(f"Error: {e}")
+        return 1
     finally:
         watcher.stop()
-
-    return result.return_code
 
 
 if __name__ == "__main__":
