@@ -16,7 +16,10 @@ DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 
 
-def web_compile(directory: Path, host: str = DEFAULT_HOST) -> bytes:
+def web_compile(
+    directory: Path, host: str | None = None, auth_token: str | None = None
+) -> bytes:
+    host = host or DEFAULT_HOST
     # zip up the files
     print("Zipping files...")
 
@@ -47,6 +50,10 @@ def web_compile(directory: Path, host: str = DEFAULT_HOST) -> bytes:
 
             # Return the raw response content instead of parsing as JSON
             return response.content
+    # catch
+    except requests.RequestException as e:
+        print(f"Error: {e}")
+        raise
     finally:
         try:
             Path(tmp_zip.name).unlink()

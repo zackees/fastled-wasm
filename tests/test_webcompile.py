@@ -6,6 +6,9 @@ from fastled_wasm.web_compile import web_compile
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
+_USE_LOCALHOST = False
+_HOST = "http://localhost" if _USE_LOCALHOST else None
+
 
 class WebCompileTester(unittest.TestCase):
     """Main tester class."""
@@ -13,7 +16,7 @@ class WebCompileTester(unittest.TestCase):
     def test_compile(self) -> None:
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
-        zip_bytes = web_compile(TEST_DIR)
+        zip_bytes = web_compile(TEST_DIR, host=_HOST)
         print(len(zip_bytes))
 
         # Verify the response structure
