@@ -65,6 +65,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.0.9 - Enabled web compile. Access it with `--web` or `--web-host`
   * 1.0.8 - Allow more than one fastled-wasm browser instances to co-exist by searching for unused ports after 8081.
   * 1.0.7 - Docker multi image build implemented, tool now points to new docker image compile.
   * 1.0.6 - Removed `--no-open` and `--watch`, `--watch` is now assumed unless `--just-compile` is used.
