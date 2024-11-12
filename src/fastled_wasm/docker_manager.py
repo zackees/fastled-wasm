@@ -115,37 +115,56 @@ class DockerManager:
         try:
             if not self.ensure_linux_containers():
                 return False
+
+            image_name = f"{self.container_name}:{TAG}"
+            remote_image = f"niteris/fastled-wasm:{TAG}"
+
             if force_update:
                 print("Forcing image update...")
                 # Remove both tagged versions of the image
                 subprocess.run(
-                    ["docker", "rmi", f"{self.container_name}:{TAG}"],
+                    ["docker", "rmi", image_name],
                     check=False,
                 )
                 subprocess.run(
-                    ["docker", "rmi", f"niteris/fastled-wasm:{TAG}"],
+                    ["docker", "rmi", remote_image],
                     check=False,
                 )
 
+            # First check if we have the local tagged image
             result = subprocess.run(
-                ["docker", "image", "inspect", f"{self.container_name}:{TAG}"],
+                ["docker", "image", "inspect", image_name],
                 capture_output=True,
                 check=False,
             )
+
             if result.returncode != 0 or force_update:
-                print("Local image not found. Pulling from niteris/fastled-wasm...")
-                subprocess.run(
-                    ["docker", "pull", f"niteris/fastled-wasm:{TAG}"], check=True
+                print(f"Local image not found. Pulling from {remote_image}...")
+                pull_result = subprocess.run(
+                    ["docker", "pull", remote_image],
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
-                subprocess.run(
+                if pull_result.returncode != 0:
+                    print(f"Failed to pull image: {pull_result.stderr}")
+                    return False
+
+                tag_result = subprocess.run(
                     [
                         "docker",
                         "tag",
-                        f"niteris/fastled-wasm:{TAG}",
-                        f"{self.container_name}:{TAG}",
+                        remote_image,
+                        image_name,
                     ],
-                    check=True,
+                    capture_output=True,
+                    text=True,
+                    check=False,
                 )
+                if tag_result.returncode != 0:
+                    print(f"Failed to tag image: {tag_result.stderr}")
+                    return False
+
                 print("Successfully pulled and tagged remote image.")
             return True
         except subprocess.CalledProcessError as e:
