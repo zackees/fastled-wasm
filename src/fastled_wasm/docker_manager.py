@@ -7,6 +7,8 @@ from typing import Optional
 
 import docker  # type: ignore
 
+from fastled_wasm.build_mode import BuildMode
+
 TAG = "main"
 
 
@@ -92,11 +94,19 @@ class DockerManager:
                     return True
 
                 print("Switching to Linux containers...")
-                subprocess.run(["cmd", "/c", "docker context ls"], check=True)
-                subprocess.run(["cmd", "/c", "docker context use default"], check=True)
+                subprocess.run(
+                    ["cmd", "/c", "docker context ls"], check=True, capture_output=True
+                )
+                subprocess.run(
+                    ["cmd", "/c", "docker context use default"],
+                    check=True,
+                    capture_output=True,
+                )
                 return True
             except subprocess.CalledProcessError as e:
                 print(f"Failed to switch to Linux containers: {e}")
+                print(f"stdout: {e.stdout}")
+                print(f"stderr: {e.stderr}")
                 return False
         return True  # Non-Windows platforms don't need this
 
@@ -119,6 +129,7 @@ class DockerManager:
 
             result = subprocess.run(
                 ["docker", "image", "inspect", f"{self.container_name}:{TAG}"],
+                capture_output=True,
                 check=False,
             )
             if result.returncode != 0 or force_update:
@@ -165,12 +176,15 @@ class DockerManager:
         except subprocess.CalledProcessError:
             return False
 
-    def run_container(self, volume_path: str, base_name: str) -> Optional[int]:
+    def run_container(
+        self, volume_path: str, base_name: str, build_mode: BuildMode
+    ) -> Optional[int]:
         """Run the Docker container with the specified volume.
 
         Args:
             volume_path: Path to the volume to mount
             base_name: Base name for the mounted volume
+            build_mode: Build mode (DEBUG, QUICK, or RELEASE)
         """
         try:
             print("Creating new container...")
@@ -187,6 +201,13 @@ class DockerManager:
                     f"{self.container_name}:{TAG}",
                 ]
             )
+            docker_command.extend(["python", "/js/run.py", "compile"])
+            if build_mode == BuildMode.DEBUG:
+                docker_command.append("--debug")
+            elif build_mode == BuildMode.RELEASE:
+                docker_command.append("--release")
+            elif build_mode == BuildMode.QUICK:
+                docker_command.append("--quick")
 
             print(f"Running command: {' '.join(docker_command)}")
             process = subprocess.Popen(

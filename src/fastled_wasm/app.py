@@ -13,6 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from fastled_wasm.build_mode import BuildMode, get_build_mode
 from fastled_wasm.compile import CompiledResult, compile_local
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
@@ -72,6 +73,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Pull the latest build image before compiling",
     )
+    build_mode = parser.add_mutually_exclusive_group()
+    build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
+    build_mode.add_argument(
+        "--quick",
+        action="store_true",
+        default=True,
+        help="Build in quick mode (default)",
+    )
+    build_mode.add_argument(
+        "--release", action="store_true", help="Build in release mode"
+    )
 
     args = parser.parse_args()
 
@@ -130,11 +142,15 @@ def main() -> int:
         )
         args.web = True
 
-    def _run_web_compiler() -> CompiledResult:
+    build_mode: BuildMode = get_build_mode(args)
+
+    def _run_web_compiler(build_mode: BuildMode = build_mode) -> CompiledResult:
         return run_web_compiler(args.directory, args.web_host)
 
-    def _compile_local() -> CompiledResult:
-        return compile_local(args.directory, args.reuse, force_update=args.update)
+    def _compile_local(build_mode: BuildMode = build_mode) -> CompiledResult:
+        return compile_local(
+            args.directory, args.reuse, force_update=args.update, build_mode=build_mode
+        )
 
     compiler_type = "web" if args.web else "local"
     compile_function = _run_web_compiler if args.web else _compile_local  # type: ignore

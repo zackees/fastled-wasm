@@ -3,6 +3,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from fastled_wasm.build_mode import BuildMode
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 
@@ -37,7 +38,10 @@ def check_is_code_directory(directory: Path) -> bool:
 
 
 def compile_local(
-    directory: str, reuse: bool = False, force_update: bool = False
+    directory: str,
+    reuse: bool = False,
+    force_update: bool = False,
+    build_mode: BuildMode = BuildMode.QUICK,
 ) -> CompiledResult:
     """Compile the FastLED sketch using Docker.
 
@@ -45,6 +49,10 @@ def compile_local(
         directory: Path to the directory containing the FastLED sketch
         reuse: Whether to reuse an existing container
         force_update: Whether to force update even if container exists
+        build_mode: Build mode to use:
+            - DEBUG: Include debug info, minimal optimization
+            - QUICK: Basic optimizations, faster compile time
+            - RELEASE: Maximum optimization, slower compile time
     """
     absolute_directory = os.path.abspath(directory)
     volume_changed = CONFIG.last_volume_path != absolute_directory
@@ -91,7 +99,9 @@ def compile_local(
             if not DOCKER.remove_container():
                 print("Failed to remove existing container")
                 return CompiledResult(success=False, fastled_js="")
-            return_code = DOCKER.run_container(absolute_directory, base_name)
+            return_code = DOCKER.run_container(
+                absolute_directory, base_name, build_mode
+            )
         else:
             print("Reusing existing container...")
             docker_command = [
@@ -99,6 +109,7 @@ def compile_local(
                 "start",
                 "-a",
                 CONTAINER_NAME,
+                build_mode.value,
             ]
             process = subprocess.Popen(
                 docker_command,
@@ -112,7 +123,7 @@ def compile_local(
             process.wait()
             return_code = process.returncode
     else:
-        return_code = DOCKER.run_container(absolute_directory, base_name)
+        return_code = DOCKER.run_container(absolute_directory, base_name, build_mode)
 
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
