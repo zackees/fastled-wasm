@@ -5,6 +5,8 @@ from pathlib import Path
 
 import httpx
 
+from fastled_wasm.build_mode import BuildMode
+
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
@@ -32,7 +34,10 @@ def _sanitize_host(host: str) -> str:
 
 
 def web_compile(
-    directory: Path, host: str | None = None, auth_token: str | None = None
+    directory: Path,
+    host: str | None = None,
+    auth_token: str | None = None,
+    build_mode: BuildMode | None = None,
 ) -> WebCompileResult:
     host = _sanitize_host(host or DEFAULT_HOST)
     auth_token = auth_token or _AUTH_TOKEN
@@ -64,6 +69,11 @@ def web_compile(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
                 timeout=_TIMEOUT,  # 60 seconds timeout
             ) as client:
+                headers = {
+                    "accept": "application/json",
+                    "authorization": auth_token,
+                    "build_mode": build_mode.value.lower() if build_mode else BuildMode.QUICK.value.lower(),
+                }
                 response = client.post(
                     f"{host}/{ENDPOINT_COMPILED_WASM}",
                     files=files,
