@@ -73,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.0.12 - Added suppport for compile modes. Pass in `--release`, `--quick`, `--debug` for different compile options. We also support `--profile` to profile the build process.
   * 1.0.11 - `--web` compile will automatically be enabled if the local build using docker fails.
   * 1.0.10 - Watching files is now available for `--web`
   * 1.0.9 - Enabled web compile. Access it with `--web` or `--web-host`
