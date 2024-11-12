@@ -6,12 +6,10 @@ from typing import Optional
 
 import httpx
 
-from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 
-CONTAINER_NAME = "fastled-wasm-compiler-server"
-DOCKER = DockerManager(container_name=CONTAINER_NAME)
-CONFIG: Config = Config()
+_DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler-server"
+
 _DEFAULT_START_PORT = 9021
 
 
@@ -29,7 +27,9 @@ def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
 
 
 class CompileServer:
-    def __init__(self) -> None:
+    def __init__(self, container_name=_DEFAULT_CONTAINER_NAME) -> None:
+        self.container_name = container_name
+        self.docker = DockerManager(container_name=container_name)
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.docker_process: Optional[subprocess.Popen] = None
@@ -62,16 +62,16 @@ class CompileServer:
     def start(self) -> int:
         self.running = True
         # Ensure Docker is running and image exists
-        if not DOCKER.is_running():
-            if not DOCKER.start():
+        if not self.docker.is_running():
+            if not self.docker.start():
                 print("Docker could not be started. Exiting.")
                 raise RuntimeError("Docker could not be started. Exiting.")
-        if not DOCKER.ensure_image_exists():
+        if not self.docker.ensure_image_exists():
             print("Failed to ensure Docker image exists.")
             raise RuntimeError("Failed to ensure Docker image exists")
 
-        if DOCKER.container_exists():
-            if not DOCKER.remove_container():
+        if self.docker.container_exists():
+            if not self.docker.remove_container():
                 print("Failed to remove existing container")
                 raise RuntimeError("Failed to remove existing container")
         # Remove the image to force a fresh download
@@ -90,7 +90,7 @@ class CompileServer:
             "docker",
             "run",
             "--name",
-            CONTAINER_NAME,
+            self.container_name,
             "-p",  # Port mapping flag
             f"{port}:80",  # Map dynamic host port to container port 80
             "--expose",  # Explicitly expose the port
@@ -112,10 +112,14 @@ class CompileServer:
             try:
                 # Stop the Docker container
                 subprocess.run(
-                    ["docker", "stop", CONTAINER_NAME], capture_output=True, check=True
+                    ["docker", "stop", self.container_name],
+                    capture_output=True,
+                    check=True,
                 )
                 subprocess.run(
-                    ["docker", "rm", CONTAINER_NAME], capture_output=True, check=True
+                    ["docker", "rm", self.container_name],
+                    capture_output=True,
+                    check=True,
                 )
 
                 # Close the stdout pipe

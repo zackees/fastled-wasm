@@ -187,31 +187,27 @@ def main() -> int:
         args.web = True
 
     compile_server: CompileServer | None = None
+    url: str | None = None
     if not args.web:
         compile_server = CompileServer()
         print("Waiting for the local compiler to start...")
         if not compile_server.wait_for_startup():
             print("Failed to start local compiler.")
             return 1
+        url = compile_server.url()
+    url = url or args.web_host
 
     build_mode: BuildMode = get_build_mode(args)
 
     def _run_web_compiler(
-        build_mode: BuildMode = build_mode, profile=profile
+        url=url, build_mode: BuildMode = build_mode, profile=profile
     ) -> CompiledResult:
-        return run_web_compiler(
-            args.directory, host=args.web_host, build_mode=build_mode, profile=profile
-        )
-
-    def _compile_local(build_mode: BuildMode = build_mode) -> CompiledResult:
-        assert compile_server
-        url = compile_server.url()
         return run_web_compiler(
             args.directory, host=url, build_mode=build_mode, profile=profile
         )
 
     compiler_type = "web" if args.web else "local"
-    compile_function = _run_web_compiler if args.web else _compile_local  # type: ignore
+    compile_function = _run_web_compiler
 
     result: CompiledResult = compile_function()
 
