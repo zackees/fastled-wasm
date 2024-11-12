@@ -18,7 +18,6 @@
 
 #include "ui.h"
 
-
 #define LED_PIN 3
 #define BRIGHTNESS 96
 #define COLOR_ORDER GRB

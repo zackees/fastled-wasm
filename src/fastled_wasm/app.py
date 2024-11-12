@@ -14,7 +14,8 @@ import time
 from pathlib import Path
 
 from fastled_wasm.build_mode import BuildMode, get_build_mode
-from fastled_wasm.compile import CompiledResult, compile_local
+from fastled_wasm.compile import CompiledResult
+from fastled_wasm.compile_server import CompileServer
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 from fastled_wasm.filewatcher import FileChangedNotifier
@@ -185,6 +186,14 @@ def main() -> int:
         )
         args.web = True
 
+    compile_server: CompileServer | None = None
+    if not args.web:
+        compile_server = CompileServer()
+        print("Waiting for the local compiler to start...")
+        if not compile_server.wait_for_startup():
+            print("Failed to start local compiler.")
+            return 1
+
     build_mode: BuildMode = get_build_mode(args)
 
     def _run_web_compiler(
@@ -195,8 +204,10 @@ def main() -> int:
         )
 
     def _compile_local(build_mode: BuildMode = build_mode) -> CompiledResult:
-        return compile_local(
-            args.directory, args.reuse, force_update=args.update, build_mode=build_mode
+        assert compile_server
+        url = compile_server.url()
+        return run_web_compiler(
+            args.directory, host=url, build_mode=build_mode, profile=profile
         )
 
     compiler_type = "web" if args.web else "local"
@@ -218,6 +229,8 @@ def main() -> int:
         print(
             "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
         )
+        if compile_server:
+            compile_server.stop()
         return 0
 
     if args.just_compile:
