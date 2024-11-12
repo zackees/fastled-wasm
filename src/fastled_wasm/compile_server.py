@@ -8,7 +8,7 @@ import httpx
 
 from fastled_wasm.docker_manager import DockerManager
 
-_DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler-server"
+_DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
 _DEFAULT_START_PORT = 9021
 _DISABLE_AUTO_CLEAN = False  # Massive speed boost by assuming clean state.
