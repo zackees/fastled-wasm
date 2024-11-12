@@ -10,7 +10,7 @@ COMMAND = "fastled-wasm --just-compile"
 
 
 HERE = Path(__file__).parent
-TEST_DIR = HERE / ".." / "test_ino" / "wasm"
+TEST_DIR = HERE / "test_ino" / "wasm"
 
 
 class MainTester(unittest.TestCase):

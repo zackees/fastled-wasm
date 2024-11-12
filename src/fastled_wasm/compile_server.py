@@ -9,7 +9,7 @@ import httpx
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
 
-CONTAINER_NAME = "fastled-wasm-compiler"
+CONTAINER_NAME = "fastled-wasm-compiler-server"
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
 CONFIG: Config = Config()
 _DEFAULT_START_PORT = 9021

@@ -5,7 +5,7 @@ from fastled_wasm.compile_server import CompileServer
 from fastled_wasm.web_compile import WebCompileResult, web_compile
 
 HERE = Path(__file__).parent
-TEST_DIR = HERE / ".." / "test_ino" / "wasm"
+TEST_DIR = HERE / "test_ino" / "wasm"
 
 
 class WebCompilerTester(unittest.TestCase):

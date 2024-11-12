@@ -5,7 +5,7 @@ from pathlib import Path
 from fastled_wasm.web_compile import web_compile
 
 HERE = Path(__file__).parent
-TEST_DIR = HERE / ".." / "test_ino" / "wasm"
+TEST_DIR = HERE / "test_ino" / "wasm"
 
 _USE_LOCALHOST = False
 _HOST = "http://localhost" if _USE_LOCALHOST else None
