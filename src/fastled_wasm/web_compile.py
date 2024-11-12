@@ -73,12 +73,13 @@ def web_compile(
                 headers = {
                     "accept": "application/json",
                     "authorization": auth_token,
-                    "build_mode": (
+                    "build": (
                         build_mode.value.lower()
                         if build_mode
                         else BuildMode.QUICK.value.lower()
                     ),
                 }
+                print("headers", headers)
                 response = client.post(
                     url,
                     files=files,
