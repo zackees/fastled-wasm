@@ -69,15 +69,20 @@ def web_compile(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
                 timeout=_TIMEOUT,  # 60 seconds timeout
             ) as client:
+                url = f"{host}/{ENDPOINT_COMPILED_WASM}"
                 headers = {
                     "accept": "application/json",
                     "authorization": auth_token,
-                    "build_mode": build_mode.value.lower() if build_mode else BuildMode.QUICK.value.lower(),
+                    "build_mode": (
+                        build_mode.value.lower()
+                        if build_mode
+                        else BuildMode.QUICK.value.lower()
+                    ),
                 }
                 response = client.post(
-                    f"{host}/{ENDPOINT_COMPILED_WASM}",
+                    url,
                     files=files,
-                    headers={"accept": "application/json", "authorization": auth_token},
+                    headers=headers,
                 )
 
                 if response.status_code != 200:
