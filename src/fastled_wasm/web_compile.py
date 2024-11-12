@@ -38,6 +38,7 @@ def web_compile(
     host: str | None = None,
     auth_token: str | None = None,
     build_mode: BuildMode | None = None,
+    profile: bool = False,
 ) -> WebCompileResult:
     host = _sanitize_host(host or DEFAULT_HOST)
     auth_token = auth_token or _AUTH_TOKEN
@@ -78,8 +79,8 @@ def web_compile(
                         if build_mode
                         else BuildMode.QUICK.value.lower()
                     ),
+                    "profile": "true" if profile else "false",
                 }
-                print("headers", headers)
                 response = client.post(
                     url,
                     files=files,

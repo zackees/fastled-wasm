@@ -18,12 +18,12 @@
 #include "ui.h"
 
 
-#define LED_PIN 3
+#define LED_PIN 10
 #define BRIGHTNESS 96
 #define COLOR_ORDER GRB
 
-#define MATRIX_WIDTH 100
-#define MATRIX_HEIGHT 100
+#define MATRIX_WIDTH 10
+#define MATRIX_HEIGHT 134
 #define GRID_SERPENTINE false
 
 #define NUM_LEDS (MATRIX_WIDTH * MATRIX_HEIGHT)

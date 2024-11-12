@@ -73,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Pull the latest build image before compiling",
     )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Enable profiling for web compilation",
+    )
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
     build_mode.add_argument(
@@ -84,6 +89,7 @@ def parse_args() -> argparse.Namespace:
     build_mode.add_argument(
         "--release", action="store_true", help="Build in release mode"
     )
+
     build_mode.add_argument(
         "--force-compile",
         action="store_true",
@@ -106,12 +112,14 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_web_compiler(
-    directory: Path, host: str, build_mode: BuildMode
+    directory: Path, host: str, build_mode: BuildMode, profile: bool
 ) -> CompiledResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
-    web_result = web_compile(directory=input_dir, host=host, build_mode=build_mode)
+    web_result = web_compile(
+        directory=input_dir, host=host, build_mode=build_mode, profile=profile
+    )
     diff = time.time() - start
     if not web_result:
         print("\nWeb compilation failed:")
@@ -134,7 +142,9 @@ def run_web_compiler(
         shutil.unpack_archive(temp_zip, output_dir, "zip")
 
     print(web_result.stdout)
-    print(f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}")
+    print(
+        f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  zip size: {len(web_result.zip_bytes)} bytes"
+    )
     return CompiledResult(success=True, fastled_js=str(output_dir))
 
 
@@ -158,6 +168,7 @@ def _looks_like_sketch_directory(directory: Path) -> bool:
 def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
+    profile = args.profile
 
     if not args.force_compile and not _looks_like_sketch_directory(
         Path(args.directory)
@@ -176,8 +187,12 @@ def main() -> int:
 
     build_mode: BuildMode = get_build_mode(args)
 
-    def _run_web_compiler(build_mode: BuildMode = build_mode) -> CompiledResult:
-        return run_web_compiler(args.directory, args.web_host, build_mode)
+    def _run_web_compiler(
+        build_mode: BuildMode = build_mode, profile=profile
+    ) -> CompiledResult:
+        return run_web_compiler(
+            args.directory, host=args.web_host, build_mode=build_mode, profile=profile
+        )
 
     def _compile_local(build_mode: BuildMode = build_mode) -> CompiledResult:
         return compile_local(
