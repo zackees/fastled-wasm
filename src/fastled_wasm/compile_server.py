@@ -1,7 +1,10 @@
+import socket
 import subprocess
 import threading
 import time
 from typing import Optional
+
+import httpx
 
 from fastled_wasm.config import Config
 from fastled_wasm.docker_manager import DockerManager
@@ -11,24 +14,62 @@ DOCKER = DockerManager(container_name=CONTAINER_NAME)
 CONFIG: Config = Config()
 
 
+def _find_available_port() -> int:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("localhost", 0))
+    _, port = s.getsockname()
+    s.close()
+    return port
+
+
 class CompileServer:
-    def __init__(self):
+    def __init__(self) -> None:
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        self.compile_queue = []  # Could be replaced with proper Queue
         self.docker_process: Optional[subprocess.Popen] = None
-        self.start()
+        self._port = self.start()
 
-    def start(self):
+    def port(self) -> int:
+        return self._port
+
+    def wait_for_startup(self, timeout: int = 100) -> bool:
+        """Wait for the server to start up."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            # ping the server to see if it's up
+            if not self._port:
+                return False
+            # use httpx to ping the server
+            # if successful, return True
+            try:
+                response = httpx.get(f"http://localhost:{self._port}")
+                if response.status_code < 400:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+        return False
+
+    def start(self) -> int:
         self.running = True
         # Ensure Docker is running and image exists
         if not DOCKER.is_running():
             if not DOCKER.start():
                 print("Docker could not be started. Exiting.")
-                return
+                raise RuntimeError("Docker could not be started. Exiting.")
         if not DOCKER.ensure_image_exists():
             print("Failed to ensure Docker image exists.")
-            return
+            raise RuntimeError("Failed to ensure Docker image exists")
+
+        if DOCKER.container_exists():
+            if not DOCKER.remove_container():
+                print("Failed to remove existing container")
+                raise RuntimeError("Failed to remove existing container")
+        # Remove the image to force a fresh download
+        subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
+        print("All clean")
+
+        port = _find_available_port()
 
         # Start the Docker container in server mode
         docker_command = [
@@ -37,6 +78,10 @@ class CompileServer:
             "--name",
             CONTAINER_NAME,
             "-it",  # Interactive mode with pseudo-TTY
+            "-p",  # Port mapping flag
+            f"{port}:80",  # Map dynamic host port to container port 80
+            "--expose",  # Explicitly expose the port
+            "80",  # Expose port 80 in container
             "fastled-wasm",
             "python",
             "/js/run.py",
@@ -51,8 +96,9 @@ class CompileServer:
         self.thread.daemon = True
         self.thread.start()
         print("Compile server started")
+        return port
 
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
         if self.docker_process:
             try:
@@ -94,7 +140,7 @@ class CompileServer:
 
         print("Compile server stopped")
 
-    def _server_loop(self):
+    def _server_loop(self) -> None:
         while self.running:
             if self.docker_process:
                 # Read Docker container output
@@ -109,9 +155,6 @@ class CompileServer:
                     self.running = False
                     break
 
-            if self.compile_queue:
-                print("Would process compile request here")
-                # TODO: Implement actual compilation logic
             time.sleep(0.1)  # Prevent busy waiting
 
 

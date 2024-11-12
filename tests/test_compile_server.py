@@ -1,4 +1,3 @@
-import time
 import unittest
 from pathlib import Path
 
@@ -18,8 +17,7 @@ class WebCompilerTester(unittest.TestCase):
         """Test basic server start/stop functionality."""
         server = CompileServer()
 
-        # Wait for server to initialize
-        time.sleep(1)
+        server.wait_for_startup()
 
         # Stop the server
         server.stop()
