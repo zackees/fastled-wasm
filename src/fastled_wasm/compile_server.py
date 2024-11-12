@@ -12,14 +12,20 @@ from fastled_wasm.docker_manager import DockerManager
 CONTAINER_NAME = "fastled-wasm-compiler"
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
 CONFIG: Config = Config()
+_DEFAULT_START_PORT = 9021
 
 
-def _find_available_port() -> int:
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(("localhost", 0))
-    _, port = s.getsockname()
-    s.close()
-    return port
+def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
+    """Find an available port starting from the given port."""
+    port = start_port
+    end_port = start_port + 1000
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("localhost", port)) != 0:
+                return port
+            port += 1
+            if port >= end_port:
+                raise RuntimeError("No available ports found")
 
 
 class CompileServer:
@@ -31,6 +37,9 @@ class CompileServer:
 
     def port(self) -> int:
         return self._port
+
+    def url(self) -> str:
+        return f"http://localhost:{self._port}"
 
     def wait_for_startup(self, timeout: int = 100) -> bool:
         """Wait for the server to start up."""
@@ -70,6 +79,11 @@ class CompileServer:
         print("All clean")
 
         port = _find_available_port()
+        server_command = [
+            "python",
+            "/js/run.py",
+            "server",
+        ]
 
         # Start the Docker container in server mode
         docker_command = [
@@ -77,20 +91,14 @@ class CompileServer:
             "run",
             "--name",
             CONTAINER_NAME,
-            "-it",  # Interactive mode with pseudo-TTY
             "-p",  # Port mapping flag
             f"{port}:80",  # Map dynamic host port to container port 80
             "--expose",  # Explicitly expose the port
             "80",  # Expose port 80 in container
             "fastled-wasm",
-            "python",
-            "/js/run.py",
-            "server",
-        ]
+        ] + server_command
 
-        self.docker_process = subprocess.Popen(
-            docker_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-        )
+        self.docker_process = subprocess.Popen(docker_command, text=True)
 
         self.thread = threading.Thread(target=self._server_loop)
         self.thread.daemon = True
@@ -144,11 +152,6 @@ class CompileServer:
         while self.running:
             if self.docker_process:
                 # Read Docker container output
-                if self.docker_process.stdout:
-                    line = self.docker_process.stdout.readline()
-                    if line:
-                        print(f"Docker server: {line.strip()}")
-
                 # Check if Docker process is still running
                 if self.docker_process.poll() is not None:
                     print("Docker server stopped unexpectedly")
