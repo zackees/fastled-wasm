@@ -84,6 +84,11 @@ def parse_args() -> argparse.Namespace:
     build_mode.add_argument(
         "--release", action="store_true", help="Build in release mode"
     )
+    build_mode.add_argument(
+        "--force-compile",
+        action="store_true",
+        help="Skips the test to see if the current directory is a valid FastLED sketch directory",
+    )
 
     args = parser.parse_args()
 
@@ -100,11 +105,13 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def run_web_compiler(directory: Path, host: str) -> CompiledResult:
+def run_web_compiler(
+    directory: Path, host: str, build_mode: BuildMode
+) -> CompiledResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
-    web_result = web_compile(input_dir, host)
+    web_result = web_compile(directory=input_dir, host=host, build_mode=build_mode)
     diff = time.time() - start
     if not web_result:
         print("\nWeb compilation failed:")
@@ -131,9 +138,34 @@ def run_web_compiler(directory: Path, host: str) -> CompiledResult:
     return CompiledResult(success=True, fastled_js=str(output_dir))
 
 
+def _looks_like_sketch_directory(directory: Path) -> bool:
+    # walk the path and if there are over 30 files, return False
+    # at the root of the directory there should either be an ino file or a src directory
+    # or some cpp files
+    # if there is a platformio.ini file, return True
+    ino_file_at_root = list(directory.glob("*.ino"))
+    if ino_file_at_root:
+        return True
+    cpp_file_at_root = list(directory.glob("*.cpp"))
+    if cpp_file_at_root:
+        return True
+    platformini_file = list(directory.glob("platformio.ini"))
+    if platformini_file:
+        return True
+    return False
+
+
 def main() -> int:
     args = parse_args()
     open_web_browser = not args.just_compile
+
+    if not args.force_compile and not _looks_like_sketch_directory(
+        Path(args.directory)
+    ):
+        print(
+            "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
+        )
+        return 1
 
     # If not explicitly using web compiler, check Docker installation
     if not args.web and not DOCKER.is_docker_installed():
@@ -145,7 +177,7 @@ def main() -> int:
     build_mode: BuildMode = get_build_mode(args)
 
     def _run_web_compiler(build_mode: BuildMode = build_mode) -> CompiledResult:
-        return run_web_compiler(args.directory, args.web_host)
+        return run_web_compiler(args.directory, args.web_host, build_mode)
 
     def _compile_local(build_mode: BuildMode = build_mode) -> CompiledResult:
         return compile_local(
