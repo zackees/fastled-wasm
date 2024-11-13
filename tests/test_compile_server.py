@@ -35,7 +35,7 @@ class WebCompilerTester(unittest.TestCase):
 
         # Verify server stopped
         self.assertFalse(server.running, "Server did not stop")
-        self.assertIsNone(server.docker_process, "Server process not cleared")
+        self.assertIsNone(server.running_process, "Server process not cleared")
         self.assertTrue(result.success, "Compilation failed")
 
 

@@ -33,7 +33,6 @@ class CompileServer:
         self.docker = DockerManager(container_name=container_name)
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        self.docker_process: Optional[subprocess.Popen] = None
         self.running_process: subprocess.Popen | None = None
         self._port = self.start()
 
@@ -95,50 +94,58 @@ class CompileServer:
             self.running = False
             raise RuntimeError("Server failed to start")
         self.thread = threading.Thread(target=self._server_loop)
-        self.thread.daemon = True
         self.thread.start()
         print("Compile server started")
         return port
 
     def stop(self) -> None:
-        self.running = False
-        if self.docker_process:
+        print(f"Stopping server on port {self._port}")
+        if self.running_process:
             try:
                 # Stop the Docker container
-                subprocess.run(
+                cp: subprocess.CompletedProcess
+                cp = subprocess.run(
                     ["docker", "stop", self.container_name],
                     capture_output=True,
+                    text=True,
                     check=True,
                 )
-                subprocess.run(
+                if cp.returncode != 0:
+                    print(f"Failed to stop Docker container: {cp.stderr}")
+
+                cp = subprocess.run(
                     ["docker", "rm", self.container_name],
                     capture_output=True,
+                    text=True,
                     check=True,
                 )
+                if cp.returncode != 0:
+                    print(f"Failed to remove Docker container: {cp.stderr}")
 
                 # Close the stdout pipe
-                if self.docker_process.stdout:
-                    self.docker_process.stdout.close()
+                if self.running_process.stdout:
+                    self.running_process.stdout.close()
 
                 # Wait for the process to fully terminate with a timeout
-                self.docker_process.wait(timeout=10)
-                if self.docker_process.returncode is None:
+                self.running_process.wait(timeout=10)
+                if self.running_process.returncode is None:
                     # kill
-                    self.docker_process.kill()
-                if self.docker_process.returncode is not None:
+                    self.running_process.kill()
+                if self.running_process.returncode is not None:
                     print(
-                        f"Server stopped with return code {self.docker_process.returncode}"
+                        f"Server stopped with return code {self.running_process.returncode}"
                     )
 
             except subprocess.TimeoutExpired:
                 # Force kill if it doesn't stop gracefully
-                self.docker_process.kill()
-                self.docker_process.wait()
+                self.running_process.kill()
+                self.running_process.wait()
             except Exception as e:
                 print(f"Error stopping Docker container: {e}")
             finally:
-                self.docker_process = None
-
+                self.running_process = None
+        # Signal the server thread to stop
+        self.running = False
         if self.thread:
             self.thread.join(timeout=10)  # Wait up to 10 seconds for thread to finish
             if self.thread.is_alive():
@@ -148,17 +155,12 @@ class CompileServer:
 
     def _server_loop(self) -> None:
         while self.running:
-            if self.docker_process:
+            if self.running_process:
                 # Read Docker container output
                 # Check if Docker process is still running
-                if self.docker_process.poll() is not None:
+                if self.running_process.poll() is not None:
                     print("Docker server stopped unexpectedly")
                     self.running = False
                     break
 
             time.sleep(0.1)  # Prevent busy waiting
-
-
-def start_compile_server() -> CompileServer:
-    server = CompileServer()
-    return server

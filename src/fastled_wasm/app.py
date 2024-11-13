@@ -187,47 +187,54 @@ def main() -> int:
         args.web = True
 
     compile_server: CompileServer | None = None
-    url: str | None = None
-    if not args.web:
-        try:
-            compile_server = CompileServer()
-            print("Waiting for the local compiler to start...")
-            if not compile_server.wait_for_startup():
-                print("Failed to start local compiler.")
-                return 1
-            url = compile_server.url()
-        except RuntimeError:
-            print("Failed to start local compile server, using web compiler instead.")
-            url = None
-    url = url or args.web_host
 
-    build_mode: BuildMode = get_build_mode(args)
+    try:
+        url: str | None = None
+        if not args.web:
+            try:
+                compile_server = CompileServer()
+                print("Waiting for the local compiler to start...")
+                if not compile_server.wait_for_startup():
+                    print("Failed to start local compiler.")
+                    return 1
+                url = compile_server.url()
+            except RuntimeError:
+                print(
+                    "Failed to start local compile server, using web compiler instead."
+                )
+                url = None
+        url = url or args.web_host
 
-    def compile_function(
-        url=url, build_mode: BuildMode = build_mode, profile=profile
-    ) -> CompiledResult:
-        return run_web_compiler(
-            args.directory, host=url, build_mode=build_mode, profile=profile
-        )
+        build_mode: BuildMode = get_build_mode(args)
 
-    result: CompiledResult = compile_function()
+        def compile_function(
+            url=url, build_mode: BuildMode = build_mode, profile=profile
+        ) -> CompiledResult:
+            return run_web_compiler(
+                args.directory, host=url, build_mode=build_mode, profile=profile
+            )
 
-    if not result.success:
-        print("\nCompilation failed.")
-        return 1
+        result: CompiledResult = compile_function()
 
-    if open_web_browser:
-        open_browser_thread(Path(args.directory) / "fastled_js")
-    else:
-        print(
-            "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
-        )
-        if compile_server:
-            compile_server.stop()
-        return 0
+        if not result.success:
+            print("\nCompilation failed.")
+            return 1
 
-    if args.just_compile:
-        return 0 if result.success else 1
+        if open_web_browser:
+            open_browser_thread(Path(args.directory) / "fastled_js")
+        else:
+            print(
+                "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
+            )
+            if compile_server:
+                print("Shutting down compile server...")
+                compile_server.stop()
+            return 0
+
+        if args.just_compile:
+            return 0 if result.success else 1
+    except KeyboardInterrupt:
+        print("\nExiting...")
 
     # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
