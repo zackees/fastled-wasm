@@ -3,11 +3,8 @@
 import subprocess
 import sys
 import time
-from typing import Optional
 
 import docker  # type: ignore
-
-from fastled_wasm.build_mode import BuildMode
 
 TAG = "main"
 
@@ -201,8 +198,10 @@ class DockerManager:
         return f"{self.container_name}:{TAG}"
 
     def run_container(
-        self, volume_path: dict[str, str], build_mode: BuildMode
-    ) -> Optional[int]:
+        self,
+        volume_path: dict[str, str],
+        cmd: list[str],
+    ) -> int:
         """Run the Docker container with the specified volume.
 
         Args:
@@ -230,13 +229,7 @@ class DockerManager:
                     f"{self.container_name}:{TAG}",
                 ]
             )
-            docker_command.extend(["python", "/js/run.py", "compile"])
-            if build_mode == BuildMode.DEBUG:
-                docker_command.append("--debug")
-            elif build_mode == BuildMode.RELEASE:
-                docker_command.append("--release")
-            elif build_mode == BuildMode.QUICK:
-                docker_command.append("--quick")
+            docker_command.extend(cmd)
 
             print(f"Running command: {' '.join(docker_command)}")
             process = subprocess.Popen(
