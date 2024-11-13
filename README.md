@@ -70,7 +70,6 @@ Pre-processing is done to your source files. A fake Arduino.h will be inserted i
 provide shims for most of the common api points.
 
 
-
 # Revisions
 
   * 1.0.13 - Increase speed of local compiles by running the server version of the compiler so it can keep
