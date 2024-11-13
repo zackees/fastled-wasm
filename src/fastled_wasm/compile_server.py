@@ -58,6 +58,8 @@ class CompileServer:
             except Exception:
                 pass
             time.sleep(0.1)
+            if not self.running:
+                return False
         return False
 
     def start(self) -> int:
@@ -84,6 +86,8 @@ class CompileServer:
         if _DISABLE_AUTO_CLEAN:
             server_command.append("--disable-auto-clean")
 
+        full_container_name = self.docker.full_container_name()
+
         # Start the Docker container in server mode
         docker_command = [
             "docker",
@@ -94,8 +98,11 @@ class CompileServer:
             f"{port}:80",  # Map dynamic host port to container port 80
             "--expose",  # Explicitly expose the port
             "80",  # Expose port 80 in container
-            "fastled-wasm",
+            full_container_name,
         ] + server_command
+
+        cmd_str = subprocess.list2cmdline(docker_command)
+        print(f"Starting Docker container with command: {cmd_str}")
 
         self.docker_process = subprocess.Popen(docker_command, text=True)
 

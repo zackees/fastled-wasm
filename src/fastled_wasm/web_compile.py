@@ -33,6 +33,9 @@ def _sanitize_host(host: str) -> str:
     return host if host.startswith("http://") else f"http://{host}"
 
 
+_CONNECTION_ERROR_MAP: dict[str, bool] = {}
+
+
 def web_compile(
     directory: Path,
     host: str | None = None,
@@ -53,8 +56,12 @@ def web_compile(
             wasm_dir = Path(temp_dir) / "wasm"
 
             # Copy all files from source to wasm subdirectory, excluding fastled_js
-            def ignore_fastled_js(dir, files):
-                return [f for f in files if "fastled_js" in str(Path(dir) / f)]
+            def ignore_fastled_js(dir: str, files: list[str]) -> list[str]:
+                if "fastled_js" in dir:
+                    return files
+                if dir.startswith("."):
+                    return files
+                return []
 
             shutil.copytree(directory, wasm_dir, ignore=ignore_fastled_js)
             # Create zip archive from the temp directory
@@ -65,6 +72,29 @@ def web_compile(
     try:
         with open(tmp_zip.name, "rb") as zip_file:
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
+
+            tested = host in _CONNECTION_ERROR_MAP
+            if not tested:
+                test_url = f"{host}/healthz"
+                print(f"Testing connection to {test_url}")
+                timeout = 5
+                with httpx.Client(
+                    transport=httpx.HTTPTransport(local_address="0.0.0.0")
+                ) as test_client:
+                    test_response = test_client.get(test_url, timeout=timeout)
+                    if test_response.status_code != 200:
+                        print(f"Connection to {test_url} failed")
+                        _CONNECTION_ERROR_MAP[host] = True
+                        return WebCompileResult(
+                            success=False, stdout="Connection failed", zip_bytes=b""
+                        )
+                    _CONNECTION_ERROR_MAP[host] = False
+
+            ok = not _CONNECTION_ERROR_MAP[host]
+            if not ok:
+                return WebCompileResult(
+                    success=False, stdout="Connection failed", zip_bytes=b""
+                )
 
             with httpx.Client(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4

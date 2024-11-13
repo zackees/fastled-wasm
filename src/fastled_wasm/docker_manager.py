@@ -132,9 +132,10 @@ class DockerManager:
                 )
 
             # First check if we have the local tagged image
-            result = subprocess.run(
+            result: subprocess.CompletedProcess = subprocess.run(
                 ["docker", "image", "inspect", image_name],
                 capture_output=True,
+                text=True,
                 check=False,
             )
 
@@ -194,6 +195,10 @@ class DockerManager:
             return True
         except subprocess.CalledProcessError:
             return False
+
+    def full_container_name(self) -> str:
+        """Get the name of the container."""
+        return f"{self.container_name}:{TAG}"
 
     def run_container(
         self, volume_path: str, base_name: str, build_mode: BuildMode
