@@ -49,7 +49,7 @@ class FileChangedNotifier(threading.Thread):
     def __init__(
         self,
         path: str,
-        debounce_seconds: float = 2.0,
+        debounce_seconds: float = 1.0,
         excluded_patterns: list[str] | None = None,
     ) -> None:
         """Initialize the notifier with a path to watch
