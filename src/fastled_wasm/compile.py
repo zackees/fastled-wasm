@@ -104,7 +104,7 @@ def compile_local(
         cmd.append("--quick")
 
     def _run_container() -> int:
-        return DOCKER.run_container(volumes, cmd)
+        return DOCKER.run_container(cmd, volumes)
 
     # Handle container reuse logic
     if DOCKER.container_exists():

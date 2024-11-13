@@ -199,8 +199,8 @@ class DockerManager:
 
     def run_container(
         self,
-        volume_path: dict[str, str],
         cmd: list[str],
+        volume_path: dict[str, str] | None = None,
     ) -> int:
         """Run the Docker container with the specified volume.
 
@@ -209,6 +209,7 @@ class DockerManager:
             base_name: Base name for the mounted volume
             build_mode: Build mode (DEBUG, QUICK, or RELEASE)
         """
+        volume_path = volume_path or {}
         try:
             print("Creating new container...")
             docker_command = ["docker", "run"]
