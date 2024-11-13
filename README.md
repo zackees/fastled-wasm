@@ -73,6 +73,8 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.0.13 - Increase speed of local compiles by running the server version of the compiler so it can keep
+             it's cache and not have to pay docker startup costs because now it's a persistant server until exit.
   * 1.0.12 - Added suppport for compile modes. Pass in `--release`, `--quick`, `--debug` for different compile options. We also support `--profile` to profile the build process.
   * 1.0.11 - `--web` compile will automatically be enabled if the local build using docker fails.
   * 1.0.10 - Watching files is now available for `--web`
