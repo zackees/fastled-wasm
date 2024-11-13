@@ -13,6 +13,6 @@ if [ "$is_github_runner" = true ]; then
   # don't run in parallel on github runners
   uv run pytest tests -v
 else
-  uv run pytest -n auto tests -v
+  uv run pytest tests -v
 fi
 

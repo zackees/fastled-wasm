@@ -95,7 +95,7 @@ def web_compile(
                 return WebCompileResult(
                     success=False, stdout="Connection failed", zip_bytes=b""
                 )
-
+            print(f"Connection to {host} successful")
             with httpx.Client(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
                 timeout=_TIMEOUT,  # 60 seconds timeout
@@ -118,8 +118,6 @@ def web_compile(
                 )
 
                 if response.status_code != 200:
-                    print("Compilation failed:")
-                    print(response.text)
                     json_response = response.json()
                     detail = json_response.get("detail", "Could not compile")
                     return WebCompileResult(success=False, stdout=detail, zip_bytes=b"")
