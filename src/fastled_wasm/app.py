@@ -189,12 +189,16 @@ def main() -> int:
     compile_server: CompileServer | None = None
     url: str | None = None
     if not args.web:
-        compile_server = CompileServer()
-        print("Waiting for the local compiler to start...")
-        if not compile_server.wait_for_startup():
-            print("Failed to start local compiler.")
-            return 1
-        url = compile_server.url()
+        try:
+            compile_server = CompileServer()
+            print("Waiting for the local compiler to start...")
+            if not compile_server.wait_for_startup():
+                print("Failed to start local compiler.")
+                return 1
+            url = compile_server.url()
+        except RuntimeError:
+            print("Failed to start local compile server, using web compiler instead.")
+            args.web = True
     url = url or args.web_host
 
     build_mode: BuildMode = get_build_mode(args)
