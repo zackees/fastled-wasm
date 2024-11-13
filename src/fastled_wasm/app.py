@@ -118,7 +118,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_web_compiler(
-    directory: Path, host: str, build_mode: BuildMode, profile: bool
+    directory: Path,
+    host: str,
+    build_mode: BuildMode,
+    profile: bool,
+    last_hash_value: str | None,
 ) -> CompiledResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
@@ -132,6 +136,26 @@ def run_web_compiler(
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
         return CompiledResult(success=False, fastled_js="", hash_value=None)
+
+    def print_results() -> None:
+        hash_value = (
+            web_result.hash_value
+            if web_result.hash_value is not None
+            else "NO HASH VALUE"
+        )
+        print(
+            f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  hash: {hash_value}\n  zip size: {len(web_result.zip_bytes)} bytes"
+        )
+
+    # now check to see if the hash value is the same as the last hash value
+    if last_hash_value is not None and last_hash_value == web_result.hash_value:
+        print(
+            "\nNo significant source code changes detected and data was the same, skipping recompilation."
+        )
+        print_results()
+        return CompiledResult(
+            success=True, fastled_js=str(output_dir), hash_value=web_result.hash_value
+        )
 
     # Extract zip contents to fastled_js directory
     output_dir.mkdir(exist_ok=True)
@@ -148,13 +172,10 @@ def run_web_compiler(
         shutil.unpack_archive(temp_zip, output_dir, "zip")
 
     print(web_result.stdout)
-    hash_value = (
-        web_result.hash_value if web_result.hash_value is not None else "NO HASH VALUE"
+    print_results()
+    return CompiledResult(
+        success=True, fastled_js=str(output_dir), hash_value=web_result.hash_value
     )
-    print(
-        f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  hash: {hash_value}\n  zip size: {len(web_result.zip_bytes)} bytes"
-    )
-    return CompiledResult(success=True, fastled_js=str(output_dir), hash_value=hash_value)
 
 
 def _looks_like_sketch_directory(directory: Path) -> bool:
@@ -217,13 +238,21 @@ def main() -> int:
         build_mode: BuildMode = get_build_mode(args)
 
         def compile_function(
-            url=url, build_mode: BuildMode = build_mode, profile=profile
+            url=url,
+            build_mode: BuildMode = build_mode,
+            profile=profile,
+            last_hash_value: str | None = None,
         ) -> CompiledResult:
             return run_web_compiler(
-                args.directory, host=url, build_mode=build_mode, profile=profile
+                args.directory,
+                host=url,
+                build_mode=build_mode,
+                profile=profile,
+                last_hash_value=last_hash_value,
             )
 
-        result: CompiledResult = compile_function()
+        result: CompiledResult = compile_function(last_hash_value=None)
+        last_compiled_result: CompiledResult = result
 
         if not result.success:
             print("\nCompilation failed.")
@@ -259,7 +288,8 @@ def main() -> int:
                 changed_files = []
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
-                result = compile_function()
+                last_hash_value = last_compiled_result.hash_value
+                result = compile_function(last_hash_value=last_hash_value)
                 if not result.success:
                     print("\nRecompilation failed.")
                 else:

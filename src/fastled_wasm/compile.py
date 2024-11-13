@@ -143,7 +143,9 @@ def compile_local(
 
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
-        return CompiledResult(success=(return_code == 0), fastled_js="", hash_value=None)
+        return CompiledResult(
+            success=(return_code == 0), fastled_js="", hash_value=None
+        )
 
     fastled_js = os.path.join(absolute_directory, "fastled_js")
     if not os.path.exists(fastled_js):
