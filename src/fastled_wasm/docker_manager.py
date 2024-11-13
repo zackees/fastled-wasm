@@ -9,6 +9,7 @@ import docker  # type: ignore
 
 TAG = "main"
 
+
 def _win32_docker_location() -> str | None:
     home_dir = Path.home()
     out = [
@@ -19,7 +20,6 @@ def _win32_docker_location() -> str | None:
         if Path(loc).exists():
             return loc
     return None
-
 
 
 class DockerManager:

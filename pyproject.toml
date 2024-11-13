@@ -18,6 +18,7 @@ dependencies = [
     "watchdog",
     "livereload",
     "download",
+    "pygments"
 ]
 # Change this with the version number bump.
 version = "1.0.13"
