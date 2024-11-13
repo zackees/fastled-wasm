@@ -201,7 +201,7 @@ class DockerManager:
         return f"{self.container_name}:{TAG}"
 
     def run_container(
-        self, volume_path: str, base_name: str, build_mode: BuildMode
+        self, volume_path: dict[str, str], build_mode: BuildMode
     ) -> Optional[int]:
         """Run the Docker container with the specified volume.
 
@@ -216,12 +216,17 @@ class DockerManager:
 
             if sys.stdout.isatty():
                 docker_command.append("-it")
+            # Attach volumes if specified
+            docker_command += [
+                "--name",
+                self.container_name,
+            ]
+            if volume_path:
+                for host_path, container_path in volume_path.items():
+                    docker_command.extend(["-v", f"{host_path}:{container_path}"])
+
             docker_command.extend(
                 [
-                    "--name",
-                    self.container_name,
-                    "-v",
-                    f"{volume_path}:/mapped/{base_name}",
                     f"{self.container_name}:{TAG}",
                 ]
             )

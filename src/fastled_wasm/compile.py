@@ -93,15 +93,15 @@ def compile_local(
         print("Failed to ensure Docker image exists..")
         return CompiledResult(success=False, fastled_js="")
 
+    volumes: dict[str, str] = {absolute_directory: f"/mapped/{base_name}"}
     # Handle container reuse logic
     if DOCKER.container_exists():
         if volume_changed or not reuse:
             if not DOCKER.remove_container():
                 print("Failed to remove existing container")
                 return CompiledResult(success=False, fastled_js="")
-            return_code = DOCKER.run_container(
-                absolute_directory, base_name, build_mode
-            )
+
+            return_code = DOCKER.run_container(volumes, build_mode)
         else:
             print("Reusing existing container...")
             docker_command = [
@@ -123,7 +123,7 @@ def compile_local(
             process.wait()
             return_code = process.returncode
     else:
-        return_code = DOCKER.run_container(absolute_directory, base_name, build_mode)
+        return_code = DOCKER.run_container(volumes, build_mode)
 
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
