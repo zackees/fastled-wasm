@@ -11,7 +11,6 @@ from fastled_wasm.docker_manager import DockerManager
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
 _DEFAULT_START_PORT = 9021
-_DISABLE_AUTO_CLEAN = False  # Massive speed boost by assuming clean state.
 
 
 def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
@@ -28,8 +27,11 @@ def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
 
 
 class CompileServer:
-    def __init__(self, container_name=_DEFAULT_CONTAINER_NAME) -> None:
+    def __init__(
+        self, container_name=_DEFAULT_CONTAINER_NAME, disable_auto_clean: bool = False
+    ) -> None:
         self.container_name = container_name
+        self.disable_auto_clean = disable_auto_clean
         self.docker = DockerManager(container_name=container_name)
         self.running = False
         self.thread: Optional[threading.Thread] = None
@@ -83,7 +85,7 @@ class CompileServer:
 
         port = _find_available_port()
         server_command = ["python", "/js/run.py", "server"]
-        if _DISABLE_AUTO_CLEAN:
+        if self.disable_auto_clean:
             server_command.append("--disable-auto-clean")
         print(f"Started Docker container with command: {server_command}")
         ports = {port: 80}

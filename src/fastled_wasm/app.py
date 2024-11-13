@@ -48,6 +48,11 @@ def parse_args() -> argparse.Namespace:
         help="Just compile, skip opening the browser and watching for changes.",
     )
     parser.add_argument(
+        "--no-auto-clean",
+        action="store_true",
+        help="Big performance gains for compilation, but it's flaky at this time",
+    )
+    parser.add_argument(
         "--web",
         "-w",
         action="store_true",
@@ -186,13 +191,14 @@ def main() -> int:
         )
         args.web = True
 
+    disable_auto_clean = args.no_auto_clean
     compile_server: CompileServer | None = None
 
     try:
         url: str | None = None
         if not args.web:
             try:
-                compile_server = CompileServer()
+                compile_server = CompileServer(disable_auto_clean=disable_auto_clean)
                 print("Waiting for the local compiler to start...")
                 if not compile_server.wait_for_startup():
                     print("Failed to start local compiler.")
