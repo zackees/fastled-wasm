@@ -198,26 +198,19 @@ def main() -> int:
             url = compile_server.url()
         except RuntimeError:
             print("Failed to start local compile server, using web compiler instead.")
-            args.web = True
+            url = None
     url = url or args.web_host
 
     build_mode: BuildMode = get_build_mode(args)
 
-    def _run_web_compiler(
+    def compile_function(
         url=url, build_mode: BuildMode = build_mode, profile=profile
     ) -> CompiledResult:
         return run_web_compiler(
             args.directory, host=url, build_mode=build_mode, profile=profile
         )
 
-    compiler_type = "web" if args.web else "local"
-    compile_function = _run_web_compiler
-
     result: CompiledResult = compile_function()
-
-    if not result.success and compiler_type == "local":
-        print("Failed to run local compiler. Trying web compiler instead...")
-        result = _run_web_compiler()
 
     if not result.success:
         print("\nCompilation failed.")
