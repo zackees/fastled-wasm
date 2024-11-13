@@ -1,5 +1,18 @@
 #!/bin/bash
 
 set -e
+
+is_github_runner=false
+if [ -n "$GITHUB_ACTIONS" ]; then
+  is_github_runner=true
+fi
+
+
 echo "Running unittests"
-uv run pytest -n auto tests -v
+if [ "$is_github_runner" = true ]; then
+  # don't run in parallel on github runners
+  uv run pytest tests -v
+else
+  uv run pytest -n auto tests -v
+fi
+
