@@ -200,7 +200,8 @@ class DockerManager:
     def run_container(
         self,
         cmd: list[str],
-        volume_path: dict[str, str] | None = None,
+        volumes: dict[str, str] | None = None,
+        ports: dict[int, int] | None = None,
     ) -> int:
         """Run the Docker container with the specified volume.
 
@@ -209,7 +210,8 @@ class DockerManager:
             base_name: Base name for the mounted volume
             build_mode: Build mode (DEBUG, QUICK, or RELEASE)
         """
-        volume_path = volume_path or {}
+        volumes = volumes or {}
+        ports = ports or {}
         try:
             print("Creating new container...")
             docker_command = ["docker", "run"]
@@ -221,8 +223,11 @@ class DockerManager:
                 "--name",
                 self.container_name,
             ]
-            if volume_path:
-                for host_path, container_path in volume_path.items():
+            if ports:
+                for host_port, container_port in ports.items():
+                    docker_command.extend(["-p", f"{host_port}:{container_port}"])
+            if volumes:
+                for host_path, container_path in volumes.items():
                     docker_command.extend(["-v", f"{host_path}:{container_path}"])
 
             docker_command.extend(
