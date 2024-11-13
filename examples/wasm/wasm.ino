@@ -79,6 +79,7 @@ Button changePalette("Noise - Next Palette");
 Button changeFx("Switch between Noise & Animartrix");
 NumberField fxIndex("Animartrix - index", 0, 0, NUM_ANIMATIONS);
 
+
 Animartrix animartrix(xyMap, POLAR_WAVES);
 FxEngine fxEngine(NUM_LEDS);
 

@@ -17,6 +17,7 @@ _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 class WebCompileResult:
     success: bool
     stdout: str
+    hash_value: str | None
     zip_bytes: bytes
 
     def __bool__(self) -> bool:
@@ -86,14 +87,20 @@ def web_compile(
                         print(f"Connection to {test_url} failed")
                         _CONNECTION_ERROR_MAP[host] = True
                         return WebCompileResult(
-                            success=False, stdout="Connection failed", zip_bytes=b""
+                            success=False,
+                            stdout="Connection failed",
+                            hash_value=None,
+                            zip_bytes=b"",
                         )
                     _CONNECTION_ERROR_MAP[host] = False
 
             ok = not _CONNECTION_ERROR_MAP[host]
             if not ok:
                 return WebCompileResult(
-                    success=False, stdout="Connection failed", zip_bytes=b""
+                    success=False,
+                    stdout="Connection failed",
+                    hash_value=None,
+                    zip_bytes=b"",
                 )
             print(f"Connection to {host} successful")
             with httpx.Client(
@@ -120,7 +127,9 @@ def web_compile(
                 if response.status_code != 200:
                     json_response = response.json()
                     detail = json_response.get("detail", "Could not compile")
-                    return WebCompileResult(success=False, stdout=detail, zip_bytes=b"")
+                    return WebCompileResult(
+                        success=False, stdout=detail, hash_value=None, zip_bytes=b""
+                    )
 
                 print(f"Response status code: {response}")
                 # Create a temporary directory to extract the zip
@@ -136,14 +145,21 @@ def web_compile(
 
                     # Read stdout from out.txt if it exists
                     stdout_file = extract_path / "out.txt"
+                    hash_file = extract_path / "hash.txt"
                     stdout = stdout_file.read_text() if stdout_file.exists() else ""
+                    hash_value = hash_file.read_text() if hash_file.exists() else None
 
                     return WebCompileResult(
-                        success=True, stdout=stdout, zip_bytes=response.content
+                        success=True,
+                        stdout=stdout,
+                        hash_value=hash_value,
+                        zip_bytes=response.content,
                     )
     except httpx.HTTPError as e:
         print(f"Error: {e}")
-        return WebCompileResult(success=False, stdout=str(e), zip_bytes=b"")
+        return WebCompileResult(
+            success=False, stdout=str(e), hash_value=None, zip_bytes=b""
+        )
     finally:
         try:
             Path(tmp_zip.name).unlink()

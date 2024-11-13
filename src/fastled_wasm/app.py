@@ -131,7 +131,7 @@ def run_web_compiler(
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
-        return CompiledResult(success=False, fastled_js="")
+        return CompiledResult(success=False, fastled_js="", hash_value=None)
 
     # Extract zip contents to fastled_js directory
     output_dir.mkdir(exist_ok=True)
@@ -148,10 +148,13 @@ def run_web_compiler(
         shutil.unpack_archive(temp_zip, output_dir, "zip")
 
     print(web_result.stdout)
-    print(
-        f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  zip size: {len(web_result.zip_bytes)} bytes"
+    hash_value = (
+        web_result.hash_value if web_result.hash_value is not None else "NO HASH VALUE"
     )
-    return CompiledResult(success=True, fastled_js=str(output_dir))
+    print(
+        f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  hash: {hash_value}\n  zip size: {len(web_result.zip_bytes)} bytes"
+    )
+    return CompiledResult(success=True, fastled_js=str(output_dir), hash_value=hash_value)
 
 
 def _looks_like_sketch_directory(directory: Path) -> bool:

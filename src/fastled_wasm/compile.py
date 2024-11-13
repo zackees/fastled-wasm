@@ -18,6 +18,7 @@ class CompiledResult:
 
     success: bool
     fastled_js: str
+    hash_value: str | None
 
 
 def check_is_code_directory(directory: Path) -> bool:
@@ -43,7 +44,8 @@ def compile_local(
     force_update: bool = False,
     build_mode: BuildMode = BuildMode.QUICK,
 ) -> CompiledResult:
-    """Compile the FastLED sketch using Docker.
+    """Compile the FastLED sketch using Docker. This is now deprecated since
+    we use the web compiler instead with a localhost server instead.
 
     Args:
         directory: Path to the directory containing the FastLED sketch
@@ -63,7 +65,7 @@ def compile_local(
         if DOCKER.container_exists():
             if not DOCKER.remove_container():
                 print("Failed to remove existing container")
-                return CompiledResult(success=False, fastled_js="")
+                return CompiledResult(success=False, fastled_js="", hash_value=None)
         # Remove the image to force a fresh download
         subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
         print("All clean")
@@ -75,23 +77,23 @@ def compile_local(
 
     if not check_is_code_directory(Path(absolute_directory)):
         print(f"Directory '{absolute_directory}' does not contain a FastLED sketch.")
-        return CompiledResult(success=False, fastled_js="")
+        return CompiledResult(success=False, fastled_js="", hash_value=None)
 
     if not DOCKER.is_running():
         if DOCKER.start():
             print("Docker is now running.")
         else:
             print("Docker could not be started. Exiting.")
-            return CompiledResult(success=False, fastled_js="")
+            return CompiledResult(success=False, fastled_js="", hash_value=None)
 
     if not os.path.isdir(absolute_directory):
         print(f"ERROR: Directory '{absolute_directory}' does not exist.")
-        return CompiledResult(success=False, fastled_js="")
+        return CompiledResult(success=False, fastled_js="", hash_value=None)
 
     # Ensure the image exists (pull if needed)
     if not DOCKER.ensure_image_exists():
         print("Failed to ensure Docker image exists..")
-        return CompiledResult(success=False, fastled_js="")
+        return CompiledResult(success=False, fastled_js="", hash_value=None)
 
     volumes: dict[str, str] = {absolute_directory: f"/mapped/{base_name}"}
 
@@ -113,7 +115,7 @@ def compile_local(
         if volume_changed or not reuse:
             if not DOCKER.remove_container():
                 print("Failed to remove existing container")
-                return CompiledResult(success=False, fastled_js="")
+                return CompiledResult(success=False, fastled_js="", hash_value=None)
 
             return_code = _run_container()
         else:
@@ -141,11 +143,11 @@ def compile_local(
 
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
-        return CompiledResult(success=(return_code == 0), fastled_js="")
+        return CompiledResult(success=(return_code == 0), fastled_js="", hash_value=None)
 
     fastled_js = os.path.join(absolute_directory, "fastled_js")
     if not os.path.exists(fastled_js):
         print(f"ERROR: Output directory '{fastled_js}' not found.")
-        return CompiledResult(success=False, fastled_js="")
+        return CompiledResult(success=False, fastled_js="", hash_value=None)
     print(f"Successfully compiled sketch in {fastled_js}")
-    return CompiledResult(success=True, fastled_js=fastled_js)
+    return CompiledResult(success=True, fastled_js=fastled_js, hash_value=None)
