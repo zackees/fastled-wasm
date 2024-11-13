@@ -15,7 +15,10 @@ def _open_browser_python(fastled_js: Path, port: int) -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     server = Server()
-    server.watch(str(fastled_js))
+    # Watch index.html file for changes. If we watch the directories
+    # we get a lot of changes and the browser refreshes too often.
+    index_html = fastled_js / "index.html"
+    server.watch(str(index_html), delay=0.1)
 
     while True:
         try:
