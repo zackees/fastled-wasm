@@ -3,10 +3,23 @@
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import docker  # type: ignore
 
 TAG = "main"
+
+def _win32_docker_location() -> str | None:
+    home_dir = Path.home()
+    out = [
+        "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+        f"{home_dir}\AppData\Local\Docker\Docker Desktop.exe",
+    ]
+    for loc in out:
+        if Path(loc).exists():
+            return loc
+    return None
+
 
 
 class DockerManager:
@@ -45,7 +58,11 @@ class DockerManager:
         print("Attempting to start Docker...")
         try:
             if sys.platform == "win32":
-                subprocess.run(["start", "Docker Desktop"], shell=True)
+                docker_path = _win32_docker_location()
+                if not docker_path:
+                    print("Docker Desktop not found.")
+                    return False
+                subprocess.run(["start", "", docker_path], shell=True)
             elif sys.platform == "darwin":
                 subprocess.run(["open", "/Applications/Docker.app"])
             elif sys.platform.startswith("linux"):
