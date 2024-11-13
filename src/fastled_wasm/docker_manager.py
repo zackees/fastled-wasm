@@ -202,7 +202,7 @@ class DockerManager:
         cmd: list[str],
         volumes: dict[str, str] | None = None,
         ports: dict[int, int] | None = None,
-    ) -> int:
+    ) -> subprocess.Popen:
         """Run the Docker container with the specified volume.
 
         Args:
@@ -212,50 +212,35 @@ class DockerManager:
         """
         volumes = volumes or {}
         ports = ports or {}
-        try:
-            print("Creating new container...")
-            docker_command = ["docker", "run"]
 
-            if sys.stdout.isatty():
-                docker_command.append("-it")
-            # Attach volumes if specified
-            docker_command += [
-                "--name",
-                self.container_name,
+        print("Creating new container...")
+        docker_command = ["docker", "run"]
+
+        if sys.stdout.isatty():
+            docker_command.append("-it")
+        # Attach volumes if specified
+        docker_command += [
+            "--name",
+            self.container_name,
+        ]
+        if ports:
+            for host_port, container_port in ports.items():
+                docker_command.extend(["-p", f"{host_port}:{container_port}"])
+        if volumes:
+            for host_path, container_path in volumes.items():
+                docker_command.extend(["-v", f"{host_path}:{container_path}"])
+
+        docker_command.extend(
+            [
+                f"{self.container_name}:{TAG}",
             ]
-            if ports:
-                for host_port, container_port in ports.items():
-                    docker_command.extend(["-p", f"{host_port}:{container_port}"])
-            if volumes:
-                for host_path, container_path in volumes.items():
-                    docker_command.extend(["-v", f"{host_path}:{container_path}"])
+        )
+        docker_command.extend(cmd)
 
-            docker_command.extend(
-                [
-                    f"{self.container_name}:{TAG}",
-                ]
-            )
-            docker_command.extend(cmd)
+        print(f"Running command: {' '.join(docker_command)}")
+        process = subprocess.Popen(
+            docker_command,
+            text=True,
+        )
 
-            print(f"Running command: {' '.join(docker_command)}")
-            process = subprocess.Popen(
-                docker_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-
-            assert process.stdout
-
-            for line in process.stdout:
-                print(line, end="")
-
-            process.wait()
-            return process.returncode
-
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to run Docker container: {e}")
-            return 1
-        except KeyboardInterrupt:
-            print("\nOperation cancelled by user.")
-            return 1
+        return process

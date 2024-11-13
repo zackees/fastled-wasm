@@ -104,7 +104,9 @@ def compile_local(
         cmd.append("--quick")
 
     def _run_container() -> int:
-        return DOCKER.run_container(cmd=cmd, volumes=volumes)
+        proc = DOCKER.run_container(cmd=cmd, volumes=volumes)
+        proc.wait()
+        return proc.returncode
 
     # Handle container reuse logic
     if DOCKER.container_exists():

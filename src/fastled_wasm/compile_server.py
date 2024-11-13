@@ -34,6 +34,7 @@ class CompileServer:
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.docker_process: Optional[subprocess.Popen] = None
+        self.running_process: subprocess.Popen | None = None
         self._port = self.start()
 
     def port(self) -> int:
@@ -85,27 +86,14 @@ class CompileServer:
         server_command = ["python", "/js/run.py", "server"]
         if _DISABLE_AUTO_CLEAN:
             server_command.append("--disable-auto-clean")
-
-        full_container_name = self.docker.full_container_name()
-
-        # Start the Docker container in server mode
-        docker_command = [
-            "docker",
-            "run",
-            "--name",
-            self.container_name,
-            "-p",  # Port mapping flag
-            f"{port}:80",  # Map dynamic host port to container port 80
-            "--expose",  # Explicitly expose the port
-            "80",  # Expose port 80 in container
-            full_container_name,
-        ] + server_command
-
-        cmd_str = subprocess.list2cmdline(docker_command)
-        print(f"Starting Docker container with command: {cmd_str}")
-
-        self.docker_process = subprocess.Popen(docker_command, text=True)
-
+        print(f"Started Docker container with command: {server_command}")
+        ports = {port: 80}
+        self.running_process = self.docker.run_container(server_command, ports=ports)
+        time.sleep(3)
+        if self.running_process.poll() is not None:
+            print("Server failed to start")
+            self.running = False
+            raise RuntimeError("Server failed to start")
         self.thread = threading.Thread(target=self._server_loop)
         self.thread.daemon = True
         self.thread.start()
