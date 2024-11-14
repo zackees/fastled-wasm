@@ -55,13 +55,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--web",
         "-w",
-        action="store_true",
-        help="Use web compiler instead of local Docker. Implies --just-compile and disables --reuse and --exclude",
-    )
-    parser.add_argument(
-        "--web-host",
         type=str,
-        help="Host URL for the web compiler (default: https://fastled.onrender.com), implies --web",
+        nargs="?",
+        const="https://fastled.onrender.com",  # Default value when --web is specified without value
+        help="Use web compiler. Optional URL can be provided (default: https://fastled.onrender.com)",
     )
     parser.add_argument(
         "--reuse",
@@ -103,9 +100,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
-
-    if args.web_host:
-        args.web = True
 
     # Handle --web implications
     if args.web:
@@ -220,7 +214,9 @@ def main() -> int:
 
     try:
         url: str | None = None
-        if not args.web:
+        if args.web:
+            url = args.web
+        else:
             try:
                 compile_server = CompileServer(disable_auto_clean=disable_auto_clean)
                 print("Waiting for the local compiler to start...")
@@ -232,8 +228,8 @@ def main() -> int:
                 print(
                     "Failed to start local compile server, using web compiler instead."
                 )
-                url = None
-        url = url or args.web_host
+                args.web = "https://fastled.onrender.com"
+                url = args.web
 
         build_mode: BuildMode = get_build_mode(args)
 
