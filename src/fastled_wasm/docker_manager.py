@@ -157,12 +157,11 @@ class DockerManager:
                 print(f"Local image not found. Pulling from {remote_image}...")
                 pull_result = subprocess.run(
                     ["docker", "pull", remote_image],
-                    capture_output=True,
                     text=True,
                     check=False,
                 )
                 if pull_result.returncode != 0:
-                    print(f"Failed to pull image: {pull_result.stderr}")
+                    print("Failed to pull image.")
                     return False
 
                 tag_result = subprocess.run(
