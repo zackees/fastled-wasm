@@ -6,7 +6,7 @@ import os
 import unittest
 from pathlib import Path
 
-COMMAND = "fastled-wasm --just-compile"
+COMMAND = "fled --just-compile"
 
 
 HERE = Path(__file__).parent
@@ -16,7 +16,7 @@ TEST_DIR = HERE / "test_ino" / "wasm"
 class MainTester(unittest.TestCase):
     """Main tester class."""
 
-    def test_imports(self) -> None:
+    def test_command(self) -> None:
         """Test command line interface (CLI)."""
         os.chdir(str(TEST_DIR))
         rtn = os.system(COMMAND)

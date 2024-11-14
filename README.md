@@ -69,10 +69,9 @@ If you want to embed data, then do so in the `data/` directory at the project ro
 Pre-processing is done to your source files. A fake Arduino.h will be inserted into your source files that will
 provide shims for most of the common api points.
 
-a
-
 # Revisions
 
+  * 1.0.15 - `fled` is an alias of `fastled-wasm` and will eventually replace it.
   * 1.0.14 - For non significant changes (comments, whitespace) in C++/ino/*.h files, compilation is skipped. This significantly reduces load on the server and prevents unnecessary local client browser refreshes.
   * 1.0.13 - Increase speed of local compiles by running the server version of the compiler so it can keep it's cache and not have to pay docker startup costs because now it's a persistant server until exit.
   * 1.0.12 - Added suppport for compile modes. Pass in `--release`, `--quick`, `--debug` for different compile options. We also support `--profile` to profile the build process.
