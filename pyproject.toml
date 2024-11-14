@@ -51,3 +51,4 @@ disable_error_code = ["import-untyped"]
 
 [project.scripts]
 fastled-wasm = "fastled_wasm.cli:main"
+fled = "fastled_wasm.cli:main"
