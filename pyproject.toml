@@ -19,7 +19,7 @@ dependencies = [
     "filelock",
 ]
 # Change this with the version number bump.
-version = "1.0.16"
+version = "1.0.17"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
