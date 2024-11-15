@@ -25,7 +25,7 @@ class WebCompilerTester(unittest.TestCase):
     @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer(container_name="fastled-wasm-compiler-server-test")
+        server = CompileServer()
         server.wait_for_startup()
         url = server.url()
         result: WebCompileResult = web_compile(TEST_DIR, host=url)
