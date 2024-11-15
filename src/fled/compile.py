@@ -90,56 +90,57 @@ def compile_local(
         print(f"ERROR: Directory '{absolute_directory}' does not exist.")
         return CompiledResult(success=False, fastled_js="", hash_value=None)
 
-    # Ensure the image exists (pull if needed)
-    if not DOCKER.ensure_image_exists():
-        print("Failed to ensure Docker image exists..")
-        return CompiledResult(success=False, fastled_js="", hash_value=None)
+    with DOCKER.get_lock():
+        # Ensure the image exists (pull if needed)
+        if not DOCKER.ensure_image_exists():
+            print("Failed to ensure Docker image exists..")
+            return CompiledResult(success=False, fastled_js="", hash_value=None)
 
-    volumes: dict[str, str] = {absolute_directory: f"/mapped/{base_name}"}
+        volumes: dict[str, str] = {absolute_directory: f"/mapped/{base_name}"}
 
-    cmd = ["python", "/js/run.py", "compile"]
-    if build_mode == BuildMode.DEBUG:
-        cmd.append("--debug")
-    elif build_mode == BuildMode.RELEASE:
-        cmd.append("--release")
-    elif build_mode == BuildMode.QUICK:
-        cmd.append("--quick")
+        cmd = ["python", "/js/run.py", "compile"]
+        if build_mode == BuildMode.DEBUG:
+            cmd.append("--debug")
+        elif build_mode == BuildMode.RELEASE:
+            cmd.append("--release")
+        elif build_mode == BuildMode.QUICK:
+            cmd.append("--quick")
 
-    def _run_container() -> int:
-        proc = DOCKER.run_container(cmd=cmd, volumes=volumes)
-        proc.wait()
-        return proc.returncode
+        def _run_container() -> int:
+            proc = DOCKER.run_container(cmd=cmd, volumes=volumes)
+            proc.wait()
+            return proc.returncode
 
-    # Handle container reuse logic
-    if DOCKER.container_exists():
-        if volume_changed or not reuse:
-            if not DOCKER.remove_container():
-                print("Failed to remove existing container")
-                return CompiledResult(success=False, fastled_js="", hash_value=None)
+        # Handle container reuse logic
+        if DOCKER.container_exists():
+            if volume_changed or not reuse:
+                if not DOCKER.remove_container():
+                    print("Failed to remove existing container")
+                    return CompiledResult(success=False, fastled_js="", hash_value=None)
 
-            return_code = _run_container()
+                return_code = _run_container()
+            else:
+                print("Reusing existing container...")
+                docker_command = [
+                    "docker",
+                    "start",
+                    "-a",
+                    CONTAINER_NAME,
+                    build_mode.value,
+                ]
+                process = subprocess.Popen(
+                    docker_command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+                assert process.stdout
+                for line in process.stdout:
+                    print(line, end="")
+                process.wait()
+                return_code = process.returncode
         else:
-            print("Reusing existing container...")
-            docker_command = [
-                "docker",
-                "start",
-                "-a",
-                CONTAINER_NAME,
-                build_mode.value,
-            ]
-            process = subprocess.Popen(
-                docker_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            assert process.stdout
-            for line in process.stdout:
-                print(line, end="")
-            process.wait()
-            return_code = process.returncode
-    else:
-        return_code = _run_container()
+            return_code = _run_container()
 
     if return_code != 0:
         print(f"Container execution failed with code {return_code}.")
