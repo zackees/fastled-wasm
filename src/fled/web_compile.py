@@ -105,7 +105,6 @@ def web_compile(
             print(f"Connection to {host} successful")
             with httpx.Client(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
-                timeout=_TIMEOUT,  # 60 seconds timeout
             ) as client:
                 url = f"{host}/{ENDPOINT_COMPILED_WASM}"
                 headers = {
@@ -123,6 +122,7 @@ def web_compile(
                     url,
                     files=files,
                     headers=headers,
+                    timeout=_TIMEOUT,
                 )
 
                 if response.status_code != 200:
