@@ -12,9 +12,7 @@ license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "docker",
-    "keyring", 
     "httpx",
-    "keyrings.alt; platform_system == 'Linux'",
     "watchdog",
     "livereload",
     "download",

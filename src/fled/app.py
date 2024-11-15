@@ -11,12 +11,11 @@ import shutil
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from fled.build_mode import BuildMode, get_build_mode
-from fled.compile import CompiledResult
 from fled.compile_server import CompileServer
-from fled.config import Config
 from fled.docker_manager import DockerManager
 from fled.filewatcher import FileChangedNotifier
 from fled.open_browser import open_browser_thread
@@ -29,8 +28,16 @@ CONTAINER_NAME = f"fastled-wasm-compiler{PLATFORM_TAG}"
 DEFAULT_URL = "https://fastled.onrender.com"
 
 
+@dataclass
+class CompiledResult:
+    """Dataclass to hold the result of the compilation."""
+
+    success: bool
+    fastled_js: str
+    hash_value: str | None
+
+
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
-CONFIG: Config = Config()
 
 
 def parse_args() -> argparse.Namespace:

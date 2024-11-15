@@ -67,18 +67,17 @@ class CompileServer:
     def start(self) -> int:
         self.running = True
         # Ensure Docker is running and image exists
-        if not self.docker.is_running():
-            if not self.docker.start():
-                print("Docker could not be started. Exiting.")
-                raise RuntimeError("Docker could not be started. Exiting.")
-        if not self.docker.ensure_image_exists():
-            print("Failed to ensure Docker image exists.")
-            raise RuntimeError("Failed to ensure Docker image exists")
+        with self.docker.get_lock():
+            if not self.docker.is_running():
+                if not self.docker.start():
+                    print("Docker could not be started. Exiting.")
+                    raise RuntimeError("Docker could not be started. Exiting.")
+            if not self.docker.ensure_image_exists():
+                print("Failed to ensure Docker image exists.")
+                raise RuntimeError("Failed to ensure Docker image exists")
+            if not self.docker.container_exists():
+                print("Docker container does not exist. Starting new container.")
 
-        if self.docker.container_exists():
-            if not self.docker.remove_container():
-                print("Failed to remove existing container")
-                raise RuntimeError("Failed to remove existing container")
         # Remove the image to force a fresh download
         subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
         print("All clean")
