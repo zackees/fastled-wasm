@@ -7,9 +7,6 @@ from fled.web_compile import web_compile
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "bad"
 
-_USE_LOCALHOST = False
-_HOST = "http://localhost" if _USE_LOCALHOST else None
-
 
 class WebCompileTester(unittest.TestCase):
     """Main tester class."""
@@ -18,7 +15,7 @@ class WebCompileTester(unittest.TestCase):
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
         start = time.time()
-        result = web_compile(TEST_DIR, host=_HOST)
+        result = web_compile(TEST_DIR)
         diff = time.time() - start
         print(f"Time taken: {diff:.2f} seconds")
 
