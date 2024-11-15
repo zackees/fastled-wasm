@@ -81,11 +81,6 @@ def parse_args() -> argparse.Namespace:
         help="Additional patterns to exclude from file watching (Not available with --web)",
     )
     parser.add_argument(
-        "--update",
-        action="store_true",
-        help="Pull the latest build image before compiling",
-    )
-    parser.add_argument(
         "--profile",
         action="store_true",
         help="Enable profiling for web compilation",
