@@ -26,6 +26,7 @@ machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
 PLATFORM_TAG: str = "-arm64" if IS_ARM else ""
 CONTAINER_NAME = f"fastled-wasm-compiler{PLATFORM_TAG}"
+DEFAULT_URL = "https://fastled.onrender.com"
 
 
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
@@ -57,7 +58,8 @@ def parse_args() -> argparse.Namespace:
         "-w",
         type=str,
         nargs="?",
-        const="https://fastled.onrender.com",  # Default value when --web is specified without value
+        # const does not seem to be working as expected
+        const=DEFAULT_URL,  # Default value when --web is specified without value
         help="Use web compiler. Optional URL can be provided (default: https://fastled.onrender.com)",
     )
     parser.add_argument(
@@ -174,6 +176,10 @@ def run_web_compiler(
 
 def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
     if args.web:
+        if isinstance(args.web, str):
+            return args.web
+        if isinstance(args.web, bool):
+            return DEFAULT_URL
         return args.web
     else:
         disable_auto_clean = args.no_auto_clean
@@ -186,7 +192,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
             return compile_server
         except RuntimeError:
             print("Failed to start local compile server, using web compiler instead.")
-            return "https://fastled.onrender.com"
+            return DEFAULT_URL
 
 
 def _looks_like_sketch_directory(directory: Path) -> bool:
