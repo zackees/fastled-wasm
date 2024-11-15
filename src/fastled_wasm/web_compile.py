@@ -118,6 +118,7 @@ def web_compile(
                     ),
                     "profile": "true" if profile else "false",
                 }
+                print(f"Compiling on {url}")
                 response = client.post(
                     url,
                     files=files,
