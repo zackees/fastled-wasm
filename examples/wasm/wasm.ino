@@ -14,9 +14,8 @@
 #include "fx/fx_engine.h"
 
 #include "fx/2d/animartrix.hpp"
-#include "platforms/wasm/js.h"
-
 #include "ui.h"
+
 
 #define LED_PIN 3
 #define BRIGHTNESS 96
@@ -69,6 +68,9 @@ CRGB leds[NUM_LEDS];
 XYMap xyMap = XYMap::constructRectangularGrid(MATRIX_WIDTH, MATRIX_HEIGHT);
 NoisePalette noisePalette = NoisePalette(xyMap);
 
+Title title("FastLED Wasm Demo");
+Description description("This example combines two features of FastLED to produce a remarkable range of effects from a relatively small amount of code.  This example combines FastLED's color palette lookup functions with FastLED's Perlin noise generator, and the combination is extremely powerful.");
+
 Slider brightness("Brightness", 255, 0, 255);
 Checkbox isOff("Off", false);
 Slider speed("Noise - Speed", 15, 1, 50);
@@ -78,7 +80,6 @@ Slider scale( "Noise - Scale", 20, 1, 100);
 Button changePalette("Noise - Next Palette");
 Button changeFx("Switch between Noise & Animartrix");
 NumberField fxIndex("Animartrix - index", 0, 0, NUM_ANIMATIONS);
-
 
 Animartrix animartrix(xyMap, POLAR_WAVES);
 FxEngine fxEngine(NUM_LEDS);
@@ -117,11 +118,6 @@ void loop() {
     if (fxIndex.value() != lastFxIndex) {
         lastFxIndex = fxIndex;
         animartrix.fxSet(fxIndex);
-    }
-
-    EVERY_N_MILLISECONDS(1000) {
-        printf("fastled running\r\n");
-        printf("Numberfield: %f\r\n", fxIndex.value());
     }
 
 
