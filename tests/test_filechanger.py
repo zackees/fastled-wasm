@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from fastled_wasm.filewatcher import FileChangedNotifier
+from fled.filewatcher import FileChangedNotifier
 
 
 class FileChangeTester(unittest.TestCase):

@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-from fastled_wasm.docker_manager import DockerManager
+from fled.docker_manager import DockerManager
 
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 

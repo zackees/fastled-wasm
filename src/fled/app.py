@@ -13,14 +13,14 @@ import tempfile
 import time
 from pathlib import Path
 
-from fastled_wasm.build_mode import BuildMode, get_build_mode
-from fastled_wasm.compile import CompiledResult
-from fastled_wasm.compile_server import CompileServer
-from fastled_wasm.config import Config
-from fastled_wasm.docker_manager import DockerManager
-from fastled_wasm.filewatcher import FileChangedNotifier
-from fastled_wasm.open_browser import open_browser_thread
-from fastled_wasm.web_compile import web_compile
+from fled.build_mode import BuildMode, get_build_mode
+from fled.compile import CompiledResult
+from fled.compile_server import CompileServer
+from fled.config import Config
+from fled.docker_manager import DockerManager
+from fled.filewatcher import FileChangedNotifier
+from fled.open_browser import open_browser_thread
+from fled.web_compile import web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine

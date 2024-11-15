@@ -13,8 +13,8 @@ TAG = "main"
 def _win32_docker_location() -> str | None:
     home_dir = Path.home()
     out = [
-        "C:\Program Files\Docker\Docker\Docker Desktop.exe",
-        f"{home_dir}\AppData\Local\Docker\Docker Desktop.exe",
+        "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+        f"{home_dir}\\AppData\\Local\\Docker\\Docker Desktop.exe",
     ]
     for loc in out:
         if Path(loc).exists():

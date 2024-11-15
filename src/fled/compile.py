@@ -3,9 +3,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastled_wasm.build_mode import BuildMode
-from fastled_wasm.config import Config
-from fastled_wasm.docker_manager import DockerManager
+from fled.build_mode import BuildMode
+from fled.config import Config
+from fled.docker_manager import DockerManager
 
 CONTAINER_NAME = "fastled-wasm-compiler"
 DOCKER = DockerManager(container_name=CONTAINER_NAME)
