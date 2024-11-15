@@ -172,6 +172,23 @@ def run_web_compiler(
     )
 
 
+def _get_url(args: argparse.Namespace) -> str:
+    if args.web:
+        return args.web
+    else:
+        disable_auto_clean = args.no_auto_clean
+        try:
+            compile_server = CompileServer(disable_auto_clean=disable_auto_clean)
+            print("Waiting for the local compiler to start...")
+            if not compile_server.wait_for_startup():
+                print("Failed to start local compiler.")
+                raise RuntimeError("Failed to start local compiler.")
+            return compile_server.url()
+        except RuntimeError:
+            print("Failed to start local compile server, using web compiler instead.")
+            return "https://fastled.onrender.com"
+
+
 def _looks_like_sketch_directory(directory: Path) -> bool:
     # walk the path and if there are over 30 files, return False
     # at the root of the directory there should either be an ino file or a src directory
@@ -209,34 +226,20 @@ def main() -> int:
         )
         args.web = True
 
-    disable_auto_clean = args.no_auto_clean
     compile_server: CompileServer | None = None
 
     try:
-        url: str | None = None
-        if args.web:
-            url = args.web
-        else:
-            try:
-                compile_server = CompileServer(disable_auto_clean=disable_auto_clean)
-                print("Waiting for the local compiler to start...")
-                if not compile_server.wait_for_startup():
-                    print("Failed to start local compiler.")
-                    return 1
-                url = compile_server.url()
-            except RuntimeError:
-                print(
-                    "Failed to start local compile server, using web compiler instead."
-                )
-                args.web = "https://fastled.onrender.com"
-                url = args.web
-
+        try:
+            url: str = _get_url(args)
+        except Exception as e:
+            print(f"Error: {e}")
+            return 1
         build_mode: BuildMode = get_build_mode(args)
 
         def compile_function(
-            url=url,
+            url: str = url,
             build_mode: BuildMode = build_mode,
-            profile=profile,
+            profile: bool = profile,
             last_hash_value: str | None = None,
         ) -> CompiledResult:
             return run_web_compiler(
