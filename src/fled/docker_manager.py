@@ -97,6 +97,9 @@ class DockerManager:
             print(
                 "Please try starting Docker Desktop manually and run this command again."
             )
+        except KeyboardInterrupt:
+            print("Aborted by user.")
+            raise
         except Exception as e:
             print(f"Error starting Docker: {str(e)}")
         return False
@@ -142,54 +145,36 @@ class DockerManager:
 
             image_name = f"{self.container_name}:{TAG}"
             remote_image = f"niteris/fastled-wasm:{TAG}"
+            print("Pulling latest")
+            cmd_check_newer_image = [
+                "docker",
+                "pull",
+                remote_image,
+            ]
+            result = subprocess.run(
+                cmd_check_newer_image,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                print("Failed to check for newer image.")
+                return False
+            print("Tagging image")
 
-            if force_update:
-                print("Forcing image update...")
-                # Remove both tagged versions of the image
-                subprocess.run(
-                    ["docker", "rmi", image_name],
-                    check=False,
-                )
-                subprocess.run(
-                    ["docker", "rmi", remote_image],
-                    check=False,
-                )
-
-            # First check if we have the local tagged image
-            result: subprocess.CompletedProcess = subprocess.run(
-                ["docker", "image", "inspect", image_name],
+            tag_result = subprocess.run(
+                [
+                    "docker",
+                    "tag",
+                    remote_image,
+                    image_name,
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-
-            if result.returncode != 0 or force_update:
-                print(f"Local image not found. Pulling from {remote_image}...")
-                pull_result = subprocess.run(
-                    ["docker", "pull", remote_image],
-                    text=True,
-                    check=False,
-                )
-                if pull_result.returncode != 0:
-                    print("Failed to pull image.")
-                    return False
-
-                tag_result = subprocess.run(
-                    [
-                        "docker",
-                        "tag",
-                        remote_image,
-                        image_name,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if tag_result.returncode != 0:
-                    print(f"Failed to tag image: {tag_result.stderr}")
-                    return False
-
-                print("Successfully pulled and tagged remote image.")
+            if tag_result.returncode != 0:
+                print(f"Failed to tag image: {tag_result.stderr}")
+                return False
             return True
         except subprocess.CalledProcessError as e:
             print(f"Failed to ensure image exists: {e}")
@@ -212,7 +197,6 @@ class DockerManager:
         try:
             subprocess.run(
                 ["docker", "rm", "-f", self.container_name],
-                capture_output=True,
                 check=True,
             )
             return True
@@ -264,6 +248,7 @@ class DockerManager:
         docker_command.extend(cmd)
 
         print(f"Running command: {' '.join(docker_command)}")
+
         process = subprocess.Popen(
             docker_command,
             text=True,

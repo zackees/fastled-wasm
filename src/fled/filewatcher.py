@@ -59,7 +59,7 @@ class FileChangedNotifier(threading.Thread):
             debounce_seconds: Minimum time between notifications for the same file
             excluded_patterns: List of directory/file patterns to exclude from watching
         """
-        super().__init__()
+        super().__init__(daemon=True)
         self.path = path
         self.observer: BaseObserver | None = None
         self.event_handler: MyEventHandler | None = None
@@ -76,6 +76,7 @@ class FileChangedNotifier(threading.Thread):
 
     def stop(self) -> None:
         """Stop watching for changes"""
+        print("watcher stop")
         self.stopped.set()
         if self.observer:
             self.observer.stop()
@@ -95,6 +96,8 @@ class FileChangedNotifier(threading.Thread):
         try:
             while not self.stopped.is_set():
                 time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("File watcher stopped by user.")
         finally:
             self.stop()
 
@@ -118,6 +121,8 @@ class FileChangedNotifier(threading.Thread):
 
             self.last_notification[filepath] = current_time
             return filepath
+        except KeyboardInterrupt:
+            raise
         except queue.Empty:
             return None
 

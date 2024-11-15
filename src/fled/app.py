@@ -192,6 +192,8 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
                 print("Failed to start local compiler.")
                 raise RuntimeError("Failed to start local compiler.")
             return compile_server
+        except KeyboardInterrupt:
+            raise
         except RuntimeError:
             print("Failed to start local compile server, using web compiler instead.")
             return DEFAULT_URL
@@ -245,7 +247,11 @@ def main() -> int:
             else:
                 compile_server = url_or_server
                 url = compile_server.url()
-
+        except KeyboardInterrupt:
+            print("\nExiting from first try...")
+            if compile_server:
+                compile_server.stop()
+            return 1
         except Exception as e:
             print(f"Error: {e}")
             return 1
@@ -286,7 +292,10 @@ def main() -> int:
         if args.just_compile:
             return 0 if result.success else 1
     except KeyboardInterrupt:
-        print("\nExiting...")
+        print("\nExiting from main")
+        if compile_server:
+            compile_server.stop()
+        return 1
 
     # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
@@ -297,6 +306,9 @@ def main() -> int:
         while True:
             try:
                 changed_files = watcher.get_all_changes()
+            except KeyboardInterrupt:
+                print("\nExiting from watcher...")
+                raise
             except Exception as e:
                 print(f"Error getting changes: {e}")
                 changed_files = []
@@ -319,13 +331,16 @@ def main() -> int:
         return 1
     finally:
         watcher.stop()
+        if compile_server:
+            compile_server.stop()
 
 
 if __name__ == "__main__":
     try:
+        sys.argv.append("examples/wasm")
         sys.exit(main())
     except KeyboardInterrupt:
-        print("\nExiting...")
+        print("\nExiting from main...")
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

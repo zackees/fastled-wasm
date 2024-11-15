@@ -158,6 +158,9 @@ def web_compile(
                         hash_value=hash_value,
                         zip_bytes=response.content,
                     )
+    except KeyboardInterrupt:
+        print("Keyboard interrupt")
+        raise
     except httpx.HTTPError as e:
         print(f"Error: {e}")
         return WebCompileResult(

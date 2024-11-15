@@ -57,6 +57,8 @@ class CompileServer:
                 response = httpx.get(f"http://localhost:{self._port}")
                 if response.status_code < 400:
                     return True
+            except KeyboardInterrupt:
+                raise
             except Exception:
                 pass
             time.sleep(0.1)
@@ -65,6 +67,7 @@ class CompileServer:
         return False
 
     def start(self) -> int:
+        print("Compiling server starting")
         self.running = True
         # Ensure Docker is running
         with self.docker.get_lock():
@@ -74,24 +77,40 @@ class CompileServer:
                     raise RuntimeError("Docker could not be started. Exiting.")
 
             # Clean up any existing container with the same name
+
             try:
-                subprocess.run(
-                    ["docker", "rm", "-f", self.container_name],
-                    capture_output=True,
-                    check=False,
+                container_exists = (
+                    subprocess.run(
+                        ["docker", "inspect", self.container_name],
+                        capture_output=True,
+                        text=True,
+                    ).returncode
+                    == 0
                 )
+                if container_exists:
+                    print("Cleaning up existing container")
+                    subprocess.run(
+                        ["docker", "rm", "-f", self.container_name],
+                        check=False,
+                    )
+            except KeyboardInterrupt:
+                raise
             except Exception as e:
                 print(f"Warning: Failed to remove existing container: {e}")
 
+            print("Ensuring Docker image exists")
             if not self.docker.ensure_image_exists():
                 print("Failed to ensure Docker image exists.")
                 raise RuntimeError("Failed to ensure Docker image exists")
 
+        print("Docker image now validated")
+
         # Remove the image to force a fresh download
-        subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
-        print("All clean")
+        # subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
+        # print("All clean")
 
         port = _find_available_port()
+        # server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
         server_command = ["python", "/js/run.py", "server"]
         if self.disable_auto_clean:
             server_command.append("--disable-auto-clean")
@@ -103,7 +122,7 @@ class CompileServer:
             print("Server failed to start")
             self.running = False
             raise RuntimeError("Server failed to start")
-        self.thread = threading.Thread(target=self._server_loop)
+        self.thread = threading.Thread(target=self._server_loop, daemon=True)
         self.thread.start()
         print("Compile server started")
         return port
@@ -111,7 +130,7 @@ class CompileServer:
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
         # attempt to send a shutdown signal to the server
-        httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
+        # httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
         if self.running_process:
             try:
                 # Stop the Docker container
@@ -152,6 +171,9 @@ class CompileServer:
                 # Force kill if it doesn't stop gracefully
                 self.running_process.kill()
                 self.running_process.wait()
+            except KeyboardInterrupt:
+                self.running_process.kill()
+                self.running_process.wait()
             except Exception as e:
                 print(f"Error stopping Docker container: {e}")
             finally:
@@ -166,13 +188,20 @@ class CompileServer:
         print("Compile server stopped")
 
     def _server_loop(self) -> None:
-        while self.running:
-            if self.running_process:
-                # Read Docker container output
-                # Check if Docker process is still running
-                if self.running_process.poll() is not None:
-                    print("Docker server stopped unexpectedly")
-                    self.running = False
-                    break
+        try:
+            while self.running:
+                if self.running_process:
+                    # Read Docker container output
+                    # Check if Docker process is still running
+                    if self.running_process.poll() is not None:
+                        print("Docker server stopped unexpectedly")
+                        self.running = False
+                        break
 
-            time.sleep(0.1)  # Prevent busy waiting
+                time.sleep(0.1)  # Prevent busy waiting
+        except KeyboardInterrupt:
+            print("Server thread stopped by user.")
+        except Exception as e:
+            print(f"Error in server thread: {e}")
+        finally:
+            self.running = False
