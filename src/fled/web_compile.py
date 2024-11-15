@@ -78,9 +78,10 @@ def web_compile(
             if not tested:
                 test_url = f"{host}/healthz"
                 print(f"Testing connection to {test_url}")
-                timeout = 5
+                timeout = 10
                 with httpx.Client(
-                    transport=httpx.HTTPTransport(local_address="0.0.0.0")
+                    transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+                    timeout=timeout,
                 ) as test_client:
                     test_response = test_client.get(test_url, timeout=timeout)
                     if test_response.status_code != 200:
@@ -105,6 +106,7 @@ def web_compile(
             print(f"Connection to {host} successful")
             with httpx.Client(
                 transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
+                timeout=_TIMEOUT,
             ) as client:
                 url = f"{host}/{ENDPOINT_COMPILED_WASM}"
                 headers = {
