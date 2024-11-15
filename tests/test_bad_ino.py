@@ -2,7 +2,7 @@ import time
 import unittest
 from pathlib import Path
 
-from fled.web_compile import web_compile
+from fastled.web_compile import web_compile
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "bad"

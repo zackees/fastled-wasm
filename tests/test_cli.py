@@ -6,7 +6,7 @@ import os
 import unittest
 from pathlib import Path
 
-COMMAND = "fled --just-compile"
+COMMAND = "fastled --just-compile"
 
 
 HERE = Path(__file__).parent

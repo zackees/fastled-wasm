@@ -3,7 +3,7 @@ requires = ["setuptools>=65.5.1", "setuptools-scm", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fled"
+name = "fastled"
 readme = "README.md"
 description = "FastLED Wasm Compiler"
 requires-python = ">=3.7"
@@ -49,5 +49,6 @@ ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 
 [project.scripts]
-fastled-wasm = "fled.cli:main"
-fled = "fled.cli:main"
+fastled-wasm = "fastled.cli:main"
+fled = "fastled.cli:main"
+fastled = "fastled.cli:main"

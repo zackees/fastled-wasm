@@ -3,8 +3,8 @@ import platform
 import unittest
 from pathlib import Path
 
-from fled.compile_server import CompileServer
-from fled.web_compile import WebCompileResult, web_compile
+from fastled.compile_server import CompileServer
+from fastled.web_compile import WebCompileResult, web_compile
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"

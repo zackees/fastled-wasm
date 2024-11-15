@@ -5,7 +5,7 @@ from pathlib import Path
 
 import httpx
 
-from fled.build_mode import BuildMode
+from fastled.build_mode import BuildMode
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"

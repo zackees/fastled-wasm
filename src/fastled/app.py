@@ -15,12 +15,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from fled.build_mode import BuildMode, get_build_mode
-from fled.compile_server import CompileServer
-from fled.docker_manager import DockerManager
-from fled.filewatcher import FileChangedNotifier
-from fled.open_browser import open_browser_thread
-from fled.web_compile import web_compile
+from fastled.build_mode import BuildMode, get_build_mode
+from fastled.compile_server import CompileServer
+from fastled.docker_manager import DockerManager
+from fastled.filewatcher import FileChangedNotifier
+from fastled.open_browser import open_browser_thread
+from fastled.web_compile import web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine

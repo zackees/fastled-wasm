@@ -4,7 +4,7 @@ Main entry point.
 
 import sys
 
-from fled.app import main as app_main
+from fastled.app import main as app_main
 
 
 def main() -> int:
