@@ -125,7 +125,7 @@ def run_web_compiler(
         directory=input_dir, host=host, build_mode=build_mode, profile=profile
     )
     diff = time.time() - start
-    if not web_result:
+    if not web_result.success:
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
@@ -172,7 +172,7 @@ def run_web_compiler(
     )
 
 
-def _get_url(args: argparse.Namespace) -> str:
+def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
     if args.web:
         return args.web
     else:
@@ -183,7 +183,7 @@ def _get_url(args: argparse.Namespace) -> str:
             if not compile_server.wait_for_startup():
                 print("Failed to start local compiler.")
                 raise RuntimeError("Failed to start local compiler.")
-            return compile_server.url()
+            return compile_server
         except RuntimeError:
             print("Failed to start local compile server, using web compiler instead.")
             return "https://fastled.onrender.com"
@@ -227,10 +227,17 @@ def main() -> int:
         args.web = True
 
     compile_server: CompileServer | None = None
+    url: str
 
     try:
         try:
-            url: str = _get_url(args)
+            url_or_server: str | CompileServer = _try_start_server_or_get_url(args)
+            if isinstance(url_or_server, str):
+                url = url_or_server
+            else:
+                compile_server = url_or_server
+                url = compile_server.url()
+
         except Exception as e:
             print(f"Error: {e}")
             return 1
