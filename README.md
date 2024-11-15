@@ -73,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.0 - Use `fastled` as the command for the wasm compiler.
   * 1.0.17 - Pulls updates when necessary. Removed dependency on keyring.
   * 1.0.16 - `fastled-wasm` package name has been changed to `fled`
   * 1.0.15 - `fled` is an alias of `fastled-wasm` and will eventually replace it. `--web-host` was folded into `--web`, which if unspecified will attempt to run a local docker server and fallback to the cloud server if that fails. Specifying `--web` with no arguments will default to the cloud server while an argument (like `localhost`) will cause it to bind to that already running server for compilation.
