@@ -66,17 +66,26 @@ class CompileServer:
 
     def start(self) -> int:
         self.running = True
-        # Ensure Docker is running and image exists
+        # Ensure Docker is running
         with self.docker.get_lock():
             if not self.docker.is_running():
                 if not self.docker.start():
                     print("Docker could not be started. Exiting.")
                     raise RuntimeError("Docker could not be started. Exiting.")
+
+            # Clean up any existing container with the same name
+            try:
+                subprocess.run(
+                    ["docker", "rm", "-f", self.container_name],
+                    capture_output=True,
+                    check=False,
+                )
+            except Exception as e:
+                print(f"Warning: Failed to remove existing container: {e}")
+
             if not self.docker.ensure_image_exists():
                 print("Failed to ensure Docker image exists.")
                 raise RuntimeError("Failed to ensure Docker image exists")
-            if not self.docker.container_exists():
-                print("Docker container does not exist. Starting new container.")
 
         # Remove the image to force a fresh download
         subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
@@ -101,6 +110,8 @@ class CompileServer:
 
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
+        # attempt to send a shutdown signal to the server
+        httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
         if self.running_process:
             try:
                 # Stop the Docker container
