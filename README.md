@@ -27,6 +27,7 @@ https://github.com/user-attachments/assets/64ae0e6c-5f8b-4830-ab87-dcc25bc61218
 https://zackees.github.io/fastled-wasm/
 
 
+
 # Install
 
 ```bash
