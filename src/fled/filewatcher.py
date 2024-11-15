@@ -68,7 +68,7 @@ class FileChangedNotifier(threading.Thread):
         self.excluded_patterns = (
             set(excluded_patterns) if excluded_patterns is not None else set()
         )
-        self.stopped = threading.Event()
+        self.stopped = False
         self.change_queue: queue.Queue = queue.Queue()
         self.last_notification: Dict[str, float] = {}
         self.file_hashes: Dict[str, str] = {}
@@ -77,7 +77,7 @@ class FileChangedNotifier(threading.Thread):
     def stop(self) -> None:
         """Stop watching for changes"""
         print("watcher stop")
-        self.stopped.set()
+        self.stopped = True
         if self.observer:
             self.observer.stop()
             self.observer.join()
@@ -94,7 +94,7 @@ class FileChangedNotifier(threading.Thread):
         self.observer.start()
 
         try:
-            while not self.stopped.is_set():
+            while not self.stopped:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             print("File watcher stopped by user.")

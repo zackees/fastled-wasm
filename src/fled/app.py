@@ -8,6 +8,7 @@ import argparse
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -278,8 +279,9 @@ def main() -> int:
             print("\nCompilation failed.")
             return 1
 
+        browser_proc: subprocess.Popen | None = None
         if open_web_browser:
-            open_browser_thread(Path(args.directory) / "fastled_js")
+            browser_proc = open_browser_thread(Path(args.directory) / "fastled_js")
         else:
             print(
                 "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
@@ -290,6 +292,10 @@ def main() -> int:
             return 0
 
         if args.just_compile:
+            if compile_server:
+                compile_server.stop()
+            if browser_proc:
+                browser_proc.kill()
             return 0 if result.success else 1
     except KeyboardInterrupt:
         print("\nExiting from main")
@@ -333,6 +339,8 @@ def main() -> int:
         watcher.stop()
         if compile_server:
             compile_server.stop()
+        if browser_proc:
+            browser_proc.kill()
 
 
 if __name__ == "__main__":
