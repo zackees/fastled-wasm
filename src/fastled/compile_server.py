@@ -2,6 +2,7 @@ import socket
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -36,6 +37,7 @@ class CompileServer:
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.running_process: subprocess.Popen | None = None
+        self.fastled_src_dir: Path | None = None
         self._port = self.start()
 
     def port(self) -> int:
@@ -110,13 +112,19 @@ class CompileServer:
         # print("All clean")
 
         port = _find_available_port()
+        print(f"Found an available port: {port}")
         # server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
         server_command = ["python", "/js/run.py", "server"]
         if self.disable_auto_clean:
             server_command.append("--disable-auto-clean")
         print(f"Started Docker container with command: {server_command}")
         ports = {port: 80}
-        self.running_process = self.docker.run_container(server_command, ports=ports)
+        volumes = None
+        if self.fastled_src_dir:
+            volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "ro"}}
+        self.running_process = self.docker.run_container(
+            server_command, ports=ports, volumes=volumes
+        )
         time.sleep(3)
         if self.running_process.poll() is not None:
             print("Server failed to start")

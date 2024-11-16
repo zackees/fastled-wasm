@@ -210,15 +210,15 @@ class DockerManager:
     def run_container(
         self,
         cmd: list[str],
-        volumes: dict[str, str] | None = None,
+        volumes: dict[str, dict[str, str]] | None = None,
         ports: dict[int, int] | None = None,
     ) -> subprocess.Popen:
         """Run the Docker container with the specified volume.
 
         Args:
-            volume_path: Path to the volume to mount
-            base_name: Base name for the mounted volume
-            build_mode: Build mode (DEBUG, QUICK, or RELEASE)
+            cmd: Command to run in the container
+            volumes: Dict mapping host paths to dicts with 'bind' and 'mode' keys
+            ports: Dict mapping host ports to container ports
         """
         volumes = volumes or {}
         ports = ports or {}
@@ -237,8 +237,10 @@ class DockerManager:
             for host_port, container_port in ports.items():
                 docker_command.extend(["-p", f"{host_port}:{container_port}"])
         if volumes:
-            for host_path, container_path in volumes.items():
-                docker_command.extend(["-v", f"{host_path}:{container_path}"])
+            for host_path, mount_spec in volumes.items():
+                docker_command.extend(
+                    ["-v", f"{host_path}:{mount_spec['bind']}:{mount_spec['mode']}"]
+                )
 
         docker_command.extend(
             [
