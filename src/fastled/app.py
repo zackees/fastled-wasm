@@ -212,6 +212,8 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
 def _lots_and_lots_of_files(directory: Path) -> bool:
     count = 0
     for root, dirs, files in os.walk(directory):
+        # ignore any directories that start with .
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
         count += len(files)
         if count > 100:
             return True
