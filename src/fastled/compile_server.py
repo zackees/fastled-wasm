@@ -27,17 +27,34 @@ def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
                 raise RuntimeError("No available ports found")
 
 
+def _looks_like_fastled_repo(directory: Path) -> bool:
+    libprops = directory / "library.properties"
+    if not libprops.exists():
+        return False
+    txt = libprops.read_text()
+    return "FastLED" in txt
+
+
 class CompileServer:
     def __init__(
         self, container_name=_DEFAULT_CONTAINER_NAME, disable_auto_clean: bool = False
     ) -> None:
+
+        cwd = Path(".").resolve()
+        fastled_src_dir: Path | None = None
+        if _looks_like_fastled_repo(cwd):
+            print(
+                "Looks like a FastLED repo, using it as the source directory and mapping it into the server."
+            )
+            fastled_src_dir = cwd
+
         self.container_name = container_name
         self.disable_auto_clean = disable_auto_clean
         self.docker = DockerManager(container_name=container_name)
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.running_process: subprocess.Popen | None = None
-        self.fastled_src_dir: Path | None = None
+        self.fastled_src_dir: Path | None = fastled_src_dir
         self._port = self.start()
 
     def port(self) -> int:

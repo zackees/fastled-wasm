@@ -121,14 +121,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def _looks_like_fastled_repo(directory: Path) -> bool:
-    libprops = directory / "library.properties"
-    if not libprops.exists():
-        return False
-    txt = libprops.read_text()
-    return "FastLED" in txt
-
-
 def run_web_compiler(
     directory: Path,
     host: str,
