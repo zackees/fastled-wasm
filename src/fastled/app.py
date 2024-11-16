@@ -97,6 +97,11 @@ def parse_args() -> argparse.Namespace:
     build_mode.add_argument(
         "--release", action="store_true", help="Build in release mode"
     )
+    build_mode.add_argument(
+        "--server",
+        action="store_true",
+        help="Run the server in the current directory, volume mapping fastled if we are in the repo",
+    )
 
     build_mode.add_argument(
         "--force-compile",
@@ -114,6 +119,14 @@ def parse_args() -> argparse.Namespace:
             parser.error("--exclude cannot be used with --web")
 
     return args
+
+
+def _looks_like_fastled_repo(directory: Path) -> bool:
+    libprops = directory / "library.properties"
+    if not libprops.exists():
+        return False
+    txt = libprops.read_text()
+    return "FastLED" in txt
 
 
 def run_web_compiler(
@@ -217,11 +230,10 @@ def _looks_like_sketch_directory(directory: Path) -> bool:
     return False
 
 
-def main() -> int:
-    args = parse_args()
+def run_client(args: argparse.Namespace) -> int:
+    compile_server: CompileServer | None = None
     open_web_browser = not args.just_compile
     profile = args.profile
-
     if not args.force_compile and not _looks_like_sketch_directory(
         Path(args.directory)
     ):
@@ -237,9 +249,7 @@ def main() -> int:
         )
         args.web = True
 
-    compile_server: CompileServer | None = None
     url: str
-
     try:
         try:
             url_or_server: str | CompileServer = _try_start_server_or_get_url(args)
@@ -341,6 +351,30 @@ def main() -> int:
             compile_server.stop()
         if browser_proc:
             browser_proc.kill()
+
+
+def run_server(args: argparse.Namespace) -> int:
+    compile_server = CompileServer(disable_auto_clean=args.no_auto_clean)
+    compile_server.start()
+    compile_server.wait_for_startup()
+    print(f"Server started at {compile_server.url()}")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nExiting from server...")
+        return 1
+    finally:
+        compile_server.stop()
+    return 0
+
+
+def main() -> int:
+    args = parse_args()
+    if args.server:
+        return run_server(args)
+    else:
+        return run_client(args)
 
 
 if __name__ == "__main__":
