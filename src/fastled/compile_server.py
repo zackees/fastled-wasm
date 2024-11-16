@@ -154,7 +154,11 @@ class CompileServer:
                 str(self.fastled_src_dir): {"bind": "/js/fastled/src", "mode": "rw"}
             }
             # no auto-update because the source directory is mapped in.
-            server_command.append("--no-auto-update")
+            server_command.append("--no-auto-update")  # stop git repo updates.
+            if not self.interactive:
+                server_command.append(
+                    "--no-sketch-cache"
+                )  # Remove sketch cache which assumes src is static.
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
         )

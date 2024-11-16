@@ -159,9 +159,7 @@ def run_web_compiler(
 
     # now check to see if the hash value is the same as the last hash value
     if last_hash_value is not None and last_hash_value == web_result.hash_value:
-        print(
-            "\nNo significant source code changes detected and data was the same, skipping recompilation."
-        )
+        print("\nSkipping redeploy: No significant changes found.")
         print_results()
         return CompiledResult(
             success=True, fastled_js=str(output_dir), hash_value=web_result.hash_value

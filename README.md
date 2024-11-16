@@ -72,6 +72,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.3 - Live editing of *.h and *.cpp files is now possible. Sketch cache will be disabled in this mode.
   * 1.1.2 - `--server` will now volume map fastled src directory if it detects this. This was also implemented on the docker side.
   * 1.1.1 - `--interactive` is now supported to debug the container. Volume maps and better compatibilty with ipv4/v6 by concurrent connection finding.
   * 1.1.0 - Use `fastled` as the command for the wasm compiler.
