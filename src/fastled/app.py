@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastled.build_mode import BuildMode, get_build_mode
-from fastled.compile_server import CompileServer
+from fastled.compile_server import CompileServer, looks_like_fastled_repo
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileChangedNotifier
 from fastled.open_browser import open_browser_thread
@@ -211,6 +211,9 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
 
 
 def _looks_like_sketch_directory(directory: Path) -> bool:
+    if looks_like_fastled_repo(directory):
+        return False
+
     # walk the path and if there are over 30 files, return False
     # at the root of the directory there should either be an ino file or a src directory
     # or some cpp files

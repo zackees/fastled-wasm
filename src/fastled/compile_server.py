@@ -27,7 +27,7 @@ def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
                 raise RuntimeError("No available ports found")
 
 
-def _looks_like_fastled_repo(directory: Path) -> bool:
+def looks_like_fastled_repo(directory: Path) -> bool:
     libprops = directory / "library.properties"
     if not libprops.exists():
         return False
@@ -45,7 +45,7 @@ class CompileServer:
 
         cwd = Path(".").resolve()
         fastled_src_dir: Path | None = None
-        if _looks_like_fastled_repo(cwd):
+        if looks_like_fastled_repo(cwd):
             print(
                 "Looks like a FastLED repo, using it as the source directory and mapping it into the server."
             )
