@@ -14,6 +14,8 @@ ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 
+_THREAD_POOL = ThreadPoolExecutor(max_workers=8)
+
 
 @dataclass
 class TestConnectionResult:
@@ -58,7 +60,7 @@ def _test_connection(host: str, use_ipv4: bool) -> TestConnectionResult:
             transport=transport,
         ) as test_client:
             test_response = test_client.get(
-                f"{host}/healthz", timeout=_TIMEOUT, follow_redirects=True
+                f"{host}/healthz", timeout=3, follow_redirects=True
             )
             result = TestConnectionResult(
                 host, test_response.status_code == 200, use_ipv4
@@ -101,6 +103,7 @@ def web_compile(
             shutil.copytree(directory, wasm_dir, ignore=ignore_fastled_js)
             # Create zip archive from the temp directory
             shutil.make_archive(tmp_zip.name[:-4], "zip", temp_dir)
+    archive_size = Path(tmp_zip.name).stat().st_size
 
     print(f"Web compiling on {host}...")
 
@@ -113,35 +116,34 @@ def web_compile(
                 urls.append(f"{host}:{SERVER_PORT}")
             test_connection_result: TestConnectionResult | None = None
 
-            with ThreadPoolExecutor(max_workers=len(urls)) as executor:
-                futures: list = []
-                ip_versions = [True, False] if "localhost" not in host else [True]
-                for ipv4 in ip_versions:
-                    for url in urls:
-                        f = executor.submit(_test_connection, url, ipv4)
-                        futures.append(f)
+            futures: list = []
+            ip_versions = [True, False] if "localhost" not in host else [True]
+            for ipv4 in ip_versions:
+                for url in urls:
+                    f = _THREAD_POOL.submit(_test_connection, url, ipv4)
+                    futures.append(f)
 
-                succeeded = False
-                for future in as_completed(futures):
-                    result: TestConnectionResult = future.result()
+            succeeded = False
+            for future in as_completed(futures):
+                result: TestConnectionResult = future.result()
 
-                    if result.success:
-                        print(f"Connection successful to {result.host}")
-                        succeeded = True
-                        # host = test_url
-                        test_connection_result = result
-                        break
-                    else:
-                        print(f"Ignoring {result.host} due to connection failure")
+                if result.success:
+                    print(f"Connection successful to {result.host}")
+                    succeeded = True
+                    # host = test_url
+                    test_connection_result = result
+                    break
+                else:
+                    print(f"Ignoring {result.host} due to connection failure")
 
-                if not succeeded:
-                    print("Connection failed to all endpoints")
-                    return WebCompileResult(
-                        success=False,
-                        stdout="Connection failed",
-                        hash_value=None,
-                        zip_bytes=b"",
-                    )
+            if not succeeded:
+                print("Connection failed to all endpoints")
+                return WebCompileResult(
+                    success=False,
+                    stdout="Connection failed",
+                    hash_value=None,
+                    zip_bytes=b"",
+                )
             assert test_connection_result is not None
             ipv4_stmt = "IPv4" if test_connection_result.ipv4 else "IPv6"
             transport = (
@@ -165,7 +167,9 @@ def web_compile(
                 }
 
                 url = f"{test_connection_result.host}/{ENDPOINT_COMPILED_WASM}"
-                print(f"Compiling on {url} via {ipv4_stmt}")
+                print(
+                    f"Compiling on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes"
+                )
                 response = client.post(
                     url,
                     follow_redirects=True,
