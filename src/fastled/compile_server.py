@@ -149,6 +149,8 @@ class CompileServer:
         if self.fastled_src_dir:
             print("Moutning FastLED source directory into container")
             volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "rw"}}
+            # no auto-update because the source directory is mapped in.
+            server_command.append("--no-auto-update")
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
         )

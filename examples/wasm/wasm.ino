@@ -79,7 +79,7 @@ Slider changePalletTime("Noise - Time until next random Palette", 5, 1, 100);
 Slider scale( "Noise - Scale", 20, 1, 100);
 Button changePalette("Noise - Next Palette");
 Button changeFx("Switch between Noise & Animartrix");
-NumberField fxIndex("Animartrix - index", 0, 0, NUM_ANIMATIONS);
+NumberField fxIndex("Animartrix - iex", 0, 0, NUM_ANIMATIONS);
 
 Animartrix animartrix(xyMap, POLAR_WAVES);
 FxEngine fxEngine(NUM_LEDS);

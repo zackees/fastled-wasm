@@ -108,7 +108,8 @@ def web_compile(
         with open(tmp_zip.name, "rb") as zip_file:
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
             urls = [host]
-            if ":" not in host:
+            domain = host.split("://")[-1]
+            if ":" not in domain:
                 urls.append(f"{host}:{SERVER_PORT}")
             test_connection_result: TestConnectionResult | None = None
 
