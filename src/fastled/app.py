@@ -82,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         help="Additional patterns to exclude from file watching (Not available with --web)",
     )
     parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Run in interactive mode (Not available with --web)",
+    )
+    parser.add_argument(
         "--profile",
         action="store_true",
         help="Enable profiling for web compilation",
@@ -346,12 +351,18 @@ def run_client(args: argparse.Namespace) -> int:
 
 
 def run_server(args: argparse.Namespace) -> int:
-    compile_server = CompileServer(disable_auto_clean=args.no_auto_clean)
+    interactive = args.interactive
+    compile_server = CompileServer(
+        disable_auto_clean=args.no_auto_clean, interactive=interactive
+    )
+    print(f"Server started at {compile_server.url()}")
     compile_server.start()
     compile_server.wait_for_startup()
-    print(f"Server started at {compile_server.url()}")
     try:
         while True:
+            if not compile_server.proceess_running():
+                print("Server process is not running. Exiting...")
+                return 1
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nExiting from server...")
@@ -363,7 +374,7 @@ def run_server(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
-    if args.server:
+    if args.server or args.interactive:
         return run_server(args)
     else:
         return run_client(args)

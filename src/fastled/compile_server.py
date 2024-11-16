@@ -37,7 +37,10 @@ def _looks_like_fastled_repo(directory: Path) -> bool:
 
 class CompileServer:
     def __init__(
-        self, container_name=_DEFAULT_CONTAINER_NAME, disable_auto_clean: bool = False
+        self,
+        container_name=_DEFAULT_CONTAINER_NAME,
+        disable_auto_clean: bool = False,
+        interactive: bool = False,
     ) -> None:
 
         cwd = Path(".").resolve()
@@ -55,6 +58,7 @@ class CompileServer:
         self.thread: Optional[threading.Thread] = None
         self.running_process: subprocess.Popen | None = None
         self.fastled_src_dir: Path | None = fastled_src_dir
+        self.interactive = interactive
         self._port = self.start()
 
     def port(self) -> int:
@@ -131,7 +135,10 @@ class CompileServer:
         port = _find_available_port()
         print(f"Found an available port: {port}")
         # server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
-        server_command = ["python", "/js/run.py", "server"]
+        if self.interactive:
+            server_command = ["/bin/bash"]
+        else:
+            server_command = ["python", "/js/run.py", "server"]
         if self.disable_auto_clean:
             server_command.append("--disable-auto-clean")
         print(f"Started Docker container with command: {server_command}")
@@ -142,6 +149,7 @@ class CompileServer:
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
         )
+        print("Compile server starting")
         time.sleep(3)
         if self.running_process.poll() is not None:
             print("Server failed to start")
@@ -149,8 +157,13 @@ class CompileServer:
             raise RuntimeError("Server failed to start")
         self.thread = threading.Thread(target=self._server_loop, daemon=True)
         self.thread.start()
-        print("Compile server started")
+
         return port
+
+    def proceess_running(self) -> bool:
+        if self.running_process is None:
+            return False
+        return self.running_process.poll() is None
 
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
