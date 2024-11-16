@@ -23,7 +23,7 @@ class WebCompileTester(unittest.TestCase):
         print(f"Time taken: {diff:.2f} seconds")
 
         # Verify we got a successful result
-        self.assertTrue(result.success)
+        self.assertTrue(result.success, f"Compilation failed: {result.stdout}")
 
         # Verify we got actual WASM data back
         self.assertTrue(len(result.zip_bytes) > 0)

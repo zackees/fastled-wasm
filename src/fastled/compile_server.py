@@ -11,10 +11,10 @@ from fastled.docker_manager import DockerManager
 
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
-_DEFAULT_START_PORT = 9021
+SERVER_PORT = 9021
 
 
-def _find_available_port(start_port: int = _DEFAULT_START_PORT) -> int:
+def find_available_port(start_port: int = SERVER_PORT) -> int:
     """Find an available port starting from the given port."""
     port = start_port
     end_port = start_port + 1000
@@ -77,7 +77,9 @@ class CompileServer:
             # use httpx to ping the server
             # if successful, return True
             try:
-                response = httpx.get(f"http://localhost:{self._port}")
+                response = httpx.get(
+                    f"http://localhost:{self._port}", follow_redirects=True
+                )
                 if response.status_code < 400:
                     return True
             except KeyboardInterrupt:
@@ -132,7 +134,7 @@ class CompileServer:
         # subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
         # print("All clean")
 
-        port = _find_available_port()
+        port = find_available_port()
         print(f"Found an available port: {port}")
         # server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
         if self.interactive:
@@ -145,6 +147,7 @@ class CompileServer:
         ports = {port: 80}
         volumes = None
         if self.fastled_src_dir:
+            print("Moutning FastLED source directory into container")
             volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "rw"}}
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
@@ -168,32 +171,36 @@ class CompileServer:
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
         # attempt to send a shutdown signal to the server
-        # httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
-        if self.running_process:
-            try:
-                # Stop the Docker container
-                cp: subprocess.CompletedProcess
-                cp = subprocess.run(
-                    ["docker", "stop", self.container_name],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                if cp.returncode != 0:
-                    print(f"Failed to stop Docker container: {cp.stderr}")
+        try:
+            httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
+        # except Exception:
+        except Exception as e:
+            print(f"Failed to send shutdown signal: {e}")
+            pass
+        try:
+            # Stop the Docker container
+            cp: subprocess.CompletedProcess
+            cp = subprocess.run(
+                ["docker", "stop", self.container_name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if cp.returncode != 0:
+                print(f"Failed to stop Docker container: {cp.stderr}")
 
-                cp = subprocess.run(
-                    ["docker", "rm", self.container_name],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                if cp.returncode != 0:
-                    print(f"Failed to remove Docker container: {cp.stderr}")
+            cp = subprocess.run(
+                ["docker", "rm", self.container_name],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            if cp.returncode != 0:
+                print(f"Failed to remove Docker container: {cp.stderr}")
 
-                # Close the stdout pipe
-                if self.running_process.stdout:
-                    self.running_process.stdout.close()
+            # Close the stdout pipe
+            if self.running_process and self.running_process.stdout:
+                self.running_process.stdout.close()
 
                 # Wait for the process to fully terminate with a timeout
                 self.running_process.wait(timeout=10)
@@ -205,17 +212,19 @@ class CompileServer:
                         f"Server stopped with return code {self.running_process.returncode}"
                     )
 
-            except subprocess.TimeoutExpired:
-                # Force kill if it doesn't stop gracefully
+        except subprocess.TimeoutExpired:
+            # Force kill if it doesn't stop gracefully
+            if self.running_process:
                 self.running_process.kill()
                 self.running_process.wait()
-            except KeyboardInterrupt:
+        except KeyboardInterrupt:
+            if self.running_process:
                 self.running_process.kill()
                 self.running_process.wait()
-            except Exception as e:
-                print(f"Error stopping Docker container: {e}")
-            finally:
-                self.running_process = None
+        except Exception as e:
+            print(f"Error stopping Docker container: {e}")
+        finally:
+            self.running_process = None
         # Signal the server thread to stop
         self.running = False
         if self.thread:

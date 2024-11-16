@@ -1,16 +1,25 @@
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
 from fastled.build_mode import BuildMode
+from fastled.compile_server import SERVER_PORT
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
+
+
+@dataclass
+class TestConnectionResult:
+    host: str
+    success: bool
+    ipv4: bool
 
 
 @dataclass
@@ -34,7 +43,31 @@ def _sanitize_host(host: str) -> str:
     return host if host.startswith("http://") else f"http://{host}"
 
 
-_CONNECTION_ERROR_MAP: dict[str, bool] = {}
+_CONNECTION_ERROR_MAP: dict[str, TestConnectionResult] = {}
+
+
+def _test_connection(host: str, use_ipv4: bool) -> TestConnectionResult:
+    key = f"{host}-{use_ipv4}"
+    maybe_result: TestConnectionResult | None = _CONNECTION_ERROR_MAP.get(key)
+    if maybe_result is not None:
+        return maybe_result
+    transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
+    try:
+        with httpx.Client(
+            timeout=_TIMEOUT,
+            transport=transport,
+        ) as test_client:
+            test_response = test_client.get(
+                f"{host}/healthz", timeout=_TIMEOUT, follow_redirects=True
+            )
+            result = TestConnectionResult(
+                host, test_response.status_code == 200, use_ipv4
+            )
+            _CONNECTION_ERROR_MAP[key] = result
+    except Exception:
+        result = TestConnectionResult(host, False, use_ipv4)
+        _CONNECTION_ERROR_MAP[key] = result
+    return result
 
 
 def web_compile(
@@ -45,6 +78,7 @@ def web_compile(
     profile: bool = False,
 ) -> WebCompileResult:
     host = _sanitize_host(host or DEFAULT_HOST)
+    print("Compiling on", host)
     auth_token = auth_token or _AUTH_TOKEN
     # zip up the files
     print("Zipping files...")
@@ -73,42 +107,51 @@ def web_compile(
     try:
         with open(tmp_zip.name, "rb") as zip_file:
             files = {"file": ("wasm.zip", zip_file, "application/x-zip-compressed")}
+            urls = [host]
+            if ":" not in host:
+                urls.append(f"{host}:{SERVER_PORT}")
+            test_connection_result: TestConnectionResult | None = None
 
-            tested = host in _CONNECTION_ERROR_MAP
-            if not tested:
-                test_url = f"{host}/healthz"
-                print(f"Testing connection to {test_url}")
-                timeout = 10
-                with httpx.Client(
-                    transport=httpx.HTTPTransport(local_address="0.0.0.0"),
-                    timeout=timeout,
-                ) as test_client:
-                    test_response = test_client.get(test_url, timeout=timeout)
-                    if test_response.status_code != 200:
-                        print(f"Connection to {test_url} failed")
-                        _CONNECTION_ERROR_MAP[host] = True
-                        return WebCompileResult(
-                            success=False,
-                            stdout="Connection failed",
-                            hash_value=None,
-                            zip_bytes=b"",
-                        )
-                    _CONNECTION_ERROR_MAP[host] = False
+            with ThreadPoolExecutor(max_workers=len(urls)) as executor:
+                futures: list = []
+                ip_versions = [True, False] if "localhost" not in host else [True]
+                for ipv4 in ip_versions:
+                    for url in urls:
+                        f = executor.submit(_test_connection, url, ipv4)
+                        futures.append(f)
 
-            ok = not _CONNECTION_ERROR_MAP[host]
-            if not ok:
-                return WebCompileResult(
-                    success=False,
-                    stdout="Connection failed",
-                    hash_value=None,
-                    zip_bytes=b"",
-                )
-            print(f"Connection to {host} successful")
+                succeeded = False
+                for future in as_completed(futures):
+                    result: TestConnectionResult = future.result()
+
+                    if result.success:
+                        print(f"Connection successful to {result.host}")
+                        succeeded = True
+                        # host = test_url
+                        test_connection_result = result
+                        break
+                    else:
+                        print(f"Ignoring {result.host} due to connection failure")
+
+                if not succeeded:
+                    print("Connection failed to all endpoints")
+                    return WebCompileResult(
+                        success=False,
+                        stdout="Connection failed",
+                        hash_value=None,
+                        zip_bytes=b"",
+                    )
+            assert test_connection_result is not None
+            ipv4_stmt = "IPv4" if test_connection_result.ipv4 else "IPv6"
+            transport = (
+                httpx.HTTPTransport(local_address="0.0.0.0")
+                if test_connection_result.ipv4
+                else None
+            )
             with httpx.Client(
-                transport=httpx.HTTPTransport(local_address="0.0.0.0"),  # forces IPv4
+                transport=transport,
                 timeout=_TIMEOUT,
             ) as client:
-                url = f"{host}/{ENDPOINT_COMPILED_WASM}"
                 headers = {
                     "accept": "application/json",
                     "authorization": auth_token,
@@ -119,9 +162,12 @@ def web_compile(
                     ),
                     "profile": "true" if profile else "false",
                 }
-                print(f"Compiling on {url}")
+
+                url = f"{test_connection_result.host}/{ENDPOINT_COMPILED_WASM}"
+                print(f"Compiling on {url} via {ipv4_stmt}")
                 response = client.post(
                     url,
+                    follow_redirects=True,
                     files=files,
                     headers=headers,
                     timeout=_TIMEOUT,

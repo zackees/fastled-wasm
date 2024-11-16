@@ -82,6 +82,7 @@ def parse_args() -> argparse.Namespace:
         help="Additional patterns to exclude from file watching (Not available with --web)",
     )
     parser.add_argument(
+        "-i",
         "--interactive",
         action="store_true",
         help="Run in interactive mode (Not available with --web)",
@@ -210,8 +211,22 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
             return DEFAULT_URL
 
 
+def _lots_and_lots_of_files(directory: Path) -> bool:
+    count = 0
+    for root, dirs, files in os.walk(directory):
+        count += len(files)
+        if count > 100:
+            return True
+    return False
+
+
 def _looks_like_sketch_directory(directory: Path) -> bool:
     if looks_like_fastled_repo(directory):
+        print("Directory looks like the FastLED repo")
+        return False
+
+    if _lots_and_lots_of_files(directory):
+        print("Too many files in the directory, bailing out")
         return False
 
     # walk the path and if there are over 30 files, return False
@@ -254,9 +269,11 @@ def run_client(args: argparse.Namespace) -> int:
         try:
             url_or_server: str | CompileServer = _try_start_server_or_get_url(args)
             if isinstance(url_or_server, str):
+                print(f"Found URL: {url_or_server}")
                 url = url_or_server
             else:
                 compile_server = url_or_server
+                print(f"Server started at {compile_server.url()}")
                 url = compile_server.url()
         except KeyboardInterrupt:
             print("\nExiting from first try...")
@@ -377,15 +394,25 @@ def run_server(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
-    if args.server or args.interactive:
+    target_dir = Path(args.directory)
+    cwd_is_target_dir = target_dir == Path(os.getcwd())
+    force_server = cwd_is_target_dir and looks_like_fastled_repo(target_dir)
+    auto_server = (args.server or args.interactive or cwd_is_target_dir) and (
+        not args.web and not args.just_compile
+    )
+    if auto_server or force_server:
+        print("Running in server only mode.")
         return run_server(args)
     else:
+        print("Running in client/server mode.")
         return run_client(args)
 
 
 if __name__ == "__main__":
     try:
         sys.argv.append("examples/wasm")
+        sys.argv.append("-w")
+        sys.argv.append("localhost")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
