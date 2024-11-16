@@ -49,7 +49,7 @@ class CompileServer:
             print(
                 "Looks like a FastLED repo, using it as the source directory and mapping it into the server."
             )
-            fastled_src_dir = cwd
+            fastled_src_dir = cwd / "src"
 
         self.container_name = container_name
         self.disable_auto_clean = disable_auto_clean
@@ -123,7 +123,7 @@ class CompileServer:
             except Exception as e:
                 print(f"Warning: Failed to remove existing container: {e}")
 
-            print("Ensuring Docker image exists")
+            print("Ensuring Docker image exists at latest version")
             if not self.docker.ensure_image_exists():
                 print("Failed to ensure Docker image exists.")
                 raise RuntimeError("Failed to ensure Docker image exists")
@@ -147,8 +147,12 @@ class CompileServer:
         ports = {port: 80}
         volumes = None
         if self.fastled_src_dir:
-            print("Moutning FastLED source directory into container")
-            volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "rw"}}
+            print(
+                f"Mounting FastLED source directory {self.fastled_src_dir} into container /js/fastled/src"
+            )
+            volumes = {
+                str(self.fastled_src_dir): {"bind": "/js/fastled/src", "mode": "rw"}
+            }
             # no auto-update because the source directory is mapped in.
             server_command.append("--no-auto-update")
         self.running_process = self.docker.run_container(
