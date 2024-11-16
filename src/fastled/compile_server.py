@@ -138,7 +138,7 @@ class CompileServer:
         ports = {port: 80}
         volumes = None
         if self.fastled_src_dir:
-            volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "ro"}}
+            volumes = {str(self.fastled_src_dir): {"bind": "/js/fastled", "mode": "rw"}}
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
         )
