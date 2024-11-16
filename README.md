@@ -9,7 +9,6 @@ Compiles an Arduino/Platformio sketch into a wasm binary that can be run directl
 [![Win_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/test_win.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_win.yml)
 
 
-
 # About
 
 This python app will compile your FastLED style sketches into html/js/wasm output that runs directly in the browser.
