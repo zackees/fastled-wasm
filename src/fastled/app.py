@@ -358,9 +358,9 @@ if __name__ == "__main__":
         print(f"Project root: {project_root}")
         os.chdir(project_root)
         os.chdir("../fastled")
-        sys.argv.append("examples/wasm")
-        sys.argv.append("--server")
-        sys.argv.append("--interactive")
+        sys.argv.append("examples/SdCard")
+        sys.argv.append("--web")
+        sys.argv.append("localhost")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
