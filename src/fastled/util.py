@@ -1,7 +1,6 @@
-
-
 import hashlib
 from pathlib import Path
+
 
 def hash_file(file_path: Path) -> str:
     hasher = hashlib.sha256()

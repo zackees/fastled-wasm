@@ -1,22 +1,25 @@
 import io
+import json
 import shutil
 import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 import httpx
 
 from fastled.build_mode import BuildMode
 from fastled.compile_server import SERVER_PORT
 from fastled.sketch import get_sketch_files
+from fastled.util import hash_file
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
-
+ENABLE_EMBEDDED_DATA = False
 _THREAD_POOL = ThreadPoolExecutor(max_workers=8)
 
 
@@ -73,7 +76,22 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
     return result
 
 
-def zip_files(directory: Path) -> bytes | Exception:
+def _file_info(file_path: Path) -> str:
+    hash_txt = hash_file(file_path)
+    file_size = file_path.stat().st_size
+    json_str = json.dumps({"hash": hash_txt, "size": file_size})
+    return json_str
+
+
+@dataclass
+class ZipResult:
+    zip_bytes: bytes
+    zip_embedded_bytes: bytes | None
+    success: bool
+    error: str | None
+
+
+def zip_files(directory: Path) -> ZipResult | Exception:
     print("Zipping files...")
     try:
         files = get_sketch_files(directory)
@@ -82,14 +100,36 @@ def zip_files(directory: Path) -> bytes | Exception:
         for f in files:
             print(f"Adding file: {f}")
         # Create in-memory zip file
+        has_embedded_zip = False
+        zip_embedded_buffer = io.BytesIO()
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(
-            zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9
-        ) as zip_file:
-            for file_path in files:
-                relative_path = file_path.relative_to(directory)
-                zip_file.write(file_path, str(Path("wasm") / relative_path))
-        return zip_buffer.getvalue()
+            zip_embedded_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9
+        ) as emebedded_zip_file:
+            with zipfile.ZipFile(
+                zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9
+            ) as zip_file:
+                for file_path in files:
+                    relative_path = file_path.relative_to(directory)
+                    achive_path = str(Path("wasm") / relative_path)
+                    if str(relative_path).startswith("data") and ENABLE_EMBEDDED_DATA:
+                        _file_info_str = _file_info(file_path)
+                        zip_file.writestr(
+                            achive_path + ".embedded.json", _file_info_str
+                        )
+                        emebedded_zip_file.write(file_path, relative_path)
+                        has_embedded_zip = True
+                    else:
+                        zip_file.write(file_path, achive_path)
+        result = ZipResult(
+            zip_bytes=zip_buffer.getvalue(),
+            zip_embedded_bytes=(
+                zip_embedded_buffer.getvalue() if has_embedded_zip else None
+            ),
+            success=True,
+            error=None,
+        )
+        return result
     except Exception as e:
         return e
 
@@ -108,11 +148,13 @@ def web_compile(
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
 
-    zip_bytes = zip_files(directory)
-    if isinstance(zip_bytes, Exception):
+    zip_result = zip_files(directory)
+
+    if isinstance(zip_result, Exception):
         return WebCompileResult(
-            success=False, stdout=str(zip_bytes), hash_value=None, zip_bytes=b""
+            success=False, stdout=str(zip_result), hash_value=None, zip_bytes=b""
         )
+    zip_bytes = zip_result.zip_bytes
     archive_size = len(zip_bytes)
     print(f"Web compiling on {host}...")
     try:
@@ -203,17 +245,36 @@ def web_compile(
                 # Extract the zip
                 shutil.unpack_archive(temp_zip, extract_path, "zip")
 
+                if zip_result.zip_embedded_bytes:
+                    # extract the embedded bytes, which were not sent to the server
+                    temp_zip.write_bytes(zip_result.zip_embedded_bytes)
+                    shutil.unpack_archive(temp_zip, extract_path, "zip")
+
+                # we don't need the temp zip anymore
+                temp_zip.unlink()
+
                 # Read stdout from out.txt if it exists
                 stdout_file = extract_path / "out.txt"
                 hash_file = extract_path / "hash.txt"
                 stdout = stdout_file.read_text() if stdout_file.exists() else ""
                 hash_value = hash_file.read_text() if hash_file.exists() else None
 
+                # now rezip the extracted files since we added the embedded json files
+                out_buffer = io.BytesIO()
+                with zipfile.ZipFile(
+                    out_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9
+                ) as out_zip:
+                    for root, _, _files in os.walk(extract_path):
+                        for file in _files:
+                            file_path = Path(root) / file
+                            relative_path = file_path.relative_to(extract_path)
+                            out_zip.write(file_path, relative_path)
+
                 return WebCompileResult(
                     success=True,
                     stdout=stdout,
                     hash_value=hash_value,
-                    zip_bytes=response.content,
+                    zip_bytes=out_buffer.getvalue(),
                 )
     except KeyboardInterrupt:
         print("Keyboard interrupt")
