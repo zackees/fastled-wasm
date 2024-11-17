@@ -51,14 +51,7 @@ def _sanitize_host(host: str) -> str:
     return host if host.startswith("http://") else f"http://{host}"
 
 
-_CONNECTION_ERROR_MAP: dict[str, ConnectionResult] = {}
-
-
 def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
-    key = f"{host}-{use_ipv4}"
-    maybe_result: ConnectionResult | None = _CONNECTION_ERROR_MAP.get(key)
-    if maybe_result is not None:
-        return maybe_result
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
     try:
         with httpx.Client(
@@ -69,10 +62,8 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
                 f"{host}/healthz", timeout=3, follow_redirects=True
             )
             result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
-            _CONNECTION_ERROR_MAP[key] = result
     except Exception:
         result = ConnectionResult(host, False, use_ipv4)
-        _CONNECTION_ERROR_MAP[key] = result
     return result
 
 

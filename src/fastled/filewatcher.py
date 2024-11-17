@@ -5,6 +5,7 @@ import hashlib
 import queue
 import threading
 import time
+from multiprocessing import Process, Queue
 from pathlib import Path
 from typing import Dict, Set
 
@@ -144,3 +145,25 @@ class FileChangedNotifier(threading.Thread):
         # clear all the changes from the queue
         self.change_queue.queue.clear()
         return changed_files
+
+
+def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
+    watcher = FileChangedNotifier(str(root), excluded_patterns=excluded_patterns)
+    watcher.start()
+    while True:
+        try:
+            changed_files = watcher.get_all_changes()
+            for file in changed_files:
+                queue.put(file)
+        except KeyboardInterrupt:
+            break
+    watcher.stop()
+
+
+def create_file_watcher_process(
+    root: Path, excluded_patterns: list[str]
+) -> tuple[Process, Queue]:
+    """Create a new process running the file watcher"""
+    queue: Queue = Queue()
+    process = Process(target=_process_wrapper, args=(root, excluded_patterns, queue))
+    return process, queue

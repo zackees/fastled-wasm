@@ -17,7 +17,7 @@ from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
-from fastled.filewatcher import FileChangedNotifier
+from fastled.filewatcher import create_file_watcher_process
 from fastled.open_browser import open_browser_thread
 from fastled.sketch import looks_like_sketch_directory
 from fastled.web_compile import web_compile
@@ -91,6 +91,11 @@ def parse_args() -> argparse.Namespace:
         "--release", action="store_true", help="Build in release mode"
     )
     build_mode.add_argument(
+        "--localhost",
+        action="store_true",
+        help="Use localhost for web compilation from an instance of fastled --server",
+    )
+    build_mode.add_argument(
         "--server",
         action="store_true",
         help="Run the server in the current directory, volume mapping fastled if we are in the repo",
@@ -103,6 +108,10 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    if args.localhost:
+        args.web = "localhost"
+    if args.web is not None:
+        args.web = args.web if args.web == "" else args.web
     if args.server and args.web:
         parser.error("--server and --web are mutually exclusive")
     if args.directory is None and not args.server:
@@ -284,13 +293,24 @@ def run_client(args: argparse.Namespace) -> int:
 
     # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
-    watcher = FileChangedNotifier(args.directory, excluded_patterns=["fastled_js"])
-    watcher.start()
+    # watcher = FileChangedNotifier(args.directory, excluded_patterns=["fastled_js"])
+    # watcher.start()
+
+    from multiprocessing import Process, Queue
+
+    proc: Process
+    queue: Queue
+    proc, queue = create_file_watcher_process(
+        args.directory, excluded_patterns=["fastled_js"]
+    )
 
     try:
         while True:
             try:
-                changed_files = watcher.get_all_changes()
+                size = queue.qsize()
+                changed_files = []
+                for i in range(size):
+                    changed_files.append(queue.get())
             except KeyboardInterrupt:
                 print("\nExiting from watcher...")
                 raise
@@ -307,15 +327,13 @@ def run_client(args: argparse.Namespace) -> int:
                     print("\nRecompilation successful.")
             time.sleep(0.3)
     except KeyboardInterrupt:
-        watcher.stop()
         print("\nStopping watch mode...")
         return 0
     except Exception as e:
-        watcher.stop()
         print(f"Error: {e}")
         return 1
     finally:
-        watcher.stop()
+        proc.terminate()
         if compile_server:
             compile_server.stop()
         if browser_proc:
