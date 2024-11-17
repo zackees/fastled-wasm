@@ -20,6 +20,7 @@ from fastled.compile_server import CompileServer, looks_like_fastled_repo
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileChangedNotifier
 from fastled.open_browser import open_browser_thread
+from fastled.sketch import get_sketch_files
 from fastled.web_compile import web_compile
 
 machine = platform.machine().lower()
@@ -210,14 +211,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
 
 
 def _lots_and_lots_of_files(directory: Path) -> bool:
-    count = 0
-    for root, dirs, files in os.walk(directory):
-        # ignore any directories that start with .
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
-        count += len(files)
-        if count > 100:
-            return True
-    return False
+    return len(get_sketch_files(directory)) > 100
 
 
 def _looks_like_sketch_directory(directory: Path) -> bool:

@@ -72,6 +72,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.5 - Filter out hidden files and directories from being included in the sketch archive sent to the compiler.
   * 1.1.4 - Fix regression introduced by testing out ipv4/ipv6 connections from a thread pool.
   * 1.1.3 - Live editing of *.h and *.cpp files is now possible. Sketch cache will be disabled in this mode.
   * 1.1.2 - `--server` will now volume map fastled src directory if it detects this. This was also implemented on the docker side.
