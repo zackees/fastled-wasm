@@ -1,7 +1,5 @@
 """
 Uses the latest wasm compiler image to compile the FastLED sketch.
-
-
 """
 
 import argparse
@@ -15,6 +13,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
 from fastled.compile_server import CompileServer, looks_like_fastled_repo
 from fastled.docker_manager import DockerManager
@@ -44,7 +43,7 @@ DOCKER = DockerManager(container_name=CONTAINER_NAME)
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="FastLED WASM Compiler")
+    parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
     parser.add_argument(
         "directory",
         type=str,
