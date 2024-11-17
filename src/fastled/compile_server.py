@@ -31,7 +31,7 @@ def looks_like_fastled_repo(directory: Path) -> bool:
     libprops = directory / "library.properties"
     if not libprops.exists():
         return False
-    txt = libprops.read_text()
+    txt = libprops.read_text(encoding="utf-8", errors="ignore")
     return "FastLED" in txt
 
 
@@ -39,7 +39,6 @@ class CompileServer:
     def __init__(
         self,
         container_name=_DEFAULT_CONTAINER_NAME,
-        disable_auto_clean: bool = False,
         interactive: bool = False,
     ) -> None:
 
@@ -52,14 +51,13 @@ class CompileServer:
             fastled_src_dir = cwd / "src"
 
         self.container_name = container_name
-        self.disable_auto_clean = disable_auto_clean
         self.docker = DockerManager(container_name=container_name)
         self.running = False
         self.thread: Optional[threading.Thread] = None
         self.running_process: subprocess.Popen | None = None
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
-        self._port = self.start()
+        self._port = self._start()
 
     def port(self) -> int:
         return self._port
@@ -91,7 +89,7 @@ class CompileServer:
                 return False
         return False
 
-    def start(self) -> int:
+    def _start(self) -> int:
         print("Compiling server starting")
         self.running = True
         # Ensure Docker is running
@@ -141,8 +139,6 @@ class CompileServer:
             server_command = ["/bin/bash"]
         else:
             server_command = ["python", "/js/run.py", "server"]
-        if self.disable_auto_clean:
-            server_command.append("--disable-auto-clean")
         print(f"Started Docker container with command: {server_command}")
         ports = {port: 80}
         volumes = None
@@ -153,8 +149,10 @@ class CompileServer:
             volumes = {
                 str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
             }
-            # no auto-update because the source directory is mapped in.
-            server_command.append("--no-auto-update")  # stop git repo updates.
+            if not self.interactive:
+                # no auto-update because the source directory is mapped in.
+                # This should be automatic now.
+                server_command.append("--no-auto-update")  # stop git repo updates.
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes
         )

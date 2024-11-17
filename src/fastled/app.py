@@ -58,11 +58,6 @@ def parse_args() -> argparse.Namespace:
         help="Just compile, skip opening the browser and watching for changes.",
     )
     parser.add_argument(
-        "--no-auto-clean",
-        action="store_true",
-        help="Big performance gains for compilation, but it's flaky at this time",
-    )
-    parser.add_argument(
         "--web",
         "-w",
         type=str,
@@ -70,17 +65,6 @@ def parse_args() -> argparse.Namespace:
         # const does not seem to be working as expected
         const=DEFAULT_URL,  # Default value when --web is specified without value
         help="Use web compiler. Optional URL can be provided (default: https://fastled.onrender.com)",
-    )
-    parser.add_argument(
-        "--reuse",
-        action="store_true",
-        help="Reuse the existing container if it exists. (Not available with --web)",
-    )
-    parser.add_argument(
-        "--exclude",
-        type=str,
-        nargs="+",
-        help="Additional patterns to exclude from file watching (Not available with --web)",
     )
     parser.add_argument(
         "-i",
@@ -117,14 +101,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
-
-    # Handle --web implications
-    if args.web:
-        if args.reuse:
-            parser.error("--reuse cannot be used with --web")
-        if args.exclude:
-            parser.error("--exclude cannot be used with --web")
-
     return args
 
 
@@ -195,9 +171,8 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
             return DEFAULT_URL
         return args.web
     else:
-        disable_auto_clean = args.no_auto_clean
         try:
-            compile_server = CompileServer(disable_auto_clean=disable_auto_clean)
+            compile_server = CompileServer()
             print("Waiting for the local compiler to start...")
             if not compile_server.wait_for_startup():
                 print("Failed to start local compiler.")
@@ -366,11 +341,9 @@ def run_client(args: argparse.Namespace) -> int:
 
 def run_server(args: argparse.Namespace) -> int:
     interactive = args.interactive
-    compile_server = CompileServer(
-        disable_auto_clean=args.no_auto_clean, interactive=interactive
-    )
-    print(f"Server started at {compile_server.url()}")
-    compile_server.start()
+    compile_server = CompileServer(interactive=interactive)
+    if not interactive:
+        print(f"Server started at {compile_server.url()}")
     compile_server.wait_for_startup()
     try:
         while True:
@@ -404,9 +377,13 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
+        project_root = Path(__file__).resolve().parent.parent.parent
+        print(f"Project root: {project_root}")
+        os.chdir(project_root)
+        os.chdir("../fastled")
         sys.argv.append("examples/wasm")
-        sys.argv.append("-w")
-        sys.argv.append("localhost")
+        sys.argv.append("--server")
+        sys.argv.append("--interactive")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
