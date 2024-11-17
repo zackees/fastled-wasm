@@ -25,7 +25,10 @@ def _enabled() -> bool:
 class WebCompilerTester(unittest.TestCase):
     """Main tester class."""
 
-    @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
+    @unittest.skipUnless(
+        _enabled(),
+        "Skipping test because either this is on non-Linux system on github or embedded data is disabled",
+    )
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
         server = CompileServer()
