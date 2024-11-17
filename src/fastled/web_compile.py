@@ -19,7 +19,7 @@ DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
-ENABLE_EMBEDDED_DATA = False
+ENABLE_EMBEDDED_DATA = True
 _THREAD_POOL = ThreadPoolExecutor(max_workers=8)
 
 

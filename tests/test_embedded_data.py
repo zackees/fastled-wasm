@@ -1,6 +1,7 @@
 import os
 import platform
 import unittest
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -49,8 +50,11 @@ class WebCompilerTester(unittest.TestCase):
         # dump the result into a temp directory
         with TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
-            with open(str(temp_dir_path / "output.zip"), "wb") as f:
+            # unzip zip_bytes
+            with open(temp_dir_path / "output.zip", "wb") as f:
                 f.write(zip_bytes)
+            with zipfile.ZipFile(temp_dir_path / "output.zip", "r") as zip_ref:
+                zip_ref.extractall(temp_dir_path)
             # check that data/ dir exists
             self.assertTrue((temp_dir_path / "data").is_dir())
             # check that data/bigdata.dat exists
