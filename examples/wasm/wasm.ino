@@ -84,6 +84,8 @@ NumberField fxIndex("Animartrix - iex", 0, 0, NUM_ANIMATIONS);
 Animartrix animartrix(xyMap, POLAR_WAVES);
 FxEngine fxEngine(NUM_LEDS);
 
+
+
 void setup() {
     FastLED.addLeds<WS2811, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS)
         .setCorrection(TypicalLEDStrip)
