@@ -73,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.7 - Sketch cache re-enabled, but selectively invalidated on cpp/h updates. Cleaned up deprecated args. Fixed double thread running for containers that was causing slowdown.
   * 1.1.6 - Use the fast src volume map allow quick updates to fastled when developing on the source code.
   * 1.1.5 - Filter out hidden files and directories from being included in the sketch archive sent to the compiler.
   * 1.1.4 - Fix regression introduced by testing out ipv4/ipv6 connections from a thread pool.
