@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
-from fastled.compile_server import CompileServer, looks_like_fastled_repo
+from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileChangedNotifier
 from fastled.open_browser import open_browser_thread
@@ -344,13 +344,7 @@ def run_server(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
-    target_dir = Path(args.directory)
-    cwd_is_target_dir = target_dir == Path(os.getcwd())
-    force_server = cwd_is_target_dir and looks_like_fastled_repo(target_dir)
-    auto_server = (args.server or args.interactive or cwd_is_target_dir) and (
-        not args.web and not args.just_compile
-    )
-    if auto_server or force_server:
+    if args.server:
         print("Running in server only mode.")
         return run_server(args)
     else:
