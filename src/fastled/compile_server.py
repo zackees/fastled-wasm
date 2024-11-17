@@ -151,7 +151,7 @@ class CompileServer:
                 f"Mounting FastLED source directory {self.fastled_src_dir} into container /js/fastled/src"
             )
             volumes = {
-                str(self.fastled_src_dir): {"bind": "/js/fastled/src", "mode": "rw"}
+                str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
             }
             # no auto-update because the source directory is mapped in.
             server_command.append("--no-auto-update")  # stop git repo updates.
