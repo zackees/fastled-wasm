@@ -21,7 +21,7 @@ _THREAD_POOL = ThreadPoolExecutor(max_workers=8)
 
 
 @dataclass
-class TestConnectionResult:
+class ConnectionResult:
     host: str
     success: bool
     ipv4: bool
@@ -48,12 +48,12 @@ def _sanitize_host(host: str) -> str:
     return host if host.startswith("http://") else f"http://{host}"
 
 
-_CONNECTION_ERROR_MAP: dict[str, TestConnectionResult] = {}
+_CONNECTION_ERROR_MAP: dict[str, ConnectionResult] = {}
 
 
-def _test_connection(host: str, use_ipv4: bool) -> TestConnectionResult:
+def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
     key = f"{host}-{use_ipv4}"
-    maybe_result: TestConnectionResult | None = _CONNECTION_ERROR_MAP.get(key)
+    maybe_result: ConnectionResult | None = _CONNECTION_ERROR_MAP.get(key)
     if maybe_result is not None:
         return maybe_result
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
@@ -65,12 +65,10 @@ def _test_connection(host: str, use_ipv4: bool) -> TestConnectionResult:
             test_response = test_client.get(
                 f"{host}/healthz", timeout=3, follow_redirects=True
             )
-            result = TestConnectionResult(
-                host, test_response.status_code == 200, use_ipv4
-            )
+            result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
             _CONNECTION_ERROR_MAP[key] = result
     except Exception:
-        result = TestConnectionResult(host, False, use_ipv4)
+        result = ConnectionResult(host, False, use_ipv4)
         _CONNECTION_ERROR_MAP[key] = result
     return result
 
@@ -124,7 +122,7 @@ def web_compile(
         domain = host.split("://")[-1]
         if ":" not in domain:
             urls.append(f"{host}:{SERVER_PORT}")
-        test_connection_result: TestConnectionResult | None = None
+        test_connection_result: ConnectionResult | None = None
 
         futures: list = []
         ip_versions = [True, False] if "localhost" not in host else [True]
@@ -135,7 +133,7 @@ def web_compile(
 
         succeeded = False
         for future in as_completed(futures):
-            result: TestConnectionResult = future.result()
+            result: ConnectionResult = future.result()
 
             if result.success:
                 print(f"Connection successful to {result.host}")
