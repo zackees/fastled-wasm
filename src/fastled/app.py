@@ -20,7 +20,7 @@ from fastled.compile_server import CompileServer, looks_like_fastled_repo
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileChangedNotifier
 from fastled.open_browser import open_browser_thread
-from fastled.sketch import get_sketch_files
+from fastled.sketch import looks_like_sketch_directory
 from fastled.web_compile import web_compile
 
 machine = platform.machine().lower()
@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
         "directory",
         type=str,
         nargs="?",
-        default=os.getcwd(),
+        default=None,
         help="Directory containing the FastLED sketch to compile",
     )
     parser.add_argument(
@@ -101,6 +101,18 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    if args.server and args.web:
+        parser.error("--server and --web are mutually exclusive")
+    if args.directory is None and not args.server:
+        # does current directory look like a sketch?
+        maybe_sketch_dir = Path(os.getcwd())
+        if looks_like_sketch_directory(maybe_sketch_dir):
+            args.directory = str(maybe_sketch_dir)
+        else:
+            print(
+                "\nYou either need to specify a sketch directory or run in --server mode."
+            )
+            sys.exit(1)
     return args
 
 
@@ -185,42 +197,11 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
             return DEFAULT_URL
 
 
-def _lots_and_lots_of_files(directory: Path) -> bool:
-    return len(get_sketch_files(directory)) > 100
-
-
-def _looks_like_sketch_directory(directory: Path) -> bool:
-    if looks_like_fastled_repo(directory):
-        print("Directory looks like the FastLED repo")
-        return False
-
-    if _lots_and_lots_of_files(directory):
-        print("Too many files in the directory, bailing out")
-        return False
-
-    # walk the path and if there are over 30 files, return False
-    # at the root of the directory there should either be an ino file or a src directory
-    # or some cpp files
-    # if there is a platformio.ini file, return True
-    ino_file_at_root = list(directory.glob("*.ino"))
-    if ino_file_at_root:
-        return True
-    cpp_file_at_root = list(directory.glob("*.cpp"))
-    if cpp_file_at_root:
-        return True
-    platformini_file = list(directory.glob("platformio.ini"))
-    if platformini_file:
-        return True
-    return False
-
-
 def run_client(args: argparse.Namespace) -> int:
     compile_server: CompileServer | None = None
     open_web_browser = not args.just_compile
     profile = args.profile
-    if not args.force_compile and not _looks_like_sketch_directory(
-        Path(args.directory)
-    ):
+    if not args.force_compile and not looks_like_sketch_directory(Path(args.directory)):
         print(
             "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
         )

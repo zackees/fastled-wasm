@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 
 from fastled.docker_manager import DockerManager
+from fastled.sketch import looks_like_fastled_repo
 
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
@@ -25,14 +26,6 @@ def find_available_port(start_port: int = SERVER_PORT) -> int:
             port += 1
             if port >= end_port:
                 raise RuntimeError("No available ports found")
-
-
-def looks_like_fastled_repo(directory: Path) -> bool:
-    libprops = directory / "library.properties"
-    if not libprops.exists():
-        return False
-    txt = libprops.read_text(encoding="utf-8", errors="ignore")
-    return "FastLED" in txt
 
 
 class CompileServer:
