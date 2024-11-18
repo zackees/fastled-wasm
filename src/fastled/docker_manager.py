@@ -212,6 +212,7 @@ class DockerManager:
         cmd: list[str],
         volumes: dict[str, dict[str, str]] | None = None,
         ports: dict[int, int] | None = None,
+        tty: bool = False,
     ) -> subprocess.Popen:
         """Run the Docker container with the specified volume.
 
@@ -226,7 +227,8 @@ class DockerManager:
         print("Creating new container...")
         docker_command = ["docker", "run"]
 
-        if sys.stdout.isatty():
+        if tty:
+            assert sys.stdout.isatty(), "TTY mode requires a TTY"
             docker_command.append("-it")
         # Attach volumes if specified
         docker_command += [
