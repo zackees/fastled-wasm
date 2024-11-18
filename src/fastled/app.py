@@ -93,8 +93,9 @@ def parse_args() -> argparse.Namespace:
     )
     build_mode.add_argument(
         "--localhost",
+        "--local",
         action="store_true",
-        help="Use localhost for web compilation from an instance of fastled --server",
+        help="Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
     )
     build_mode.add_argument(
         "--server",
