@@ -24,6 +24,8 @@ void loop() {
 #include "screenmap.h"
 #include "file_system.h"
 
+using namespace fl;
+
 
 #include "screenmap.json.h"  // const char JSON_SCREEN_MAP[] = { ... }
 
