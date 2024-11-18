@@ -18,6 +18,7 @@ from fastled.build_mode import BuildMode, get_build_mode
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileWatcherProcess
+from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_thread
 from fastled.sketch import looks_like_sketch_directory
 from fastled.web_compile import web_compile
@@ -296,28 +297,60 @@ def run_client(args: argparse.Namespace) -> int:
         args.directory, excluded_patterns=["fastled_js"]
     )
 
+    source_code_watcher: FileWatcherProcess | None = None
+    if compile_server and compile_server.using_fastled_src_dir_volume():
+        assert compile_server.fastled_src_dir is not None
+        source_code_watcher = FileWatcherProcess(
+            compile_server.fastled_src_dir, excluded_patterns=[]
+        )
+
+    def trigger_rebuild_if_sketch_changed(
+        last_compiled_result: CompiledResult,
+    ) -> CompiledResult:
+        changed_files = sketch_filewatcher.get_all_changes()
+        if changed_files:
+            print(f"\nChanges detected in {changed_files}")
+            last_hash_value = last_compiled_result.hash_value
+            out = compile_function(last_hash_value=last_hash_value)
+            if not out.success:
+                print("\nRecompilation failed.")
+            else:
+                print("\nRecompilation successful.")
+            return out
+        return last_compiled_result
+
     try:
         while True:
-            changed_files = sketch_filewatcher.get_all_changes()
-            if changed_files:
-                print(f"\nChanges detected in {changed_files}")
-                last_hash_value = last_compiled_result.hash_value
-                result = compile_function(last_hash_value=last_hash_value)
-                if not result.success:
-                    print("\nRecompilation failed.")
-                else:
-                    print("\nRecompilation successful.")
+            last_compiled_result = trigger_rebuild_if_sketch_changed(
+                last_compiled_result
+            )
             if compile_server and not compile_server.proceess_running():
                 print("Server process is not running. Exiting...")
                 return 1
-            time.sleep(0.3)
-            # space_key_watcher = SpaceBarWatcher()
-            # while True:
-            #    if space_key_watcher.space_bar_pressed():
-            #        print("\nStopping watch mode...")
-            #        break
-            #    time.sleep(0.5)
-            # space_key_watcher.stop()
+            if source_code_watcher is not None:
+                changed_files = source_code_watcher.get_all_changes()
+                if changed_files:
+                    print(f"\nChanges detected in FastLED source code: {changed_files}")
+                    print("Press space bar to trigger compile.")
+
+                    space_key_watcher = SpaceBarWatcher()
+                    try:
+                        while True:
+                            if space_key_watcher.space_bar_pressed():
+                                print("Space bar pressed, triggering recompile...")
+                                last_compiled_result = compile_function(
+                                    last_hash_value=None
+                                )
+                                print("Finished recompile.")
+                                break
+                            elif len(sketch_filewatcher.get_all_changes()) > 0:
+                                last_compiled_result = compile_function(
+                                    last_hash_value=None
+                                )
+                                break
+                            time.sleep(0.1)
+                    finally:
+                        space_key_watcher.stop()
 
     except KeyboardInterrupt:
         print("\nStopping watch mode...")
@@ -365,6 +398,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
+        os.chdir("../fastled")
         sys.argv.append("examples/SdCard")
         sys.exit(main())
     except KeyboardInterrupt:
