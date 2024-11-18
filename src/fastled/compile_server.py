@@ -157,13 +157,13 @@ class CompileServer:
 
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
-        # attempt to send a shutdown signal to the server
-        try:
-            httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
-        # except Exception:
-        except Exception as e:
-            print(f"Failed to send shutdown signal: {e}")
-            pass
+        # # attempt to send a shutdown signal to the server
+        # try:
+        #     httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
+        # # except Exception:
+        # except Exception as e:
+        #     print(f"Failed to send shutdown signal: {e}")
+        #     pass
         try:
             # Stop the Docker container
             cp: subprocess.CompletedProcess
