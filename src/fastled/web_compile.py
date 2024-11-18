@@ -20,7 +20,7 @@ ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 ENABLE_EMBEDDED_DATA = True
-_THREAD_POOL = ProcessPoolExecutor(max_workers=8)
+_EXECUTOR = ProcessPoolExecutor(max_workers=8)
 
 
 @dataclass
@@ -161,7 +161,7 @@ def web_compile(
         ip_versions = [True, False] if "localhost" not in host else [True]
         for ipv4 in ip_versions:
             for url in urls:
-                f = _THREAD_POOL.submit(_test_connection, url, ipv4)
+                f = _EXECUTOR.submit(_test_connection, url, ipv4)
                 futures.append(f)
 
         succeeded = False
