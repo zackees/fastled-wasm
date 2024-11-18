@@ -204,6 +204,8 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
         result: ConnectionResult | None = find_good_connection([addr])
         if result is not None:
             print(f"Found local server at {result.host}")
+            return result.host
+        else:
             local_host_needs_server = True
 
     if not local_host_needs_server and args.web:
@@ -417,8 +419,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        os.chdir("../fastled")
+        # os.chdir("../fastled")
         sys.argv.append("examples/SdCard")
+        sys.argv.append("--localhost")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
