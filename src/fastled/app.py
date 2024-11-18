@@ -292,13 +292,13 @@ def run_client(args: argparse.Namespace) -> int:
         return 1
 
     print("\nWatching for changes. Press Ctrl+C to stop...")
-    filewatcher_proc = FileWatcherProcess(
+    sketch_filewatcher = FileWatcherProcess(
         args.directory, excluded_patterns=["fastled_js"]
     )
 
     try:
         while True:
-            changed_files = filewatcher_proc.get_all_changes()
+            changed_files = sketch_filewatcher.get_all_changes()
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
                 last_hash_value = last_compiled_result.hash_value
@@ -311,6 +311,14 @@ def run_client(args: argparse.Namespace) -> int:
                 print("Server process is not running. Exiting...")
                 return 1
             time.sleep(0.3)
+            # space_key_watcher = SpaceBarWatcher()
+            # while True:
+            #    if space_key_watcher.space_bar_pressed():
+            #        print("\nStopping watch mode...")
+            #        break
+            #    time.sleep(0.5)
+            # space_key_watcher.stop()
+
     except KeyboardInterrupt:
         print("\nStopping watch mode...")
         return 0
@@ -318,7 +326,7 @@ def run_client(args: argparse.Namespace) -> int:
         print(f"Error: {e}")
         return 1
     finally:
-        filewatcher_proc.stop()
+        sketch_filewatcher.stop()
         if compile_server:
             compile_server.stop()
         if browser_proc:
