@@ -71,7 +71,6 @@ Pre-processing is done to your source files. A fake Arduino.h will be inserted i
 provide shims for most of the common api points.
 
 
-
 # Revisions
 
   * 1.1.11 - Dev improvement: FastLED src code volume mapped into docker will just in time update without having to manually trigger it.
