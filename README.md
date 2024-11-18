@@ -31,25 +31,34 @@ https://zackees.github.io/fastled-wasm/
 # Install
 
 ```bash
-pip install fastled-wasm
+pip install fastled
 ```
 
 **Note that you may need to install x86 docker emulation on Mac-m1 and later, as this is an x86 only image at the prsent.**
 
 # Use
 
-Change to the directory where the sketch lives and run
+Change to the directory where the sketch lives and run, will run the compilation
+on the web compiler.
 
 ```bash
 cd <SKETCH-DIRECTORY>
-fastled-wasm
+fastled
 ```
 
-Or if you don't have docker then use our web compiler
+Or if you have docker you can run a server automatically.
 
 ```bash
 cd <SKETCH-DIRECTORY>
-fastled-wasm --web
+fastled --localhost
+```
+
+To just run a server without launching a client, use
+
+```
+fastled --server
+# now launch the client
+fastled examples/wasm --localhost
 ```
 
 After compilation a web browser windows will pop up.
