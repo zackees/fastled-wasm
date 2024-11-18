@@ -139,7 +139,7 @@ def zip_files(directory: Path, build_mode: BuildMode) -> ZipResult | Exception:
 
 
 def find_good_connection(
-    urls: list[str], filter_out_bad=True, use_ipv6: bool = False
+    urls: list[str], filter_out_bad=True, use_ipv6: bool = True
 ) -> ConnectionResult | None:
     futures: list[Future] = []
     for url in urls:
