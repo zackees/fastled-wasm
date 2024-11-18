@@ -73,6 +73,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.12 - By default, fastled will default to the web compiler. `--localhost` to either attach to an existing server launched with `--server` or else one will be created automatically and launched.
   * 1.1.11 - Dev improvement: FastLED src code volume mapped into docker will just in time update without having to manually trigger it.
   * 1.1.10 - Swap large assets with embedded placeholders. This helps video sketches upload and compile instantly. Assets are re-added on after compile artifacts are returned.
   * 1.1.9 - Remove auto server and instead tell the user corrective action to take.
