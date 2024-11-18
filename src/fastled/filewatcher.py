@@ -7,7 +7,6 @@ import queue
 import threading
 import time
 from contextlib import redirect_stdout
-from dataclasses import dataclass
 from multiprocessing import Process, Queue
 from pathlib import Path
 from queue import Empty
@@ -168,10 +167,15 @@ def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
             watcher.stop()
 
 
-@dataclass
 class FileWatcherProcess:
-    process: Process
-    queue: Queue
+    def __init__(self, root: Path, excluded_patterns: list[str]) -> None:
+        self.queue: Queue = Queue()
+        self.process = Process(
+            target=_process_wrapper,
+            args=(root, excluded_patterns, self.queue),
+            daemon=True,
+        )
+        self.process.start()
 
     def stop(self):
         self.process.terminate()
@@ -188,15 +192,3 @@ class FileWatcherProcess:
             except Empty:
                 break
         return changed_files
-
-
-def create_file_watcher_process(
-    root: Path, excluded_patterns: list[str]
-) -> FileWatcherProcess:
-    """Create a new process running the file watcher"""
-    queue: Queue = Queue()
-    process = Process(
-        target=_process_wrapper, args=(root, excluded_patterns, queue), daemon=True
-    )
-    process.start()
-    return FileWatcherProcess(process, queue)

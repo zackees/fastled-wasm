@@ -17,7 +17,7 @@ from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
-from fastled.filewatcher import create_file_watcher_process
+from fastled.filewatcher import FileWatcherProcess
 from fastled.open_browser import open_browser_thread
 from fastled.sketch import looks_like_sketch_directory
 from fastled.web_compile import web_compile
@@ -292,7 +292,7 @@ def run_client(args: argparse.Namespace) -> int:
         return 1
 
     print("\nWatching for changes. Press Ctrl+C to stop...")
-    filewatcher_proc = create_file_watcher_process(
+    filewatcher_proc = FileWatcherProcess(
         args.directory, excluded_patterns=["fastled_js"]
     )
 
