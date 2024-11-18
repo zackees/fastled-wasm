@@ -82,6 +82,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.13 - Disable the use of ipv6. It produces random timeouts on the onrender server we are using for the web compiler.
   * 1.1.12 - By default, fastled will default to the web compiler. `--localhost` to either attach to an existing server launched with `--server` or else one will be created automatically and launched.
   * 1.1.11 - Dev improvement: FastLED src code volume mapped into docker will just in time update without having to manually trigger it.
   * 1.1.10 - Swap large assets with embedded placeholders. This helps video sketches upload and compile instantly. Assets are re-added on after compile artifacts are returned.
