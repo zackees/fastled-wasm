@@ -99,6 +99,8 @@ We use `ccache` to cache object files. This seems actually help a lot and is bet
 
 The compilation to wasm will happen under a lock. Removing this lock requires removing the platformio toolchain as the compiler backend which enforces it's own internal lock preventing parallel use.
 
+Simple syntax errors will be caught by the pre-processing step. This happens without a lock to reduce the single lock bottleneck.
+
 # Sketch Cache
 
 Sketchs are aggresively finger-printed and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
