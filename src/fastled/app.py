@@ -111,12 +111,12 @@ def parse_args() -> argparse.Namespace:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
-    if not args.localhost and not args.web and not args.server:
+    if not cwd_is_fastled and not args.localhost and not args.web and not args.server:
         print(f"Using web compiler at {DEFAULT_URL}")
         args.web = DEFAULT_URL
     if cwd_is_fastled and not args.web:
         args.localhost = True
-    elif args.localhost:
+    if args.localhost:
         args.web = "localhost"
     if args.server and args.web:
         parser.error("--server and --web are mutually exclusive")
@@ -204,8 +204,8 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
     if is_local_host:
         addr = "localhost" if args.localhost else args.web
         result: ConnectionResult | None = find_good_connection([addr])
-        if result is None:
-            print("No local server found, starting one...")
+        if result is not None:
+            print(f"Found local server at {result.host}")
             local_host_needs_server = True
 
     if not local_host_needs_server and args.web:
@@ -216,6 +216,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
         return args.web
     else:
         try:
+            print("No local server found, starting one...")
             compile_server = CompileServer()
             print("Waiting for the local compiler to start...")
             if not compile_server.wait_for_startup():
