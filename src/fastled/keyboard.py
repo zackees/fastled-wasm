@@ -1,29 +1,28 @@
-import sys
-import time
 import os
 import select
-from threading import Thread
-from queue import Queue, Empty
-from typing import Any
+import sys
+import time
+from multiprocessing import Process, Queue
+from queue import Empty
 
 
 class SpaceBarWatcher:
     def __init__(self) -> None:
         self.queue: Queue = Queue()
         self.queue_cancel: Queue = Queue()
-        self.thread = Thread(target=self._watch_for_space, daemon=True)
-        self.thread.start()
+        self.process = Process(target=self._watch_for_space)
+        self.process.start()
 
     def _watch_for_space(self) -> None:
-        print("Press space bar to stop the process.")
         # Set stdin to non-blocking mode
         fd = sys.stdin.fileno()
-        if os.name != 'nt':  # Unix-like systems
-            import tty
+        if os.name != "nt":  # Unix-like systems
             import termios
-            old_settings = termios.tcgetattr(fd)
+            import tty
+
+            old_settings = termios.tcgetattr(fd)  # type: ignore
             try:
-                tty.setraw(fd)
+                tty.setraw(fd)  # type: ignore
                 while True:
                     # Check for cancel signal
                     try:
@@ -35,12 +34,13 @@ class SpaceBarWatcher:
                     # Check if there's input ready
                     if select.select([sys.stdin], [], [], 0.1)[0]:
                         char = sys.stdin.read(1)
-                        if char == ' ':
-                            self.queue.put(ord(' '))
+                        if char == " ":
+                            self.queue.put(ord(" "))
             finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore
         else:  # Windows
             import msvcrt
+
             while True:
                 # Check for cancel signal
                 try:
@@ -49,14 +49,11 @@ class SpaceBarWatcher:
                 except Empty:
                     pass
 
-                print("Checking for key press")
-
                 # Check if there's input ready
                 if msvcrt.kbhit():
                     char = msvcrt.getch().decode()
-                    print(f"Got key press: {char}")
-                    if char == ' ':
-                        self.queue.put(ord(' '))
+                    if char == " ":
+                        self.queue.put(ord(" "))
 
     def space_bar_pressed(self) -> bool:
         found = False
@@ -68,7 +65,10 @@ class SpaceBarWatcher:
 
     def stop(self) -> None:
         self.queue_cancel.put(True)
-        self.thread.join()
+        self.process.terminate()
+        self.process.join()
+        self.queue.close()
+        self.queue.join_thread()
 
 
 def main() -> None:
@@ -77,7 +77,7 @@ def main() -> None:
         while True:
             if watcher.space_bar_pressed():
                 break
-            time.sleep(.1)
+            time.sleep(1)
     finally:
         watcher.stop()
 
