@@ -89,7 +89,7 @@ class ZipResult:
     error: str | None
 
 
-def zip_files(directory: Path) -> ZipResult | Exception:
+def zip_files(directory: Path, build_mode: BuildMode) -> ZipResult | Exception:
     print("Zipping files...")
     try:
         files = get_sketch_files(directory)
@@ -119,6 +119,12 @@ def zip_files(directory: Path) -> ZipResult | Exception:
                         has_embedded_zip = True
                     else:
                         zip_file.write(file_path, achive_path)
+                # write build mode into the file as build.txt so that sketches are fingerprinted
+                # based on the build mode. Otherwise the same sketch with different build modes
+                # will have the same fingerprint.
+                zip_file.writestr(
+                    str(Path("wasm") / "build_mode.txt"), build_mode.value
+                )
         result = ZipResult(
             zip_bytes=zip_buffer.getvalue(),
             zip_embedded_bytes=(
@@ -164,11 +170,12 @@ def web_compile(
     profile: bool = False,
 ) -> WebCompileResult:
     host = _sanitize_host(host or DEFAULT_HOST)
+    build_mode = build_mode or BuildMode.QUICK
     print("Compiling on", host)
     auth_token = auth_token or _AUTH_TOKEN
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
-    zip_result = zip_files(directory)
+    zip_result = zip_files(directory, build_mode=build_mode)
     if isinstance(zip_result, Exception):
         return WebCompileResult(
             success=False, stdout=str(zip_result), hash_value=None, zip_bytes=b""
