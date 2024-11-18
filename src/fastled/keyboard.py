@@ -1,33 +1,62 @@
-import curses
+import sys
 import time
-from multiprocessing import Process, Queue
-from queue import Empty
+import os
+import select
+from threading import Thread
+from queue import Queue, Empty
 from typing import Any
 
 
-class SpaceBoardWatcherProcess:
+class SpaceBarWatcher:
     def __init__(self) -> None:
         self.queue: Queue = Queue()
         self.queue_cancel: Queue = Queue()
-        self.process = Process(target=self._watch_for_space)
-        self.process.start()
+        self.thread = Thread(target=self._watch_for_space, daemon=True)
+        self.thread.start()
 
     def _watch_for_space(self) -> None:
-        def _curses_main(stdscr: Any) -> None:
-            """Main function for the curses application."""
-            stdscr.nodelay(True)  # Non-blocking input
-            stdscr.addstr("Press the space bar to exit...\n")
+        print("Press space bar to stop the process.")
+        # Set stdin to non-blocking mode
+        fd = sys.stdin.fileno()
+        if os.name != 'nt':  # Unix-like systems
+            import tty
+            import termios
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                while True:
+                    # Check for cancel signal
+                    try:
+                        self.queue_cancel.get(timeout=0.1)
+                        break
+                    except Empty:
+                        pass
+
+                    # Check if there's input ready
+                    if select.select([sys.stdin], [], [], 0.1)[0]:
+                        char = sys.stdin.read(1)
+                        if char == ' ':
+                            self.queue.put(ord(' '))
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        else:  # Windows
+            import msvcrt
             while True:
+                # Check for cancel signal
                 try:
-                    self.queue_cancel.get(timeout=0.5)
+                    self.queue_cancel.get(timeout=0.1)
+                    break
                 except Empty:
                     pass
-                key: int = stdscr.getch()
-                if key == ord(" "):  # ASCII code for space
-                    stdscr.addstr("Space bar pressed!\n")
-                    self.queue.put(key)
 
-        curses.wrapper(_curses_main)
+                print("Checking for key press")
+
+                # Check if there's input ready
+                if msvcrt.kbhit():
+                    char = msvcrt.getch().decode()
+                    print(f"Got key press: {char}")
+                    if char == ' ':
+                        self.queue.put(ord(' '))
 
     def space_bar_pressed(self) -> bool:
         found = False
@@ -39,19 +68,16 @@ class SpaceBoardWatcherProcess:
 
     def stop(self) -> None:
         self.queue_cancel.put(True)
-        self.process.terminate()
-        self.process.join()
-        self.queue.close()
-        self.queue.join_thread()
+        self.thread.join()
 
 
 def main() -> None:
-    watcher = SpaceBoardWatcherProcess()
+    watcher = SpaceBarWatcher()
     try:
         while True:
             if watcher.space_bar_pressed():
                 break
-            time.sleep(1)
+            time.sleep(.1)
     finally:
         watcher.stop()
 
@@ -61,4 +87,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("Keyboard interrupt detected.")
-        pass
