@@ -16,7 +16,25 @@ class SpaceBarWatcher:
     def _watch_for_space(self) -> None:
         # Set stdin to non-blocking mode
         fd = sys.stdin.fileno()
-        if os.name != "nt":  # Unix-like systems
+
+        if os.name == "nt":  # Windows
+            import msvcrt
+
+            while True:
+                # Check for cancel signal
+                try:
+                    self.queue_cancel.get(timeout=0.1)
+                    break
+                except Empty:
+                    pass
+
+                # Check if there's input ready
+                if msvcrt.kbhit():  # type: ignore
+                    char = msvcrt.getch().decode()  # type: ignore
+                    if char == " ":
+                        self.queue.put(ord(" "))
+
+        else:  # Unix-like systems
             import termios
             import tty
 
@@ -38,22 +56,6 @@ class SpaceBarWatcher:
                             self.queue.put(ord(" "))
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore
-        else:  # Windows
-            import msvcrt
-
-            while True:
-                # Check for cancel signal
-                try:
-                    self.queue_cancel.get(timeout=0.1)
-                    break
-                except Empty:
-                    pass
-
-                # Check if there's input ready
-                if msvcrt.kbhit():
-                    char = msvcrt.getch().decode()
-                    if char == " ":
-                        self.queue.put(ord(" "))
 
     def space_bar_pressed(self) -> bool:
         found = False
