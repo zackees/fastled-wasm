@@ -180,6 +180,8 @@ class FileWatcherProcess:
     def stop(self):
         self.process.terminate()
         self.process.join()
+        self.queue.close()
+        self.queue.join_thread()
 
     def get_all_changes(self, timeout: float | None = None) -> list[str]:
         changed_files = []
