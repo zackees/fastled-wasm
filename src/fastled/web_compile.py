@@ -133,15 +133,15 @@ def zip_files(directory: Path) -> ZipResult | Exception:
 
 
 def find_good_connection(
-    urls: list[str], filter_out_bad=False
+    urls: list[str], filter_out_bad=False, use_ipv6: bool = False
 ) -> ConnectionResult | None:
     futures: list[Future] = []
-    ip_versions = [True, False]
-    # Start all connection tests
-    for ipv4 in ip_versions:
-        for url in urls:
-            f = _EXECUTOR.submit(_test_connection, url, ipv4)
-            futures.append(f)
+    for url in urls:
+        f = _EXECUTOR.submit(_test_connection, url, use_ipv4=True)
+        futures.append(f)
+        if use_ipv6:
+            f_v6 = _EXECUTOR.submit(_test_connection, url, use_ipv4=False)
+            futures.append(f_v6)
 
     try:
         # Return first successful result

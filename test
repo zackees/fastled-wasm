@@ -4,6 +4,6 @@ set -e
 
 # Can't run in parralel because of the shared docker
 # instance.
-uv run pytest tests -v "$@"
+uv run pytest -s -vv tests "$@"
 # uv run pytest -n auto tests -v
 
