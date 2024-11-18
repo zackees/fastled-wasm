@@ -74,6 +74,7 @@ provide shims for most of the common api points.
 
 # Revisions
 
+  * 1.1.10 - Swap large assets with embedded placeholders. This helps video sketches upload and compile instantly. Assets are re-added on after compile artifacts are returned.
   * 1.1.9 - Remove auto server and instead tell the user corrective action to take.
   * 1.1.8 - Program now knows it's own version which will be displayed with help file. Use `--version` to get it directly.
   * 1.1.7 - Sketch cache re-enabled, but selectively invalidated on cpp/h updates. Cleaned up deprecated args. Fixed double thread running for containers that was causing slowdown.
