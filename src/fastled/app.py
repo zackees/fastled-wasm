@@ -115,6 +115,9 @@ def parse_args() -> argparse.Namespace:
         args.web = args.web if args.web == "" else args.web
     if args.server and args.web:
         parser.error("--server and --web are mutually exclusive")
+    if args.interactive and not args.server:
+        print("--interactive forces --server mode")
+        args.server = True
     if args.directory is None and not args.server:
         # does current directory look like a sketch?
         maybe_sketch_dir = Path(os.getcwd())
@@ -125,6 +128,7 @@ def parse_args() -> argparse.Namespace:
                 "\nYou either need to specify a sketch directory or run in --server mode."
             )
             sys.exit(1)
+
     return args
 
 

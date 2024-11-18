@@ -17,7 +17,6 @@ dependencies = [
     "livereload",
     "download",
     "filelock",
-    "windows-curses;platform_system=='Windows'",
 ]
 
 dynamic = ["version"]
