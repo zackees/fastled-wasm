@@ -1,9 +1,7 @@
 import socket
 import subprocess
-import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import httpx
 
@@ -46,7 +44,6 @@ class CompileServer:
         self.container_name = container_name
         self.docker = DockerManager(container_name=container_name)
         self.running = False
-        self.thread: Optional[threading.Thread] = None
         self.running_process: subprocess.Popen | None = None
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
@@ -131,7 +128,7 @@ class CompileServer:
         if self.interactive:
             server_command = ["/bin/bash"]
         else:
-            server_command = ["python", "/js/run.py", "server"]
+            server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
         print(f"Started Docker container with command: {server_command}")
         ports = {port: 80}
         volumes = None
@@ -155,9 +152,6 @@ class CompileServer:
             print("Server failed to start")
             self.running = False
             raise RuntimeError("Server failed to start")
-        self.thread = threading.Thread(target=self._server_loop, daemon=True)
-        self.thread.start()
-
         return port
 
     def proceess_running(self) -> bool:
@@ -222,31 +216,5 @@ class CompileServer:
             print(f"Error stopping Docker container: {e}")
         finally:
             self.running_process = None
-        # Signal the server thread to stop
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=10)  # Wait up to 10 seconds for thread to finish
-            if self.thread.is_alive():
-                print("Warning: Server thread did not terminate properly")
-
-        print("Compile server stopped")
-
-    def _server_loop(self) -> None:
-        try:
-            while self.running:
-                if self.running_process:
-                    # Read Docker container output
-                    # Check if Docker process is still running
-                    rtn = self.running_process.poll()
-                    if rtn is not None:
-                        print("Docker server stopped")
-                        self.running = False
-                        break
-
-                time.sleep(0.1)  # Prevent busy waiting
-        except KeyboardInterrupt:
-            print("Server thread stopped by user.")
-        except Exception as e:
-            print(f"Error in server thread: {e}")
-        finally:
             self.running = False
+        print("Compile server stopped")
