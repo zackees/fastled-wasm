@@ -4,7 +4,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,8 +50,11 @@ def _sanitize_host(host: str) -> str:
         return host if host.startswith("https://") else f"https://{host}"
     return host if host.startswith("http://") else f"http://{host}"
 
+_CONNECTION_CACHE: dict[str, ConnectionResult] = {}
 
 def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
+    key = f"{host}_{use_ipv4}"
+    
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
     try:
         with httpx.Client(
@@ -125,6 +128,30 @@ def zip_files(directory: Path) -> ZipResult | Exception:
         return e
 
 
+def find_good_connection(
+    urls: list[str], filter_out_bad=False
+) -> ConnectionResult | None:
+    futures: list[Future] = []
+    ip_versions = [True, False]
+    # Start all connection tests
+    for ipv4 in ip_versions:
+        for url in urls:
+            f = _EXECUTOR.submit(_test_connection, url, ipv4)
+            futures.append(f)
+
+    try:
+        # Return first successful result
+        for future in as_completed(futures):
+            result: ConnectionResult = future.result()
+            if result.success or not filter_out_bad:
+                return result
+    finally:
+        # Cancel any remaining futures
+        for future in futures:
+            future.cancel()
+    return None
+
+
 def web_compile(
     directory: Path,
     host: str | None = None,
@@ -135,12 +162,9 @@ def web_compile(
     host = _sanitize_host(host or DEFAULT_HOST)
     print("Compiling on", host)
     auth_token = auth_token or _AUTH_TOKEN
-
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
-
     zip_result = zip_files(directory)
-
     if isinstance(zip_result, Exception):
         return WebCompileResult(
             success=False, stdout=str(zip_result), hash_value=None, zip_bytes=b""
@@ -149,35 +173,13 @@ def web_compile(
     archive_size = len(zip_bytes)
     print(f"Web compiling on {host}...")
     try:
-
-        files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         urls = [host]
         domain = host.split("://")[-1]
         if ":" not in domain:
             urls.append(f"{host}:{SERVER_PORT}")
-        test_connection_result: ConnectionResult | None = None
 
-        futures: list = []
-        ip_versions = [True, False] if "localhost" not in host else [True]
-        for ipv4 in ip_versions:
-            for url in urls:
-                f = _EXECUTOR.submit(_test_connection, url, ipv4)
-                futures.append(f)
-
-        succeeded = False
-        for future in as_completed(futures):
-            result: ConnectionResult = future.result()
-
-            if result.success:
-                print(f"Connection successful to {result.host}")
-                succeeded = True
-                # host = test_url
-                test_connection_result = result
-                break
-            else:
-                print(f"Ignoring {result.host} due to connection failure")
-
-        if not succeeded:
+        connection_result = find_good_connection(urls)
+        if connection_result is None:
             print("Connection failed to all endpoints")
             return WebCompileResult(
                 success=False,
@@ -185,11 +187,11 @@ def web_compile(
                 hash_value=None,
                 zip_bytes=b"",
             )
-        assert test_connection_result is not None
-        ipv4_stmt = "IPv4" if test_connection_result.ipv4 else "IPv6"
+
+        ipv4_stmt = "IPv4" if connection_result.ipv4 else "IPv6"
         transport = (
             httpx.HTTPTransport(local_address="0.0.0.0")
-            if test_connection_result.ipv4
+            if connection_result.ipv4
             else None
         )
         with httpx.Client(
@@ -207,8 +209,9 @@ def web_compile(
                 "profile": "true" if profile else "false",
             }
 
-            url = f"{test_connection_result.host}/{ENDPOINT_COMPILED_WASM}"
+            url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"
             print(f"Compiling on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes")
+            files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
             response = client.post(
                 url,
                 follow_redirects=True,

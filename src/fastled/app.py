@@ -20,8 +20,8 @@ from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_thread
-from fastled.sketch import looks_like_sketch_directory
-from fastled.web_compile import web_compile
+from fastled.sketch import looks_like_fastled_repo, looks_like_sketch_directory
+from fastled.web_compile import ConnectionResult, find_good_connection, web_compile
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
@@ -108,11 +108,17 @@ def parse_args() -> argparse.Namespace:
         help="Skips the test to see if the current directory is a valid FastLED sketch directory",
     )
 
+    cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
+
     args = parser.parse_args()
-    if args.localhost:
+    print(f"Running with args: {args}")
+    if not args.localhost and not args.web and not args.server:
+        print(f"Using web compiler at {DEFAULT_URL}")
+        args.web = DEFAULT_URL
+    if cwd_is_fastled and not args.web:
+        args.localhost = True
+    elif args.localhost:
         args.web = "localhost"
-    if args.web is not None:
-        args.web = args.web if args.web == "" else args.web
     if args.server and args.web:
         parser.error("--server and --web are mutually exclusive")
     if args.interactive and not args.server:
@@ -192,7 +198,18 @@ def run_web_compiler(
 
 
 def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
-    if args.web:
+    is_local_host = "localhost" in args.web or "127.0.0.1" in args.web or args.localhost
+
+    # test to see if there is already a local host server
+    local_host_needs_server = False
+    if is_local_host:
+        addr = "localhost" if args.localhost else args.web
+        result: ConnectionResult | None = find_good_connection([addr])
+        if result is None:
+            print("No local server found, starting one...")
+            local_host_needs_server = True
+
+    if not local_host_needs_server and args.web:
         if isinstance(args.web, str):
             return args.web
         if isinstance(args.web, bool):

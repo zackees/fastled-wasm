@@ -48,6 +48,11 @@ class CompileServer:
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
         self._port = self._start()
+        # fancy print
+        msg = f"# FastLED Compile Server started at {self.url()} #"
+        print("\n" + "#" * len(msg))
+        print(msg)
+        print("#" * len(msg) + "\n")
 
     def using_fastled_src_dir_volume(self) -> bool:
         return self.fastled_src_dir is not None
