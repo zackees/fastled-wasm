@@ -329,6 +329,9 @@ def run_client(args: argparse.Namespace) -> int:
                     print("\nRecompilation failed.")
                 else:
                     print("\nRecompilation successful.")
+            if compile_server and not compile_server.proceess_running():
+                print("Server process is not running. Exiting...")
+                return 1
             time.sleep(0.3)
     except KeyboardInterrupt:
         print("\nStopping watch mode...")

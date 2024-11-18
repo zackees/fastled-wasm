@@ -4,7 +4,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,7 +20,7 @@ ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 ENABLE_EMBEDDED_DATA = True
-_THREAD_POOL = ThreadPoolExecutor(max_workers=8)
+_THREAD_POOL = ProcessPoolExecutor(max_workers=8)
 
 
 @dataclass
