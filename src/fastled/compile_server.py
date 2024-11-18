@@ -12,6 +12,8 @@ _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
 SERVER_PORT = 9021
 
+SERVER_OPTIONS = ["--allow-shutdown", "--no-auto-update"]
+
 
 def find_available_port(start_port: int = SERVER_PORT) -> int:
     """Find an available port starting from the given port."""
@@ -130,8 +132,9 @@ class CompileServer:
         if self.interactive:
             server_command = ["/bin/bash"]
         else:
-            server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
-        print(f"Started Docker container with command: {server_command}")
+            server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
+        server_cmd_str = subprocess.list2cmdline(server_command)
+        print(f"Started Docker container with command: {server_cmd_str}")
         ports = {port: 80}
         volumes = None
         if self.fastled_src_dir:
@@ -141,10 +144,6 @@ class CompileServer:
             volumes = {
                 str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
             }
-            if not self.interactive:
-                # no auto-update because the source directory is mapped in.
-                # This should be automatic now.
-                server_command.append("--no-auto-update")  # stop git repo updates.
         self.running_process = self.docker.run_container(
             server_command, ports=ports, volumes=volumes, tty=self.interactive
         )
