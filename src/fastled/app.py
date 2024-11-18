@@ -372,13 +372,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        project_root = Path(__file__).resolve().parent.parent.parent
-        print(f"Project root: {project_root}")
-        os.chdir(project_root)
-        os.chdir("../fastled")
         sys.argv.append("examples/SdCard")
-        sys.argv.append("--web")
-        sys.argv.append("localhost")
+        sys.argv.append("--local")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
