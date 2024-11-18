@@ -50,11 +50,14 @@ def _sanitize_host(host: str) -> str:
         return host if host.startswith("https://") else f"https://{host}"
     return host if host.startswith("http://") else f"http://{host}"
 
-_CONNECTION_CACHE: dict[str, ConnectionResult] = {}
 
 def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
+    # Function static cache
+    connection_cache = _test_connection.__dict__.setdefault("_CONNECTION_CACHE", {})
     key = f"{host}_{use_ipv4}"
-    
+    cached_result = connection_cache.get(key)
+    if cached_result is not None:
+        return cached_result
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
     try:
         with httpx.Client(
@@ -67,6 +70,7 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
             result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
     except Exception:
         result = ConnectionResult(host, False, use_ipv4)
+    connection_cache[key] = result
     return result
 
 

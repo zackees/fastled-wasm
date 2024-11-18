@@ -111,7 +111,6 @@ def parse_args() -> argparse.Namespace:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
-    print(f"Running with args: {args}")
     if not args.localhost and not args.web and not args.server:
         print(f"Using web compiler at {DEFAULT_URL}")
         args.web = DEFAULT_URL
@@ -232,7 +231,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
 
 def run_client(args: argparse.Namespace) -> int:
     compile_server: CompileServer | None = None
-    open_web_browser = not args.just_compile
+    open_web_browser = not args.just_compile and not args.interactive
     profile = args.profile
     if not args.force_compile and not looks_like_sketch_directory(Path(args.directory)):
         print(
