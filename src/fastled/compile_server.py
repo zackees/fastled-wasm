@@ -49,6 +49,9 @@ class CompileServer:
         self.interactive = interactive
         self._port = self._start()
 
+    def using_fastled_src_dir_volume(self) -> bool:
+        return self.fastled_src_dir is not None
+
     def port(self) -> int:
         return self._port
 
@@ -90,7 +93,6 @@ class CompileServer:
                     raise RuntimeError("Docker could not be started. Exiting.")
 
             # Clean up any existing container with the same name
-
             try:
                 container_exists = (
                     subprocess.run(
@@ -117,14 +119,8 @@ class CompileServer:
                 raise RuntimeError("Failed to ensure Docker image exists")
 
         print("Docker image now validated")
-
-        # Remove the image to force a fresh download
-        # subprocess.run(["docker", "rmi", "fastled-wasm"], capture_output=True)
-        # print("All clean")
-
         port = find_available_port()
         print(f"Found an available port: {port}")
-        # server_command = ["python", "/js/run.py", "server", "--allow-shutdown"]
         if self.interactive:
             server_command = ["/bin/bash"]
         else:

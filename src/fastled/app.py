@@ -11,9 +11,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
-from multiprocessing import Process, Queue
 from pathlib import Path
-from queue import Empty
 
 from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
@@ -293,34 +291,14 @@ def run_client(args: argparse.Namespace) -> int:
             compile_server.stop()
         return 1
 
-    # Watch mode
     print("\nWatching for changes. Press Ctrl+C to stop...")
-    # watcher = FileChangedNotifier(args.directory, excluded_patterns=["fastled_js"])
-    # watcher.start()
-
-    proc: Process
-    queue: Queue
-    proc, queue = create_file_watcher_process(
+    filewatcher_proc = create_file_watcher_process(
         args.directory, excluded_patterns=["fastled_js"]
     )
 
     try:
         while True:
-            try:
-                changed_files = []
-                while True:
-                    try:
-                        changed_file = queue.get(block=False)
-                        changed_files.append(changed_file)
-                    except Empty:
-                        break
-
-            except KeyboardInterrupt:
-                print("\nExiting from watcher...")
-                raise
-            except Exception as e:
-                print(f"Error getting changes: {e}")
-                changed_files = []
+            changed_files = filewatcher_proc.get_all_changes()
             if changed_files:
                 print(f"\nChanges detected in {changed_files}")
                 last_hash_value = last_compiled_result.hash_value
@@ -340,7 +318,7 @@ def run_client(args: argparse.Namespace) -> int:
         print(f"Error: {e}")
         return 1
     finally:
-        proc.terminate()
+        filewatcher_proc.stop()
         if compile_server:
             compile_server.stop()
         if browser_proc:

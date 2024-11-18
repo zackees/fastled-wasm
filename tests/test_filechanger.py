@@ -6,10 +6,13 @@ import os
 import tempfile
 import time
 import unittest
-from multiprocessing import Queue
 from pathlib import Path
 
-from fastled.filewatcher import FileChangedNotifier, create_file_watcher_process
+from fastled.filewatcher import (
+    FileChangedNotifier,
+    FileWatcherProcess,
+    create_file_watcher_process,
+)
 
 
 class FileChangeTester(unittest.TestCase):
@@ -60,8 +63,8 @@ class FileChangeProcessTester(unittest.TestCase):
             test_file.write_text("initial content")
 
             # Start watching the directory in a separate process
-            queue: Queue
-            process, queue = create_file_watcher_process(Path(temp_dir), [])
+            proc: FileWatcherProcess = create_file_watcher_process(Path(temp_dir), [])
+            time.sleep(0.5)  # Give the watcher time to start
 
             try:
                 # Make a change to the file
@@ -69,25 +72,22 @@ class FileChangeProcessTester(unittest.TestCase):
                 test_file.write_text("new content")
 
                 # Wait for and verify the change
-                changed_file = queue.get(timeout=5)
-                self.assertIsNotNone(changed_file, "No file change detected")
+                # changed_file = queue.get(timeout=5)
+                changed_files = proc.get_all_changes(timeout=5)
+                # self.assertIsNotNone(changed_file, "No file change detected")
+                self.assertNotEqual(len(changed_files), 0, "No file change detected")
                 self.assertEqual(
-                    os.path.basename(changed_file), os.path.basename(str(test_file))
+                    os.path.basename(changed_files[0]), os.path.basename(str(test_file))
                 )
-
             except Exception as e:
                 type_str_of_exception = str(type(e))
                 print(f"Got exception: {type_str_of_exception}")
                 if "queue.Empty" in type_str_of_exception:
                     self.fail("No file change detected")
                 print(f"Got exception: {e}")
-                process.terminate()
-                process.join()
                 raise e
-
             finally:
-                process.terminate()
-                process.join()
+                proc.stop()
 
 
 if __name__ == "__main__":

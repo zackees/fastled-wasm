@@ -7,8 +7,10 @@ import queue
 import threading
 import time
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from multiprocessing import Process, Queue
 from pathlib import Path
+from queue import Empty
 from typing import Dict, Set
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
@@ -166,14 +168,35 @@ def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
             watcher.stop()
 
 
+@dataclass
+class FileWatcherProcess:
+    process: Process
+    queue: Queue
+
+    def stop(self):
+        self.process.terminate()
+        self.process.join()
+
+    def get_all_changes(self, timeout: float | None = None) -> list[str]:
+        changed_files = []
+        block = timeout is not None
+
+        while True:
+            try:
+                changed_file = self.queue.get(block=block, timeout=timeout)
+                changed_files.append(changed_file)
+            except Empty:
+                break
+        return changed_files
+
+
 def create_file_watcher_process(
     root: Path, excluded_patterns: list[str]
-) -> tuple[Process, Queue]:
+) -> FileWatcherProcess:
     """Create a new process running the file watcher"""
     queue: Queue = Queue()
     process = Process(
         target=_process_wrapper, args=(root, excluded_patterns, queue), daemon=True
     )
     process.start()
-    time.sleep(0.5)
-    return process, queue
+    return FileWatcherProcess(process, queue)
