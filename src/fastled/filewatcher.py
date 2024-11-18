@@ -2,9 +2,11 @@
 """
 
 import hashlib
+import os
 import queue
 import threading
 import time
+from contextlib import redirect_stdout
 from multiprocessing import Process, Queue
 from pathlib import Path
 from typing import Dict, Set
@@ -148,16 +150,20 @@ class FileChangedNotifier(threading.Thread):
 
 
 def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
-    watcher = FileChangedNotifier(str(root), excluded_patterns=excluded_patterns)
-    watcher.start()
-    while True:
-        try:
-            changed_files = watcher.get_all_changes()
-            for file in changed_files:
-                queue.put(file)
-        except KeyboardInterrupt:
-            break
-    watcher.stop()
+    with open(os.devnull, "w") as fnull:  # Redirect to /dev/null
+        with redirect_stdout(fnull):
+            watcher = FileChangedNotifier(
+                str(root), excluded_patterns=excluded_patterns
+            )
+            watcher.start()
+            while True:
+                try:
+                    changed_files = watcher.get_all_changes()
+                    for file in changed_files:
+                        queue.put(file)
+                except KeyboardInterrupt:
+                    break
+            watcher.stop()
 
 
 def create_file_watcher_process(
@@ -165,5 +171,9 @@ def create_file_watcher_process(
 ) -> tuple[Process, Queue]:
     """Create a new process running the file watcher"""
     queue: Queue = Queue()
-    process = Process(target=_process_wrapper, args=(root, excluded_patterns, queue))
+    process = Process(
+        target=_process_wrapper, args=(root, excluded_patterns, queue), daemon=True
+    )
+    process.start()
+    time.sleep(0.5)
     return process, queue

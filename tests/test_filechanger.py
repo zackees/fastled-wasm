@@ -62,15 +62,14 @@ class FileChangeProcessTester(unittest.TestCase):
             # Start watching the directory in a separate process
             queue: Queue
             process, queue = create_file_watcher_process(Path(temp_dir), [])
-            process.start()
 
             try:
                 # Make a change to the file
-                time.sleep(2)  # Give the watcher time to start
+                # time.sleep(2)  # Give the watcher time to start
                 test_file.write_text("new content")
 
                 # Wait for and verify the change
-                changed_file = queue.get(timeout=0.5)
+                changed_file = queue.get(timeout=5)
                 self.assertIsNotNone(changed_file, "No file change detected")
                 self.assertEqual(
                     os.path.basename(changed_file), os.path.basename(str(test_file))

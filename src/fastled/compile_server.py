@@ -237,8 +237,9 @@ class CompileServer:
                 if self.running_process:
                     # Read Docker container output
                     # Check if Docker process is still running
-                    if self.running_process.poll() is not None:
-                        print("Docker server stopped unexpectedly")
+                    rtn = self.running_process.poll()
+                    if rtn is not None:
+                        print("Docker server stopped")
                         self.running = False
                         break
 

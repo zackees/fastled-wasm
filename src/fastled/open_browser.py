@@ -24,7 +24,11 @@ def _open_browser_python(fastled_js: Path, port: int) -> subprocess.Popen:
     ]
 
     # Start the process
-    process = subprocess.Popen(cmd)
+    process = subprocess.Popen(
+        cmd,
+        # stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     return process
 
 

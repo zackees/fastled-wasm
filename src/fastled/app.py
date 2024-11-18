@@ -11,7 +11,9 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from multiprocessing import Process, Queue
 from pathlib import Path
+from queue import Empty
 
 from fastled import __version__
 from fastled.build_mode import BuildMode, get_build_mode
@@ -296,8 +298,6 @@ def run_client(args: argparse.Namespace) -> int:
     # watcher = FileChangedNotifier(args.directory, excluded_patterns=["fastled_js"])
     # watcher.start()
 
-    from multiprocessing import Process, Queue
-
     proc: Process
     queue: Queue
     proc, queue = create_file_watcher_process(
@@ -307,10 +307,14 @@ def run_client(args: argparse.Namespace) -> int:
     try:
         while True:
             try:
-                size = queue.qsize()
                 changed_files = []
-                for i in range(size):
-                    changed_files.append(queue.get())
+                while True:
+                    try:
+                        changed_file = queue.get(block=False)
+                        changed_files.append(changed_file)
+                    except Empty:
+                        break
+
             except KeyboardInterrupt:
                 print("\nExiting from watcher...")
                 raise
@@ -373,7 +377,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.argv.append("examples/SdCard")
-        sys.argv.append("--local")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
