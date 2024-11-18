@@ -21,7 +21,12 @@ from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_thread
 from fastled.sketch import looks_like_fastled_repo, looks_like_sketch_directory
-from fastled.web_compile import ConnectionResult, find_good_connection, web_compile
+from fastled.web_compile import (
+    SERVER_PORT,
+    ConnectionResult,
+    find_good_connection,
+    web_compile,
+)
 
 machine = platform.machine().lower()
 IS_ARM: bool = "arm" in machine or "aarch64" in machine
@@ -203,7 +208,11 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
     local_host_needs_server = False
     if is_local_host:
         addr = "localhost" if args.localhost else args.web
-        result: ConnectionResult | None = find_good_connection([addr])
+        urls = [addr]
+        if ":" not in addr:
+            urls.append(f"{addr}:{SERVER_PORT}")
+
+        result: ConnectionResult | None = find_good_connection(urls)
         if result is not None:
             print(f"Found local server at {result.host}")
             return result.host

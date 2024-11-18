@@ -1,3 +1,4 @@
+import _thread
 import io
 import json
 import os
@@ -53,11 +54,7 @@ def _sanitize_host(host: str) -> str:
 
 def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
     # Function static cache
-    connection_cache = _test_connection.__dict__.setdefault("_CONNECTION_CACHE", {})
-    key = f"{host}_{use_ipv4}"
-    cached_result = connection_cache.get(key)
-    if cached_result is not None:
-        return cached_result
+    host = _sanitize_host(host)
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
     try:
         with httpx.Client(
@@ -68,9 +65,18 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
                 f"{host}/healthz", timeout=3, follow_redirects=True
             )
             result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
-    except Exception:
+    except KeyboardInterrupt:
+        # main thraed interrupt
+
+        _thread.interrupt_main()
+
+    except TimeoutError:
         result = ConnectionResult(host, False, use_ipv4)
-    connection_cache[key] = result
+    except Exception as e:
+        import warnings
+
+        warnings.warn(f"Connection failed: {e}")
+        result = ConnectionResult(host, False, use_ipv4)
     return result
 
 
@@ -143,9 +149,10 @@ def find_good_connection(
 ) -> ConnectionResult | None:
     futures: list[Future] = []
     for url in urls:
+
         f = _EXECUTOR.submit(_test_connection, url, use_ipv4=True)
         futures.append(f)
-        if use_ipv6:
+        if use_ipv6 and "localhost" not in url:
             f_v6 = _EXECUTOR.submit(_test_connection, url, use_ipv4=False)
             futures.append(f_v6)
 
@@ -184,6 +191,7 @@ def web_compile(
     archive_size = len(zip_bytes)
     print(f"Web compiling on {host}...")
     try:
+        host = _sanitize_host(host)
         urls = [host]
         domain = host.split("://")[-1]
         if ":" not in domain:
