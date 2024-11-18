@@ -85,7 +85,7 @@ back and forth. Therefore a special directory `data/` is implicitly used to hold
 will be replaced with a stub containing the size and hash of the file during upload. On download these stubs are swapped back
 with their originals.
 
-The wasm compiler will also recongize all files in the `data/` directory and generate a `files.json` manifest and can be used
+The wasm compiler will recognize all files in the `data/` directory and generate a `files.json` manifest and can be used
 in your wasm sketch using an emulated SD card system mounted at `/data/` on the SD Card. In order to increase load speed, these
 files will be asynchroniously streamed into the running sketch instance during runtime. The only caveat here is that although these files will be available during the setup() phase of the sketch, they will not be fully hydrated, so if you do a seek(end) of these files the results are undefined.
 
