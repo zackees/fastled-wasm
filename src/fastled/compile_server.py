@@ -140,7 +140,7 @@ class CompileServer:
                 # This should be automatic now.
                 server_command.append("--no-auto-update")  # stop git repo updates.
         self.running_process = self.docker.run_container(
-            server_command, ports=ports, volumes=volumes
+            server_command, ports=ports, volumes=volumes, tty=self.interactive
         )
         print("Compile server starting")
         time.sleep(3)
