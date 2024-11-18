@@ -118,8 +118,6 @@ def parse_args() -> argparse.Namespace:
         args.localhost = True
     if args.localhost:
         args.web = "localhost"
-    if args.server and args.web:
-        parser.error("--server and --web are mutually exclusive")
     if args.interactive and not args.server:
         print("--interactive forces --server mode")
         args.server = True
