@@ -361,6 +361,8 @@ def run_client(args: argparse.Namespace) -> int:
                 return 1
             if source_code_watcher is not None:
                 changed_files = source_code_watcher.get_all_changes()
+                # de-duplicate changes
+                changed_files = sorted(list(set(changed_files)))
                 if changed_files:
                     print(f"\nChanges detected in FastLED source code: {changed_files}")
                     print("Press space bar to trigger compile.")
