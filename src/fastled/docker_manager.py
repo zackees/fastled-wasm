@@ -20,7 +20,7 @@ from filelock import FileLock
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = CONFIG_DIR / "db.db"
-DISK_CACHE = DiskLRUCache(DB_FILE, 10)
+DISK_CACHE = DiskLRUCache(str(DB_FILE), 10)
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -170,33 +170,41 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
+
         try:
             local_image = self.client.images.get(f"{image_name}:{tag}")
             print(f"Image {image_name}:{tag} is already available.")
 
-            if upgrade or not local_image:
+            if upgrade:
+                remote_image = self.client.images.get_registry_data(
+                    f"{image_name}:{tag}"
+                )
+                remote_image_hash = remote_image.id
+                remote_image_hash_from_local_image = DISK_CACHE.get(local_image.id)
+                if remote_image_hash_from_local_image == remote_image_hash:
+                    print(f"Local image {image_name}:{tag} is up to date.")
+                    return
+
                 # Quick check for latest version
-                try:
-                    remote_image = self.client.images.get_registry_data(
-                        f"{image_name}:{tag}"
-                    )
-                    print(f"Local version: {local_image.id}")
-                    print(f"Remote version: {remote_image.id}")
 
-                    is_latest = local_image.id.startswith(remote_image.id)
-                    print(f"Local version is{' ' if is_latest else ' not '}up to date")
-
-                    if not is_latest:
-                        print(f"Pulling newer version of {image_name}:{tag}...")
-                        _ = self.client.images.pull(image_name, tag=tag)
-                        print(f"Updated to newer version of {image_name}:{tag}")
-                except Exception as e:
-                    print(f"Failed to check remote version: {e}")
+                print(f"Pulling newer version of {image_name}:{tag}...")
+                _ = self.client.images.pull(image_name, tag=tag)
+                print(f"Updated to newer version of {image_name}:{tag}")
+                local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
+                DISK_CACHE.put(local_image_hash, remote_image_hash)
 
         except docker.errors.ImageNotFound:
             print(f"Image {image_name}:{tag} not found. Downloading...")
             self.client.images.pull(image_name, tag=tag)
-            print(f"Image {image_name}:{tag} downloaded successfully.")
+            try:
+                local_image = self.client.images.get(f"{image_name}:{tag}")
+                local_image_hash = local_image.id
+                DISK_CACHE.put(local_image_hash, remote_image_hash)
+                print(f"Image {image_name}:{tag} downloaded successfully.")
+            except docker.errors.ImageNotFound:
+                import warnings
+
+                warnings.warn(f"Image {image_name}:{tag} not found after download.")
 
     def tag_image(self, image_name: str, old_tag: str, new_tag: str) -> None:
         """
@@ -214,63 +222,76 @@ class DockerManager:
         ports: dict | None,
     ) -> bool:
         """Compare if existing container has matching configuration"""
-        # Check if container is using the same image
-        container_image_id = container.image.id
-        container_image_tags = container.image.tags
+        try:
+            # Check if container is using the same image
+            container_image_id = container.image.id
+            container_image_tags = container.image.tags
 
-        # Simplified image comparison - just compare the IDs directly
-        if container_image_tags is None:
-            print(f"Container using untagged image with ID: {container_image_id}")
-        else:
-            current_image = self.client.images.get(container_image_tags[0])
-            if container_image_id != current_image.id:
-                print(
-                    f"Container using different image version. Container: {container_image_id}, Current: {current_image.id}"
+            # Simplified image comparison - just compare the IDs directly
+            if not container_image_tags:
+                print(f"Container using untagged image with ID: {container_image_id}")
+            else:
+                current_image = self.client.images.get(container_image_tags[0])
+                if container_image_id != current_image.id:
+                    print(
+                        f"Container using different image version. Container: {container_image_id}, Current: {current_image.id}"
+                    )
+                    return False
+
+            # Check command if specified
+            if command and container.attrs["Config"]["Cmd"] != command.split():
+                return False
+
+            # Check volumes if specified
+            if volumes:
+                container_mounts = (
+                    {
+                        m["Destination"]: {"bind": m["Source"], "mode": m["Mode"]}
+                        for m in container.attrs["Mounts"]
+                    }
+                    if container.attrs.get("Mounts")
+                    else {}
                 )
-                return False
 
-        # Check command if specified
-        if command and container.attrs["Config"]["Cmd"] != command.split():
+                if not all(
+                    mount["bind"] in container_mounts.get(vol, {}).get("bind", "")
+                    for vol, mount in volumes.items()
+                ):
+                    return False
+
+            # Check ports if specified
+            if ports:
+                container_ports = (
+                    container.attrs["Config"]["ExposedPorts"]
+                    if container.attrs["Config"].get("ExposedPorts")
+                    else {}
+                )
+                container_port_bindings = (
+                    container.attrs["HostConfig"]["PortBindings"]
+                    if container.attrs["HostConfig"].get("PortBindings")
+                    else {}
+                )
+
+                for host_port, container_port in ports.items():
+                    port_key = f"{container_port}/tcp"
+                    if port_key not in container_ports:
+                        return False
+                    if not container_port_bindings.get(port_key, [{"HostPort": None}])[
+                        0
+                    ]["HostPort"] == str(host_port):
+                        return False
+        except KeyboardInterrupt:
+            raise
+        except docker.errors.NotFound:
+            print("Container not found.")
             return False
+        except Exception as e:
+            import traceback
 
-        # Check volumes if specified
-        if volumes:
-            container_mounts = (
-                {
-                    m["Destination"]: {"bind": m["Source"], "mode": m["Mode"]}
-                    for m in container.attrs["Mounts"]
-                }
-                if container.attrs.get("Mounts")
-                else {}
-            )
+            stack = traceback.format_exc()
+            import warnings
 
-            if not all(
-                mount["bind"] in container_mounts.get(vol, {}).get("bind", "")
-                for vol, mount in volumes.items()
-            ):
-                return False
-
-        # Check ports if specified
-        if ports:
-            container_ports = (
-                container.attrs["Config"]["ExposedPorts"]
-                if container.attrs["Config"].get("ExposedPorts")
-                else {}
-            )
-            container_port_bindings = (
-                container.attrs["HostConfig"]["PortBindings"]
-                if container.attrs["HostConfig"].get("PortBindings")
-                else {}
-            )
-
-            for host_port, container_port in ports.items():
-                port_key = f"{container_port}/tcp"
-                if port_key not in container_ports:
-                    return False
-                if not container_port_bindings.get(port_key, [{"HostPort": None}])[0][
-                    "HostPort"
-                ] == str(host_port):
-                    return False
+            warnings.warn(f"Error checking container config: {e}\n{stack}")
 
         return True
 
