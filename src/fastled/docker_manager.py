@@ -188,6 +188,7 @@ class DockerManager:
                     f"{image_name}:{tag}"
                 )
                 remote_image_hash = remote_image.id
+                remote_image_hash_from_local_image: str | None = None
                 try:
                     remote_image_hash_from_local_image = DISK_CACHE.get(local_image.id)
                 except KeyboardInterrupt:
