@@ -2,17 +2,26 @@
 New abstraction for Docker management with improved Ctrl+C handling.
 """
 
+import sys
+from datetime import datetime, timezone
+
 import docker
+from docker.client import DockerClient
 from docker.models.containers import Container
 from docker.models.images import Image
-from docker.client import DockerClient
-import signal
-import sys
+
+
+# Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
+# then it will throw an exception.
+def _utc_now_no_tz() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(tzinfo=None)
 
 
 class DockerManager:
     def __init__(self):
         self.client: DockerClient = docker.from_env()
+        self.first_run = False
 
     def validate_or_download_image(self, image_name: str, tag: str = "latest") -> None:
         """
@@ -44,14 +53,17 @@ class DockerManager:
             container: Container = self.client.containers.get(container_name)
             if container.status == "running":
                 print(f"Container {container_name} is already running.")
+            if container.status == "paused":
+                print(f"Resuming existing container {container_name}.")
+                container.unpause()
             else:
                 print(f"Starting existing container {container_name}.")
+                self.first_run = True
                 container.start()
         except docker.errors.NotFound:
             print(f"Creating and starting new container {container_name}.")
             container = self.client.containers.run(
-                image_name, command, name=container_name, detach=True,
-                # tty=True
+                image_name, command, name=container_name, detach=True, tty=True
             )
         return container
 
@@ -59,10 +71,25 @@ class DockerManager:
         """
         Attach to a running container and monitor its logs.
         """
+
         print(f"Attaching to container {container.name}...")
+
+        first_run = self.first_run
+        self.first_run = False
+        from_date = _utc_now_no_tz() if not first_run else None
+        to_date = _utc_now_no_tz()
         try:
-            for log in container.logs(stream=True):
-                print(log.decode("utf-8").strip())
+            while True:
+                for log in container.logs(
+                    follow=False, since=from_date, until=to_date, stream=True
+                ):
+                    print(log.decode("utf-8"), end="")
+                import time
+
+                time.sleep(0.1)
+                from_date = to_date
+                to_date = _utc_now_no_tz()
+
         except KeyboardInterrupt:
             print("\nDetaching from container logs...")
             raise
@@ -108,7 +135,7 @@ def handle_sigint(signal, frame):
 
 def main():
     # Register SIGINT handler
-    signal.signal(signal.SIGINT, handle_sigint)
+    # signal.signal(signal.SIGINT, handle_sigint)
 
     docker_manager = DockerManager()
 
@@ -127,15 +154,18 @@ def main():
         docker_manager.tag_image(image_name, tag, new_tag)
 
         # Step 3: Run the container
-        container = docker_manager.run_container(f"{image_name}:{new_tag}", container_name, command)
+        container = docker_manager.run_container(
+            f"{image_name}:{new_tag}", container_name, command
+        )
 
         # Step 4: Attach and monitor the container logs
         docker_manager.attach_and_run(container)
     except KeyboardInterrupt:
         print("\nStopping container...")
         container = docker_manager.get_container(container_name)
-        container.stop()
-        print("Container stopped.")
+        # container.stop()
+        # print("Container stopped.")
+        docker_manager.suspend_container(container)
 
     try:
         # Suspend and resume the container
