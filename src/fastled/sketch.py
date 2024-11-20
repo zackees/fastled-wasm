@@ -2,6 +2,31 @@ import os
 from pathlib import Path
 
 
+def find_sketch_directories(directory: Path) -> list[Path]:
+    sketch_directories: list[Path] = []
+    # search all the paths one level deep
+    for path in directory.iterdir():
+
+        if path.is_dir():
+            print(path)
+            dir_name = path.name
+
+            if str(dir_name).startswith("."):
+                print("Ignoring hidden directory", path)
+                continue
+
+            if looks_like_sketch_directory(path, quick=True):
+                sketch_directories.append(path)
+            if dir_name.lower() == "examples":
+                for example in path.iterdir():
+                    if example.is_dir():
+                        if looks_like_sketch_directory(example, quick=True):
+                            sketch_directories.append(example)
+    # make relative to cwd
+    sketch_directories = [p.relative_to(directory) for p in sketch_directories]
+    return sketch_directories
+
+
 def get_sketch_files(directory: Path) -> list[Path]:
     files: list[Path] = []
     for root, dirs, filenames in os.walk(directory):
@@ -30,14 +55,15 @@ def _lots_and_lots_of_files(directory: Path) -> bool:
     return len(get_sketch_files(directory)) > 100
 
 
-def looks_like_sketch_directory(directory: Path) -> bool:
+def looks_like_sketch_directory(directory: Path, quick=False) -> bool:
     if looks_like_fastled_repo(directory):
         print("Directory looks like the FastLED repo")
         return False
 
-    if _lots_and_lots_of_files(directory):
-        print("Too many files in the directory, bailing out")
-        return False
+    if not quick:
+        if _lots_and_lots_of_files(directory):
+            print("Too many files in the directory, bailing out")
+            return False
 
     # walk the path and if there are over 30 files, return False
     # at the root of the directory there should either be an ino file or a src directory

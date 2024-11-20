@@ -20,7 +20,11 @@ from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_thread
-from fastled.sketch import looks_like_fastled_repo, looks_like_sketch_directory
+from fastled.sketch import (
+    find_sketch_directories,
+    looks_like_fastled_repo,
+    looks_like_sketch_directory,
+)
 from fastled.web_compile import (
     SERVER_PORT,
     ConnectionResult,
@@ -149,10 +153,26 @@ def parse_args() -> argparse.Namespace:
         if looks_like_sketch_directory(maybe_sketch_dir):
             args.directory = str(maybe_sketch_dir)
         else:
-            print(
-                "\nYou either need to specify a sketch directory or run in --server mode."
-            )
-            sys.exit(1)
+            sketch_directories = find_sketch_directories(maybe_sketch_dir)
+            if len(sketch_directories) == 1:
+                print(f"\nUsing sketch directory: {sketch_directories[0]}")
+                args.directory = str(sketch_directories[0])
+            elif len(sketch_directories) > 1:
+                print("\nMultiple FastLED sketches found:")
+                for i, sketch_dir in enumerate(sketch_directories):
+                    print(f"  [{i+1}]: {sketch_dir}")
+                which = input("\nPlease specify a sketch directory: ")
+                try:
+                    index = int(which) - 1
+                    args.directory = str(sketch_directories[index])
+                except (ValueError, IndexError):
+                    print("Invalid selection.")
+                    sys.exit(1)
+            else:
+                print(
+                    "\nYou either need to specify a sketch directory or run in --server mode."
+                )
+                sys.exit(1)
 
     return args
 
