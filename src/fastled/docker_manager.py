@@ -203,6 +203,16 @@ class DockerManager:
         ports: dict | None,
     ) -> bool:
         """Compare if existing container has matching configuration"""
+        # Check if container is using the same image
+        container_image_id = container.image.id
+        current_image = self.client.images.get(container.image.tags[0])
+
+        if container_image_id != current_image.id:
+            print(
+                f"Container using different image version. Container: {container_image_id}, Current: {current_image.id}"
+            )
+            return False
+
         # Check command if specified
         if command and container.attrs["Config"]["Cmd"] != command.split():
             return False
