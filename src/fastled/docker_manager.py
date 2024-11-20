@@ -45,8 +45,10 @@ def _win32_docker_location() -> str | None:
     return None
 
 
-_HERE = Path(__file__).parent
-_FILE_LOCK = FileLock(str(_HERE / "fled.lock"))
+def get_lock(image_name: str) -> FileLock:
+    """Get the file lock for this DockerManager instance."""
+    lock_file = CONFIG_DIR / f"{image_name}.lock"
+    return FileLock(str(lock_file))
 
 
 class RunningContainer:
@@ -89,10 +91,6 @@ class DockerManager:
     def __init__(self) -> None:
         self.client: DockerClient = docker.from_env()
         self.first_run = False
-
-    def get_lock(self) -> FileLock:
-        """Get the file lock for this DockerManager instance."""
-        return _FILE_LOCK
 
     @staticmethod
     def is_docker_installed() -> bool:
@@ -179,53 +177,56 @@ class DockerManager:
         """
         print(f"Validating image {image_name}:{tag}...")
 
-        try:
-            local_image = self.client.images.get(f"{image_name}:{tag}")
-            print(f"Image {image_name}:{tag} is already available.")
-
-            if upgrade:
-                remote_image = self.client.images.get_registry_data(
-                    f"{image_name}:{tag}"
-                )
-                remote_image_hash = remote_image.id
-                remote_image_hash_from_local_image: str | None = None
-                try:
-                    remote_image_hash_from_local_image = DISK_CACHE.get(local_image.id)
-                except KeyboardInterrupt:
-                    raise
-                except Exception:
-                    remote_image_hash_from_local_image = None
-                    import traceback
-                    import warnings
-
-                    stack = traceback.format_exc()
-                    warnings.warn(
-                        f"Error getting remote image hash from local image: {stack}"
-                    )
-                if remote_image_hash_from_local_image == remote_image_hash:
-                    print(f"Local image {image_name}:{tag} is up to date.")
-                    return
-
-                # Quick check for latest version
-
-                print(f"Pulling newer version of {image_name}:{tag}...")
-                _ = self.client.images.pull(image_name, tag=tag)
-                print(f"Updated to newer version of {image_name}:{tag}")
-                local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
-                DISK_CACHE.put(local_image_hash, remote_image_hash)
-
-        except docker.errors.ImageNotFound:
-            print(f"Image {image_name}:{tag} not found. Downloading...")
-            self.client.images.pull(image_name, tag=tag)
+        with get_lock(f"{image_name}-{tag}"):
             try:
                 local_image = self.client.images.get(f"{image_name}:{tag}")
-                local_image_hash = local_image.id
-                DISK_CACHE.put(local_image_hash, remote_image_hash)
-                print(f"Image {image_name}:{tag} downloaded successfully.")
-            except docker.errors.ImageNotFound:
-                import warnings
+                print(f"Image {image_name}:{tag} is already available.")
 
-                warnings.warn(f"Image {image_name}:{tag} not found after download.")
+                if upgrade:
+                    remote_image = self.client.images.get_registry_data(
+                        f"{image_name}:{tag}"
+                    )
+                    remote_image_hash = remote_image.id
+                    remote_image_hash_from_local_image: str | None = None
+                    try:
+                        remote_image_hash_from_local_image = DISK_CACHE.get(
+                            local_image.id
+                        )
+                    except KeyboardInterrupt:
+                        raise
+                    except Exception:
+                        remote_image_hash_from_local_image = None
+                        import traceback
+                        import warnings
+
+                        stack = traceback.format_exc()
+                        warnings.warn(
+                            f"Error getting remote image hash from local image: {stack}"
+                        )
+                    if remote_image_hash_from_local_image == remote_image_hash:
+                        print(f"Local image {image_name}:{tag} is up to date.")
+                        return
+
+                    # Quick check for latest version
+
+                    print(f"Pulling newer version of {image_name}:{tag}...")
+                    _ = self.client.images.pull(image_name, tag=tag)
+                    print(f"Updated to newer version of {image_name}:{tag}")
+                    local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
+                    DISK_CACHE.put(local_image_hash, remote_image_hash)
+
+            except docker.errors.ImageNotFound:
+                print(f"Image {image_name}:{tag} not found. Downloading...")
+                self.client.images.pull(image_name, tag=tag)
+                try:
+                    local_image = self.client.images.get(f"{image_name}:{tag}")
+                    local_image_hash = local_image.id
+                    DISK_CACHE.put(local_image_hash, remote_image_hash)
+                    print(f"Image {image_name}:{tag} downloaded successfully.")
+                except docker.errors.ImageNotFound:
+                    import warnings
+
+                    warnings.warn(f"Image {image_name}:{tag} not found after download.")
 
     def tag_image(self, image_name: str, old_tag: str, new_tag: str) -> None:
         """

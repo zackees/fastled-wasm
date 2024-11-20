@@ -1,5 +1,6 @@
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -92,28 +93,25 @@ class CompileServer:
         print("Compiling server starting")
 
         # Ensure Docker is running
-        with self.docker.get_lock():
-            if not self.docker.is_running():
-                if not self.docker.start():
-                    print("Docker could not be started. Exiting.")
-                    raise RuntimeError("Docker could not be started. Exiting.")
-            from datetime import datetime, timezone
+        if not self.docker.is_running():
+            if not self.docker.start():
+                print("Docker could not be started. Exiting.")
+                raise RuntimeError("Docker could not be started. Exiting.")
+        now = datetime.now(timezone.utc)
+        now_str = now.strftime("%Y-%m-%d %H %Z")
 
-            now = datetime.now(timezone.utc)
-            now_str = now.strftime("%Y-%m-%d %H %Z")
-
-            upgrade = False
-            if self.auto_updates is None:
-                prev_date_str = DISK_CACHE.get("last-update")
-                if prev_date_str != now_str:
-                    print("One hour has passed, checking docker for updates")
-                    upgrade = True
-            else:
-                upgrade = self.auto_updates
-            self.docker.validate_or_download_image(
-                image_name=_IMAGE_NAME, tag="main", upgrade=upgrade
-            )
-            DISK_CACHE.put("last-update", now_str)
+        upgrade = False
+        if self.auto_updates is None:
+            prev_date_str = DISK_CACHE.get("last-update")
+            if prev_date_str != now_str:
+                print("One hour has passed, checking docker for updates")
+                upgrade = True
+        else:
+            upgrade = self.auto_updates
+        self.docker.validate_or_download_image(
+            image_name=_IMAGE_NAME, tag="main", upgrade=upgrade
+        )
+        DISK_CACHE.put("last-update", now_str)
 
         print("Docker image now validated")
         port = SERVER_PORT
