@@ -135,7 +135,7 @@ def parse_args() -> argparse.Namespace:
     if not cwd_is_fastled and not args.localhost and not args.web and not args.server:
         print(f"Using web compiler at {DEFAULT_URL}")
         args.web = DEFAULT_URL
-    if cwd_is_fastled and not args.web:
+    if cwd_is_fastled and not args.web and not args.server:
         print("Forcing --local mode because we are in the FastLED repo")
         args.localhost = True
     if args.localhost:
