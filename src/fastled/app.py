@@ -173,6 +173,11 @@ def parse_args() -> argparse.Namespace:
                     "\nYou either need to specify a sketch directory or run in --server mode."
                 )
                 sys.exit(1)
+    elif args.directory is not None and os.path.isfile(args.directory):
+        dir_path = Path(args.directory).parent
+        if looks_like_sketch_directory(dir_path):
+            print(f"Using sketch directory: {dir_path}")
+            args.directory = str(dir_path)
 
     return args
 
