@@ -1,4 +1,4 @@
-from fastled.docker2 import DockerManager2
+from fastled.docker_manager import DockerManager
 
 
 class DockerContainer:
@@ -8,4 +8,4 @@ class DockerContainer:
         self.image_name = image_name
         self.image_tag = image_tag
         self.container_name = container_name
-        self.docker = DockerManager2()
+        self.docker = DockerManager()

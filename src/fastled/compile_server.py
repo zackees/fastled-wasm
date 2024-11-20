@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 
-from fastled.docker2 import DockerManager2, RunningContainer
+from fastled.docker_manager import DockerManager, RunningContainer
 from fastled.sketch import looks_like_fastled_repo
 
 _IMAGE_NAME = "niteris/fastled-wasm"
@@ -45,7 +45,7 @@ class CompileServer:
             fastled_src_dir = cwd / "src"
 
         self.container_name = container_name
-        self.docker = DockerManager2()
+        self.docker = DockerManager()
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
         self.running_container: RunningContainer | None = None
@@ -61,9 +61,9 @@ class CompileServer:
     def running(self) -> bool:
         if not self._port:
             return False
-        if not DockerManager2.is_docker_installed():
+        if not DockerManager.is_docker_installed():
             return False
-        if not DockerManager2.is_running():
+        if not DockerManager.is_running():
             return False
         return self.docker.is_container_running(self.container_name)
 

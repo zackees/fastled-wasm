@@ -1,17 +1,26 @@
-"""Docker management functionality for FastLED WASM compiler."""
+"""
+New abstraction for Docker management with improved Ctrl+C handling.
+"""
 
 import subprocess
 import sys
+import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-import docker  # type: ignore
+import docker
+from docker.client import DockerClient
+from docker.models.containers import Container
+from docker.models.images import Image
 from filelock import FileLock
 
-TAG = "main"
 
-_HERE = Path(__file__).parent
-_FILE_LOCK = FileLock(str(_HERE / "fled.lock"))
+# Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
+# then it will throw an exception.
+def _utc_now_no_tz() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(tzinfo=None)
 
 
 def _win32_docker_location() -> str | None:
@@ -26,11 +35,50 @@ def _win32_docker_location() -> str | None:
     return None
 
 
-class DockerManager:
-    """Manages Docker operations for FastLED WASM compiler."""
+_HERE = Path(__file__).parent
+_FILE_LOCK = FileLock(str(_HERE / "fled.lock"))
 
-    def __init__(self, container_name: str):
-        self.container_name = container_name
+
+class RunningContainer:
+    def __init__(self, container, first_run=False):
+        self.container = container
+        self.first_run = first_run
+        self.running = True
+        self.thread = threading.Thread(target=self._log_monitor)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def _log_monitor(self):
+        from_date = _utc_now_no_tz() if not self.first_run else None
+        to_date = _utc_now_no_tz()
+
+        while self.running:
+            try:
+                for log in self.container.logs(
+                    follow=False, since=from_date, until=to_date, stream=True
+                ):
+                    print(log.decode("utf-8"), end="")
+                time.sleep(0.1)
+                from_date = to_date
+                to_date = _utc_now_no_tz()
+            except Exception as e:
+                print(f"Error monitoring logs: {e}")
+                break
+
+    def stop(self) -> None:
+        """Stop monitoring the container logs"""
+        self.running = False
+        self.thread.join()
+
+
+class DockerManager:
+    def __init__(self) -> None:
+        self.client: DockerClient = docker.from_env()
+        self.first_run = False
+
+    def get_lock(self) -> FileLock:
+        """Get the file lock for this DockerManager instance."""
+        return _FILE_LOCK
 
     @staticmethod
     def is_docker_installed() -> bool:
@@ -46,9 +94,13 @@ class DockerManager:
             print("Docker is not installed.")
             return False
 
-    def is_running(self) -> bool:
+    @staticmethod
+    def is_running() -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
+        if not DockerManager.is_docker_installed():
+            return False
         try:
+            # self.client.ping()
             client = docker.from_env()
             client.ping()
             print("Docker is running.")
@@ -104,158 +156,215 @@ class DockerManager:
             print(f"Error starting Docker: {str(e)}")
         return False
 
-    def ensure_linux_containers(self) -> bool:
-        """Ensure Docker is using Linux containers on Windows."""
-        if sys.platform == "win32":
+    def validate_or_download_image(
+        self, image_name: str, tag: str = "latest", upgrade: bool = False
+    ) -> None:
+        """
+        Validate if the image exists, and if not, download it.
+        If upgrade is True, will pull the latest version even if image exists locally.
+        """
+        try:
+            local_image = self.client.images.get(f"{image_name}:{tag}")
+            print(f"Image {image_name}:{tag} is already available.")
+
+            # Quick check for latest version
             try:
-                # Check if we're already in Linux container mode
-                result = subprocess.run(
-                    ["docker", "info"], capture_output=True, text=True, check=True
+                remote_image = self.client.images.get_registry_data(
+                    f"{image_name}:{tag}"
                 )
-                if "linux" in result.stdout.lower():
-                    return True
+                is_latest = local_image.id.startswith(remote_image.id)
+                print(f"Local version is{' ' if is_latest else ' not '}up to date")
 
-                print("Switching to Linux containers...")
-                subprocess.run(
-                    ["cmd", "/c", "docker context ls"], check=True, capture_output=True
-                )
-                subprocess.run(
-                    ["cmd", "/c", "docker context use default"],
-                    check=True,
-                    capture_output=True,
-                )
-                return True
-            except subprocess.CalledProcessError as e:
-                print(f"Failed to switch to Linux containers: {e}")
-                print(f"stdout: {e.stdout}")
-                print(f"stderr: {e.stderr}")
-                return False
-        return True  # Non-Windows platforms don't need this
+                if upgrade and not is_latest:
+                    print(f"Pulling newer version of {image_name}:{tag}...")
+                    _ = self.client.images.pull(image_name, tag=tag)
+                    print(f"Updated to newer version of {image_name}:{tag}")
+            except Exception as e:
+                print(f"Failed to check remote version: {e}")
 
-    def get_lock(self) -> FileLock:
-        """Get the file lock for this DockerManager instance."""
-        return _FILE_LOCK
+        except docker.errors.ImageNotFound:
+            print(f"Image {image_name}:{tag} not found. Downloading...")
+            self.client.images.pull(image_name, tag=tag)
+            print(f"Image {image_name}:{tag} downloaded successfully.")
 
-    def ensure_image_exists(self, force_update: bool = False) -> bool:
-        """Check if local image exists, pull from remote if not or if update requested."""
-
-        try:
-            if not self.ensure_linux_containers():
-                return False
-
-            image_name = f"{self.container_name}:{TAG}"
-            remote_image = f"niteris/fastled-wasm:{TAG}"
-            print("Pulling latest")
-            cmd_check_newer_image = [
-                "docker",
-                "pull",
-                remote_image,
-            ]
-            result = subprocess.run(
-                cmd_check_newer_image,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                print("Failed to check for newer image.")
-                return False
-            print("Tagging image")
-
-            tag_result = subprocess.run(
-                [
-                    "docker",
-                    "tag",
-                    remote_image,
-                    image_name,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if tag_result.returncode != 0:
-                print(f"Failed to tag image: {tag_result.stderr}")
-                return False
-            return True
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to ensure image exists: {e}")
-            return False
-
-    def container_exists(self) -> bool:
-        """Check if a container with the given name exists."""
-        try:
-            result = subprocess.run(
-                ["docker", "container", "inspect", self.container_name],
-                capture_output=True,
-                check=False,
-            )
-            return result.returncode == 0
-        except subprocess.CalledProcessError:
-            return False
-
-    def remove_container(self) -> bool:
-        """Remove a container if it exists."""
-        try:
-            subprocess.run(
-                ["docker", "rm", "-f", self.container_name],
-                check=True,
-            )
-            return True
-        except subprocess.CalledProcessError:
-            return False
-
-    def full_container_name(self) -> str:
-        """Get the name of the container."""
-        return f"{self.container_name}:{TAG}"
+    def tag_image(self, image_name: str, old_tag: str, new_tag: str) -> None:
+        """
+        Tag an image with a new tag.
+        """
+        image: Image = self.client.images.get(f"{image_name}:{old_tag}")
+        image.tag(image_name, new_tag)
+        print(f"Image {image_name}:{old_tag} tagged as {new_tag}.")
 
     def run_container(
         self,
-        cmd: list[str],
+        image_name: str,
+        tag: str,
+        container_name: str,
+        command: str | None = None,
         volumes: dict[str, dict[str, str]] | None = None,
         ports: dict[int, int] | None = None,
-        tty: bool = False,
-    ) -> subprocess.Popen:
-        """Run the Docker container with the specified volume.
+    ) -> Container:
+        """
+        Run a container from an image. If it already exists, start it.
 
         Args:
-            cmd: Command to run in the container
             volumes: Dict mapping host paths to dicts with 'bind' and 'mode' keys
+                    Example: {'/host/path': {'bind': '/container/path', 'mode': 'rw'}}
             ports: Dict mapping host ports to container ports
+                    Example: {8080: 80} maps host port 8080 to container port 80
         """
-        volumes = volumes or {}
-        ports = ports or {}
+        image_name = f"{image_name}:{tag}"
+        try:
+            container: Container = self.client.containers.get(container_name)
+            if container.status == "running":
+                print(f"Container {container_name} is already running.")
+            elif container.status == "exited":
+                print(f"Starting existing container {container_name}.")
+                container.start()
+            elif container.status == "restarting":
+                print(f"Waiting for container {container_name} to restart...")
+                timeout = 10
+                container.wait(timeout=10)
+                if container.status == "running":
+                    print(f"Container {container_name} has restarted.")
+                else:
+                    print(
+                        f"Container {container_name} did not restart within {timeout} seconds."
+                    )
+                    container.stop()
+                    print(f"Container {container_name} has been stopped.")
+                    container.start()
+            elif container.status == "paused":
+                print(f"Resuming existing container {container_name}.")
+                container.unpause()
+            else:
+                print(f"Unknown container status: {container.status}")
+                print(f"Starting existing container {container_name}.")
+                self.first_run = True
+                container.start()
+        except docker.errors.NotFound:
+            print(f"Creating and starting new container {container_name}.")
+            container = self.client.containers.run(
+                image_name,
+                command,
+                name=container_name,
+                detach=True,
+                tty=True,
+                volumes=volumes,
+                ports=ports,
+            )
+        return container
 
-        print("Creating new container...")
-        docker_command = ["docker", "run"]
+    def attach_and_run(self, container: Container | str) -> RunningContainer:
+        """
+        Attach to a running container and monitor its logs in a background thread.
+        Returns a RunningContainer object that can be used to stop monitoring.
+        """
+        if isinstance(container, str):
+            container = self.get_container(container)
 
-        if tty:
-            assert sys.stdout.isatty(), "TTY mode requires a TTY"
-            docker_command.append("-it")
-        # Attach volumes if specified
-        docker_command += [
-            "--name",
-            self.container_name,
-        ]
-        if ports:
-            for host_port, container_port in ports.items():
-                docker_command.extend(["-p", f"{host_port}:{container_port}"])
-        if volumes:
-            for host_path, mount_spec in volumes.items():
-                docker_command.extend(
-                    ["-v", f"{host_path}:{mount_spec['bind']}:{mount_spec['mode']}"]
-                )
+        print(f"Attaching to container {container.name}...")
 
-        docker_command.extend(
-            [
-                f"{self.container_name}:{TAG}",
-            ]
+        first_run = self.first_run
+        self.first_run = False
+
+        return RunningContainer(container, first_run)
+
+    def suspend_container(self, container: Container | str) -> None:
+        """
+        Suspend (pause) the container.
+        """
+        if isinstance(container, str):
+            container = self.get_container(container)
+        try:
+            container.pause()
+            print(f"Container {container.name} has been suspended.")
+        except Exception as e:
+            print(f"Failed to suspend container {container.name}: {e}")
+
+    def resume_container(self, container: Container | str) -> None:
+        """
+        Resume (unpause) the container.
+        """
+        if isinstance(container, str):
+            container = self.get_container(container)
+        try:
+            container.unpause()
+            print(f"Container {container.name} has been resumed.")
+        except Exception as e:
+            print(f"Failed to resume container {container.name}: {e}")
+
+    def get_container(self, container_name: str) -> Container:
+        """
+        Get a container by name.
+        """
+        try:
+            return self.client.containers.get(container_name)
+        except docker.errors.NotFound:
+            print(f"Container {container_name} not found.")
+            raise
+
+    def is_container_running(self, container_name: str) -> bool:
+        """
+        Check if a container is running.
+        """
+        try:
+            container = self.client.containers.get(container_name)
+            return container.status == "running"
+        except docker.errors.NotFound:
+            print(f"Container {container_name} not found.")
+            return False
+
+
+def main():
+    # Register SIGINT handler
+    # signal.signal(signal.SIGINT, handle_sigint)
+
+    docker_manager = DockerManager()
+
+    # Parameters
+    image_name = "python"
+    tag = "3.10-slim"
+    # new_tag = "my-python"
+    container_name = "my-python-container"
+    command = "python -m http.server"
+
+    try:
+        # Step 1: Validate or download the image
+        docker_manager.validate_or_download_image(image_name, tag)
+
+        # Step 2: Tag the image
+        # docker_manager.tag_image(image_name, tag, new_tag)
+
+        # Step 3: Run the container
+        container = docker_manager.run_container(
+            image_name, tag, container_name, command
         )
-        docker_command.extend(cmd)
 
-        print(f"Running command: {' '.join(docker_command)}")
+        # Step 4: Attach and monitor the container logs
+        running_container = docker_manager.attach_and_run(container)
 
-        process = subprocess.Popen(
-            docker_command,
-            text=True,
-        )
+        # Wait for keyboard interrupt
+        while True:
+            time.sleep(0.1)
 
-        return process
+    except KeyboardInterrupt:
+        print("\nStopping container...")
+        running_container.stop()
+        container = docker_manager.get_container(container_name)
+        docker_manager.suspend_container(container)
+
+    try:
+        # Suspend and resume the container
+        container = docker_manager.get_container(container_name)
+        docker_manager.suspend_container(container)
+
+        input("Press Enter to resume the container...")
+
+        docker_manager.resume_container(container)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+if __name__ == "__main__":
+    main()
