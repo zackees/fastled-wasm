@@ -2,10 +2,13 @@
 New abstraction for Docker management with improved Ctrl+C handling.
 """
 
+import _thread
 import subprocess
 import sys
 import threading
 import time
+import traceback
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -68,6 +71,10 @@ class RunningContainer:
                 time.sleep(0.1)
                 from_date = to_date
                 to_date = _utc_now_no_tz()
+            except KeyboardInterrupt:
+                print("Monitoring logs interrupted by user.")
+                _thread.interrupt_main()
+                break
             except Exception as e:
                 print(f"Error monitoring logs: {e}")
                 break
@@ -170,6 +177,7 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
+        print(f"Validating image {image_name}:{tag}...")
 
         try:
             local_image = self.client.images.get(f"{image_name}:{tag}")
@@ -252,24 +260,31 @@ class DockerManager:
 
             # Check command if specified
             if command and container.attrs["Config"]["Cmd"] != command.split():
+                print(
+                    f"Command mismatch: {container.attrs['Config']['Cmd']} != {command}"
+                )
                 return False
 
             # Check volumes if specified
             if volumes:
                 container_mounts = (
                     {
-                        m["Destination"]: {"bind": m["Source"], "mode": m["Mode"]}
+                        m["Source"]: {"bind": m["Destination"], "mode": m["Mode"]}
                         for m in container.attrs["Mounts"]
                     }
                     if container.attrs.get("Mounts")
                     else {}
                 )
 
-                if not all(
-                    mount["bind"] in container_mounts.get(vol, {}).get("bind", "")
-                    for vol, mount in volumes.items()
-                ):
-                    return False
+                for host_dir, mount in volumes.items():
+                    if host_dir not in container_mounts:
+                        print(f"Volume {host_dir} not found in container mounts.")
+                        return False
+                    if container_mounts[host_dir] != mount:
+                        print(
+                            f"Volume {host_dir} has different mount options: {container_mounts[host_dir]} != {mount}"
+                        )
+                        return False
 
             # Check ports if specified
             if ports:
@@ -284,13 +299,15 @@ class DockerManager:
                     else {}
                 )
 
-                for host_port, container_port in ports.items():
+                for container_port, host_port in ports.items():
                     port_key = f"{container_port}/tcp"
                     if port_key not in container_ports:
+                        print(f"Container port {port_key} not found.")
                         return False
                     if not container_port_bindings.get(port_key, [{"HostPort": None}])[
                         0
                     ]["HostPort"] == str(host_port):
+                        print(f"Port {host_port} is not bound to {port_key}.")
                         return False
         except KeyboardInterrupt:
             raise
@@ -298,13 +315,9 @@ class DockerManager:
             print("Container not found.")
             return False
         except Exception as e:
-            import traceback
-
             stack = traceback.format_exc()
-            import warnings
-
             warnings.warn(f"Error checking container config: {e}\n{stack}")
-
+            return False
         return True
 
     def run_container(
@@ -367,7 +380,7 @@ class DockerManager:
                 self.first_run = True
                 container.start()
         except docker.errors.NotFound:
-            print(f"Creating and starting new container {container_name}.")
+            print(f"Creating and starting {container_name}")
             container = self.client.containers.run(
                 image_name,
                 command,
@@ -399,10 +412,16 @@ class DockerManager:
         Suspend (pause) the container.
         """
         if isinstance(container, str):
+            container_name = container
             container = self.get_container(container)
+            if not container:
+                print(f"Could not put container {container_name} to sleep.")
+                return
         try:
             container.pause()
             print(f"Container {container.name} has been suspended.")
+        except KeyboardInterrupt:
+            print(f"Container {container.name} interrupted by keyboard interrupt.")
         except Exception as e:
             print(f"Failed to suspend container {container.name}: {e}")
 

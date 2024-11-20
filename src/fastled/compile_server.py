@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 
-from fastled.docker_manager import DockerManager, RunningContainer
+from fastled.docker_manager import DISK_CACHE, DockerManager, RunningContainer
 from fastled.sketch import looks_like_fastled_repo
 
 _IMAGE_NAME = "niteris/fastled-wasm"
@@ -95,10 +95,21 @@ class CompileServer:
                 if not self.docker.start():
                     print("Docker could not be started. Exiting.")
                     raise RuntimeError("Docker could not be started. Exiting.")
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+            now_str = now.strftime("%Y-%m-%d %H %Z")
+            prev_date_str = DISK_CACHE.get("last-update")
+
+            upgrade = False
+            if prev_date_str != now_str:
+                print("New day, upgrading Docker image")
+                upgrade = True
 
             self.docker.validate_or_download_image(
-                image_name=_IMAGE_NAME, tag="main", upgrade=True
+                image_name=_IMAGE_NAME, tag="main", upgrade=upgrade
             )
+            DISK_CACHE.put("last-update", now_str)
 
         print("Docker image now validated")
         port = SERVER_PORT
@@ -138,7 +149,7 @@ class CompileServer:
         return self.docker.is_container_running(self.container_name)
 
     def stop(self) -> None:
-        print(f"Stopping server on port {self._port}")
+        # print(f"Stopping server on port {self._port}")
         if self.running_container:
             self.running_container.stop()
         self.docker.suspend_container(self.container_name)
