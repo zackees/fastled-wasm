@@ -213,7 +213,10 @@ class DockerManager:
                     _ = self.client.images.pull(image_name, tag=tag)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
-                    DISK_CACHE.put(local_image_hash, remote_image_hash)
+                    if remote_image_hash_from_local_image is not None:
+                        DISK_CACHE.put(
+                            local_image_hash, remote_image_hash_from_local_image
+                        )
 
             except docker.errors.ImageNotFound:
                 print(f"Image {image_name}:{tag} not found. Downloading...")
