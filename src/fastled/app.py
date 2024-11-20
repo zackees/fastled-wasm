@@ -158,7 +158,7 @@ def parse_args() -> argparse.Namespace:
                 print(f"\nUsing sketch directory: {sketch_directories[0]}")
                 args.directory = str(sketch_directories[0])
             elif len(sketch_directories) > 1:
-                print("\nMultiple FastLED sketches found:")
+                print("\nMultiple Directories found, choose one:")
                 for i, sketch_dir in enumerate(sketch_directories):
                     print(f"  [{i+1}]: {sketch_dir}")
                 which = input("\nPlease specify a sketch directory: ")

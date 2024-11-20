@@ -6,13 +6,9 @@ def find_sketch_directories(directory: Path) -> list[Path]:
     sketch_directories: list[Path] = []
     # search all the paths one level deep
     for path in directory.iterdir():
-
         if path.is_dir():
-            print(path)
             dir_name = path.name
-
             if str(dir_name).startswith("."):
-                print("Ignoring hidden directory", path)
                 continue
 
             if looks_like_sketch_directory(path, quick=True):
@@ -62,7 +58,6 @@ def looks_like_sketch_directory(directory: Path, quick=False) -> bool:
 
     if not quick:
         if _lots_and_lots_of_files(directory):
-            print("Too many files in the directory, bailing out")
             return False
 
     # walk the path and if there are over 30 files, return False
