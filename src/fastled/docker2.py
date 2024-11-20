@@ -2,8 +2,11 @@
 New abstraction for Docker management with improved Ctrl+C handling.
 """
 
+import subprocess
 import sys
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import docker
 from docker.client import DockerClient
@@ -18,10 +21,94 @@ def _utc_now_no_tz() -> datetime:
     return now.replace(tzinfo=None)
 
 
-class DockerManager:
+def _win32_docker_location() -> str | None:
+    home_dir = Path.home()
+    out = [
+        "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+        f"{home_dir}\\AppData\\Local\\Docker\\Docker Desktop.exe",
+    ]
+    for loc in out:
+        if Path(loc).exists():
+            return loc
+    return None
+
+
+class DockerManager2:
     def __init__(self):
         self.client: DockerClient = docker.from_env()
         self.first_run = False
+
+    @staticmethod
+    def is_docker_installed() -> bool:
+        """Check if Docker is installed on the system."""
+        try:
+            subprocess.run(["docker", "--version"], capture_output=True, check=True)
+            print("Docker is installed.")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Docker command failed: {str(e)}")
+            return False
+        except FileNotFoundError:
+            print("Docker is not installed.")
+            return False
+
+    def is_running(self) -> bool:
+        """Check if Docker is running by pinging the Docker daemon."""
+        try:
+            client = docker.from_env()
+            client.ping()
+            print("Docker is running.")
+            return True
+        except docker.errors.DockerException as e:
+            print(f"Docker is not running: {str(e)}")
+            return False
+
+    def start(self) -> bool:
+        """Attempt to start Docker Desktop (or the Docker daemon) automatically."""
+        print("Attempting to start Docker...")
+
+        try:
+            if sys.platform == "win32":
+                docker_path = _win32_docker_location()
+                if not docker_path:
+                    print("Docker Desktop not found.")
+                    return False
+                subprocess.run(["start", "", docker_path], shell=True)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", "/Applications/Docker.app"])
+            elif sys.platform.startswith("linux"):
+                subprocess.run(["sudo", "systemctl", "start", "docker"])
+            else:
+                print("Unknown platform. Cannot auto-launch Docker.")
+                return False
+
+            # Wait for Docker to start up with increasing delays
+            print("Waiting for Docker Desktop to start...")
+            attempts = 0
+            max_attempts = 20  # Increased max wait time
+            while attempts < max_attempts:
+                attempts += 1
+                if self.is_running():
+                    print("Docker started successfully.")
+                    return True
+
+                # Gradually increase wait time between checks
+                wait_time = min(5, 1 + attempts * 0.5)
+                print(
+                    f"Docker not ready yet, waiting {wait_time:.1f}s... (attempt {attempts}/{max_attempts})"
+                )
+                time.sleep(wait_time)
+
+            print("Failed to start Docker within the expected time.")
+            print(
+                "Please try starting Docker Desktop manually and run this command again."
+            )
+        except KeyboardInterrupt:
+            print("Aborted by user.")
+            raise
+        except Exception as e:
+            print(f"Error starting Docker: {str(e)}")
+        return False
 
     def validate_or_download_image(
         self, image_name: str, tag: str = "latest", upgrade: bool = False
@@ -180,7 +267,7 @@ def main():
     # Register SIGINT handler
     # signal.signal(signal.SIGINT, handle_sigint)
 
-    docker_manager = DockerManager()
+    docker_manager = DockerManager2()
 
     # Parameters
     image_name = "python"
