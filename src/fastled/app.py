@@ -44,9 +44,6 @@ class CompiledResult:
     hash_value: str | None
 
 
-DOCKER = DockerManager(container_name=CONTAINER_NAME)
-
-
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
@@ -252,7 +249,7 @@ def run_client(args: argparse.Namespace) -> int:
         return 1
 
     # If not explicitly using web compiler, check Docker installation
-    if not args.web and not DOCKER.is_docker_installed():
+    if not args.web and not DockerManager.is_docker_installed():
         print(
             "\nDocker is not installed on this system - switching to web compiler instead."
         )

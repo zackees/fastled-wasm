@@ -55,8 +55,7 @@ class DockerManager2:
     def is_running(self) -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
         try:
-            client = docker.from_env()
-            client.ping()
+            self.client.ping()
             print("Docker is running.")
             return True
         except docker.errors.DockerException as e:
@@ -272,7 +271,7 @@ def main():
     # Parameters
     image_name = "python"
     tag = "3.10-slim"
-    new_tag = "my-python"
+    # new_tag = "my-python"
     container_name = "my-python-container"
     command = "python -m http.server"
 
@@ -281,11 +280,11 @@ def main():
         docker_manager.validate_or_download_image(image_name, tag)
 
         # Step 2: Tag the image
-        docker_manager.tag_image(image_name, tag, new_tag)
+        # docker_manager.tag_image(image_name, tag, new_tag)
 
         # Step 3: Run the container
         container = docker_manager.run_container(
-            f"{image_name}:{new_tag}", container_name, command
+            f"{image_name}:{tag}", container_name, command
         )
 
         # Step 4: Attach and monitor the container logs
