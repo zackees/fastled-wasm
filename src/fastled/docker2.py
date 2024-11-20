@@ -23,13 +23,32 @@ class DockerManager:
         self.client: DockerClient = docker.from_env()
         self.first_run = False
 
-    def validate_or_download_image(self, image_name: str, tag: str = "latest") -> None:
+    def validate_or_download_image(
+        self, image_name: str, tag: str = "latest", upgrade: bool = False
+    ) -> None:
         """
         Validate if the image exists, and if not, download it.
+        If upgrade is True, will pull the latest version even if image exists locally.
         """
         try:
-            self.client.images.get(f"{image_name}:{tag}")
+            local_image = self.client.images.get(f"{image_name}:{tag}")
             print(f"Image {image_name}:{tag} is already available.")
+
+            # Quick check for latest version
+            try:
+                remote_image = self.client.images.get_registry_data(
+                    f"{image_name}:{tag}"
+                )
+                is_latest = local_image.id.startswith(remote_image.id)
+                print(f"Local version is{' ' if is_latest else ' not '}up to date")
+
+                if upgrade and not is_latest:
+                    print(f"Pulling newer version of {image_name}:{tag}...")
+                    _ = self.client.images.pull(image_name, tag=tag)
+                    print(f"Updated to newer version of {image_name}:{tag}")
+            except Exception as e:
+                print(f"Failed to check remote version: {e}")
+
         except docker.errors.ImageNotFound:
             print(f"Image {image_name}:{tag} not found. Downloading...")
             self.client.images.pull(image_name, tag=tag)
@@ -57,10 +76,10 @@ class DockerManager:
             container: Container = self.client.containers.get(container_name)
             if container.status == "running":
                 print(f"Container {container_name} is already running.")
-            if container.status == "exited":
+            elif container.status == "exited":
                 print(f"Starting existing container {container_name}.")
                 container.start()
-            if container.status == "restarting":
+            elif container.status == "restarting":
                 print(f"Waiting for container {container_name} to restart...")
                 timeout = 10
                 container.wait(timeout=10)
@@ -76,10 +95,11 @@ class DockerManager:
                     # start the container
                     container.start()
 
-            if container.status == "paused":
+            elif container.status == "paused":
                 print(f"Resuming existing container {container_name}.")
                 container.unpause()
             else:
+                print(f"Unknown container status: {container.status}")
                 print(f"Starting existing container {container_name}.")
                 self.first_run = True
                 container.start()
