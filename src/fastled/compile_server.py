@@ -1,13 +1,13 @@
-import socket
 import subprocess
 import time
 from pathlib import Path
 
 import httpx
 
-from fastled.docker_manager import DockerManager
+from fastled.docker2 import DockerManager2, RunningContainer
 from fastled.sketch import looks_like_fastled_repo
 
+_IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
 SERVER_PORT = 9021
@@ -17,15 +17,16 @@ SERVER_OPTIONS = ["--allow-shutdown", "--no-auto-update"]
 
 def find_available_port(start_port: int = SERVER_PORT) -> int:
     """Find an available port starting from the given port."""
-    port = start_port
-    end_port = start_port + 1000
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("localhost", port)) != 0:
-                return port
-            port += 1
-            if port >= end_port:
-                raise RuntimeError("No available ports found")
+    # port = start_port
+    # end_port = start_port + 1000
+    # while True:
+    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    #         if s.connect_ex(("localhost", port)) != 0:
+    #             return port
+    #         port += 1
+    #         if port >= end_port:
+    #             raise RuntimeError("No available ports found")
+    return start_port
 
 
 class CompileServer:
@@ -44,11 +45,10 @@ class CompileServer:
             fastled_src_dir = cwd / "src"
 
         self.container_name = container_name
-        self.docker = DockerManager(container_name=container_name)
-        self.running = False
-        self.running_process: subprocess.Popen | None = None
+        self.docker = DockerManager2()
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
+        self.running_container: RunningContainer | None = None
         self._port = self._start()
         # fancy print
         if not interactive:
@@ -56,6 +56,16 @@ class CompileServer:
             print("\n" + "#" * len(msg))
             print(msg)
             print("#" * len(msg) + "\n")
+
+    @property
+    def running(self) -> bool:
+        if not self._port:
+            return False
+        if not DockerManager2.is_docker_installed():
+            return False
+        if not DockerManager2.is_running():
+            return False
+        return self.docker.is_container_running(self.container_name)
 
     def using_fastled_src_dir_volume(self) -> bool:
         return self.fastled_src_dir is not None
@@ -86,13 +96,13 @@ class CompileServer:
             except Exception:
                 pass
             time.sleep(0.1)
-            if not self.running:
+            if not self.docker.is_container_running(self.container_name):
                 return False
         return False
 
     def _start(self) -> int:
         print("Compiling server starting")
-        self.running = True
+
         # Ensure Docker is running
         with self.docker.get_lock():
             if not self.docker.is_running():
@@ -100,31 +110,9 @@ class CompileServer:
                     print("Docker could not be started. Exiting.")
                     raise RuntimeError("Docker could not be started. Exiting.")
 
-            # Clean up any existing container with the same name
-            try:
-                container_exists = (
-                    subprocess.run(
-                        ["docker", "inspect", self.container_name],
-                        capture_output=True,
-                        text=True,
-                    ).returncode
-                    == 0
-                )
-                if container_exists:
-                    print("Cleaning up existing container")
-                    subprocess.run(
-                        ["docker", "rm", "-f", self.container_name],
-                        check=False,
-                    )
-            except KeyboardInterrupt:
-                raise
-            except Exception as e:
-                print(f"Warning: Failed to remove existing container: {e}")
-
-            print("Ensuring Docker image exists at latest version")
-            if not self.docker.ensure_image_exists():
-                print("Failed to ensure Docker image exists.")
-                raise RuntimeError("Failed to ensure Docker image exists")
+            self.docker.validate_or_download_image(
+                image_name=_IMAGE_NAME, tag="main", upgrade=True
+            )
 
         print("Docker image now validated")
         port = find_available_port()
@@ -135,7 +123,7 @@ class CompileServer:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
         server_cmd_str = subprocess.list2cmdline(server_command)
         print(f"Started Docker container with command: {server_cmd_str}")
-        ports = {port: 80}
+        ports = {80: port}
         volumes = None
         if self.fastled_src_dir:
             print(
@@ -144,78 +132,29 @@ class CompileServer:
             volumes = {
                 str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
             }
-        self.running_process = self.docker.run_container(
-            server_command, ports=ports, volumes=volumes, tty=self.interactive
+
+        cmd_str = subprocess.list2cmdline(server_command)
+
+        self.docker.run_container(
+            image_name=_IMAGE_NAME,
+            tag="main",
+            container_name=self.container_name,
+            command=cmd_str,
+            ports=ports,
+            volumes=volumes,
         )
+        self.running_container = self.docker.attach_and_run(self.container_name)
+        assert self.running_container is not None, "Container should be running"
+
         print("Compile server starting")
-        time.sleep(3)
-        if self.running_process.poll() is not None:
-            print("Server failed to start")
-            self.running = False
-            raise RuntimeError("Server failed to start")
         return port
 
     def proceess_running(self) -> bool:
-        if self.running_process is None:
-            return False
-        return self.running_process.poll() is None
+        return self.docker.is_container_running(self.container_name)
 
     def stop(self) -> None:
         print(f"Stopping server on port {self._port}")
-        # # attempt to send a shutdown signal to the server
-        # try:
-        #     httpx.get(f"http://localhost:{self._port}/shutdown", timeout=2)
-        # # except Exception:
-        # except Exception as e:
-        #     print(f"Failed to send shutdown signal: {e}")
-        #     pass
-        try:
-            # Stop the Docker container
-            cp: subprocess.CompletedProcess
-            cp = subprocess.run(
-                ["docker", "stop", self.container_name],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            if cp.returncode != 0:
-                print(f"Failed to stop Docker container: {cp.stderr}")
-
-            cp = subprocess.run(
-                ["docker", "rm", self.container_name],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            if cp.returncode != 0:
-                print(f"Failed to remove Docker container: {cp.stderr}")
-
-            # Close the stdout pipe
-            if self.running_process and self.running_process.stdout:
-                self.running_process.stdout.close()
-
-                # Wait for the process to fully terminate with a timeout
-                self.running_process.wait(timeout=10)
-                if self.running_process.returncode is None:
-                    # kill
-                    self.running_process.kill()
-                if self.running_process.returncode is not None:
-                    print(
-                        f"Server stopped with return code {self.running_process.returncode}"
-                    )
-
-        except subprocess.TimeoutExpired:
-            # Force kill if it doesn't stop gracefully
-            if self.running_process:
-                self.running_process.kill()
-                self.running_process.wait()
-        except KeyboardInterrupt:
-            if self.running_process:
-                self.running_process.kill()
-                self.running_process.wait()
-        except Exception as e:
-            print(f"Error stopping Docker container: {e}")
-        finally:
-            self.running_process = None
-            self.running = False
+        if self.running_container:
+            self.running_container.stop()
+        self.docker.suspend_container(self.container_name)
         print("Compile server stopped")

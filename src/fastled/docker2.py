@@ -4,6 +4,7 @@ New abstraction for Docker management with improved Ctrl+C handling.
 
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ import docker
 from docker.client import DockerClient
 from docker.models.containers import Container
 from docker.models.images import Image
+from filelock import FileLock
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -33,10 +35,50 @@ def _win32_docker_location() -> str | None:
     return None
 
 
+_HERE = Path(__file__).parent
+_FILE_LOCK = FileLock(str(_HERE / "fled.lock"))
+
+
+class RunningContainer:
+    def __init__(self, container, first_run=False):
+        self.container = container
+        self.first_run = first_run
+        self.running = True
+        self.thread = threading.Thread(target=self._log_monitor)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def _log_monitor(self):
+        from_date = _utc_now_no_tz() if not self.first_run else None
+        to_date = _utc_now_no_tz()
+
+        while self.running:
+            try:
+                for log in self.container.logs(
+                    follow=False, since=from_date, until=to_date, stream=True
+                ):
+                    print(log.decode("utf-8"), end="")
+                time.sleep(0.1)
+                from_date = to_date
+                to_date = _utc_now_no_tz()
+            except Exception as e:
+                print(f"Error monitoring logs: {e}")
+                break
+
+    def stop(self) -> None:
+        """Stop monitoring the container logs"""
+        self.running = False
+        self.thread.join()
+
+
 class DockerManager2:
-    def __init__(self):
+    def __init__(self) -> None:
         self.client: DockerClient = docker.from_env()
         self.first_run = False
+
+    def get_lock(self) -> FileLock:
+        """Get the file lock for this DockerManager instance."""
+        return _FILE_LOCK
 
     @staticmethod
     def is_docker_installed() -> bool:
@@ -52,10 +94,15 @@ class DockerManager2:
             print("Docker is not installed.")
             return False
 
-    def is_running(self) -> bool:
+    @staticmethod
+    def is_running() -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
+        if not DockerManager2.is_docker_installed():
+            return False
         try:
-            self.client.ping()
+            # self.client.ping()
+            client = docker.from_env()
+            client.ping()
             print("Docker is running.")
             return True
         except docker.errors.DockerException as e:
@@ -149,16 +196,25 @@ class DockerManager2:
         print(f"Image {image_name}:{old_tag} tagged as {new_tag}.")
 
     def run_container(
-        self, image_name: str, container_name: str, command: str | None = None
+        self,
+        image_name: str,
+        tag: str,
+        container_name: str,
+        command: str | None = None,
+        volumes: dict[str, dict[str, str]] | None = None,
+        ports: dict[int, int] | None = None,
     ) -> Container:
         """
         Run a container from an image. If it already exists, start it.
+
+        Args:
+            volumes: Dict mapping host paths to dicts with 'bind' and 'mode' keys
+                    Example: {'/host/path': {'bind': '/container/path', 'mode': 'rw'}}
+            ports: Dict mapping host ports to container ports
+                    Example: {8080: 80} maps host port 8080 to container port 80
         """
+        image_name = f"{image_name}:{tag}"
         try:
-
-            # - `status` (str): One of ``restarting``, ``running``,
-            #    ``paused``, ``exited``
-
             container: Container = self.client.containers.get(container_name)
             if container.status == "running":
                 print(f"Container {container_name} is already running.")
@@ -175,12 +231,9 @@ class DockerManager2:
                     print(
                         f"Container {container_name} did not restart within {timeout} seconds."
                     )
-                    # stop the container
                     container.stop()
                     print(f"Container {container_name} has been stopped.")
-                    # start the container
                     container.start()
-
             elif container.status == "paused":
                 print(f"Resuming existing container {container_name}.")
                 container.unpause()
@@ -192,51 +245,49 @@ class DockerManager2:
         except docker.errors.NotFound:
             print(f"Creating and starting new container {container_name}.")
             container = self.client.containers.run(
-                image_name, command, name=container_name, detach=True, tty=True
+                image_name,
+                command,
+                name=container_name,
+                detach=True,
+                tty=True,
+                volumes=volumes,
+                ports=ports,
             )
         return container
 
-    def attach_and_run(self, container: Container) -> None:
+    def attach_and_run(self, container: Container | str) -> RunningContainer:
         """
-        Attach to a running container and monitor its logs.
+        Attach to a running container and monitor its logs in a background thread.
+        Returns a RunningContainer object that can be used to stop monitoring.
         """
+        if isinstance(container, str):
+            container = self.get_container(container)
 
         print(f"Attaching to container {container.name}...")
 
         first_run = self.first_run
         self.first_run = False
-        from_date = _utc_now_no_tz() if not first_run else None
-        to_date = _utc_now_no_tz()
-        try:
-            while True:
-                for log in container.logs(
-                    follow=False, since=from_date, until=to_date, stream=True
-                ):
-                    print(log.decode("utf-8"), end="")
-                import time
 
-                time.sleep(0.1)
-                from_date = to_date
-                to_date = _utc_now_no_tz()
+        return RunningContainer(container, first_run)
 
-        except KeyboardInterrupt:
-            print("\nDetaching from container logs...")
-            raise
-
-    def suspend_container(self, container: Container) -> None:
+    def suspend_container(self, container: Container | str) -> None:
         """
         Suspend (pause) the container.
         """
+        if isinstance(container, str):
+            container = self.get_container(container)
         try:
             container.pause()
             print(f"Container {container.name} has been suspended.")
         except Exception as e:
             print(f"Failed to suspend container {container.name}: {e}")
 
-    def resume_container(self, container: Container) -> None:
+    def resume_container(self, container: Container | str) -> None:
         """
         Resume (unpause) the container.
         """
+        if isinstance(container, str):
+            container = self.get_container(container)
         try:
             container.unpause()
             print(f"Container {container.name} has been resumed.")
@@ -253,13 +304,16 @@ class DockerManager2:
             print(f"Container {container_name} not found.")
             raise
 
-
-def handle_sigint(signal, frame):
-    """
-    Gracefully handle SIGINT (Ctrl+C).
-    """
-    print("\nInterrupt received. Exiting...")
-    sys.exit(0)
+    def is_container_running(self, container_name: str) -> bool:
+        """
+        Check if a container is running.
+        """
+        try:
+            container = self.client.containers.get(container_name)
+            return container.status == "running"
+        except docker.errors.NotFound:
+            print(f"Container {container_name} not found.")
+            return False
 
 
 def main():
@@ -284,16 +338,20 @@ def main():
 
         # Step 3: Run the container
         container = docker_manager.run_container(
-            f"{image_name}:{tag}", container_name, command
+            image_name, tag, container_name, command
         )
 
         # Step 4: Attach and monitor the container logs
-        docker_manager.attach_and_run(container)
+        running_container = docker_manager.attach_and_run(container)
+
+        # Wait for keyboard interrupt
+        while True:
+            time.sleep(0.1)
+
     except KeyboardInterrupt:
         print("\nStopping container...")
+        running_container.stop()
         container = docker_manager.get_container(container_name)
-        # container.stop()
-        # print("Container stopped.")
         docker_manager.suspend_container(container)
 
     try:
