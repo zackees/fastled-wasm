@@ -320,6 +320,7 @@ class DockerManager:
 
             # Check if configuration matches
             if not self._container_configs_match(container, command, volumes, ports):
+                if container.status in ("running", )
                 print(
                     f"Container {container_name} exists but with different configuration. Removing and recreating..."
                 )

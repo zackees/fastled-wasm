@@ -15,20 +15,6 @@ SERVER_PORT = 9021
 SERVER_OPTIONS = ["--allow-shutdown", "--no-auto-update"]
 
 
-def find_available_port(start_port: int = SERVER_PORT) -> int:
-    """Find an available port starting from the given port."""
-    # port = start_port
-    # end_port = start_port + 1000
-    # while True:
-    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    #         if s.connect_ex(("localhost", port)) != 0:
-    #             return port
-    #         port += 1
-    #         if port >= end_port:
-    #             raise RuntimeError("No available ports found")
-    return start_port
-
-
 class CompileServer:
     def __init__(
         self,
@@ -115,8 +101,7 @@ class CompileServer:
             )
 
         print("Docker image now validated")
-        port = find_available_port()
-        print(f"Found an available port: {port}")
+        port = SERVER_PORT
         if self.interactive:
             server_command = ["/bin/bash"]
         else:
