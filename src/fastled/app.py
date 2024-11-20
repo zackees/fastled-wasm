@@ -305,7 +305,7 @@ def run_client(args: argparse.Namespace) -> int:
             browser_proc = open_browser_thread(Path(args.directory) / "fastled_js")
         else:
             print(
-                "\nCompilation successful. Run without --just-compile to open in browser and watch for changes."
+                "\nCompilation successful."
             )
             if compile_server:
                 print("Shutting down compile server...")

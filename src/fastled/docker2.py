@@ -50,9 +50,32 @@ class DockerManager:
         Run a container from an image. If it already exists, start it.
         """
         try:
+
+            # - `status` (str): One of ``restarting``, ``running``,
+            #    ``paused``, ``exited``
+
             container: Container = self.client.containers.get(container_name)
             if container.status == "running":
                 print(f"Container {container_name} is already running.")
+            if container.status == "exited":
+                print(f"Starting existing container {container_name}.")
+                container.start()
+            if container.status == "restarting":
+                print(f"Waiting for container {container_name} to restart...")
+                timeout = 10
+                container.wait(timeout=10)
+                if container.status == "running":
+                    print(f"Container {container_name} has restarted.")
+                else:
+                    print(
+                        f"Container {container_name} did not restart within {timeout} seconds."
+                    )
+                    # stop the container
+                    container.stop()
+                    print(f"Container {container_name} has been stopped.")
+                    # start the container
+                    container.start()
+
             if container.status == "paused":
                 print(f"Resuming existing container {container_name}.")
                 container.unpause()

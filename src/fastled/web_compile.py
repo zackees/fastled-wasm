@@ -70,7 +70,7 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
 
     except TimeoutError:
         result = ConnectionResult(host, False, use_ipv4)
-    except Exception as e:
+    except Exception:
         result = ConnectionResult(host, False, use_ipv4)
     return result
 
