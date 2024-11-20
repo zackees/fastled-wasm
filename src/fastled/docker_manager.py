@@ -180,7 +180,19 @@ class DockerManager:
                     f"{image_name}:{tag}"
                 )
                 remote_image_hash = remote_image.id
-                remote_image_hash_from_local_image = DISK_CACHE.get(local_image.id)
+                try:
+                    remote_image_hash_from_local_image = DISK_CACHE.get(local_image.id)
+                except KeyboardInterrupt:
+                    raise
+                except Exception:
+                    remote_image_hash_from_local_image = None
+                    import traceback
+                    import warnings
+
+                    stack = traceback.format_exc()
+                    warnings.warn(
+                        f"Error getting remote image hash from local image: {stack}"
+                    )
                 if remote_image_hash_from_local_image == remote_image_hash:
                     print(f"Local image {image_name}:{tag} is up to date.")
                     return
@@ -320,11 +332,6 @@ class DockerManager:
 
             # Check if configuration matches
             if not self._container_configs_match(container, command, volumes, ports):
-                if container.status in ("running", "restarting"):
-                    print("There is already a container that is running or restarting.")
-                    raise docker.errors.APIError(
-                        "Container already exists with different configuration and is running."
-                    )
                 print(
                     f"Container {container_name} exists but with different configuration. Removing and recreating..."
                 )

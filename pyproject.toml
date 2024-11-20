@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "fastled"
 readme = "README.md"
 description = "FastLED Wasm Compiler"
-requires-python = ">=3.7"
+requires-python = ">=3.9"
 keywords = ["template-python-cmd"]
 license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
@@ -17,7 +17,7 @@ dependencies = [
     "livereload",
     "download",
     "filelock",
-    "disklru",
+    "disklru>=2.0.1",
     "appdirs",
 ]
 

@@ -427,9 +427,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        # os.chdir("../fastled")
-        sys.argv.append("examples/SdCard")
-        sys.argv.append("--localhost")
+        os.chdir("../fastled")
+        sys.argv.append("--server")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
