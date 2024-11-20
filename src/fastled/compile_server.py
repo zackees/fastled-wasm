@@ -20,6 +20,7 @@ class CompileServer:
         self,
         container_name=_DEFAULT_CONTAINER_NAME,
         interactive: bool = False,
+        auto_updates: bool | None = None,
     ) -> None:
 
         cwd = Path(".").resolve()
@@ -35,6 +36,7 @@ class CompileServer:
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
         self.running_container: RunningContainer | None = None
+        self.auto_updates = auto_updates
         self._port = self._start()
         # fancy print
         if not interactive:
@@ -99,13 +101,15 @@ class CompileServer:
 
             now = datetime.now(timezone.utc)
             now_str = now.strftime("%Y-%m-%d %H %Z")
-            prev_date_str = DISK_CACHE.get("last-update")
 
             upgrade = False
-            if prev_date_str != now_str:
-                print("New day, upgrading Docker image")
-                upgrade = True
-
+            if self.auto_updates is None:
+                prev_date_str = DISK_CACHE.get("last-update")
+                if prev_date_str != now_str:
+                    print("One hour has passed, checking docker for updates")
+                    upgrade = True
+            else:
+                upgrade = self.auto_updates
             self.docker.validate_or_download_image(
                 image_name=_IMAGE_NAME, tag="main", upgrade=upgrade
             )

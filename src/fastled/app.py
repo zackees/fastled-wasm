@@ -104,16 +104,32 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run the server in the current directory, volume mapping fastled if we are in the repo",
     )
-
-    build_mode.add_argument(
+    parser.add_argument(
         "--force-compile",
         action="store_true",
         help="Skips the test to see if the current directory is a valid FastLED sketch directory",
+    )
+    parser.add_argument(
+        "--no-auto-updates",
+        action="store_true",
+        help="Disable automatic updates of the wasm compiler image when using docker.",
+    )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update the wasm compiler (if necessary) before running",
     )
 
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+    if args.update:
+        args.auto_update = True
+    elif args.no_auto_updates:
+        args.auto_update = False
+    else:
+        args.auto_update = None
+
     if not cwd_is_fastled and not args.localhost and not args.web and not args.server:
         print(f"Using web compiler at {DEFAULT_URL}")
         args.web = DEFAULT_URL
@@ -199,8 +215,8 @@ def run_web_compiler(
 
 
 def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
+    auto_update = args.auto_update
     is_local_host = "localhost" in args.web or "127.0.0.1" in args.web or args.localhost
-
     # test to see if there is already a local host server
     local_host_needs_server = False
     if is_local_host:
@@ -225,7 +241,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
     else:
         try:
             print("No local server found, starting one...")
-            compile_server = CompileServer()
+            compile_server = CompileServer(auto_updates=auto_update)
             print("Waiting for the local compiler to start...")
             if not compile_server.wait_for_startup():
                 print("Failed to start local compiler.")
@@ -397,7 +413,8 @@ def run_client(args: argparse.Namespace) -> int:
 
 def run_server(args: argparse.Namespace) -> int:
     interactive = args.interactive
-    compile_server = CompileServer(interactive=interactive)
+    auto_update = args.auto_update
+    compile_server = CompileServer(interactive=interactive, auto_updates=auto_update)
     if not interactive:
         print(f"Server started at {compile_server.url()}")
     compile_server.wait_for_startup()
