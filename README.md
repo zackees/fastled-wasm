@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
 
+  * 1.1.18 - Fixes for when the image has never been downloaded.
   * 1.1.17 - Added `--update` and `--no-auto-update` to control whether the compiler in docker mode will try to update.
   * 1.1.16 - Rewrote docker logic to use container suspension and resumption. Much much faster.
   * 1.1.15 - Fixed logic for considering ipv6 addresses. Auto selection of ipv6 is now restored.

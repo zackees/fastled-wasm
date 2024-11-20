@@ -198,9 +198,6 @@ class DockerManager:
                         raise
                     except Exception:
                         remote_image_hash_from_local_image = None
-                        import traceback
-                        import warnings
-
                         stack = traceback.format_exc()
                         warnings.warn(
                             f"Error getting remote image hash from local image: {stack}"
@@ -226,8 +223,6 @@ class DockerManager:
                     local_image_hash = local_image.id
                     print(f"Image {image_name}:{tag} downloaded successfully.")
                 except docker.errors.ImageNotFound:
-                    import warnings
-
                     warnings.warn(f"Image {image_name}:{tag} not found after download.")
 
     def tag_image(self, image_name: str, old_tag: str, new_tag: str) -> None:
