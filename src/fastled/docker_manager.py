@@ -10,10 +10,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
+from appdirs import user_data_dir
+from disklru import DiskLRUCache
 from docker.client import DockerClient
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
+
+CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+DB_FILE = CONFIG_DIR / "db.db"
+DISK_CACHE = DiskLRUCache(DB_FILE, 10)
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -167,20 +174,24 @@ class DockerManager:
             local_image = self.client.images.get(f"{image_name}:{tag}")
             print(f"Image {image_name}:{tag} is already available.")
 
-            # Quick check for latest version
-            try:
-                remote_image = self.client.images.get_registry_data(
-                    f"{image_name}:{tag}"
-                )
-                is_latest = local_image.id.startswith(remote_image.id)
-                print(f"Local version is{' ' if is_latest else ' not '}up to date")
+            if upgrade or not local_image:
+                # Quick check for latest version
+                try:
+                    remote_image = self.client.images.get_registry_data(
+                        f"{image_name}:{tag}"
+                    )
+                    print(f"Local version: {local_image.id}")
+                    print(f"Remote version: {remote_image.id}")
 
-                if upgrade and not is_latest:
-                    print(f"Pulling newer version of {image_name}:{tag}...")
-                    _ = self.client.images.pull(image_name, tag=tag)
-                    print(f"Updated to newer version of {image_name}:{tag}")
-            except Exception as e:
-                print(f"Failed to check remote version: {e}")
+                    is_latest = local_image.id.startswith(remote_image.id)
+                    print(f"Local version is{' ' if is_latest else ' not '}up to date")
+
+                    if not is_latest:
+                        print(f"Pulling newer version of {image_name}:{tag}...")
+                        _ = self.client.images.pull(image_name, tag=tag)
+                        print(f"Updated to newer version of {image_name}:{tag}")
+                except Exception as e:
+                    print(f"Failed to check remote version: {e}")
 
         except docker.errors.ImageNotFound:
             print(f"Image {image_name}:{tag} not found. Downloading...")
@@ -205,13 +216,18 @@ class DockerManager:
         """Compare if existing container has matching configuration"""
         # Check if container is using the same image
         container_image_id = container.image.id
-        current_image = self.client.images.get(container.image.tags[0])
+        container_image_tags = container.image.tags
 
-        if container_image_id != current_image.id:
-            print(
-                f"Container using different image version. Container: {container_image_id}, Current: {current_image.id}"
-            )
-            return False
+        # Simplified image comparison - just compare the IDs directly
+        if container_image_tags is None:
+            print(f"Container using untagged image with ID: {container_image_id}")
+        else:
+            current_image = self.client.images.get(container_image_tags[0])
+            if container_image_id != current_image.id:
+                print(
+                    f"Container using different image version. Container: {container_image_id}, Current: {current_image.id}"
+                )
+                return False
 
         # Check command if specified
         if command and container.attrs["Config"]["Cmd"] != command.split():
@@ -288,6 +304,7 @@ class DockerManager:
                 )
                 container.remove(force=True)
                 raise docker.errors.NotFound("Container removed due to config mismatch")
+            print(f"Container {container_name} found with matching configuration.")
 
             # Existing container with matching config - handle various states
             if container.status == "running":
@@ -405,7 +422,7 @@ def main():
 
     try:
         # Step 1: Validate or download the image
-        docker_manager.validate_or_download_image(image_name, tag)
+        docker_manager.validate_or_download_image(image_name, tag, upgrade=True)
 
         # Step 2: Tag the image
         # docker_manager.tag_image(image_name, tag, new_tag)
