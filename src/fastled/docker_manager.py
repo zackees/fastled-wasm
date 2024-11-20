@@ -195,6 +195,59 @@ class DockerManager:
         image.tag(image_name, new_tag)
         print(f"Image {image_name}:{old_tag} tagged as {new_tag}.")
 
+    def _container_configs_match(
+        self,
+        container: Container,
+        command: str | None,
+        volumes: dict | None,
+        ports: dict | None,
+    ) -> bool:
+        """Compare if existing container has matching configuration"""
+        # Check command if specified
+        if command and container.attrs["Config"]["Cmd"] != command.split():
+            return False
+
+        # Check volumes if specified
+        if volumes:
+            container_mounts = (
+                {
+                    m["Destination"]: {"bind": m["Source"], "mode": m["Mode"]}
+                    for m in container.attrs["Mounts"]
+                }
+                if container.attrs.get("Mounts")
+                else {}
+            )
+
+            if not all(
+                mount["bind"] in container_mounts.get(vol, {}).get("bind", "")
+                for vol, mount in volumes.items()
+            ):
+                return False
+
+        # Check ports if specified
+        if ports:
+            container_ports = (
+                container.attrs["Config"]["ExposedPorts"]
+                if container.attrs["Config"].get("ExposedPorts")
+                else {}
+            )
+            container_port_bindings = (
+                container.attrs["HostConfig"]["PortBindings"]
+                if container.attrs["HostConfig"].get("PortBindings")
+                else {}
+            )
+
+            for host_port, container_port in ports.items():
+                port_key = f"{container_port}/tcp"
+                if port_key not in container_ports:
+                    return False
+                if not container_port_bindings.get(port_key, [{"HostPort": None}])[0][
+                    "HostPort"
+                ] == str(host_port):
+                    return False
+
+        return True
+
     def run_container(
         self,
         image_name: str,
@@ -205,7 +258,8 @@ class DockerManager:
         ports: dict[int, int] | None = None,
     ) -> Container:
         """
-        Run a container from an image. If it already exists, start it.
+        Run a container from an image. If it already exists with matching config, start it.
+        If it exists with different config, remove and recreate it.
 
         Args:
             volumes: Dict mapping host paths to dicts with 'bind' and 'mode' keys
@@ -216,6 +270,16 @@ class DockerManager:
         image_name = f"{image_name}:{tag}"
         try:
             container: Container = self.client.containers.get(container_name)
+
+            # Check if configuration matches
+            if not self._container_configs_match(container, command, volumes, ports):
+                print(
+                    f"Container {container_name} exists but with different configuration. Removing and recreating..."
+                )
+                container.remove(force=True)
+                raise docker.errors.NotFound("Container removed due to config mismatch")
+
+            # Existing container with matching config - handle various states
             if container.status == "running":
                 print(f"Container {container_name} is already running.")
             elif container.status == "exited":
