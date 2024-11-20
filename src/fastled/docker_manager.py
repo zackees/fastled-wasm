@@ -224,7 +224,6 @@ class DockerManager:
                 try:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id
-                    DISK_CACHE.put(local_image_hash, remote_image_hash)
                     print(f"Image {image_name}:{tag} downloaded successfully.")
                 except docker.errors.ImageNotFound:
                     import warnings
