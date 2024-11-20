@@ -82,28 +82,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable profiling for web compilation",
     )
-    build_mode = parser.add_mutually_exclusive_group()
-    build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
-    build_mode.add_argument(
-        "--quick",
-        action="store_true",
-        default=True,
-        help="Build in quick mode (default)",
-    )
-    build_mode.add_argument(
-        "--release", action="store_true", help="Build in release mode"
-    )
-    build_mode.add_argument(
-        "--localhost",
-        "--local",
-        action="store_true",
-        help="Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
-    )
-    build_mode.add_argument(
-        "--server",
-        action="store_true",
-        help="Run the server in the current directory, volume mapping fastled if we are in the repo",
-    )
     parser.add_argument(
         "--force-compile",
         action="store_true",
@@ -118,6 +96,30 @@ def parse_args() -> argparse.Namespace:
         "--update",
         action="store_true",
         help="Update the wasm compiler (if necessary) before running",
+    )
+    parser.add_argument(
+        "--localhost",
+        "--local",
+        "-l",
+        action="store_true",
+        help="Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
+    )
+    parser.add_argument(
+        "--server",
+        "-s",
+        action="store_true",
+        help="Run the server in the current directory, volume mapping fastled if we are in the repo",
+    )
+    build_mode = parser.add_mutually_exclusive_group()
+    build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
+    build_mode.add_argument(
+        "--quick",
+        action="store_true",
+        default=True,
+        help="Build in quick mode (default)",
+    )
+    build_mode.add_argument(
+        "--release", action="store_true", help="Build in release mode"
     )
 
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
