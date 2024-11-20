@@ -38,13 +38,19 @@ class MyEventHandler(FileSystemEventHandler):
 
     def on_modified(self, event: FileSystemEvent) -> None:
         if not event.is_directory:
-            path = Path(event.src_path)
+            # Convert src_path to str if it's bytes
+            src_path = (
+                event.src_path.decode()
+                if isinstance(event.src_path, bytes)
+                else event.src_path
+            )
+            path = Path(src_path)
             # Check if any part of the path matches excluded patterns
             if not any(part in self.excluded_patterns for part in path.parts):
-                new_hash = self._get_file_hash(event.src_path)
-                if new_hash and new_hash != self.file_hashes.get(event.src_path):
-                    self.file_hashes[event.src_path] = new_hash
-                    self.change_queue.put(event.src_path)
+                new_hash = self._get_file_hash(src_path)
+                if new_hash and new_hash != self.file_hashes.get(src_path):
+                    self.file_hashes[src_path] = new_hash
+                    self.change_queue.put(src_path)
 
 
 class FileChangedNotifier(threading.Thread):
