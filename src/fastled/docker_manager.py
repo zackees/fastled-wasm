@@ -176,6 +176,8 @@ class DockerManager:
         If upgrade is True, will pull the latest version even if image exists locally.
         """
         print(f"Validating image {image_name}:{tag}...")
+        remote_image_hash_from_local_image: str | None = None
+        remote_image_hash: str | None = None
 
         with get_lock(f"{image_name}-{tag}"):
             try:
@@ -187,7 +189,7 @@ class DockerManager:
                         f"{image_name}:{tag}"
                     )
                     remote_image_hash = remote_image.id
-                    remote_image_hash_from_local_image: str | None = None
+
                     try:
                         remote_image_hash_from_local_image = DISK_CACHE.get(
                             local_image.id
@@ -213,10 +215,8 @@ class DockerManager:
                     _ = self.client.images.pull(image_name, tag=tag)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
-                    if remote_image_hash_from_local_image is not None:
-                        DISK_CACHE.put(
-                            local_image_hash, remote_image_hash_from_local_image
-                        )
+                    if remote_image_hash is not None:
+                        DISK_CACHE.put(local_image_hash, remote_image_hash)
 
             except docker.errors.ImageNotFound:
                 print(f"Image {image_name}:{tag} not found. Downloading...")
