@@ -5,7 +5,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +21,7 @@ ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 ENABLE_EMBEDDED_DATA = True
-_EXECUTOR = ProcessPoolExecutor(max_workers=8)
+_EXECUTOR = ThreadPoolExecutor(max_workers=8)
 
 
 @dataclass
@@ -66,16 +66,11 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
             )
             result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
     except KeyboardInterrupt:
-        # main thraed interrupt
-
         _thread.interrupt_main()
 
     except TimeoutError:
         result = ConnectionResult(host, False, use_ipv4)
     except Exception as e:
-        import warnings
-
-        warnings.warn(f"Connection failed: {e}")
         result = ConnectionResult(host, False, use_ipv4)
     return result
 
