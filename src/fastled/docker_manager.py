@@ -89,8 +89,19 @@ class RunningContainer:
 
 class DockerManager:
     def __init__(self) -> None:
-        self.client: DockerClient = docker.from_env()
-        self.first_run = False
+        try:
+            self._client: DockerClient | None = None
+            self.first_run = False
+        except docker.errors.DockerException as e:
+            stack = traceback.format_exc()
+            warnings.warn(f"Error initializing Docker client: {e}\n{stack}")
+            raise
+
+    @property
+    def client(self) -> DockerClient:
+        if self._client is None:
+            self._client = docker.from_env()
+        return self._client
 
     @staticmethod
     def is_docker_installed() -> bool:
@@ -119,6 +130,9 @@ class DockerManager:
             return True
         except docker.errors.DockerException as e:
             print(f"Docker is not running: {str(e)}")
+            return False
+        except Exception as e:
+            print(f"Error pinging Docker daemon: {str(e)}")
             return False
 
     def start(self) -> bool:

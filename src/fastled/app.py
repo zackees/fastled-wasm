@@ -338,7 +338,6 @@ def run_client(args: argparse.Namespace) -> int:
 
         if not result.success:
             print("\nCompilation failed.")
-            return 1
 
         browser_proc: subprocess.Popen | None = None
         if open_web_browser:
