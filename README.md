@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
 
+  * 1.1.20 - Fixed a regression for 1.1.16 involving docker throwing an exception before DockerManager.is_running() could be called so it can be launched.
   * 1.1.19 - Automatically does a limit searches for sketch directories if you leave it blank.
   * 1.1.18 - Fixes for when the image has never been downloaded.
   * 1.1.17 - Added `--update` and `--no-auto-update` to control whether the compiler in docker mode will try to update.
