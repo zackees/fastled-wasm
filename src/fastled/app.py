@@ -12,12 +12,12 @@ from fastled import __version__
 from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
 from fastled.env import DEFAULT_URL
+from fastled.select_sketch_directory import select_sketch_directory
 from fastled.sketch import (
     find_sketch_directories,
     looks_like_fastled_repo,
     looks_like_sketch_directory,
 )
-from fastled.string_diff import string_diff_paths
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,41 +126,9 @@ def parse_args() -> argparse.Namespace:
             args.directory = str(maybe_sketch_dir)
         else:
             sketch_directories = find_sketch_directories(maybe_sketch_dir)
-            if cwd_is_fastled:
-                exclude = ["src", "dev", "tests"]
-                for ex in exclude:
-                    p = Path(ex)
-                    if p in sketch_directories:
-                        sketch_directories.remove(p)
-            if len(sketch_directories) == 1:
-                print(f"\nUsing sketch directory: {sketch_directories[0]}")
-                args.directory = str(sketch_directories[0])
-            elif len(sketch_directories) > 1:
-                print("\nMultiple Directories found, choose one:")
-                for i, sketch_dir in enumerate(sketch_directories):
-                    print(f"  [{i+1}]: {sketch_dir}")
-                which = input("\nPlease specify a sketch directory: ")
-                try:
-                    index = int(which) - 1
-                    args.directory = str(sketch_directories[index])
-                except (ValueError, IndexError):
-                    inputs = [p for p in sketch_directories]
-                    top_hits: list[tuple[int, Path]] = string_diff_paths(which, inputs)
-
-                    if len(top_hits) == 1:
-                        example = top_hits[0][1]
-                        args.directory = str(example)
-                    else:
-                        top_hit_paths = [p for i, p in top_hits]
-                        for i, sketch_dir in enumerate(top_hit_paths):
-                            print(f"  [{i+1}]: {sketch_dir}")
-                        which = input("\nPlease specify a sketch directory: ")
-                        try:
-                            index = int(which) - 1
-                            args.directory = str(top_hit_paths[index])
-                        except (ValueError, IndexError):
-                            print("Invalid selection.")
-                            sys.exit(1)
+            selected_dir = select_sketch_directory(sketch_directories, cwd_is_fastled)
+            if selected_dir:
+                args.directory = selected_dir
             else:
                 print(
                     "\nYou either need to specify a sketch directory or run in --server mode."
