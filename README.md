@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
 
+  * 1.1.22 - Selecting sketch now allows strings and narrowing down paths if ambiguity
   * 1.1.21 - Now always watches for space/enter key events to trigger a recompile.
   * 1.1.20 - Fixed a regression for 1.1.16 involving docker throwing an exception before DockerManager.is_running() could be called so it can be launched.
   * 1.1.19 - Automatically does a limit searches for sketch directories if you leave it blank.
