@@ -125,6 +125,12 @@ def parse_args() -> argparse.Namespace:
             args.directory = str(maybe_sketch_dir)
         else:
             sketch_directories = find_sketch_directories(maybe_sketch_dir)
+            if cwd_is_fastled:
+                exclude = ["src", "dev", "tests"]
+                for ex in exclude:
+                    p = Path(ex)
+                    if p in sketch_directories:
+                        sketch_directories.remove(p)
             if len(sketch_directories) == 1:
                 print(f"\nUsing sketch directory: {sketch_directories[0]}")
                 args.directory = str(sketch_directories[0])
