@@ -5,8 +5,25 @@ import time
 from multiprocessing import Process, Queue
 from queue import Empty
 
+_WHITE_SPACE = [" ", "\r", "\n"]
 
+
+# Original space bar, but now also enter key.
 class SpaceBarWatcher:
+
+    @classmethod
+    def watch_space_bar_pressed(cls, timeout: float = 0) -> bool:
+        watcher = cls()
+        try:
+            start_time = time.time()
+            while True:
+                if watcher.space_bar_pressed():
+                    return True
+                if time.time() - start_time > timeout:
+                    return False
+        finally:
+            watcher.stop()
+
     def __init__(self) -> None:
         self.queue: Queue = Queue()
         self.queue_cancel: Queue = Queue()
@@ -31,7 +48,7 @@ class SpaceBarWatcher:
                 # Check if there's input ready
                 if msvcrt.kbhit():  # type: ignore
                     char = msvcrt.getch().decode()  # type: ignore
-                    if char == " ":
+                    if char in _WHITE_SPACE:
                         self.queue.put(ord(" "))
 
         else:  # Unix-like systems
@@ -52,7 +69,7 @@ class SpaceBarWatcher:
                     # Check if there's input ready
                     if select.select([sys.stdin], [], [], 0.1)[0]:
                         char = sys.stdin.read(1)
-                        if char == " ":
+                        if char in _WHITE_SPACE:
                             self.queue.put(ord(" "))
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore
@@ -60,9 +77,12 @@ class SpaceBarWatcher:
     def space_bar_pressed(self) -> bool:
         found = False
         while not self.queue.empty():
-            key = self.queue.get()
-            if key == ord(" "):
-                found = True
+            try:
+                key = self.queue.get(block=False, timeout=0.1)
+                if key == ord(" "):
+                    found = True
+            except Empty:
+                break
         return found
 
     def stop(self) -> None:
