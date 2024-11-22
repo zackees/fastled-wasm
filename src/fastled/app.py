@@ -17,6 +17,7 @@ from fastled.sketch import (
     looks_like_fastled_repo,
     looks_like_sketch_directory,
 )
+from fastled.string_diff import string_diff_paths
 
 
 def parse_args() -> argparse.Namespace:
@@ -143,8 +144,23 @@ def parse_args() -> argparse.Namespace:
                     index = int(which) - 1
                     args.directory = str(sketch_directories[index])
                 except (ValueError, IndexError):
-                    print("Invalid selection.")
-                    sys.exit(1)
+                    inputs = [p for p in sketch_directories]
+                    top_hits: list[tuple[int, Path]] = string_diff_paths(which, inputs)
+
+                    if len(top_hits) == 1:
+                        example = top_hits[0][1]
+                        args.directory = str(example)
+                    else:
+                        top_hit_paths = [p for i, p in top_hits]
+                        for i, sketch_dir in enumerate(top_hit_paths):
+                            print(f"  [{i+1}]: {sketch_dir}")
+                        which = input("\nPlease specify a sketch directory: ")
+                        try:
+                            index = int(which) - 1
+                            args.directory = str(top_hit_paths[index])
+                        except (ValueError, IndexError):
+                            print("Invalid selection.")
+                            sys.exit(1)
             else:
                 print(
                     "\nYou either need to specify a sketch directory or run in --server mode."
@@ -193,7 +209,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         os.chdir("../fastled")
-        sys.argv.append("--server")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")

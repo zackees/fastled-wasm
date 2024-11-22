@@ -19,6 +19,7 @@ dependencies = [
     "filelock",
     "disklru>=2.0.1",
     "appdirs",
+    "rapidfuzz",
 ]
 
 dynamic = ["version"]
