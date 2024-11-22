@@ -128,6 +128,7 @@ def parse_args() -> argparse.Namespace:
             sketch_directories = find_sketch_directories(maybe_sketch_dir)
             selected_dir = select_sketch_directory(sketch_directories, cwd_is_fastled)
             if selected_dir:
+                print(f"Using sketch directory: {selected_dir}")
                 args.directory = selected_dir
             else:
                 print(

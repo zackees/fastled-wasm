@@ -27,19 +27,9 @@ def select_sketch_directory(
         except (ValueError, IndexError):
             inputs = [p for p in sketch_directories]
             top_hits: list[tuple[int, Path]] = string_diff_paths(which, inputs)
-
             if len(top_hits) == 1:
                 example = top_hits[0][1]
                 return str(example)
             else:
-                top_hit_paths = [p for i, p in top_hits]
-                for i, sketch_dir in enumerate(top_hit_paths):
-                    print(f"  [{i+1}]: {sketch_dir}")
-                which = input("\nPlease specify a sketch directory: ")
-                try:
-                    index = int(which) - 1
-                    return str(top_hit_paths[index])
-                except (ValueError, IndexError):
-                    print("Invalid selection.")
-                    return None
+                return select_sketch_directory([p for _, p in top_hits], cwd_is_fastled)
     return None
