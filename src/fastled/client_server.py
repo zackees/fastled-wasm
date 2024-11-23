@@ -268,14 +268,13 @@ def run_client_server(args: argparse.Namespace) -> int:
                         space_bar_pressed = SpaceBarWatcher.watch_space_bar_pressed(
                             timeout=1.0
                         )
-                        file_had_changes = (
-                            len(source_code_watcher.get_all_changes()) > 0
-                        )
-                        if space_bar_pressed or file_had_changes:
+                        file_changes = source_code_watcher.get_all_changes()
+
+                        if space_bar_pressed or file_changes:
                             if space_bar_pressed:
                                 print("Space bar pressed, triggering recompile...")
-                            elif file_had_changes:
-                                print("Changes detected, triggering recompile...")
+                            elif file_changes:
+                                print(f"Changes detected in {','.join(file_changes)}, triggering recompile...")
                             last_compiled_result = compile_function(
                                 last_hash_value=None
                             )
