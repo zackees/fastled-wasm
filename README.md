@@ -138,7 +138,6 @@ Q: How can I get the compiled size of my FastLED sketch smaller?
 A: A big chunk of space is being used by unnecessary javascript `emscripten` is  bundling. This can be tweeked by the wasm_compiler_settings.py file in the FastLED repo.
 
 
-
 # Revisions
 
   * 1.1.22 - Selecting sketch now allows strings and narrowing down paths if ambiguity
