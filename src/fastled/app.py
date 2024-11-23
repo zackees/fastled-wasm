@@ -70,6 +70,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--update",
+        "--upgrade",
         action="store_true",
         help="Update the wasm compiler (if necessary) before running",
     )
@@ -101,45 +102,51 @@ def parse_args() -> argparse.Namespace:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
-    if args.update:
-        args.auto_update = True
-    elif args.no_auto_updates:
-        args.auto_update = False
-    else:
-        args.auto_update = None
-
-    if not cwd_is_fastled and not args.localhost and not args.web and not args.server:
-        print(f"Using web compiler at {DEFAULT_URL}")
-        args.web = DEFAULT_URL
-    if cwd_is_fastled and not args.web and not args.server:
-        print("Forcing --local mode because we are in the FastLED repo")
-        args.localhost = True
-    if args.localhost:
-        args.web = "localhost"
-    if args.interactive and not args.server:
-        print("--interactive forces --server mode")
-        args.server = True
-    if args.directory is None and not args.server:
-        # does current directory look like a sketch?
-        maybe_sketch_dir = Path(os.getcwd())
-        if looks_like_sketch_directory(maybe_sketch_dir):
-            args.directory = str(maybe_sketch_dir)
+    if not args.update:
+        if args.no_auto_updates:
+            args.auto_update = False
         else:
-            sketch_directories = find_sketch_directories(maybe_sketch_dir)
-            selected_dir = select_sketch_directory(sketch_directories, cwd_is_fastled)
-            if selected_dir:
-                print(f"Using sketch directory: {selected_dir}")
-                args.directory = selected_dir
+            args.auto_update = None
+
+        if (
+            not cwd_is_fastled
+            and not args.localhost
+            and not args.web
+            and not args.server
+        ):
+            print(f"Using web compiler at {DEFAULT_URL}")
+            args.web = DEFAULT_URL
+        if cwd_is_fastled and not args.web and not args.server:
+            print("Forcing --local mode because we are in the FastLED repo")
+            args.localhost = True
+        if args.localhost:
+            args.web = "localhost"
+        if args.interactive and not args.server:
+            print("--interactive forces --server mode")
+            args.server = True
+        if args.directory is None and not args.server:
+            # does current directory look like a sketch?
+            maybe_sketch_dir = Path(os.getcwd())
+            if looks_like_sketch_directory(maybe_sketch_dir):
+                args.directory = str(maybe_sketch_dir)
             else:
-                print(
-                    "\nYou either need to specify a sketch directory or run in --server mode."
+                sketch_directories = find_sketch_directories(maybe_sketch_dir)
+                selected_dir = select_sketch_directory(
+                    sketch_directories, cwd_is_fastled
                 )
-                sys.exit(1)
-    elif args.directory is not None and os.path.isfile(args.directory):
-        dir_path = Path(args.directory).parent
-        if looks_like_sketch_directory(dir_path):
-            print(f"Using sketch directory: {dir_path}")
-            args.directory = str(dir_path)
+                if selected_dir:
+                    print(f"Using sketch directory: {selected_dir}")
+                    args.directory = selected_dir
+                else:
+                    print(
+                        "\nYou either need to specify a sketch directory or run in --server mode."
+                    )
+                    sys.exit(1)
+        elif args.directory is not None and os.path.isfile(args.directory):
+            dir_path = Path(args.directory).parent
+            if looks_like_sketch_directory(dir_path):
+                print(f"Using sketch directory: {dir_path}")
+                args.directory = str(dir_path)
 
     return args
 
@@ -167,6 +174,13 @@ def run_server(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
+    if args.update:
+        # Force auto_update to ensure update check happens
+        compile_server = CompileServer(interactive=False, auto_updates=True)
+        compile_server.stop()
+        print("Finished updating.")
+        return 0
+
     if args.server:
         print("Running in server only mode.")
         return run_server(args)
@@ -178,6 +192,7 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         os.chdir("../fastled")
+        sys.argv.append("--upgrade")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")

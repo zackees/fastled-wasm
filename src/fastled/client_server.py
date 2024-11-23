@@ -274,7 +274,9 @@ def run_client_server(args: argparse.Namespace) -> int:
                             if space_bar_pressed:
                                 print("Space bar pressed, triggering recompile...")
                             elif file_changes:
-                                print(f"Changes detected in {','.join(file_changes)}, triggering recompile...")
+                                print(
+                                    f"Changes detected in {','.join(file_changes)}, triggering recompile..."
+                                )
                             last_compiled_result = compile_function(
                                 last_hash_value=None
                             )
