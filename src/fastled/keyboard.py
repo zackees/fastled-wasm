@@ -2,8 +2,8 @@ import os
 import select
 import sys
 import time
-from multiprocessing import Process, Queue
-from queue import Empty
+from threading import Thread
+from queue import Queue, Empty
 
 _WHITE_SPACE = [" ", "\r", "\n"]
 
@@ -27,7 +27,7 @@ class SpaceBarWatcher:
     def __init__(self) -> None:
         self.queue: Queue = Queue()
         self.queue_cancel: Queue = Queue()
-        self.process = Process(target=self._watch_for_space)
+        self.process = Thread(target=self._watch_for_space, daemon=True)
         self.process.start()
 
     def _watch_for_space(self) -> None:
@@ -87,10 +87,8 @@ class SpaceBarWatcher:
 
     def stop(self) -> None:
         self.queue_cancel.put(True)
-        self.process.terminate()
         self.process.join()
-        self.queue.close()
-        self.queue.join_thread()
+        self.queue.join()
 
 
 def main() -> None:
