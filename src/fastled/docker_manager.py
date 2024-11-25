@@ -19,6 +19,7 @@ from docker.client import DockerClient
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
+import platform
 
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,6 +49,10 @@ def _win32_docker_location() -> str | None:
 def get_lock(image_name: str) -> FileLock:
     """Get the file lock for this DockerManager instance."""
     lock_file = CONFIG_DIR / f"{image_name}.lock"
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    print(CONFIG_DIR)
+    if not lock_file.parent.exists():
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
     return FileLock(str(lock_file))
 
 
