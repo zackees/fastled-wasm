@@ -2,8 +2,8 @@ import os
 import select
 import sys
 import time
+from queue import Empty, Queue
 from threading import Thread
-from queue import Queue, Empty
 
 _WHITE_SPACE = [" ", "\r", "\n"]
 
@@ -81,6 +81,7 @@ class SpaceBarWatcher:
                 key = self.queue.get(block=False, timeout=0.1)
                 if key == ord(" "):
                     found = True
+                self.queue.task_done()
             except Empty:
                 break
         return found
@@ -88,7 +89,6 @@ class SpaceBarWatcher:
     def stop(self) -> None:
         self.queue_cancel.put(True)
         self.process.join()
-        self.queue.join()
 
 
 def main() -> None:
@@ -96,10 +96,14 @@ def main() -> None:
     try:
         while True:
             if watcher.space_bar_pressed():
+                print("Space bar hit!")
                 break
             time.sleep(1)
     finally:
+        print("Stopping watcher.")
         watcher.stop()
+        print("Watcher stopped.")
+    return
 
 
 if __name__ == "__main__":

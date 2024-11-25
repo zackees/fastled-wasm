@@ -19,7 +19,6 @@ from docker.client import DockerClient
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
-import platform
 
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
