@@ -20,6 +20,8 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
 
+from fastled.spinner import Spinner
+
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = CONFIG_DIR / "db.db"
@@ -225,17 +227,17 @@ class DockerManager:
                         return
 
                     # Quick check for latest version
-
-                    print(f"Pulling newer version of {image_name}:{tag}...")
-                    _ = self.client.images.pull(image_name, tag=tag)
+                    with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
+                        _ = self.client.images.pull(image_name, tag=tag)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     if remote_image_hash is not None:
                         DISK_CACHE.put(local_image_hash, remote_image_hash)
 
             except docker.errors.ImageNotFound:
-                print(f"Image {image_name}:{tag} not found. Downloading...")
-                self.client.images.pull(image_name, tag=tag)
+                print(f"Image {image_name}:{tag} not found.")
+                with Spinner("Loading "):
+                    self.client.images.pull(image_name, tag=tag)
                 try:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id

@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
 
+  * 1.1.24 - Adds progress spinning bar for pulling images, which take a long time.
   * 1.1.23 - Various fixes for MacOS
   * 1.1.22 - Selecting sketch now allows strings and narrowing down paths if ambiguity
   * 1.1.21 - Now always watches for space/enter key events to trigger a recompile.
