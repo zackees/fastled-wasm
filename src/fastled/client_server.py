@@ -269,13 +269,19 @@ def run_client_server(args: argparse.Namespace) -> int:
                             timeout=1.0
                         )
                         file_changes = source_code_watcher.get_all_changes()
+                        sketch_files_changed = sketch_filewatcher.get_all_changes()
 
-                        if space_bar_pressed or file_changes:
+                        if file_changes:
+                            print(
+                                f"Changes detected in {file_changes}\nHit the space bar to trigger compile."
+                            )
+
+                        if space_bar_pressed or sketch_files_changed:
                             if space_bar_pressed:
                                 print("Space bar pressed, triggering recompile...")
-                            elif file_changes:
+                            elif sketch_files_changed:
                                 print(
-                                    f"Changes detected in {','.join(file_changes)}, triggering recompile..."
+                                    f"Changes detected in {','.join(sketch_files_changed)}, triggering recompile..."
                                 )
                             last_compiled_result = compile_function(
                                 last_hash_value=None
