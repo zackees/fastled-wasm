@@ -20,6 +20,7 @@ dependencies = [
     "disklru>=2.0.1",
     "appdirs",
     "rapidfuzz",
+    "progress"
 ]
 
 dynamic = ["version"]
