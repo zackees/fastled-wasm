@@ -11,7 +11,40 @@ env:
   REGISTRY_IMAGE: niteris/fastled-wasm  # Replace with your Docker Hub username and repository
 
 jobs:
+  check-if-changed:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check workflow repo changes
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Check FastLED repo
+        uses: actions/checkout@v4
+        with:
+          repository: fastled/fastled
+          path: fastled
+      - id: check
+        run: |
+          # Check if there are any changes in workflow repository
+          WORKFLOW_CHANGED=$(git diff --quiet HEAD^1 HEAD || echo "changed")
+          
+          # Check FastLED repo for changes in last 24 hours
+          cd fastled
+          FASTLED_CHANGED=$(git log --since="24 hours ago" --oneline | wc -l)
+          
+          if [[ -n "$WORKFLOW_CHANGED" ]] || [[ "$FASTLED_CHANGED" -gt 0 ]]; then
+            echo "Changes detected in workflow repository or FastLED in last 24h"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "No recent changes detected"
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
   build:
+    needs: check-if-changed
+    if: needs.check-if-changed.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -67,7 +100,9 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     needs:
+      - check-if-changed
       - build
+    if: needs.check-if-changed.outputs.should_run == 'true'
     steps:
       - name: Download digests
         uses: actions/download-artifact@v4
