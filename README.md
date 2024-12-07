@@ -142,7 +142,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
-  * 1.1.26 - Fixed `--interactive` so that it now works correctly.
+  * 1.1.27 - Fixed `--interactive` so that it now works correctly.
   * 1.1.25 - Improved detecting which sketch directory the user means by fuzzy matching.
   * 1.1.24 - Adds progress spinning bar for pulling images, which take a long time.
   * 1.1.23 - Various fixes for MacOS
