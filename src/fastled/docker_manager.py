@@ -421,6 +421,46 @@ class DockerManager:
             )
         return container
 
+    def run_container_interactive(
+        self,
+        image_name: str,
+        tag: str,
+        container_name: str,
+        command: str | None = None,
+        volumes: dict[str, dict[str, str]] | None = None,
+        ports: dict[int, int] | None = None,
+    ) -> None:
+        # Remove existing container
+        try:
+            container: Container = self.client.containers.get(container_name)
+            container.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+        try:
+            docker_command: list[str] = [
+                "docker",
+                "run",
+                "-it",
+                "--rm",
+                "--name",
+                container_name,
+            ]
+            if volumes:
+                for host_dir, mount in volumes.items():
+                    docker_command.extend(["-v", f"{host_dir}:{mount['bind']}"])
+            if ports:
+                for host_port, container_port in ports.items():
+                    docker_command.extend(["-p", f"{host_port}:{container_port}"])
+            docker_command.append(f"{image_name}:{tag}")
+            if command:
+                docker_command.append(command)
+            cmd_str: str = subprocess.list2cmdline(docker_command)
+            print(f"Running command: {cmd_str}")
+            subprocess.run(docker_command, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error running Docker command: {e}")
+            raise
+
     def attach_and_run(self, container: Container | str) -> RunningContainer:
         """
         Attach to a running container and monitor its logs in a background thread.

@@ -121,7 +121,7 @@ class CompileServer:
         print("Docker image now validated")
         port = SERVER_PORT
         if self.interactive:
-            server_command = ["/bin/bash", "-it"]
+            server_command = ["/bin/bash"]
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
         ports = {80: port}
@@ -135,20 +135,32 @@ class CompileServer:
             }
 
         cmd_str = subprocess.list2cmdline(server_command)
-        container: Container = self.docker.run_container_detached(
-            image_name=_IMAGE_NAME,
-            tag="main",
-            container_name=self.container_name,
-            command=cmd_str,
-            ports=ports,
-            volumes=volumes,
-            remove_previous=self.interactive,
-        )
-        self.running_container = self.docker.attach_and_run(container)
-        assert self.running_container is not None, "Container should be running"
+        if not self.interactive:
+            container: Container = self.docker.run_container_detached(
+                image_name=_IMAGE_NAME,
+                tag="main",
+                container_name=self.container_name,
+                command=cmd_str,
+                ports=ports,
+                volumes=volumes,
+                remove_previous=self.interactive,
+            )
+            self.running_container = self.docker.attach_and_run(container)
+            assert self.running_container is not None, "Container should be running"
+            print("Compile server starting")
+            return port
+        else:
+            self.docker.run_container_interactive(
+                image_name=_IMAGE_NAME,
+                tag="main",
+                container_name=self.container_name,
+                command=cmd_str,
+                ports=ports,
+                volumes=volumes,
+            )
 
-        print("Compile server starting")
-        return port
+            print("Exiting interactive mode")
+            return port
 
     def proceess_running(self) -> bool:
         return self.docker.is_container_running(self.container_name)
