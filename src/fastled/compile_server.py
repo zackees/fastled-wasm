@@ -5,7 +5,12 @@ from pathlib import Path
 
 import httpx
 
-from fastled.docker_manager import DISK_CACHE, DockerManager, RunningContainer
+from fastled.docker_manager import (
+    DISK_CACHE,
+    Container,
+    DockerManager,
+    RunningContainer,
+)
 from fastled.sketch import looks_like_fastled_repo
 
 _IMAGE_NAME = "niteris/fastled-wasm"
@@ -130,15 +135,16 @@ class CompileServer:
             }
 
         cmd_str = subprocess.list2cmdline(server_command)
-        self.docker.run_container(
+        container: Container = self.docker.run_container_detached(
             image_name=_IMAGE_NAME,
             tag="main",
             container_name=self.container_name,
             command=cmd_str,
             ports=ports,
             volumes=volumes,
+            remove_previous=self.interactive,
         )
-        self.running_container = self.docker.attach_and_run(self.container_name)
+        self.running_container = self.docker.attach_and_run(container)
         assert self.running_container is not None, "Container should be running"
 
         print("Compile server starting")

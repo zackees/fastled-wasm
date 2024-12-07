@@ -339,7 +339,7 @@ class DockerManager:
             return False
         return True
 
-    def run_container(
+    def run_container_detached(
         self,
         image_name: str,
         tag: str,
@@ -410,12 +410,11 @@ class DockerManager:
             print("\n" + "#" * msg_len)
             print(out_msg)
             print("#" * msg_len + "\n")
-            detach = (command is None) or ("-it" not in command)
             container = self.client.containers.run(
                 image_name,
                 command,
                 name=container_name,
-                detach=detach,
+                detach=True,
                 tty=True,
                 volumes=volumes,
                 ports=ports,
@@ -510,7 +509,7 @@ def main():
         # docker_manager.tag_image(image_name, tag, new_tag)
 
         # Step 3: Run the container
-        container = docker_manager.run_container(
+        container = docker_manager.run_container_detached(
             image_name, tag, container_name, command
         )
 
