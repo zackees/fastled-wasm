@@ -157,7 +157,7 @@ def run_server(args: argparse.Namespace) -> int:
     compile_server = CompileServer(interactive=interactive, auto_updates=auto_update)
     if not interactive:
         print(f"Server started at {compile_server.url()}")
-    compile_server.wait_for_startup()
+        compile_server.wait_for_startup()
     try:
         while True:
             if not compile_server.proceess_running():
@@ -192,7 +192,8 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         os.chdir("../fastled")
-        sys.argv.append("--upgrade")
+        sys.argv.append("--interactive")
+        sys.argv.append("examples/NoiseRing")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")

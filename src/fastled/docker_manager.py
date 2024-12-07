@@ -347,6 +347,7 @@ class DockerManager:
         command: str | None = None,
         volumes: dict[str, dict[str, str]] | None = None,
         ports: dict[int, int] | None = None,
+        remove_previous: bool = False,
     ) -> Container:
         """
         Run a container from an image. If it already exists with matching config, start it.
@@ -362,8 +363,12 @@ class DockerManager:
         try:
             container: Container = self.client.containers.get(container_name)
 
+            if remove_previous:
+                print(f"Removing existing container {container_name}...")
+                container.remove(force=True)
+                raise docker.errors.NotFound("Container removed due to remove_previous")
             # Check if configuration matches
-            if not self._container_configs_match(container, command, volumes, ports):
+            elif not self._container_configs_match(container, command, volumes, ports):
                 print(
                     f"Container {container_name} exists but with different configuration. Removing and recreating..."
                 )
@@ -400,11 +405,17 @@ class DockerManager:
                 container.start()
         except docker.errors.NotFound:
             print(f"Creating and starting {container_name}")
+            out_msg = f"# Running in container: {command}"
+            msg_len = len(out_msg)
+            print("\n" + "#" * msg_len)
+            print(out_msg)
+            print("#" * msg_len + "\n")
+            detach = (command is None) or ("-it" not in command)
             container = self.client.containers.run(
                 image_name,
                 command,
                 name=container_name,
-                detach=True,
+                detach=detach,
                 tty=True,
                 volumes=volumes,
                 ports=ports,

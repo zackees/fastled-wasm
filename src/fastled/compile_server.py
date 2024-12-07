@@ -116,11 +116,9 @@ class CompileServer:
         print("Docker image now validated")
         port = SERVER_PORT
         if self.interactive:
-            server_command = ["/bin/bash"]
+            server_command = ["/bin/bash", "-it"]
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
-        server_cmd_str = subprocess.list2cmdline(server_command)
-        print(f"Started Docker container with command: {server_cmd_str}")
         ports = {80: port}
         volumes = None
         if self.fastled_src_dir:
@@ -132,7 +130,6 @@ class CompileServer:
             }
 
         cmd_str = subprocess.list2cmdline(server_command)
-
         self.docker.run_container(
             image_name=_IMAGE_NAME,
             tag="main",
