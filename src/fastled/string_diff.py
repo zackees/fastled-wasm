@@ -20,7 +20,6 @@ def string_diff(
     distances: list[float] = []
     for s in string_list:
         dist = fuzz.token_sort_ratio(normalize(input_string), normalize(s))
-        print("partial_ratio", dist)
         distances.append(1.0 / (dist + 1.0))
     min_distance = min(distances)
     out: list[tuple[float, str]] = []
