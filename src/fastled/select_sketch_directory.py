@@ -26,7 +26,7 @@ def select_sketch_directory(
             return str(sketch_directories[index])
         except (ValueError, IndexError):
             inputs = [p for p in sketch_directories]
-            top_hits: list[tuple[int, Path]] = string_diff_paths(which, inputs)
+            top_hits: list[tuple[float, Path]] = string_diff_paths(which, inputs)
             if len(top_hits) == 1:
                 example = top_hits[0][1]
                 return str(example)
