@@ -154,7 +154,10 @@ def parse_args() -> argparse.Namespace:
 def run_server(args: argparse.Namespace) -> int:
     interactive = args.interactive
     auto_update = args.auto_update
-    compile_server = CompileServer(interactive=interactive, auto_updates=auto_update)
+    mapped_dir = Path(args.directory).absolute() if args.directory else None
+    compile_server = CompileServer(
+        interactive=interactive, auto_updates=auto_update, mapped_dir=mapped_dir
+    )
     if not interactive:
         print(f"Server started at {compile_server.url()}")
         compile_server.wait_for_startup()

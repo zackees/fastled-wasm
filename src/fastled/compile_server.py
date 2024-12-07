@@ -27,8 +27,14 @@ class CompileServer:
         container_name=_DEFAULT_CONTAINER_NAME,
         interactive: bool = False,
         auto_updates: bool | None = None,
+        mapped_dir: Path | None = None,
     ) -> None:
-
+        if interactive and not mapped_dir:
+            raise ValueError(
+                "Interactive mode requires a mapped directory point to a sketch"
+            )
+        if not interactive and mapped_dir:
+            raise ValueError("Mapped directory is only used in interactive mode")
         cwd = Path(".").resolve()
         fastled_src_dir: Path | None = None
         if looks_like_fastled_repo(cwd):
@@ -38,6 +44,7 @@ class CompileServer:
             fastled_src_dir = cwd / "src"
 
         self.container_name = container_name
+        self.mapped_dir = mapped_dir
         self.docker = DockerManager()
         self.fastled_src_dir: Path | None = fastled_src_dir
         self.interactive = interactive
@@ -132,6 +139,19 @@ class CompileServer:
             )
             volumes = {
                 str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
+            }
+        if self.interactive:
+            # add the mapped directory to the container
+            print(f"Mounting {self.mapped_dir} into container /mapped")
+            # volumes = {str(self.mapped_dir): {"bind": "/mapped", "mode": "rw"}}
+            # add it
+            assert self.mapped_dir is not None
+            dir_name = self.mapped_dir.name
+            if not volumes:
+                volumes = {}
+            volumes[str(self.mapped_dir)] = {
+                "bind": f"/mapped/{dir_name}",
+                "mode": "rw",
             }
 
         cmd_str = subprocess.list2cmdline(server_command)
