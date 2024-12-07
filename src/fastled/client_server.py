@@ -11,7 +11,7 @@ from fastled.docker_manager import DockerManager
 from fastled.env import DEFAULT_URL
 from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
-from fastled.open_browser import open_browser_thread
+from fastled.open_browser import open_browser_process
 from fastled.sketch import looks_like_sketch_directory
 
 # CompiledResult
@@ -183,7 +183,7 @@ def run_client_server(args: argparse.Namespace) -> int:
 
         browser_proc: Process | None = None
         if open_web_browser:
-            browser_proc = open_browser_thread(Path(args.directory) / "fastled_js")
+            browser_proc = open_browser_process(Path(args.directory) / "fastled_js")
         else:
             print("\nCompilation successful.")
             if compile_server:

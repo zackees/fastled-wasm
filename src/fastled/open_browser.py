@@ -42,7 +42,7 @@ def _run_server(fastled_js: Path, port: int) -> None:
         print("\nShutting down livereload server...")
 
 
-def open_browser_thread(fastled_js: Path, port: int | None = None) -> Process:
+def open_browser_process(fastled_js: Path, port: int | None = None) -> Process:
     """Start livereload server in the fastled_js directory and return the process"""
     if port is None:
         port = DEFAULT_PORT
