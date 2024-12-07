@@ -1,35 +1,23 @@
+import os
 import socket
-import subprocess
+import sys
+from multiprocessing import Process
 from pathlib import Path
+
+from livereload import Server
 
 DEFAULT_PORT = 8081
 
 
-def _open_browser_python(fastled_js: Path, port: int) -> subprocess.Popen:
-    """Start livereload server in the fastled_js directory using CLI"""
+def _open_browser_python(fastled_js: Path, port: int) -> Server:
+    """Start livereload server in the fastled_js directory using API"""
     print(f"\nStarting livereload server in {fastled_js} on port {port}")
 
-    # Construct command for livereload CLI
-    cmd = [
-        "livereload",
-        str(fastled_js),  # directory to serve
-        "--port",
-        str(port),
-        "-t",
-        str(fastled_js / "index.html"),  # file to watch
-        "-w",
-        "0.1",  # delay
-        "-o",
-        "0.5",  # open browser delay
-    ]
-
-    # Start the process
-    process = subprocess.Popen(
-        cmd,
-        # stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return process
+    server = Server()
+    server.watch(str(fastled_js / "index.html"), delay=0.1)
+    server.setHeader("Cache-Control", "no-cache")
+    server.serve(root=str(fastled_js), port=port, open_url_delay=0.5)
+    return server
 
 
 def _find_open_port(start_port: int) -> int:
@@ -42,11 +30,29 @@ def _find_open_port(start_port: int) -> int:
             port += 1
 
 
-def open_browser_thread(fastled_js: Path, port: int | None = None) -> subprocess.Popen:
-    """Start livereload server in the fastled_js directory and return the started thread"""
+def _run_server(fastled_js: Path, port: int) -> None:
+    """Function to run in separate process that starts the livereload server"""
+    sys.stderr = open(os.devnull, "w")  # Suppress stderr output
+    _open_browser_python(fastled_js, port)
+    try:
+        # Keep the process running
+        while True:
+            pass
+    except KeyboardInterrupt:
+        print("\nShutting down livereload server...")
+
+
+def open_browser_thread(fastled_js: Path, port: int | None = None) -> Process:
+    """Start livereload server in the fastled_js directory and return the process"""
     if port is None:
         port = DEFAULT_PORT
 
     port = _find_open_port(port)
 
-    return _open_browser_python(fastled_js, port)
+    process = Process(
+        target=_run_server,
+        args=(fastled_js, port),
+        daemon=True,
+    )
+    process.start()
+    return process

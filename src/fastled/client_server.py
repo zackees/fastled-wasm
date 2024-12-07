@@ -1,8 +1,8 @@
 import argparse
 import shutil
-import subprocess
 import tempfile
 import time
+from multiprocessing import Process
 from pathlib import Path
 
 from fastled.build_mode import BuildMode, get_build_mode
@@ -181,7 +181,7 @@ def run_client_server(args: argparse.Namespace) -> int:
         if not result.success:
             print("\nCompilation failed.")
 
-        browser_proc: subprocess.Popen | None = None
+        browser_proc: Process | None = None
         if open_web_browser:
             browser_proc = open_browser_thread(Path(args.directory) / "fastled_js")
         else:
