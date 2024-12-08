@@ -1,8 +1,36 @@
+import zipfile
+from pathlib import Path
+
+import httpx
+
+from fastled.env import DEFAULT_URL
+
+ENDPOINT = f"{DEFAULT_URL}/project/init"
+
+
 def project_init() -> None:
     """
     Initialize a new FastLED project.
     """
-    print("Initializing a new FastLED project.")
-    print("This will create a new directory with a basic FastLED sketch.")
-    print("TODO: Implement this function.")
-    pass
+    response = httpx.get(ENDPOINT, timeout=20)
+    response.raise_for_status()
+    content = response.content
+    output = Path("fastled.zip")
+    output.write_bytes(content)
+    # unzip the content
+    outdir = Path("fastled")
+    if outdir.exists():
+        print("Project already initialized.")
+        return
+    with zipfile.ZipFile(output, "r") as zip_ref:
+        zip_ref.extractall(outdir)
+    print(f"Project initialized successfully at {outdir}")
+    output.unlink()
+
+
+def unit_test() -> None:
+    project_init()
+
+
+if __name__ == "__main__":
+    unit_test()
