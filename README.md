@@ -142,6 +142,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.30 - Added `--init` to initialize a demo project.
   * 1.1.29 - Remove annoying dbg messages i left in.
   * 1.1.28 - Adds cache control headers to the live server to disable all caching in the live browser.
   * 1.1.27 - Fixed `--interactive` so that it now works correctly.

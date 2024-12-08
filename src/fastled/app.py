@@ -111,8 +111,7 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     if args.init:
-        project_init()
-        args.directory = "fastled"
+        args.directory = project_init()
 
     if not args.update:
         if args.no_auto_updates:

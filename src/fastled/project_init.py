@@ -8,7 +8,7 @@ from fastled.env import DEFAULT_URL
 ENDPOINT = f"{DEFAULT_URL}/project/init"
 
 
-def project_init() -> None:
+def project_init() -> Path:
     """
     Initialize a new FastLED project.
     """
@@ -21,11 +21,12 @@ def project_init() -> None:
     outdir = Path("fastled")
     if outdir.exists():
         print("Project already initialized.")
-        return
+        return Path("fastled").iterdir().__next__()
     with zipfile.ZipFile(output, "r") as zip_ref:
         zip_ref.extractall(outdir)
     print(f"Project initialized successfully at {outdir}")
     output.unlink()
+    return Path("fastled").iterdir().__next__()
 
 
 def unit_test() -> None:
