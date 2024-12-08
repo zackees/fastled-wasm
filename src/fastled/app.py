@@ -12,6 +12,7 @@ from fastled import __version__
 from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
 from fastled.env import DEFAULT_URL
+from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
 from fastled.sketch import (
     find_sketch_directories,
@@ -32,6 +33,11 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         default=None,
         help="Directory containing the FastLED sketch to compile",
+    )
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        help="Initialize the FastLED sketch in the current directory",
     )
     parser.add_argument(
         "--just-compile",
@@ -87,6 +93,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run the server in the current directory, volume mapping fastled if we are in the repo",
     )
+
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
     build_mode.add_argument(
@@ -102,6 +109,11 @@ def parse_args() -> argparse.Namespace:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+
+    if args.init:
+        project_init()
+        sys.exit(0)
+
     if not args.update:
         if args.no_auto_updates:
             args.auto_update = False
