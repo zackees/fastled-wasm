@@ -149,4 +149,4 @@ run.sh
 tmp/
 cache/
 dist/
-./fastled
+/fastled/
