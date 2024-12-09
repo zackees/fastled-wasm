@@ -21,9 +21,11 @@ jobs:
 
     - name: Install
       run: ./install
+      shell: bash -l {0}
 
     - name: Unit tests
       run: ./test
+      shell: bash -l {0}
 
     - name: live run
       run: pip install . && cd tests/test_ino/wasm && rm -rf fastled_js && time fastled-wasm --just-compile && find fastled_js | sort

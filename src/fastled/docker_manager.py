@@ -159,9 +159,8 @@ class DockerManager:
                 )
                 return True
 
-            print(
-                f"Failed to switch to Linux containers with context '{linux_context}': ",
-                verify.stdout,
+            warnings.warn(
+                f"Failed to switch to Linux containers with context '{linux_context}': {verify.stdout}"
             )
             return False
 
@@ -172,9 +171,9 @@ class DockerManager:
         except subprocess.CalledProcessError as e:
             print(f"Failed to switch to Linux containers: {e}")
             if e.stdout:
-                print(f"stdout: {e.stdout.decode()}")
+                print(f"stdout: {e.stdout}")
             if e.stderr:
-                print(f"stderr: {e.stderr.decode()}")
+                print(f"stderr: {e.stderr}")
             return False
         except Exception as e:
             print(f"Unexpected error switching to Linux containers: {e}")
