@@ -123,7 +123,7 @@ class DockerManager:
             print("Docker is not installed.")
             return False
 
-    def _ensure_linux_containers(self) -> bool:
+    def _ensure_linux_containers_for_windows(self) -> bool:
         """Ensure Docker is using Linux containers on Windows."""
         if sys.platform != "win32":
             return True  # Only needed on Windows
@@ -243,6 +243,7 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
+        assert self._ensure_linux_containers_for_windows()
         print(f"Validating image {image_name}:{tag}...")
         remote_image_hash_from_local_image: str | None = None
         remote_image_hash: str | None = None
@@ -274,7 +275,6 @@ class DockerManager:
                         print(f"Local image {image_name}:{tag} is up to date.")
                         return
 
-                    self._ensure_linux_containers()
                     # Quick check for latest version
                     with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
                         # This needs to be swapped out using the the command line interface AI!
