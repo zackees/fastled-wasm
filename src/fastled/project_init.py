@@ -39,12 +39,12 @@ def project_init(example: str | None = None, outputdir: Path | None = None) -> P
     response = httpx.get(f"{ENDPOINT_PROJECT_INIT}/{example}", timeout=20)
     response.raise_for_status()
     content = response.content
-    output = outputdir / "fastled.zip"
-    output.write_bytes(content)
-    with zipfile.ZipFile(output, "r") as zip_ref:
+    tmpzip = outputdir / "fastled.zip"
+    tmpzip.write_bytes(content)
+    with zipfile.ZipFile(tmpzip, "r") as zip_ref:
         zip_ref.extractall(outputdir)
     print(f"Project initialized successfully at {outputdir.resolve()}")
-    output.unlink()
+    tmpzip.unlink()
     return outputdir.iterdir().__next__()
 
 
