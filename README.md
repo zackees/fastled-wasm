@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.33 - Auto updating frequency has been reduced from one hour to one day. To update immediatly use `--update`.
   * 1.1.32 - `--init` now asks for which example you want, then tells you where the example was downloaded to. No longer auto-compiles.
   * 1.1.31 - `--local` is auto-enabled if docker is installed, use `--web` to force web compiler. Updating is much more pretty.
   * 1.1.30 - Added `--init` to initialize a demo project.
