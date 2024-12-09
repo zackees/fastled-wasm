@@ -138,13 +138,12 @@ class DockerManager:
                 return True
 
             print("Switching to Linux containers...")
-            warnings.warn("Switching to Docker to use Linux containers by default...")
-            # Switch to default context which uses Linux containers
+            warnings.warn("Switching Docker to use Linux container context...")
+
+            # Explicitly specify the Linux container context
+            linux_context = "linux-docker"
             subprocess.run(
-                ["cmd", "/c", "docker context ls"], check=True, capture_output=True
-            )
-            subprocess.run(
-                ["cmd", "/c", "docker context use default"],
+                ["cmd", "/c", f"docker context use {linux_context}"],
                 check=True,
                 capture_output=True,
             )
@@ -154,11 +153,20 @@ class DockerManager:
                 ["docker", "info"], capture_output=True, text=True, check=True
             )
             if "linux" in verify.stdout.lower():
-                print("Successfully switched to Linux containers")
+                print(
+                    f"Successfully switched to Linux containers using '{linux_context}' context"
+                )
                 return True
 
-            print("Failed to switch to Linux containers: ", verify.stdout)
-            return True
+            print(
+                f"Failed to switch to Linux containers with context '{linux_context}': ",
+                verify.stdout,
+            )
+            return False
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error occurred: {e}")
+            return False
 
         except subprocess.CalledProcessError as e:
             print(f"Failed to switch to Linux containers: {e}")
