@@ -233,7 +233,7 @@ class DockerManager:
                         cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
                         cmd_str = subprocess.list2cmdline(cmd_list)
                         print(f"Running command: {cmd_str}")
-                        subprocess.run( cmd_list, check=True)
+                        subprocess.run(cmd_list, check=True)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     if remote_image_hash is not None:

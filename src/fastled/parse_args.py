@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from fastled import __version__
+from fastled.docker_manager import DockerManager
 from fastled.env import DEFAULT_URL
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
@@ -118,8 +119,13 @@ def parse_args() -> argparse.Namespace:
             and not args.web
             and not args.server
         ):
-            print(f"Using web compiler at {DEFAULT_URL}")
+            # print(f"Using web compiler at {DEFAULT_URL}")
             args.web = DEFAULT_URL
+            if DockerManager.is_docker_installed():
+                print("Docker is installed. Use --server to run the compiler locally.")
+                args.localhost = True
+            else:
+                print("Docker is not installed. Using web compiler.")
         if cwd_is_fastled and not args.web and not args.server:
             print("Forcing --local mode because we are in the FastLED repo")
             args.localhost = True

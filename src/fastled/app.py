@@ -3,7 +3,6 @@ Uses the latest wasm compiler image to compile the FastLED sketch.
 """
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -56,9 +55,6 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        os.chdir("../fastled")
-        sys.argv.append("--interactive")
-        sys.argv.append("examples/NoiseRing")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
