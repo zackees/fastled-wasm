@@ -251,7 +251,9 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
-        assert DockerManager._ensure_linux_containers_for_windows()
+        ok = DockerManager._ensure_linux_containers_for_windows()
+        if not ok:
+            w
         print(f"Validating image {image_name}:{tag}...")
         remote_image_hash_from_local_image: str | None = None
         remote_image_hash: str | None = None
