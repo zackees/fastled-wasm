@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.31 - `--local` is auto-enabled if docker is installed, use `--web` to force web compiler. Updating is much more pretty.
   * 1.1.30 - Added `--init` to initialize a demo project.
   * 1.1.29 - Remove annoying dbg messages i left in.
   * 1.1.28 - Adds cache control headers to the live server to disable all caching in the live browser.
