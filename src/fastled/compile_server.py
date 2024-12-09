@@ -110,13 +110,13 @@ class CompileServer:
                 print("Docker could not be started. Exiting.")
                 raise RuntimeError("Docker could not be started. Exiting.")
         now = datetime.now(timezone.utc)
-        now_str = now.strftime("%Y-%m-%d %H %Z")
+        now_str = now.strftime("%Y-%m-%d")
 
         upgrade = False
         if self.auto_updates is None:
             prev_date_str = DISK_CACHE.get("last-update")
             if prev_date_str != now_str:
-                print("One hour has passed, checking docker for updates")
+                print("One day has passed, checking docker for updates")
                 upgrade = True
         else:
             upgrade = self.auto_updates
