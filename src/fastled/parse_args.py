@@ -122,13 +122,20 @@ def parse_args() -> argparse.Namespace:
             and not args.web
             and not args.server
         ):
-            # print(f"Using web compiler at {DEFAULT_URL}")
-            args.web = DEFAULT_URL
             if DockerManager.is_docker_installed():
-                print("Docker is installed. Use --server to run the compiler locally.")
-                args.localhost = True
+                if not DockerManager.ensure_linux_containers_for_windows():
+                    print(
+                        f"Windows must be in linux containers mode, but is in Windows container mode, Using web compiler at {DEFAULT_URL}."
+                    )
+                    args.web = DEFAULT_URL
+                else:
+                    print(
+                        "Docker is installed. Defaulting to --local mode, use --web to override and use the web compiler instead."
+                    )
+                    args.localhost = True
             else:
-                print("Docker is not installed. Using web compiler.")
+                print(f"Docker is not installed. Using web compiler at {DEFAULT_URL}.")
+                args.web = DEFAULT_URL
         if cwd_is_fastled and not args.web and not args.server:
             print("Forcing --local mode because we are in the FastLED repo")
             args.localhost = True

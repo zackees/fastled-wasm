@@ -3,6 +3,7 @@ New abstraction for Docker management with improved Ctrl+C handling.
 """
 
 import _thread
+import os
 import subprocess
 import sys
 import threading
@@ -26,6 +27,7 @@ CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = CONFIG_DIR / "db.db"
 DISK_CACHE = DiskLRUCache(str(DB_FILE), 10)
+_IS_GITHUB = "GITHUB_ACTIONS" in os.environ
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -124,7 +126,7 @@ class DockerManager:
             return False
 
     @staticmethod
-    def _ensure_linux_containers_for_windows() -> bool:
+    def ensure_linux_containers_for_windows() -> bool:
         """Ensure Docker is using Linux containers on Windows."""
         if sys.platform != "win32":
             return True  # Only needed on Windows
@@ -134,9 +136,21 @@ class DockerManager:
             result = subprocess.run(
                 ["docker", "info"], capture_output=True, text=True, check=True
             )
+
             if "linux" in result.stdout.lower():
                 print("Already using Linux containers")
                 return True
+
+            if not _IS_GITHUB:
+                answer = (
+                    input(
+                        "\nDocker on Windows must be in linux mode, this is a global change, switch? [y/n]"
+                    )
+                    .strip()
+                    .lower()[:1]
+                )
+                if answer != "y":
+                    return False
 
             print("Switching to Linux containers...")
             warnings.warn("Switching Docker to use Linux container context...")
@@ -251,9 +265,11 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
-        ok = DockerManager._ensure_linux_containers_for_windows()
+        ok = DockerManager.ensure_linux_containers_for_windows()
         if not ok:
-            w
+            warnings.warn(
+                "Failed to ensure Linux containers on Windows. This build may fail."
+            )
         print(f"Validating image {image_name}:{tag}...")
         remote_image_hash_from_local_image: str | None = None
         remote_image_hash: str | None = None

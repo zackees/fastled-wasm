@@ -9,7 +9,7 @@ class ProjectInitTester(unittest.TestCase):
     def test_compile(self) -> None:
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
-        ok = DockerManager._ensure_linux_containers_for_windows()
+        ok = DockerManager.ensure_linux_containers_for_windows()
         self.assertTrue(ok)
 
 
