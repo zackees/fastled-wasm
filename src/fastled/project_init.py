@@ -16,6 +16,23 @@ def get_examples() -> list[str]:
     return response.json()["examples"]
 
 
+def _prompt_for_example() -> str:
+    examples = get_examples()
+    while True:
+        print("Available examples:")
+        for i, example in enumerate(examples):
+            print(f"  [{i+1}]: {example}")
+        answer = input("Enter the example number or name: ").strip()
+        if answer.isdigit():
+            example_num = int(answer) - 1
+            if example_num < 0 or example_num >= len(examples):
+                print("Invalid example number")
+                continue
+            return examples[example_num]
+        elif answer in examples:
+            return answer
+
+
 def project_init(example: str | None = None, outputdir: Path | None = None) -> Path:
     """
     Initialize a new FastLED project.
@@ -24,12 +41,7 @@ def project_init(example: str | None = None, outputdir: Path | None = None) -> P
     outputdir = outputdir or Path("fastled")
     if example is None:
         try:
-            examples = get_examples()
-            print("Available examples:")
-            for i, example in enumerate(examples):
-                print(f"  {i+1}: {example}")
-            example_num = int(input("Enter the example number: ")) - 1
-            example = examples[example_num]
+            example = _prompt_for_example()
         except httpx.HTTPStatusError:
             print(
                 f"Failed to fetch examples, using default example '{DEFAULT_EXAMPLE}'"
@@ -40,10 +52,10 @@ def project_init(example: str | None = None, outputdir: Path | None = None) -> P
     response.raise_for_status()
     content = response.content
     tmpzip = outputdir / "fastled.zip"
+    outputdir.mkdir(exist_ok=True)
     tmpzip.write_bytes(content)
     with zipfile.ZipFile(tmpzip, "r") as zip_ref:
         zip_ref.extractall(outputdir)
-    print(f"Project initialized successfully at {outputdir.resolve()}")
     tmpzip.unlink()
     return outputdir.iterdir().__next__()
 
