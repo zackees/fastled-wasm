@@ -123,7 +123,8 @@ class DockerManager:
             print("Docker is not installed.")
             return False
 
-    def _ensure_linux_containers_for_windows(self) -> bool:
+    @staticmethod
+    def _ensure_linux_containers_for_windows() -> bool:
         """Ensure Docker is using Linux containers on Windows."""
         if sys.platform != "win32":
             return True  # Only needed on Windows
@@ -141,7 +142,7 @@ class DockerManager:
             warnings.warn("Switching Docker to use Linux container context...")
 
             # Explicitly specify the Linux container context
-            linux_context = "linux-docker"
+            linux_context = "desktop-linux"
             subprocess.run(
                 ["cmd", "/c", f"docker context use {linux_context}"],
                 check=True,
@@ -251,7 +252,7 @@ class DockerManager:
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
         """
-        assert self._ensure_linux_containers_for_windows()
+        assert DockerManager._ensure_linux_containers_for_windows()
         print(f"Validating image {image_name}:{tag}...")
         remote_image_hash_from_local_image: str | None = None
         remote_image_hash: str | None = None
