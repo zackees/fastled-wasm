@@ -5,14 +5,32 @@ import httpx
 
 from fastled.env import DEFAULT_URL
 
-ENDPOINT = f"{DEFAULT_URL}/project/init"
+ENDPOINT_PROJECT_INIT = f"{DEFAULT_URL}/project/init"
+ENDPOINT_INFO = f"{DEFAULT_URL}/info"
+
+
+def _get_examples() -> list[str]:
+    response = httpx.get(ENDPOINT_INFO, timeout=4)
+    response.raise_for_status()
+    return response.json()["examples"]
 
 
 def project_init() -> Path:
     """
     Initialize a new FastLED project.
     """
-    response = httpx.get(ENDPOINT, timeout=20)
+
+    example = "wasm"
+    try:
+        examples = _get_examples()
+        print("Available examples:")
+        for i, example in enumerate(examples):
+            print(f"  {i+1}: {example}")
+        example_num = int(input("Enter the example number: ")) - 1
+        example = examples[example_num]
+    except httpx.HTTPStatusError:
+        print(f"Failed to fetch examples, using default example '{example}'")
+    response = httpx.get(f"{ENDPOINT_PROJECT_INIT}/{example}", timeout=20)
     response.raise_for_status()
     content = response.content
     output = Path("fastled.zip")
