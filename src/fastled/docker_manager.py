@@ -157,8 +157,8 @@ class DockerManager:
                 print("Successfully switched to Linux containers")
                 return True
 
-            print("Failed to switch to Linux containers")
-            return False
+            print("Failed to switch to Linux containers: ", verify.stdout)
+            return True
 
         except subprocess.CalledProcessError as e:
             print(f"Failed to switch to Linux containers: {e}")
