@@ -123,6 +123,54 @@ class DockerManager:
             print("Docker is not installed.")
             return False
 
+    def _ensure_linux_containers(self) -> bool:
+        """Ensure Docker is using Linux containers on Windows."""
+        if sys.platform != "win32":
+            return True  # Only needed on Windows
+
+        try:
+            # Check if we're already in Linux container mode
+            result = subprocess.run(
+                ["docker", "info"], capture_output=True, text=True, check=True
+            )
+            if "linux" in result.stdout.lower():
+                print("Already using Linux containers")
+                return True
+
+            print("Switching to Linux containers...")
+            warnings.warn("Switching to Docker to use Linux containers by default...")
+            # Switch to default context which uses Linux containers
+            subprocess.run(
+                ["cmd", "/c", "docker context ls"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["cmd", "/c", "docker context use default"],
+                check=True,
+                capture_output=True,
+            )
+
+            # Verify the switch worked
+            verify = subprocess.run(
+                ["docker", "info"], capture_output=True, text=True, check=True
+            )
+            if "linux" in verify.stdout.lower():
+                print("Successfully switched to Linux containers")
+                return True
+
+            print("Failed to switch to Linux containers")
+            return False
+
+        except subprocess.CalledProcessError as e:
+            print(f"Failed to switch to Linux containers: {e}")
+            if e.stdout:
+                print(f"stdout: {e.stdout.decode()}")
+            if e.stderr:
+                print(f"stderr: {e.stderr.decode()}")
+            return False
+        except Exception as e:
+            print(f"Unexpected error switching to Linux containers: {e}")
+            return False
+
     @staticmethod
     def is_running() -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
@@ -226,6 +274,7 @@ class DockerManager:
                         print(f"Local image {image_name}:{tag} is up to date.")
                         return
 
+                    self._ensure_linux_containers()
                     # Quick check for latest version
                     with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
                         # This needs to be swapped out using the the command line interface AI!
