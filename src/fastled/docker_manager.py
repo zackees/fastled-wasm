@@ -242,7 +242,10 @@ class DockerManager:
             except docker.errors.ImageNotFound:
                 print(f"Image {image_name}:{tag} not found.")
                 with Spinner("Loading "):
-                    self.client.images.pull(image_name, tag=tag)
+                    cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
+                    cmd_str = subprocess.list2cmdline(cmd_list)
+                    print(f"Running command: {cmd_str}")
+                    subprocess.run(cmd_list, check=True)
                 try:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id

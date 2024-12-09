@@ -27,7 +27,7 @@ def run_server(args: argparse.Namespace) -> int:
             if not compile_server.proceess_running():
                 print("Server process is not running. Exiting...")
                 return 1
-            time.sleep(1)
+            time.sleep(0.1)
     except KeyboardInterrupt:
         print("\nExiting from server...")
         return 1
