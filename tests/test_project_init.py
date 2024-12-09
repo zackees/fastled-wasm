@@ -11,7 +11,6 @@ TEST_DIR = HERE / "test_ino" / "wasm"
 class ProjectInitTester(unittest.TestCase):
     """Main tester class."""
 
-    @unittest.skip("Pending feature waiting for server to update")
     def test_get_examples(self) -> None:
         """Test get_examples function."""
         examples = get_examples()

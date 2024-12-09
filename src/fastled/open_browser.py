@@ -13,11 +13,12 @@ def _open_browser_python(fastled_js: Path, port: int) -> Server:
     """Start livereload server in the fastled_js directory using API"""
     print(f"\nStarting livereload server in {fastled_js} on port {port}")
 
-    server = Server()
-    server.watch(str(fastled_js / "index.html"), delay=0.1)
-    server.setHeader("Cache-Control", "no-cache")
-    server.serve(root=str(fastled_js), port=port, open_url_delay=0.5)
-    return server
+    # server = Server()
+    # server.watch(str(fastled_js / "index.html"), delay=0.1)
+    # server.setHeader("Cache-Control", "no-cache")
+    # server.serve(root=str(fastled_js), port=port, open_url_delay=0.5)
+    # return server
+    os.system(f"cd {fastled_js} && live-server")
 
 
 def _find_open_port(start_port: int) -> int:

@@ -43,7 +43,7 @@ def project_init(example: str | None = None, outputdir: Path | None = None) -> P
     output.write_bytes(content)
     with zipfile.ZipFile(output, "r") as zip_ref:
         zip_ref.extractall(outputdir)
-    print(f"Project initialized successfully at {outputdir}")
+    print(f"Project initialized successfully at {outputdir.resolve()}")
     output.unlink()
     return outputdir.iterdir().__next__()
 
