@@ -1,8 +1,11 @@
 import os
 from pathlib import Path
 
+_MAX_FILES_SEARCH_LIMIT = 10000
+
 
 def find_sketch_directories(directory: Path) -> list[Path]:
+    file_count = 0
     sketch_directories: list[Path] = []
     # search all the paths one level deep
     for path in directory.iterdir():
@@ -10,6 +13,12 @@ def find_sketch_directories(directory: Path) -> list[Path]:
             dir_name = path.name
             if str(dir_name).startswith("."):
                 continue
+            file_count += 1
+            if file_count > _MAX_FILES_SEARCH_LIMIT:
+                print(
+                    f"More than {_MAX_FILES_SEARCH_LIMIT} files found. Stopping search."
+                )
+                break
 
             if looks_like_sketch_directory(path, quick=True):
                 sketch_directories.append(path)
@@ -24,6 +33,7 @@ def find_sketch_directories(directory: Path) -> list[Path]:
 
 
 def get_sketch_files(directory: Path) -> list[Path]:
+    file_count = 0
     files: list[Path] = []
     for root, dirs, filenames in os.walk(directory):
         # ignore hidden directories
@@ -32,10 +42,21 @@ def get_sketch_files(directory: Path) -> list[Path]:
         dirs[:] = [d for d in dirs if "fastled_js" not in d]
         # ignore hidden files
         filenames = [f for f in filenames if not f.startswith(".")]
+        outer_break = False
         for filename in filenames:
             if "platformio.ini" in filename:
                 continue
+            file_count += 1
+            if file_count > _MAX_FILES_SEARCH_LIMIT:
+                print(
+                    f"More than {_MAX_FILES_SEARCH_LIMIT} files found. Stopping search."
+                )
+                outer_break = True
+                break
             files.append(Path(root) / filename)
+        if outer_break:
+            break
+
     return files
 
 

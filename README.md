@@ -140,6 +140,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.35 - When searching for files cap the limit at a high amount to prevent hang.
   * 1.1.34 - On windows check to make sure we are in linux container mode, if not try to switch and if that fails then use `--web` compiler.
   * 1.1.33 - Auto updating frequency has been reduced from one hour to one day. To update immediatly use `--update`.
   * 1.1.32 - `--init` now asks for which example you want, then tells you where the example was downloaded to. No longer auto-compiles.
