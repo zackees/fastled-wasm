@@ -228,7 +228,12 @@ class DockerManager:
 
                     # Quick check for latest version
                     with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
-                        _ = self.client.images.pull(image_name, tag=tag)
+                        # This needs to be swapped out using the the command line interface AI!
+                        # _ = self.client.images.pull(image_name, tag=tag)
+                        cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
+                        cmd_str = subprocess.list2cmdline(cmd_list)
+                        print(f"Running command: {cmd_str}")
+                        subprocess.run( cmd_list, check=True)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     if remote_image_hash is not None:
