@@ -25,9 +25,7 @@ class ServerLocalClientTester(unittest.TestCase):
     @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer()
-        server.wait_for_startup()
-
+        server = CompileServer(auto_start=True)
         rtn = os.system(CLIENT_CMD)
 
         # Stop the server

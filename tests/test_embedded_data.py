@@ -32,8 +32,7 @@ class WebCompilerTester(unittest.TestCase):
     )
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer()
-        server.wait_for_startup()
+        server = CompileServer(auto_start=True)
         url = server.url()
         result: WebCompileResult = web_compile(TEST_DIR, host=url)
 

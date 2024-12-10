@@ -40,9 +40,7 @@ class WebCompileTester(unittest.TestCase):
     @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer()
-        server.wait_for_startup()
-
+        server = CompileServer(auto_start=True)
         url = server.url()
 
         try:

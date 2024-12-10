@@ -89,7 +89,7 @@ class RunningContainer:
                 print(f"Error monitoring logs: {e}")
                 break
 
-    def stop(self) -> None:
+    def detach(self) -> None:
         """Stop monitoring the container logs"""
         self.running = False
         self.thread.join()

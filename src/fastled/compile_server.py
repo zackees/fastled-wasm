@@ -1,5 +1,6 @@
 import subprocess
 import time
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +29,7 @@ class CompileServer:
         interactive: bool = False,
         auto_updates: bool | None = None,
         mapped_dir: Path | None = None,
+        auto_start: bool = True,
     ) -> None:
         if interactive and not mapped_dir:
             raise ValueError(
@@ -50,13 +52,23 @@ class CompileServer:
         self.interactive = interactive
         self.running_container: RunningContainer | None = None
         self.auto_updates = auto_updates
-        self._port = self._start()
+        # self._port = self._start()
+        self._port = 0  # 0 until compile server is started
         # fancy print
         if not interactive:
             msg = f"# FastLED Compile Server started at {self.url()} #"
             print("\n" + "#" * len(msg))
             print(msg)
             print("#" * len(msg) + "\n")
+        if auto_start:
+            self.start()
+
+    def start(self, wait_for_startup=True) -> None:
+        if self._port != 0:
+            warnings.warn("Server has already been started")
+        self._port = self._start()
+        if wait_for_startup:
+            self.wait_for_startup()
 
     @property
     def running(self) -> bool:
@@ -72,10 +84,27 @@ class CompileServer:
         return self.fastled_src_dir is not None
 
     def port(self) -> int:
+        if self._port == 0:
+            warnings.warn("Server has not been started yet")
         return self._port
 
     def url(self) -> str:
+        if self._port == 0:
+            warnings.warn("Server has not been started yet")
         return f"http://localhost:{self._port}"
+
+    def ping(self) -> bool:
+        try:
+            response = httpx.get(
+                f"http://localhost:{self._port}", follow_redirects=True
+            )
+            if response.status_code < 400:
+                return True
+        except KeyboardInterrupt:
+            raise
+        except Exception:
+            pass
+        return False
 
     def wait_for_startup(self, timeout: int = 100) -> bool:
         """Wait for the server to start up."""
@@ -86,16 +115,8 @@ class CompileServer:
                 return False
             # use httpx to ping the server
             # if successful, return True
-            try:
-                response = httpx.get(
-                    f"http://localhost:{self._port}", follow_redirects=True
-                )
-                if response.status_code < 400:
-                    return True
-            except KeyboardInterrupt:
-                raise
-            except Exception:
-                pass
+            if self.ping():
+                return True
             time.sleep(0.1)
             if not self.docker.is_container_running(self.container_name):
                 return False
@@ -186,8 +207,9 @@ class CompileServer:
         return self.docker.is_container_running(self.container_name)
 
     def stop(self) -> None:
-        # print(f"Stopping server on port {self._port}")
         if self.running_container:
-            self.running_container.stop()
+            self.running_container.detach()
+            self.running_container = None
         self.docker.suspend_container(self.container_name)
+        self._port = 0
         print("Compile server stopped")

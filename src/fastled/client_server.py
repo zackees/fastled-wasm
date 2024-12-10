@@ -112,7 +112,7 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
             print("No local server found, starting one...")
             compile_server = CompileServer(auto_updates=auto_update)
             print("Waiting for the local compiler to start...")
-            if not compile_server.wait_for_startup():
+            if not compile_server.ping():
                 print("Failed to start local compiler.")
                 raise RuntimeError("Failed to start local compiler.")
             return compile_server

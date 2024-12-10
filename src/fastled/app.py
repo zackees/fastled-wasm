@@ -17,11 +17,14 @@ def run_server(args: argparse.Namespace) -> int:
     auto_update = args.auto_update
     mapped_dir = Path(args.directory).absolute() if args.directory else None
     compile_server = CompileServer(
-        interactive=interactive, auto_updates=auto_update, mapped_dir=mapped_dir
+        interactive=interactive,
+        auto_updates=auto_update,
+        mapped_dir=mapped_dir,
+        auto_start=True,
     )
+
     if not interactive:
         print(f"Server started at {compile_server.url()}")
-        compile_server.wait_for_startup()
     try:
         while True:
             if not compile_server.proceess_running():
