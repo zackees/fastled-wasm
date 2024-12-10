@@ -15,14 +15,14 @@
 #include "ripple.h"
 #include <FastLED.h>
 #include "detail.h"
-#include "screenmap.h"
-#include "math_macros.h"
-#include "json.h"
+#include "fl/screenmap.h"
+#include "fl/math_macros.h"
+#include "fl/json.h"
 #include "fl/ui.h"
-#include "fixed_map.h"
+#include "fl/map.h"
 
 #include "screenmap.json.h"
-#include "str.h"
+#include "fl/str.h"
 
 enum {
     BlackStrip = 0,

@@ -165,12 +165,14 @@ def find_good_connection(
 
 
 def web_compile(
-    directory: Path,
+    directory: Path | str,
     host: str | None = None,
     auth_token: str | None = None,
     build_mode: BuildMode | None = None,
     profile: bool = False,
 ) -> WebCompileResult:
+    if isinstance(directory, str):
+        directory = Path(directory)
     host = _sanitize_host(host or DEFAULT_HOST)
     build_mode = build_mode or BuildMode.QUICK
     print("Compiling on", host)
