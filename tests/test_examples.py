@@ -2,9 +2,11 @@ import os
 import platform
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastled.compile_server import CompileServer
 from fastled.paths import PROJECT_ROOT
+from fastled.project_init import project_init
 from fastled.web_compile import WebCompileResult, web_compile
 
 HERE = Path(__file__).parent
@@ -14,10 +16,12 @@ _USE_LOCALHOST = False
 _HOST = "http://localhost" if _USE_LOCALHOST else None
 _PROJECT_ROOT = PROJECT_ROOT.resolve()
 
+
 EXAMPLES = [
     "Blink",
     "wasm",
     "Chromancer",
+    "SdCard",
 ]
 
 
@@ -38,14 +42,25 @@ class WebCompileTester(unittest.TestCase):
         """Test basic server start/stop functionality."""
         server = CompileServer()
         server.wait_for_startup()
+
         url = server.url()
 
-        for examples in EXAMPLES:
-            path = _PROJECT_ROOT / "examples" / examples
-            result: WebCompileResult = web_compile(path, host=url)
-            self.assertTrue(result.success, f"Compilation failed: {result.stdout}")
-            # Stop the server
-        server.stop()
+        try:
+            with TemporaryDirectory() as tmpdir:
+                for example in EXAMPLES:
+                    out = Path(tmpdir)
+                    project_init(example=example, outputdir=out)
+                    # print out everything in the out dir
+                    for f in out.iterdir():
+                        print(f)
+                    self.assertTrue((out / example / f"{example}.ino").exists())
+                    # Test the web_compile function with actual server call
+                    result: WebCompileResult = web_compile(out / example, host=url)
+                    self.assertTrue(
+                        result.success, f"Compilation failed: {result.stdout}"
+                    )
+        finally:
+            server.stop()
 
 
 if __name__ == "__main__":
