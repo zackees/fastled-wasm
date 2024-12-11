@@ -1,7 +1,6 @@
 import threading
 from pathlib import Path
 
-from fastled.client_server import run_client_server2
 from fastled.compile_server import CompileServer
 from fastled.types import BuildMode
 
@@ -33,7 +32,9 @@ class LiveClient:
 
     def run(self) -> int:
         """Run the client."""
-        rtn = run_client_server2(
+        from fastled.client_server import run_client  # avoid circular import
+
+        rtn = run_client(
             directory=self.sketch_directory,
             host=self.host,
             open_web_browser=self.open_web_browser,

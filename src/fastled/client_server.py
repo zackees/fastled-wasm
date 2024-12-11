@@ -121,7 +121,7 @@ def _try_start_server_or_get_url(
             return (DEFAULT_URL, None)
 
 
-def run_client_server2(
+def run_client(
     directory: Path,
     host: str | CompileServer | None,
     open_web_browser: bool = True,
@@ -330,7 +330,7 @@ def run_client_server(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        return run_client_server2(
+        return run_client(
             directory=directory,
             host=compile_server if compile_server else url,
             open_web_browser=open_web_browser,

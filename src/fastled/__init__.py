@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Generator
 
 from .compile_server import CompileServer
+from .live_client import LiveClient
 from .types import BuildMode, CompileResult, CompileServerError
 
 __version__ = "1.1.38"
@@ -45,6 +46,26 @@ class Api:
             directory, host, build_mode=build_mode, profile=profile
         )
         return out
+
+    @staticmethod
+    def live_client(
+        sketch_directory: Path,
+        host: str | CompileServer | None = None,
+        auto_start=True,
+        open_web_browser=True,
+        keep_running=True,
+        build_mode=BuildMode.QUICK,
+        profile=False,
+    ) -> LiveClient:
+        return LiveClient(
+            sketch_directory=sketch_directory,
+            host=host,
+            auto_start=auto_start,
+            open_web_browser=open_web_browser,
+            keep_running=keep_running,
+            build_mode=build_mode,
+            profile=profile,
+        )
 
     @staticmethod
     def spawn_server(
