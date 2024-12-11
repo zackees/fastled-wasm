@@ -12,7 +12,7 @@ from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
-from fastled.types import BuildMode, CompileResult, get_build_mode
+from fastled.types import BuildMode, CompileResult
 from fastled.web_compile import (
     SERVER_PORT,
     ConnectionResult,
@@ -152,7 +152,7 @@ def run_client_server(args: argparse.Namespace) -> int:
         except Exception as e:
             print(f"Error: {e}")
             return 1
-        build_mode: BuildMode = get_build_mode(args)
+        build_mode: BuildMode = BuildMode.from_args(args)
 
         def compile_function(
             url: str = url,

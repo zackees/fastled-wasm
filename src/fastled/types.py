@@ -37,11 +37,11 @@ class BuildMode(Enum):
             valid_modes = [mode.name for mode in cls]
             raise ValueError(f"BUILD_MODE must be one of {valid_modes}, got {mode_str}")
 
-
-def get_build_mode(args: argparse.Namespace) -> BuildMode:
-    if args.debug:
-        return BuildMode.DEBUG
-    elif args.release:
-        return BuildMode.RELEASE
-    else:
-        return BuildMode.QUICK
+    @staticmethod
+    def from_args(args: argparse.Namespace) -> "BuildMode":
+        if args.debug:
+            return BuildMode.DEBUG
+        elif args.release:
+            return BuildMode.RELEASE
+        else:
+            return BuildMode.QUICK
