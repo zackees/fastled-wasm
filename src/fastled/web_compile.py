@@ -11,10 +11,9 @@ from pathlib import Path
 
 import httpx
 
-from fastled.build_mode import BuildMode
 from fastled.settings import SERVER_PORT
 from fastled.sketch import get_sketch_files
-from fastled.types import CompileResult
+from fastled.types import BuildMode, CompileResult
 from fastled.util import hash_file
 
 DEFAULT_HOST = "https://fastled.onrender.com"

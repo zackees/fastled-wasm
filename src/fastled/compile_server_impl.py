@@ -6,7 +6,6 @@ from pathlib import Path
 
 import httpx
 
-from fastled.build_mode import BuildMode
 from fastled.docker_manager import (
     DISK_CACHE,
     Container,
@@ -15,7 +14,7 @@ from fastled.docker_manager import (
 )
 from fastled.settings import SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
-from fastled.types import CompileResult, CompileServerError
+from fastled.types import BuildMode, CompileResult, CompileServerError
 
 _IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"

@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from fastled.build_mode import BuildMode
-from fastled.types import CompileResult
+from fastled.types import BuildMode, CompileResult
 
 
 class CompileServer:
