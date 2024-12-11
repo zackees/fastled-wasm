@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastled.types import BuildMode, CompileResult
+from fastled.types import BuildMode, CompileResult, Platform
 
 
 class CompileServer:
@@ -13,10 +13,13 @@ class CompileServer:
         mapped_dir: Path | None = None,
         auto_start: bool = True,
         container_name: str | None = None,
+        platform: Platform = Platform.WASM,
     ) -> None:
         from fastled.compile_server_impl import (  # avoid circular import
             CompileServerImpl,
         )
+
+        assert platform == Platform.WASM, "Only WASM platform is supported right now."
 
         self.impl = CompileServerImpl(
             container_name=container_name,
