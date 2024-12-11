@@ -9,7 +9,7 @@ from .compile_server import CompileServer
 from .live_client import LiveClient
 from .types import BuildMode, CompileResult, CompileServerError
 
-__version__ = "1.1.39"
+__version__ = "1.1.40"
 
 
 class Api:
@@ -69,7 +69,6 @@ class Api:
 
     @staticmethod
     def spawn_server(
-        sketch_directory: Path | None = None,
         interactive=False,
         auto_updates=None,
         auto_start=True,
@@ -81,7 +80,7 @@ class Api:
             container_name=container_name,
             interactive=interactive,
             auto_updates=auto_updates,
-            mapped_dir=sketch_directory,
+            mapped_dir=None,
             auto_start=auto_start,
         )
         return out
@@ -89,14 +88,12 @@ class Api:
     @staticmethod
     @contextmanager
     def server(
-        sketch_directory: Path | None = None,
         interactive=False,
         auto_updates=None,
         auto_start=True,
         container_name: str | None = None,
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
-            sketch_directory=sketch_directory,
             interactive=interactive,
             auto_updates=auto_updates,
             auto_start=auto_start,

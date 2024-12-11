@@ -13,7 +13,8 @@ DEFAULT_EXAMPLE = "wasm"
 def get_examples() -> list[str]:
     response = httpx.get(ENDPOINT_INFO, timeout=4)
     response.raise_for_status()
-    return response.json()["examples"]
+    out: list[str] = response.json()["examples"]
+    return sorted(out)
 
 
 def _prompt_for_example() -> str:
@@ -62,7 +63,9 @@ def project_init(
     with zipfile.ZipFile(tmpzip, "r") as zip_ref:
         zip_ref.extractall(outputdir)
     tmpzip.unlink()
-    return outputdir.iterdir().__next__()
+    out = outputdir / example
+    assert out.exists()
+    return out
 
 
 def unit_test() -> None:

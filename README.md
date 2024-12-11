@@ -233,6 +233,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.40 - Remove `sketch_directory` from Api object. This was only needed before we had a client/server architecture.
   * 1.1.39 - Added `LiveClient`, `fastled.Api.live_server()` will spawn it. Allows user to have a live compiling client that re-triggers a compile on file changes.
   * 1.1.38 - Cleanup the `fastled.Api` object and streamline for general use.
   * 1.1.37 - `Test.test_examples()` is now unit tested to work correctly.
