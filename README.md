@@ -70,7 +70,7 @@ After compilation a web browser windows will pop up. Changes to the sketch will 
 **Compiling through the api**
 ```python
 
-from fastapi import Api, CompileServer, WebCompileResult
+from fastapi import Api, WebCompileResult
 
 out: WebCompileResult = Api.web_compile("path/to/sketch")
 print(out.success)
@@ -81,6 +81,8 @@ print(out.stdout)
 **Launching a compile server**
 ```python
 
+from fastapi import Api, CompileServer
+
 server: CompileServer = Api.spawn_server()
 server.web_compile("path/to/sketch")  # output will be "path/to/sketch/fastled_js"
 server.stop()
@@ -88,6 +90,8 @@ server.stop()
 
 **Launching a server in a scope**
 ```python
+
+from fastapi import Api
 
 # Launching a server in a scope
 with Api.server() as server:
@@ -98,6 +102,8 @@ with Api.server() as server:
 **Initializing a project example from the web compiler**
 ```python
 
+from fastapi import Api
+
 examples = Api.get_examples()
 print(f"Print available examples: {examples}")
 Api.project_init(examples[0])
@@ -107,6 +113,8 @@ Api.project_init(examples[0])
 
 **Initializing a project example from the CompileServer**
 ```python
+
+from fastapi import Api
 
 with Api.server() as server:
     examples = server.get_examples()
