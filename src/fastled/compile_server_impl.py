@@ -15,7 +15,7 @@ from fastled.docker_manager import (
 )
 from fastled.settings import SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
-from fastled.types import WebCompileResult
+from fastled.types import CompileServerError, WebCompileResult
 
 _IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
@@ -66,11 +66,15 @@ class CompileServerImpl:
             self.start()
 
     def start(self, wait_for_startup=True) -> None:
+        if not DockerManager.is_docker_installed():
+            raise CompileServerError("Docker is not installed")
         if self._port != 0:
             warnings.warn("Server has already been started")
         self._port = self._start()
         if wait_for_startup:
-            self.wait_for_startup()
+            ok = self.wait_for_startup()
+            if not ok:
+                raise CompileServerError("Server did not start")
         if not self.interactive:
             msg = f"# FastLED Compile Server started at {self.url()} #"
             print("\n" + "#" * len(msg))

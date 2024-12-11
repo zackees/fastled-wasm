@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Generator
 
 from .compile_server import CompileServer
-from .types import WebCompileResult
+from .types import CompileServerError, WebCompileResult
 
 __version__ = "1.1.37"
 
@@ -93,3 +93,6 @@ class Test:
             host = host.url()
 
         return test_examples(examples=examples, host=host)
+
+
+__all__ = ["Api", "Test", "CompileServer", "WebCompileResult", "CompileServerError"]

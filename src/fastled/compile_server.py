@@ -5,6 +5,8 @@ from fastled.types import WebCompileResult
 
 
 class CompileServer:
+
+    # May throw CompileServerError if auto_start is True.
     def __init__(
         self,
         interactive: bool = False,
@@ -25,6 +27,7 @@ class CompileServer:
             auto_start=auto_start,
         )
 
+    # May throw CompileServerError if server could not be started.
     def start(self, wait_for_startup=True) -> None:
         # from fastled.compile_server_impl import CompileServerImpl  # avoid circular import
         self.impl.start(wait_for_startup=wait_for_startup)
