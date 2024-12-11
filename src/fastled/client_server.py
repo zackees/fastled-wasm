@@ -1,6 +1,7 @@
 import argparse
 import shutil
 import tempfile
+import threading
 import time
 from multiprocessing import Process
 from pathlib import Path
@@ -127,11 +128,13 @@ def run_client_server2(
     keep_running: bool = True,  # if false, only one compilation will be done.
     build_mode: BuildMode = BuildMode.QUICK,
     profile: bool = False,
+    shutdown: threading.Event | None = None,
 ) -> int:
 
     compile_server: CompileServer | None = (
         host if isinstance(host, CompileServer) else None
     )
+    shutdown = shutdown or threading.Event()
 
     def get_url() -> str:
         if compile_server is not None:
@@ -174,7 +177,7 @@ def run_client_server2(
                 compile_server.stop()
             return 0
 
-        if not keep_running:
+        if not keep_running or shutdown.is_set():
             if browser_proc:
                 browser_proc.kill()
             return 0 if result.success else 1
@@ -214,6 +217,9 @@ def run_client_server2(
 
     try:
         while True:
+            if shutdown.is_set():
+                print("\nStopping watch mode...")
+                return 0
             if SpaceBarWatcher.watch_space_bar_pressed(timeout=1.0):
                 print("Compiling...")
                 last_compiled_result = compile_function(last_hash_value=None)
