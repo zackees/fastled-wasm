@@ -120,45 +120,27 @@ def _try_start_server_or_get_url(
             return (DEFAULT_URL, None)
 
 
-def run_client_server(args: argparse.Namespace) -> int:
-    profile = bool(args.profile)
-    web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
-    auto_update = bool(args.auto_update)
-    localhost = bool(args.localhost)
-    directory = Path(args.directory)
-    just_compile = bool(args.just_compile)
-    interactive = bool(args.interactive)
-    force_compile = bool(args.force_compile)
-    open_web_browser = not just_compile and not interactive
-    build_mode: BuildMode = BuildMode.from_args(args)
+def run_client_server2(
+    directory: Path,
+    host: str | CompileServer | None,
+    open_web_browser: bool = True,
+    keep_running: bool = True,  # if false, only one compilation will be done.
+    build_mode: BuildMode = BuildMode.QUICK,
+    profile: bool = False,
+) -> int:
 
-    if not force_compile and not looks_like_sketch_directory(directory):
-        print(
-            "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
-        )
-        return 1
+    compile_server: CompileServer | None = (
+        host if isinstance(host, CompileServer) else None
+    )
 
-    # If not explicitly using web compiler, check Docker installation
-    if not web and not DockerManager.is_docker_installed():
-        print(
-            "\nDocker is not installed on this system - switching to web compiler instead."
-        )
-        web = True
+    def get_url() -> str:
+        if compile_server is not None:
+            return compile_server.url()
+        if isinstance(host, str):
+            return host
+        return DEFAULT_URL
 
-    url: str
-    compile_server: CompileServer | None = None
-    try:
-        url, compile_server = _try_start_server_or_get_url(auto_update, web, localhost)
-    except KeyboardInterrupt:
-        print("\nExiting from first try...")
-        if compile_server:
-            compile_server.stop()
-        return 1
-    except Exception as e:
-        print(f"Error: {e}")
-        if compile_server:
-            compile_server.stop()
-        return 1
+    url = get_url()
 
     try:
 
@@ -192,16 +174,12 @@ def run_client_server(args: argparse.Namespace) -> int:
                 compile_server.stop()
             return 0
 
-        if just_compile:
-            if compile_server:
-                compile_server.stop()
+        if not keep_running:
             if browser_proc:
                 browser_proc.kill()
             return 0 if result.success else 1
     except KeyboardInterrupt:
         print("\nExiting from main")
-        if compile_server:
-            compile_server.stop()
         return 1
 
     sketch_filewatcher = FileWatcherProcess(directory, excluded_patterns=["fastled_js"])
@@ -303,3 +281,59 @@ def run_client_server(args: argparse.Namespace) -> int:
             compile_server.stop()
         if browser_proc:
             browser_proc.kill()
+
+
+def run_client_server(args: argparse.Namespace) -> int:
+    profile = bool(args.profile)
+    web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
+    auto_update = bool(args.auto_update)
+    localhost = bool(args.localhost)
+    directory = Path(args.directory)
+    just_compile = bool(args.just_compile)
+    interactive = bool(args.interactive)
+    force_compile = bool(args.force_compile)
+    open_web_browser = not just_compile and not interactive
+    build_mode: BuildMode = BuildMode.from_args(args)
+
+    if not force_compile and not looks_like_sketch_directory(directory):
+        print(
+            "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
+        )
+        return 1
+
+    # If not explicitly using web compiler, check Docker installation
+    if not web and not DockerManager.is_docker_installed():
+        print(
+            "\nDocker is not installed on this system - switching to web compiler instead."
+        )
+        web = True
+
+    url: str
+    compile_server: CompileServer | None = None
+    try:
+        url, compile_server = _try_start_server_or_get_url(auto_update, web, localhost)
+    except KeyboardInterrupt:
+        print("\nExiting from first try...")
+        if compile_server:
+            compile_server.stop()
+        return 1
+    except Exception as e:
+        print(f"Error: {e}")
+        if compile_server:
+            compile_server.stop()
+        return 1
+
+    try:
+        return run_client_server2(
+            directory=directory,
+            host=compile_server if compile_server else url,
+            open_web_browser=open_web_browser,
+            keep_running=not just_compile,
+            build_mode=build_mode,
+            profile=profile,
+        )
+    except KeyboardInterrupt:
+        return 1
+    finally:
+        if compile_server:
+            compile_server.stop()
