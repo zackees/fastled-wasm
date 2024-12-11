@@ -2,12 +2,23 @@
 Unit test file.
 """
 
+import os
+import platform
 import unittest
 from tempfile import TemporaryDirectory
 
 from fastled import Api, LiveClient, Test
 
 ENABLED = False
+
+
+def _enabled() -> bool:
+    """Check if this system can run the tests."""
+    is_github_runner = "GITHUB_ACTIONS" in os.environ
+    if not is_github_runner:
+        return True
+    # this only works in ubuntu at the moment
+    return platform.system() == "Linux"
 
 
 class ApiTester(unittest.TestCase):
@@ -21,8 +32,9 @@ class ApiTester(unittest.TestCase):
             out = Test.test_examples(host=server)
             self.assertEqual(0, len(out), f"Failed tests: {out}")
 
+    @unittest.skipUnless(_enabled(), "Can only happen with a local server.")
     def test_live_client(self) -> None:
-        """Test command line interface (CLI)."""
+        """Tests that a project can be init'd, then compiled using a local server."""
 
         with TemporaryDirectory() as tmpdir:
             with Api.server() as server:
