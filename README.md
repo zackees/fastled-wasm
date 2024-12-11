@@ -174,11 +174,15 @@ can be much longer, for example if you modify a header file.
 Huge blobs of data like video will absolutely kill the compile performance as these blobs would normally have to be shuffled
 back and forth. Therefore a special directory `data/` is implicitly used to hold this blob data. Any data in this directory
 will be replaced with a stub containing the size and hash of the file during upload. On download these stubs are swapped back
-with their originals.
+with their originals during decompression.
 
 The wasm compiler will recognize all files in the `data/` directory and generate a `files.json` manifest and can be used
 in your wasm sketch using an emulated SD card system mounted at `/data/` on the SD Card. In order to increase load speed, these
-files will be asynchroniously streamed into the running sketch instance during runtime. The only caveat here is that although these files will be available during the setup() phase of the sketch, they will not be fully hydrated, so if you do a seek(end) of these files the results are undefined.
+files will be asynchroniously streamed into the running sketch instance during runtime. Files named with *.json, *.csv, *.txt will be
+immediately injected in the app before setup() is called and can be used immediatly in setup() in their entirety.
+
+All other files will be streamed in. The `Video` element in FastLED is designed to gracefully handle missing data streamed in through
+the file system.
 
 For an example of how to use this see `examples/SdCard` which is fully wasm compatible.
 
@@ -190,11 +194,9 @@ We use `ccache` to cache object files. This seems actually help a lot and is bet
 
 The compilation to wasm will happen under a lock. Removing this lock requires removing the platformio toolchain as the compiler backend which enforces it's own internal lock preventing parallel use.
 
-Simple syntax errors will be caught by the pre-processing step. This happens without a lock to reduce the single lock bottleneck.
-
 ## Sketch Cache
 
-Sketchs are aggresively finger-printed and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
+Sketchs are aggressively finger-printed and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
 printing while the actual source files are sent to compiler to preserve line numbers and file names.
 
 This pre-processing done is done via gcc and special regex's and will happen without a lock. This will allow you to have extremely quick recompiles for whitespace and changes in comments even if the compiler is executing under it's lock.
