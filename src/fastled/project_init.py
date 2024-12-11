@@ -33,7 +33,10 @@ def _prompt_for_example() -> str:
             return answer
 
 
-def project_init(example: str | None = None, outputdir: Path | None = None) -> Path:
+def project_init(
+    example: str | None = None,  # prompt for example
+    outputdir: Path | None = None
+) -> Path:
     """
     Initialize a new FastLED project.
     """
