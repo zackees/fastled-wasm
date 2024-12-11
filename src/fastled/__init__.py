@@ -5,7 +5,7 @@ from pathlib import Path
 from .compile_server import CompileServer
 from .types import WebCompileResult
 
-__version__ = "1.1.35"
+__version__ = "1.1.36"
 
 
 class Api:
@@ -55,3 +55,16 @@ class Api:
             auto_start=auto_start,
         )
         return out
+
+
+class Test:
+    @staticmethod
+    def test_examples(
+        examples: list[str] | None = None, host: str | CompileServer | None = None
+    ) -> Exception | None:
+        from fastled.test.examples import test_examples
+
+        if isinstance(host, CompileServer):
+            host = host.url()
+
+        return test_examples(examples=examples, host=host)
