@@ -7,7 +7,7 @@ from pathlib import Path
 from .compile_server import CompileServer
 from .types import WebCompileResult
 
-__version__ = "1.1.36"
+__version__ = "1.1.37"
 
 
 class Api:
