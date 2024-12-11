@@ -13,9 +13,7 @@ from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
-
-# InternalCompiledResult
-from fastled.types import InternalCompiledResult
+from fastled.types import WebCompileResult
 from fastled.web_compile import (
     SERVER_PORT,
     ConnectionResult,
@@ -30,7 +28,7 @@ def _run_web_compiler(
     build_mode: BuildMode,
     profile: bool,
     last_hash_value: str | None,
-) -> InternalCompiledResult:
+) -> WebCompileResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
@@ -42,7 +40,7 @@ def _run_web_compiler(
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
-        return InternalCompiledResult(success=False, fastled_js="", hash_value=None)
+        return web_result
 
     def print_results() -> None:
         hash_value = (
@@ -58,9 +56,7 @@ def _run_web_compiler(
     if last_hash_value is not None and last_hash_value == web_result.hash_value:
         print("\nSkipping redeploy: No significant changes found.")
         print_results()
-        return InternalCompiledResult(
-            success=True, fastled_js=str(output_dir), hash_value=web_result.hash_value
-        )
+        return web_result
 
     # Extract zip contents to fastled_js directory
     output_dir.mkdir(exist_ok=True)
@@ -78,9 +74,7 @@ def _run_web_compiler(
 
     print(web_result.stdout)
     print_results()
-    return InternalCompiledResult(
-        success=True, fastled_js=str(output_dir), hash_value=web_result.hash_value
-    )
+    return web_result
 
 
 def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
@@ -166,7 +160,7 @@ def run_client_server(args: argparse.Namespace) -> int:
             build_mode: BuildMode = build_mode,
             profile: bool = profile,
             last_hash_value: str | None = None,
-        ) -> InternalCompiledResult:
+        ) -> WebCompileResult:
             return _run_web_compiler(
                 args.directory,
                 host=url,
@@ -175,8 +169,8 @@ def run_client_server(args: argparse.Namespace) -> int:
                 last_hash_value=last_hash_value,
             )
 
-        result: InternalCompiledResult = compile_function(last_hash_value=None)
-        last_compiled_result: InternalCompiledResult = result
+        result: WebCompileResult = compile_function(last_hash_value=None)
+        last_compiled_result: WebCompileResult = result
 
         if not result.success:
             print("\nCompilation failed.")
@@ -215,8 +209,8 @@ def run_client_server(args: argparse.Namespace) -> int:
         )
 
     def trigger_rebuild_if_sketch_changed(
-        last_compiled_result: InternalCompiledResult,
-    ) -> tuple[bool, InternalCompiledResult]:
+        last_compiled_result: WebCompileResult,
+    ) -> tuple[bool, WebCompileResult]:
         changed_files = sketch_filewatcher.get_all_changes()
         if changed_files:
             print(f"\nChanges detected in {changed_files}")
