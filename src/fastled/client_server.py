@@ -77,13 +77,16 @@ def _run_web_compiler(
 
 
 def _try_start_server_or_get_url(
-    auto_update: bool, args_web: str, localhost: bool
+    auto_update: bool, args_web: str | bool, localhost: bool
 ) -> str | CompileServer:
-    is_local_host = "localhost" in args_web or "127.0.0.1" in args_web or localhost
+    is_local_host = localhost or (
+        isinstance(args_web, str)
+        and ("localhost" in args_web or "127.0.0.1" in args_web)
+    )
     # test to see if there is already a local host server
     local_host_needs_server = False
     if is_local_host:
-        addr = "localhost" if localhost else args_web
+        addr = "localhost" if localhost or not isinstance(args_web, str) else args_web
         urls = [addr]
         if ":" not in addr:
             urls.append(f"{addr}:{SERVER_PORT}")
@@ -119,26 +122,35 @@ def _try_start_server_or_get_url(
 
 def run_client_server(args: argparse.Namespace) -> int:
     compile_server: CompileServer | None = None
-    open_web_browser = not args.just_compile and not args.interactive
-    profile = args.profile
-    if not args.force_compile and not looks_like_sketch_directory(Path(args.directory)):
+
+    profile = bool(args.profile)
+    web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
+    auto_update = bool(args.auto_update)
+    localhost = bool(args.localhost)
+    directory = Path(args.directory)
+    just_compile = bool(args.just_compile)
+    interactive = bool(args.interactive)
+    force_compile = bool(args.force_compile)
+    open_web_browser = not just_compile and not interactive
+
+    if not force_compile and not looks_like_sketch_directory(directory):
         print(
             "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
         )
         return 1
 
     # If not explicitly using web compiler, check Docker installation
-    if not args.web and not DockerManager.is_docker_installed():
+    if not web and not DockerManager.is_docker_installed():
         print(
             "\nDocker is not installed on this system - switching to web compiler instead."
         )
-        args.web = True
+        web = True
 
     url: str
     try:
         try:
             url_or_server: str | CompileServer = _try_start_server_or_get_url(
-                args.auto_update, args.web, args.localhost
+                auto_update, web, localhost
             )
             if isinstance(url_or_server, str):
                 print(f"Found URL: {url_or_server}")
@@ -164,7 +176,7 @@ def run_client_server(args: argparse.Namespace) -> int:
             last_hash_value: str | None = None,
         ) -> CompileResult:
             return _run_web_compiler(
-                args.directory,
+                directory,
                 host=url,
                 build_mode=build_mode,
                 profile=profile,
@@ -179,7 +191,7 @@ def run_client_server(args: argparse.Namespace) -> int:
 
         browser_proc: Process | None = None
         if open_web_browser:
-            browser_proc = open_browser_process(Path(args.directory) / "fastled_js")
+            browser_proc = open_browser_process(directory / "fastled_js")
         else:
             print("\nCompilation successful.")
             if compile_server:
@@ -187,7 +199,7 @@ def run_client_server(args: argparse.Namespace) -> int:
                 compile_server.stop()
             return 0
 
-        if args.just_compile:
+        if just_compile:
             if compile_server:
                 compile_server.stop()
             if browser_proc:
@@ -199,9 +211,7 @@ def run_client_server(args: argparse.Namespace) -> int:
             compile_server.stop()
         return 1
 
-    sketch_filewatcher = FileWatcherProcess(
-        args.directory, excluded_patterns=["fastled_js"]
-    )
+    sketch_filewatcher = FileWatcherProcess(directory, excluded_patterns=["fastled_js"])
 
     source_code_watcher: FileWatcherProcess | None = None
     if compile_server and compile_server.using_fastled_src_dir_volume():

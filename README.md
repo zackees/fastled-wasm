@@ -202,6 +202,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.38 - Cleanup the `fastled.Api` object and streamline for general use.
   * 1.1.37 - `Test.test_examples()` is now unit tested to work correctly.
   * 1.1.36 - We now have an api. `from fastled import Api` and `from fastled import Test` for testing.
   * 1.1.35 - When searching for files cap the limit at a high amount to prevent hang.
