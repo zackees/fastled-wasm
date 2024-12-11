@@ -254,7 +254,7 @@ def run_client_server(args: argparse.Namespace) -> int:
             if changed:
                 print_status()
                 continue
-            if compile_server and not compile_server.proceess_running():
+            if compile_server and not compile_server.process_running():
                 print("Server process is not running. Exiting...")
                 return 1
             if source_code_watcher is not None:

@@ -27,7 +27,7 @@ def run_server(args: argparse.Namespace) -> int:
         print(f"Server started at {compile_server.url()}")
     try:
         while True:
-            if not compile_server.proceess_running():
+            if not compile_server.process_running():
                 print("Server process is not running. Exiting...")
                 return 1
             time.sleep(0.1)
