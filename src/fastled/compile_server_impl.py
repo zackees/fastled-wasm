@@ -21,7 +21,21 @@ _IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
 
-SERVER_OPTIONS = ["--allow-shutdown", "--no-auto-update"]
+SERVER_OPTIONS = [
+    "--allow-shutdown",  # Allow the server to be shut down without a force kill.
+    "--no-auto-update",  # Don't auto live updates from the git repo.
+]
+
+
+def _try_get_fastled_src(path: Path) -> Path | None:
+    fastled_src_dir: Path | None = None
+    if looks_like_fastled_repo(path):
+        print(
+            "Looks like a FastLED repo, using it as the source directory and mapping it into the server."
+        )
+        fastled_src_dir = path / "src"
+        return fastled_src_dir
+    return None
 
 
 class CompileServerImpl:
@@ -40,29 +54,14 @@ class CompileServerImpl:
             )
         if not interactive and mapped_dir:
             raise ValueError("Mapped directory is only used in interactive mode")
-        cwd = Path(".").resolve()
-        fastled_src_dir: Path | None = None
-        if looks_like_fastled_repo(cwd):
-            print(
-                "Looks like a FastLED repo, using it as the source directory and mapping it into the server."
-            )
-            fastled_src_dir = cwd / "src"
-
         self.container_name = container_name
         self.mapped_dir = mapped_dir
         self.docker = DockerManager()
-        self.fastled_src_dir: Path | None = fastled_src_dir
+        self.fastled_src_dir: Path | None = _try_get_fastled_src(Path(".").resolve())
         self.interactive = interactive
         self.running_container: RunningContainer | None = None
         self.auto_updates = auto_updates
-        # self._port = self._start()
         self._port = 0  # 0 until compile server is started
-        # fancy print
-        if not interactive:
-            msg = f"# FastLED Compile Server started at {self.url()} #"
-            print("\n" + "#" * len(msg))
-            print(msg)
-            print("#" * len(msg) + "\n")
         if auto_start:
             self.start()
 
@@ -72,6 +71,11 @@ class CompileServerImpl:
         self._port = self._start()
         if wait_for_startup:
             self.wait_for_startup()
+        if not self.interactive:
+            msg = f"# FastLED Compile Server started at {self.url()} #"
+            print("\n" + "#" * len(msg))
+            print(msg)
+            print("#" * len(msg) + "\n")
 
     def web_compile(
         self,
