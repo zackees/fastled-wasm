@@ -33,7 +33,7 @@ class Api:
         directory: Path | str,
         host: str | CompileServer | None = None,
         build_mode: BuildMode = BuildMode.QUICK,
-        profile: bool = False,  # When true then profile information will be outputted in the directory.
+        profile: bool = False,  # When true then profile information will be enabled and included in the zip.
     ) -> CompileResult:
         from fastled.web_compile import web_compile
 
