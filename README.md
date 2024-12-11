@@ -125,20 +125,22 @@ with Api.server() as server:
 
 ```
 
-# Hot reload by default
+# Features
+
+## Hot reload by default
 
 Once launched, the compiler will remain open, listening to changes and recompiling as necessary and hot-reloading the sketch into the current browser.
 
 This style of development should be familiar to those doing web development.
 
-# Hot Reload for working with the FastLED repo
+## Hot Reload fastled/src when working in the FastLED repo
 
 If you launch `fastled` in the FastLED repo then this tool will automatically detect this and map the src directory into the
 host container. Whenever there are changes in the source code from the mapped directory, then these will be re-compiled
 on the next change or if you hit the space bar when prompted. Unlike a sketch folder, a re-compile on the FastLED src
 can be much longer, for example if you modify a header file.
 
-# Data
+## Big Data in `/data` directory won't be round-tripped
 
 Huge blobs of data like video will absolutely kill the compile performance as these blobs would normally have to be shuffled
 back and forth. Therefore a special directory `data/` is implicitly used to hold this blob data. Any data in this directory
@@ -151,7 +153,7 @@ files will be asynchroniously streamed into the running sketch instance during r
 
 For an example of how to use this see `examples/SdCard` which is fully wasm compatible.
 
-# Compile Speed
+## Compile Speed
 
 The compile speeds for this compiler have been optimized pretty much to the max. There are three compile settings available to the user. The default is `--quick`. Aggressive optimizations are done with `--release` which will aggressively optimize for size. The speed difference between `--release` and `--quick` seems negligable. But `--release` will produce a ~1/3 smaller binary. There is also `--debug`, which will include symbols necessary for debugging and getting the C++ function symbols working correctly in the browser during step through debugging. It works better than expected, but don't expect to have gdb or msvc debugger level of debugging experience.
 
@@ -161,22 +163,22 @@ The compilation to wasm will happen under a lock. Removing this lock requires re
 
 Simple syntax errors will be caught by the pre-processing step. This happens without a lock to reduce the single lock bottleneck.
 
-# Sketch Cache
+## Sketch Cache
 
 Sketchs are aggresively finger-printed and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
 printing while the actual source files are sent to compiler to preserve line numbers and file names.
 
 This pre-processing done is done via gcc and special regex's and will happen without a lock. This will allow you to have extremely quick recompiles for whitespace and changes in comments even if the compiler is executing under it's lock.
 
-# Local compiles
+## Local compiles
 
 If the web-compiler get's congested then it's recommend that you run the compiler locally. This requires docker and will be invoked whenever you pass in `--local`. This will first pull the most recent Docker image of the Fastled compiler, launching a webserver and then connecting to it with the client once it's been up.
 
-# Auto updates
+## Auto updates
 
 In server mode the git repository will be cloned as a side repo and then periodically updated and rsync'd to the src directory. This allows a long running instance to stay updated.
 
-### Wasm compatibility with Arduino sketchs
+## Compatibility with Arduino sketchs
 
 The compatibility is actually pretty good. Most simple sketchs should compile out of the box. Even some of the avr platform includes are stubbed out to make it work. The familiar `digitalWrite()`, `Serial.println()` and other common functions work. Although `digitalRead()` will always return 0 and `analogRead()` will return random numbers.
 
