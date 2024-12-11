@@ -13,7 +13,6 @@ from fastled.docker_manager import (
     DockerManager,
     RunningContainer,
 )
-from fastled.project_init import project_init
 from fastled.settings import SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import WebCompileResult
@@ -93,6 +92,8 @@ class CompileServer:
     def project_init(
         self, example: str | None = None, outputdir: Path | None = None
     ) -> None:
+        from fastled.project_init import project_init  # avoid circular import
+
         project_init(example=example, outputdir=outputdir)
 
     @property
