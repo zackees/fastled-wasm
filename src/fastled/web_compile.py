@@ -14,7 +14,7 @@ import httpx
 from fastled.build_mode import BuildMode
 from fastled.settings import SERVER_PORT
 from fastled.sketch import get_sketch_files
-from fastled.types import WebCompileResult
+from fastled.types import CompileResult
 from fastled.util import hash_file
 
 DEFAULT_HOST = "https://fastled.onrender.com"
@@ -160,7 +160,7 @@ def web_compile(
     auth_token: str | None = None,
     build_mode: BuildMode | None = None,
     profile: bool = False,
-) -> WebCompileResult:
+) -> CompileResult:
     if isinstance(directory, str):
         directory = Path(directory)
     host = _sanitize_host(host or DEFAULT_HOST)
@@ -171,7 +171,7 @@ def web_compile(
         raise FileNotFoundError(f"Directory not found: {directory}")
     zip_result = zip_files(directory, build_mode=build_mode)
     if isinstance(zip_result, Exception):
-        return WebCompileResult(
+        return CompileResult(
             success=False, stdout=str(zip_result), hash_value=None, zip_bytes=b""
         )
     zip_bytes = zip_result.zip_bytes
@@ -187,7 +187,7 @@ def web_compile(
         connection_result = find_good_connection(urls)
         if connection_result is None:
             print("Connection failed to all endpoints")
-            return WebCompileResult(
+            return CompileResult(
                 success=False,
                 stdout="Connection failed",
                 hash_value=None,
@@ -229,7 +229,7 @@ def web_compile(
             if response.status_code != 200:
                 json_response = response.json()
                 detail = json_response.get("detail", "Could not compile")
-                return WebCompileResult(
+                return CompileResult(
                     success=False, stdout=detail, hash_value=None, zip_bytes=b""
                 )
 
@@ -270,7 +270,7 @@ def web_compile(
                             relative_path = file_path.relative_to(extract_path)
                             out_zip.write(file_path, relative_path)
 
-                return WebCompileResult(
+                return CompileResult(
                     success=True,
                     stdout=stdout,
                     hash_value=hash_value,
@@ -281,6 +281,6 @@ def web_compile(
         raise
     except httpx.HTTPError as e:
         print(f"Error: {e}")
-        return WebCompileResult(
+        return CompileResult(
             success=False, stdout=str(e), hash_value=None, zip_bytes=b""
         )

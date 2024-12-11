@@ -15,7 +15,7 @@ from fastled.docker_manager import (
 )
 from fastled.settings import SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
-from fastled.types import CompileServerError, WebCompileResult
+from fastled.types import CompileResult, CompileServerError
 
 _IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
@@ -86,14 +86,14 @@ class CompileServerImpl:
         directory: Path | str,
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
-    ) -> WebCompileResult:
+    ) -> CompileResult:
         from fastled.web_compile import web_compile  # avoid circular import
 
         if not self._port:
             raise RuntimeError("Server has not been started yet")
         if not self.ping():
             raise RuntimeError("Server is not running")
-        out: WebCompileResult = web_compile(
+        out: CompileResult = web_compile(
             directory, host=self.url(), build_mode=build_mode, profile=profile
         )
         return out

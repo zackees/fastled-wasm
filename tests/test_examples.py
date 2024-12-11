@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from fastled.compile_server import CompileServer
 from fastled.paths import PROJECT_ROOT
 from fastled.project_init import project_init
-from fastled.web_compile import WebCompileResult
+from fastled.web_compile import CompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
@@ -51,7 +51,7 @@ class WebCompileTester(unittest.TestCase):
                         print(f)
                     self.assertTrue((out / example / f"{example}.ino").exists())
                     # Test the web_compile function with actual server call
-                    result: WebCompileResult = server.web_compile(out / example)
+                    result: CompileResult = server.web_compile(out / example)
                     self.assertTrue(
                         result.success, f"Compilation failed: {result.stdout}"
                     )

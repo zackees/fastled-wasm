@@ -3,7 +3,7 @@ from typing import Any
 
 
 @dataclass
-class WebCompileResult:
+class CompileResult:
     success: bool
     stdout: str
     hash_value: str | None

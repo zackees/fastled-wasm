@@ -72,9 +72,9 @@ After compilation a web browser windows will pop up. Changes to the sketch will 
 **Compiling through the api**
 ```python
 
-from fastapi import Api, WebCompileResult
+from fastapi import Api, CompileResult
 
-out: WebCompileResult = Api.web_compile("path/to/sketch")
+out: CompileResult = Api.web_compile("path/to/sketch")
 print(out.success)
 print(out.stdout)
 

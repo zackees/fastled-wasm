@@ -13,7 +13,7 @@ from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
-from fastled.types import WebCompileResult
+from fastled.types import CompileResult
 from fastled.web_compile import (
     SERVER_PORT,
     ConnectionResult,
@@ -28,7 +28,7 @@ def _run_web_compiler(
     build_mode: BuildMode,
     profile: bool,
     last_hash_value: str | None,
-) -> WebCompileResult:
+) -> CompileResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
@@ -160,7 +160,7 @@ def run_client_server(args: argparse.Namespace) -> int:
             build_mode: BuildMode = build_mode,
             profile: bool = profile,
             last_hash_value: str | None = None,
-        ) -> WebCompileResult:
+        ) -> CompileResult:
             return _run_web_compiler(
                 args.directory,
                 host=url,
@@ -169,8 +169,8 @@ def run_client_server(args: argparse.Namespace) -> int:
                 last_hash_value=last_hash_value,
             )
 
-        result: WebCompileResult = compile_function(last_hash_value=None)
-        last_compiled_result: WebCompileResult = result
+        result: CompileResult = compile_function(last_hash_value=None)
+        last_compiled_result: CompileResult = result
 
         if not result.success:
             print("\nCompilation failed.")
@@ -209,8 +209,8 @@ def run_client_server(args: argparse.Namespace) -> int:
         )
 
     def trigger_rebuild_if_sketch_changed(
-        last_compiled_result: WebCompileResult,
-    ) -> tuple[bool, WebCompileResult]:
+        last_compiled_result: CompileResult,
+    ) -> tuple[bool, CompileResult]:
         changed_files = sketch_filewatcher.get_all_changes()
         if changed_files:
             print(f"\nChanges detected in {changed_files}")

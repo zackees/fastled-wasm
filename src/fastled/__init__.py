@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Generator
 
 from .compile_server import CompileServer
-from .types import CompileServerError, WebCompileResult
+from .types import CompileResult, CompileServerError
 
 __version__ = "1.1.37"
 
@@ -31,14 +31,14 @@ class Api:
     @staticmethod
     def web_compile(
         directory: Path | str, host: str | CompileServer | None = None
-    ) -> WebCompileResult:
+    ) -> CompileResult:
         from fastled.web_compile import web_compile
 
         if isinstance(host, CompileServer):
             host = host.url()
         if isinstance(directory, str):
             directory = Path(directory)
-        out: WebCompileResult = web_compile(directory, host)
+        out: CompileResult = web_compile(directory, host)
         return out
 
     @staticmethod
@@ -95,4 +95,4 @@ class Test:
         return test_examples(examples=examples, host=host)
 
 
-__all__ = ["Api", "Test", "CompileServer", "WebCompileResult", "CompileServerError"]
+__all__ = ["Api", "Test", "CompileServer", "CompileResult", "CompileServerError"]

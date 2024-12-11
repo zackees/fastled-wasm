@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastled.build_mode import BuildMode
-from fastled.types import WebCompileResult
+from fastled.types import CompileResult
 
 
 class CompileServer:
@@ -37,7 +37,7 @@ class CompileServer:
         directory: Path | str,
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
-    ) -> WebCompileResult:
+    ) -> CompileResult:
         return self.impl.web_compile(
             directory=directory, build_mode=build_mode, profile=profile
         )

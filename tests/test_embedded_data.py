@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastled.compile_server import CompileServer
-from fastled.web_compile import ENABLE_EMBEDDED_DATA, WebCompileResult
+from fastled.web_compile import ENABLE_EMBEDDED_DATA, CompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "embedded"
@@ -30,10 +30,10 @@ class WebCompilerTester(unittest.TestCase):
         _enabled(),
         "Skipping test because either this is on non-Linux system on github or embedded data is disabled",
     )
-    def test_server(self) -> None:
-        """Test basic server start/stop functionality."""
+    def test_server_big_data_roundtrip(self) -> None:
+        """Tests that embedded data is round tripped correctly."""
         server = CompileServer(auto_start=True)
-        result: WebCompileResult = server.web_compile(TEST_DIR)
+        result: CompileResult = server.web_compile(TEST_DIR)
 
         # Stop the server
         server.stop()
