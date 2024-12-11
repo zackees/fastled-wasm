@@ -12,7 +12,7 @@ from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
-from fastled.types import BuildMode, CompileResult
+from fastled.types import BuildMode, CompileResult, CompileServerError
 from fastled.web_compile import (
     SERVER_PORT,
     ConnectionResult,
@@ -78,7 +78,7 @@ def _run_web_compiler(
 
 def _try_start_server_or_get_url(
     auto_update: bool, args_web: str | bool, localhost: bool
-) -> str | CompileServer:
+) -> tuple[str, CompileServer | None]:
     is_local_host = localhost or (
         isinstance(args_web, str)
         and ("localhost" in args_web or "127.0.0.1" in args_web)
@@ -94,16 +94,16 @@ def _try_start_server_or_get_url(
         result: ConnectionResult | None = find_good_connection(urls)
         if result is not None:
             print(f"Found local server at {result.host}")
-            return result.host
+            return (result.host, None)
         else:
             local_host_needs_server = True
 
     if not local_host_needs_server and args_web:
         if isinstance(args_web, str):
-            return args_web
+            return (args_web, None)
         if isinstance(args_web, bool):
-            return DEFAULT_URL
-        return args_web
+            return (DEFAULT_URL, None)
+        return (args_web, None)
     else:
         try:
             print("No local server found, starting one...")
@@ -111,18 +111,16 @@ def _try_start_server_or_get_url(
             print("Waiting for the local compiler to start...")
             if not compile_server.ping():
                 print("Failed to start local compiler.")
-                raise RuntimeError("Failed to start local compiler.")
-            return compile_server
+                raise CompileServerError("Failed to start local compiler.")
+            return (compile_server.url(), compile_server)
         except KeyboardInterrupt:
             raise
         except RuntimeError:
             print("Failed to start local compile server, using web compiler instead.")
-            return DEFAULT_URL
+            return (DEFAULT_URL, None)
 
 
 def run_client_server(args: argparse.Namespace) -> int:
-    compile_server: CompileServer | None = None
-
     profile = bool(args.profile)
     web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
     auto_update = bool(args.auto_update)
@@ -132,6 +130,7 @@ def run_client_server(args: argparse.Namespace) -> int:
     interactive = bool(args.interactive)
     force_compile = bool(args.force_compile)
     open_web_browser = not just_compile and not interactive
+    build_mode: BuildMode = BuildMode.from_args(args)
 
     if not force_compile and not looks_like_sketch_directory(directory):
         print(
@@ -147,27 +146,21 @@ def run_client_server(args: argparse.Namespace) -> int:
         web = True
 
     url: str
+    compile_server: CompileServer | None = None
     try:
-        try:
-            url_or_server: str | CompileServer = _try_start_server_or_get_url(
-                auto_update, web, localhost
-            )
-            if isinstance(url_or_server, str):
-                print(f"Found URL: {url_or_server}")
-                url = url_or_server
-            else:
-                compile_server = url_or_server
-                print(f"Server started at {compile_server.url()}")
-                url = compile_server.url()
-        except KeyboardInterrupt:
-            print("\nExiting from first try...")
-            if compile_server:
-                compile_server.stop()
-            return 1
-        except Exception as e:
-            print(f"Error: {e}")
-            return 1
-        build_mode: BuildMode = BuildMode.from_args(args)
+        url, compile_server = _try_start_server_or_get_url(auto_update, web, localhost)
+    except KeyboardInterrupt:
+        print("\nExiting from first try...")
+        if compile_server:
+            compile_server.stop()
+        return 1
+    except Exception as e:
+        print(f"Error: {e}")
+        if compile_server:
+            compile_server.stop()
+        return 1
+
+    try:
 
         def compile_function(
             url: str = url,
