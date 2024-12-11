@@ -91,7 +91,7 @@ class CompileServer:
     def project_init(
         self, example: str | None = None, outputdir: Path | None = None
     ) -> None:
-        project_init(example=example, outputdir=outputdir, url=self.url())
+        project_init(example=example, outputdir=outputdir)
 
     @property
     def running(self) -> bool:

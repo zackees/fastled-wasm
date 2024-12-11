@@ -5,6 +5,7 @@ from typing import Any
 
 __version__ = "1.1.35"
 
+
 class Api:
     @staticmethod
     def get_examples():
@@ -45,4 +46,3 @@ class Api:
             auto_start=auto_start,
         )
         return out
-

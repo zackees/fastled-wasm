@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from fastled.build_mode import BuildMode
-from fastled.compile_server import SERVER_PORT
+from fastled.settings import SERVER_PORT
 from fastled.sketch import get_sketch_files
 from fastled.util import hash_file
 
@@ -41,7 +41,7 @@ class WebCompileResult:
 
     def __bool__(self) -> bool:
         return self.success
-    
+
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
 

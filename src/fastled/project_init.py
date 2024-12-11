@@ -39,8 +39,6 @@ def project_init(
     """
     Initialize a new FastLED project.
     """
-    url = url or DEFAULT_URL
-    assert url
     outputdir = outputdir or Path("fastled")
     if example == "PROMPT" or example is None:
         try:
@@ -51,7 +49,7 @@ def project_init(
             )
             example = DEFAULT_EXAMPLE
     assert example is not None
-    endpoint_url = f"{url}/project/init/{example}"
+    endpoint_url = f"{DEFAULT_URL}/project/init/{example}"
     response = httpx.get(endpoint_url, timeout=20)
     response.raise_for_status()
     content = response.content
