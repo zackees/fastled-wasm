@@ -8,6 +8,7 @@ import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -40,6 +41,9 @@ class WebCompileResult:
 
     def __bool__(self) -> bool:
         return self.success
+    
+    def to_dict(self) -> dict[str, Any]:
+        return self.__dict__.copy()
 
 
 def _sanitize_host(host: str) -> str:
