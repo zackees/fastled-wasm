@@ -38,7 +38,7 @@ pip install fastled
 
 **Note that you may need to install x86 docker emulation on Mac-m1 and later, as this is an x86 only image at the prsent.**
 
-# Use
+# Command Line Use
 
 Change to the directory where the sketch lives and run, will run the compilation
 on the web compiler.
@@ -64,6 +64,55 @@ fastled examples/wasm --local
 ```
 
 After compilation a web browser windows will pop up. Changes to the sketch will automatically trigger a recompilation.
+
+# Python Api
+
+**Compiling through the api**
+```python
+
+from fastapi import Api, CompileServer, WebCompileResult
+
+out: WebCompileResult = Api.web_compile("path/to/sketch")
+print(out.success)
+print(out.stdout)
+
+```
+
+**Launching a compile server**
+```python
+
+server: CompileServer = Api.spawn_server()
+server.web_compile("path/to/sketch")  # output will be "path/to/sketch/fastled_js"
+server.stop()
+```
+
+**Launching a server in a scope**
+```python
+
+# Launching a server in a scope
+with Api.server() as server:
+    server.web_compile("path/to/sketch")
+
+```
+
+**Initializing a project example from the web compiler**
+```python
+
+examples = Api.get_examples()
+print(f"Print available examples: {examples}")
+Api.project_init(examples[0])
+
+
+```
+
+**Initializing a project example from the CompileServer**
+```python
+
+with Api.server() as server:
+    examples = server.get_examples()
+    server.project_init(examples[0])
+
+```
 
 # Hot reload by default
 

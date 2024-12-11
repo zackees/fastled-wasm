@@ -3,6 +3,7 @@
 # context
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Generator
 
 from .compile_server import CompileServer
 from .types import WebCompileResult
@@ -47,7 +48,7 @@ class Api:
         auto_updates=None,
         auto_start=True,
         container_name: str | None = None,
-    ):
+    ) -> CompileServer:
         from fastled.compile_server import CompileServer
 
         out = CompileServer(
@@ -67,7 +68,7 @@ class Api:
         auto_updates=None,
         auto_start=True,
         container_name: str | None = None,
-    ):
+    ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
             sketch_directory=sketch_directory,
             interactive=interactive,
