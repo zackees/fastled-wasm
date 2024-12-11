@@ -8,10 +8,10 @@ from pathlib import Path
 from fastled.build_mode import BuildMode, get_build_mode
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
-from fastled.env import DEFAULT_URL
 from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
+from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
 
 # CompiledResult

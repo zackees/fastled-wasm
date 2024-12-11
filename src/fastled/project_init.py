@@ -3,7 +3,7 @@ from pathlib import Path
 
 import httpx
 
-from fastled.env import DEFAULT_URL
+from fastled.settings import DEFAULT_URL
 
 ENDPOINT_PROJECT_INIT = f"{DEFAULT_URL}/project/init"
 ENDPOINT_INFO = f"{DEFAULT_URL}/info"

@@ -5,9 +5,9 @@ from pathlib import Path
 
 from fastled import __version__
 from fastled.docker_manager import DockerManager
-from fastled.env import DEFAULT_URL
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
+from fastled.settings import DEFAULT_URL
 from fastled.sketch import (
     find_sketch_directories,
     looks_like_fastled_repo,

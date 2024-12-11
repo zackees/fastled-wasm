@@ -8,13 +8,13 @@ import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import httpx
 
 from fastled.build_mode import BuildMode
 from fastled.settings import SERVER_PORT
 from fastled.sketch import get_sketch_files
+from fastled.types import WebCompileResult
 from fastled.util import hash_file
 
 DEFAULT_HOST = "https://fastled.onrender.com"
@@ -30,20 +30,6 @@ class ConnectionResult:
     host: str
     success: bool
     ipv4: bool
-
-
-@dataclass
-class WebCompileResult:
-    success: bool
-    stdout: str
-    hash_value: str | None
-    zip_bytes: bytes
-
-    def __bool__(self) -> bool:
-        return self.success
-
-    def to_dict(self) -> dict[str, Any]:
-        return self.__dict__.copy()
 
 
 def _sanitize_host(host: str) -> str:

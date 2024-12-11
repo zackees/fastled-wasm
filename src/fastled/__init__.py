@@ -1,7 +1,8 @@
 """FastLED Wasm Compiler package."""
 
 from pathlib import Path
-from typing import Any
+
+from .types import WebCompileResult
 
 __version__ = "1.1.35"
 
@@ -14,19 +15,17 @@ class Api:
         return get_examples()
 
     @staticmethod
-    def project_init(example=None, outputdir=None) -> Path:
+    def project_init(example=None, outputdir=None, host: str | None = None) -> Path:
         from fastled.project_init import project_init
 
-        return project_init(example, outputdir)
+        return project_init(example, outputdir, host)
 
     @staticmethod
-    def web_compile(directory, host=None) -> dict[str, Any]:
+    def web_compile(directory, host=None) -> WebCompileResult:
         from fastled.web_compile import web_compile
 
-        from .web_compile import WebCompileResult
-
         out: WebCompileResult = web_compile(directory, host)
-        return out.to_dict()
+        return out
 
     @staticmethod
     def spawn_server(
