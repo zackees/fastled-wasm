@@ -60,9 +60,9 @@ fastled --local  # if server doesn't already exist, one is created.
 You can also spawn a server in one process and then access it in another, like this:
 
 ```bash
-fastled --server  # server will no run in the background.
+fastled --server  # server will now run in the background.
 # now launch the client
-fastled examples/wasm --local  # local will find the server and compile against it.
+fastled examples/wasm --local  # local will find the local server use it do the compile.
 ```
 
 After compilation a web browser windows will pop up. Changes to the sketch will automatically trigger a recompilation.

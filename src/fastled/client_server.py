@@ -76,13 +76,14 @@ def _run_web_compiler(
     return web_result
 
 
-def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServer:
-    auto_update = args.auto_update
-    is_local_host = "localhost" in args.web or "127.0.0.1" in args.web or args.localhost
+def _try_start_server_or_get_url(
+    auto_update: bool, args_web: str, localhost: bool
+) -> str | CompileServer:
+    is_local_host = "localhost" in args_web or "127.0.0.1" in args_web or localhost
     # test to see if there is already a local host server
     local_host_needs_server = False
     if is_local_host:
-        addr = "localhost" if args.localhost else args.web
+        addr = "localhost" if localhost else args_web
         urls = [addr]
         if ":" not in addr:
             urls.append(f"{addr}:{SERVER_PORT}")
@@ -94,12 +95,12 @@ def _try_start_server_or_get_url(args: argparse.Namespace) -> str | CompileServe
         else:
             local_host_needs_server = True
 
-    if not local_host_needs_server and args.web:
-        if isinstance(args.web, str):
-            return args.web
-        if isinstance(args.web, bool):
+    if not local_host_needs_server and args_web:
+        if isinstance(args_web, str):
+            return args_web
+        if isinstance(args_web, bool):
             return DEFAULT_URL
-        return args.web
+        return args_web
     else:
         try:
             print("No local server found, starting one...")
@@ -136,7 +137,9 @@ def run_client_server(args: argparse.Namespace) -> int:
     url: str
     try:
         try:
-            url_or_server: str | CompileServer = _try_start_server_or_get_url(args)
+            url_or_server: str | CompileServer = _try_start_server_or_get_url(
+                args.auto_update, args.web, args.localhost
+            )
             if isinstance(url_or_server, str):
                 print(f"Found URL: {url_or_server}")
                 url = url_or_server

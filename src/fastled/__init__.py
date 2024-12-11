@@ -8,7 +8,7 @@ from typing import Generator
 from .compile_server import CompileServer
 from .types import BuildMode, CompileResult, CompileServerError
 
-__version__ = "1.1.37"
+__version__ = "1.1.38"
 
 
 class Api:
