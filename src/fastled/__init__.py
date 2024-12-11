@@ -1,5 +1,7 @@
 """FastLED Wasm Compiler package."""
 
+# context
+from contextlib import contextmanager
 from pathlib import Path
 
 from .compile_server import CompileServer
@@ -27,13 +29,14 @@ class Api:
 
     @staticmethod
     def web_compile(
-        directory, host: str | CompileServer | None = None
+        directory: Path | str, host: str | CompileServer | None = None
     ) -> WebCompileResult:
         from fastled.web_compile import web_compile
 
         if isinstance(host, CompileServer):
             host = host.url()
-
+        if isinstance(directory, str):
+            directory = Path(directory)
         out: WebCompileResult = web_compile(directory, host)
         return out
 
@@ -56,12 +59,33 @@ class Api:
         )
         return out
 
+    @staticmethod
+    @contextmanager
+    def server(
+        sketch_directory: Path | None = None,
+        interactive=False,
+        auto_updates=None,
+        auto_start=True,
+        container_name: str | None = None,
+    ):
+        server = Api.spawn_server(
+            sketch_directory=sketch_directory,
+            interactive=interactive,
+            auto_updates=auto_updates,
+            auto_start=auto_start,
+            container_name=container_name,
+        )
+        try:
+            yield server
+        finally:
+            server.stop()
+
 
 class Test:
     @staticmethod
     def test_examples(
         examples: list[str] | None = None, host: str | CompileServer | None = None
-    ) -> Exception | None:
+    ) -> dict[str, Exception]:
         from fastled.test.examples import test_examples
 
         if isinstance(host, CompileServer):

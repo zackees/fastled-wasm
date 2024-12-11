@@ -42,7 +42,7 @@ def project_init(
     Initialize a new FastLED project.
     """
     host = host or DEFAULT_URL
-    outputdir = outputdir or Path("fastled")
+    outputdir = Path(outputdir) if outputdir is not None else Path("fastled")
     if example == "PROMPT" or example is None:
         try:
             example = _prompt_for_example()
