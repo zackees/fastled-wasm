@@ -34,11 +34,14 @@ def _prompt_for_example() -> str:
 
 
 def project_init(
-    example: str | None = "PROMPT", outputdir: Path | None = None  # prompt for example
+    example: str | None = "PROMPT",  # prompt for example
+    outputdir: Path | None = None,
+    host: str | None = None,
 ) -> Path:
     """
     Initialize a new FastLED project.
     """
+    host = host or DEFAULT_URL
     outputdir = outputdir or Path("fastled")
     if example == "PROMPT" or example is None:
         try:
@@ -49,7 +52,7 @@ def project_init(
             )
             example = DEFAULT_EXAMPLE
     assert example is not None
-    endpoint_url = f"{DEFAULT_URL}/project/init/{example}"
+    endpoint_url = f"{host}/project/init/{example}"
     response = httpx.get(endpoint_url, timeout=20)
     response.raise_for_status()
     content = response.content
