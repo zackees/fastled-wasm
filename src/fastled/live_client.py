@@ -54,6 +54,7 @@ class LiveClient:
         assert not self.running, "LiveClient is already running"
         self.shutdown.clear()
         self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
 
     def stop(self) -> None:
         """Stop the client."""

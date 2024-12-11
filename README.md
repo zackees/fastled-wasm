@@ -125,6 +125,35 @@ with Api.server() as server:
 
 ```
 
+**LiveClient will auto-trigger a build on code changes, just like the cli does**
+```python
+
+# Live Client will compile against the web-compiler
+from fastapi import Api, LiveClient
+client: LiveClient = Api.live_client(
+    "path/to/sketch_directory",
+)
+# Now user can start editing their sketch and it will auto-compile
+# ... after a while stop it like this.
+client.stop()
+```
+
+**LiveClient with local CompileServer**
+```python
+
+# Live Client will compile against a local server.
+from fastapi import Api, LiveClient
+
+with Api.server() as server:
+    client: LiveClient = Api.live_client(
+        "path/to/sketch_directory",
+        host=server
+    )
+    # Now user can start editing their sketch and it will auto-compile
+    # ... after a while stop it like this.
+    client.stop()
+```
+
 # Features
 
 ## Hot reload by default
@@ -202,6 +231,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.39 - Added `LiveClient`, `fastled.Api.live_server()` will spawn it. Allows user to have a live compiling client that re-triggers a compile on file changes.
   * 1.1.38 - Cleanup the `fastled.Api` object and streamline for general use.
   * 1.1.37 - `Test.test_examples()` is now unit tested to work correctly.
   * 1.1.36 - We now have an api. `from fastled import Api` and `from fastled import Test` for testing.
