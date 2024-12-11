@@ -34,14 +34,15 @@ def _prompt_for_example() -> str:
 
 
 def project_init(
-    example: str | None = None, outputdir: Path | None = None  # prompt for example
+    example: str | None = "PROMPT", outputdir: Path | None = None  # prompt for example
 ) -> Path:
     """
     Initialize a new FastLED project.
     """
-
+    url = url or DEFAULT_URL
+    assert url
     outputdir = outputdir or Path("fastled")
-    if example is None:
+    if example == "PROMPT" or example is None:
         try:
             example = _prompt_for_example()
         except httpx.HTTPStatusError:
@@ -50,7 +51,8 @@ def project_init(
             )
             example = DEFAULT_EXAMPLE
     assert example is not None
-    response = httpx.get(f"{ENDPOINT_PROJECT_INIT}/{example}", timeout=20)
+    endpoint_url = f"{url}/project/init/{example}"
+    response = httpx.get(endpoint_url, timeout=20)
     response.raise_for_status()
     content = response.content
     tmpzip = outputdir / "fastled.zip"

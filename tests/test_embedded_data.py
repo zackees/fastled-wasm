@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastled.compile_server import CompileServer
-from fastled.web_compile import ENABLE_EMBEDDED_DATA, WebCompileResult, web_compile
+from fastled.web_compile import ENABLE_EMBEDDED_DATA, WebCompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "embedded"
@@ -33,8 +33,7 @@ class WebCompilerTester(unittest.TestCase):
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
         server = CompileServer(auto_start=True)
-        url = server.url()
-        result: WebCompileResult = web_compile(TEST_DIR, host=url)
+        result: WebCompileResult = server.web_compile(TEST_DIR)
 
         # Stop the server
         server.stop()

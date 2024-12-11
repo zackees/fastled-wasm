@@ -6,18 +6,21 @@ from pathlib import Path
 
 import httpx
 
+from fastled.build_mode import BuildMode
 from fastled.docker_manager import (
     DISK_CACHE,
     Container,
     DockerManager,
     RunningContainer,
 )
+from fastled.project_init import project_init
+from fastled.settings import SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
+from fastled.web_compile import WebCompileResult, web_compile
 
 _IMAGE_NAME = "niteris/fastled-wasm"
 _DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 
-SERVER_PORT = 9021
 
 SERVER_OPTIONS = ["--allow-shutdown", "--no-auto-update"]
 
@@ -70,6 +73,26 @@ class CompileServer:
         if wait_for_startup:
             self.wait_for_startup()
 
+    def web_compile(
+        self,
+        directory: Path | str,
+        build_mode: BuildMode = BuildMode.QUICK,
+        profile: bool = False,
+    ) -> WebCompileResult:
+        if not self._port:
+            raise RuntimeError("Server has not been started yet")
+        if not self.ping():
+            raise RuntimeError("Server is not running")
+        out: WebCompileResult = web_compile(
+            directory, host=self.url(), build_mode=build_mode, profile=profile
+        )
+        return out
+
+    def project_init(
+        self, example: str | None = None, outputdir: Path | None = None
+    ) -> None:
+        project_init(example=example, outputdir=outputdir, url=self.url())
+
     @property
     def running(self) -> bool:
         if not self._port:
@@ -106,6 +129,8 @@ class CompileServer:
             pass
         return False
 
+    # by default this is automatically called by the constructor, unless
+    # auto_start is set to False.
     def wait_for_startup(self, timeout: int = 100) -> bool:
         """Wait for the server to start up."""
         start_time = time.time()

@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from fastled.compile_server import CompileServer
 from fastled.paths import PROJECT_ROOT
 from fastled.project_init import project_init
-from fastled.web_compile import WebCompileResult, web_compile
+from fastled.web_compile import WebCompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
@@ -41,8 +41,6 @@ class WebCompileTester(unittest.TestCase):
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
         server = CompileServer(auto_start=True)
-        url = server.url()
-
         try:
             with TemporaryDirectory() as tmpdir:
                 for example in EXAMPLES:
@@ -53,7 +51,7 @@ class WebCompileTester(unittest.TestCase):
                         print(f)
                     self.assertTrue((out / example / f"{example}.ino").exists())
                     # Test the web_compile function with actual server call
-                    result: WebCompileResult = web_compile(out / example, host=url)
+                    result: WebCompileResult = server.web_compile(out / example)
                     self.assertTrue(
                         result.success, f"Compilation failed: {result.stdout}"
                     )

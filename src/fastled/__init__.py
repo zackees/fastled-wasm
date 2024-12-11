@@ -46,7 +46,3 @@ class Api:
         )
         return out
 
-
-# __all__ = ["CompileServer", "web_compile", "project_init", "get_examples"]
-
-__all__ = ["web_compile", "project_init"]
