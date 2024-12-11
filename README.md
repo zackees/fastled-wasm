@@ -44,23 +44,25 @@ Change to the directory where the sketch lives and run, will run the compilation
 on the web compiler.
 
 ```bash
+# This will use the web-compiler, unless you have docker installed in which case a local
+# server will be instantiated automatically.
 cd <SKETCH-DIRECTORY>
 fastled
 ```
 
-Or if you have docker you can run a server automatically.
+Forces the local server to to spawn in order to run to do the compile.
 
 ```bash
 cd <SKETCH-DIRECTORY>
-fastled --local
+fastled --local  # if server doesn't already exist, one is created.
 ```
 
 You can also spawn a server in one process and then access it in another, like this:
 
 ```bash
-fastled --server
+fastled --server  # server will no run in the background.
 # now launch the client
-fastled examples/wasm --local
+fastled examples/wasm --local  # local will find the server and compile against it.
 ```
 
 After compilation a web browser windows will pop up. Changes to the sketch will automatically trigger a recompilation.
@@ -84,6 +86,7 @@ print(out.stdout)
 from fastapi import Api, CompileServer
 
 server: CompileServer = Api.spawn_server()
+print(f"Local server running at {server.url()}")
 server.web_compile("path/to/sketch")  # output will be "path/to/sketch/fastled_js"
 server.stop()
 ```
