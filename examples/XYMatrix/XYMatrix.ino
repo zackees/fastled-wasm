@@ -177,6 +177,8 @@ uint16_t XYsafe( uint8_t x, uint8_t y)
   return XY(x,y);
 }
 
+void DrawOneFrame( uint8_t startHue8, int8_t yHueDelta8, int8_t xHueDelta8);
+
 
 // Demo that USES "XY" follows code below
 
