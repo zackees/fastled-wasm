@@ -28,8 +28,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--init",
-        action="store_true",
-        help="Initialize the FastLED sketch in the current directory",
+        nargs="?",
+        const=True,
+        help="Initialize the FastLED sketch in the current directory. Optional name can be provided",
     )
     parser.add_argument(
         "--just-compile",
@@ -103,7 +104,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
 
     if args.init:
-        args.directory = project_init()
+        example = args.init if args.init is not True else None
+        args.directory = project_init(example)
         print("\nInitialized FastLED project in", args.directory)
         print(f"Use 'fastled {args.directory}' to compile the project.")
         sys.exit(0)
