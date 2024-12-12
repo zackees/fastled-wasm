@@ -9,7 +9,7 @@ from .compile_server import CompileServer
 from .live_client import LiveClient
 from .types import BuildMode, CompileResult, CompileServerError
 
-__version__ = "1.1.47"
+__version__ = "1.1.48"
 
 
 class Api:

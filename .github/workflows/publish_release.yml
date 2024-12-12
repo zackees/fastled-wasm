@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      workflows: write
     outputs:
       new_version: ${{ steps.current_version.outputs.current }}
       should_release: ${{ steps.current_version.outputs.current != steps.prev_version.outputs.previous }}
@@ -43,8 +42,10 @@ jobs:
       id: prev_version
       run: |
         git checkout HEAD~1
+        ./clean
         uv run fastled --version > prev_version.txt
         echo "previous=$(cat prev_version.txt)" >> $GITHUB_OUTPUT
+      shell: bash
 
     - name: Create Tag if version changed
       if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
