@@ -50,9 +50,8 @@ jobs:
     - name: Create Tag if version changed
       if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
       env:
-        DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        echo "https://$DEPLOY_KEY:x-oauth-basic@github.com" > ~/.git-credentials
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git tag -a "v${{ steps.current_version.outputs.current }}" -m "Release v${{ steps.current_version.outputs.current }}"
