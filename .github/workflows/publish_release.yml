@@ -49,28 +49,17 @@ jobs:
 
     - name: Create Tag if version changed
       if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
         git tag -a "v${{ steps.current_version.outputs.current }}" -m "Release v${{ steps.current_version.outputs.current }}"
-        git push origin "v${{ steps.current_version.outputs.current }}"
+        git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "v${{ steps.current_version.outputs.current }}"
 
-  build-and-publish:
-    needs: create-tag
-    if: needs.create-tag.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-    - uses: actions/checkout@v4
-    
-    - uses: etils-actions/pypi-auto-publish@v1
-      with:
-        pypi-token: ${{ secrets.PYPI_API_TOKEN }}
-        gh-token: ${{ secrets.GITHUB_TOKEN }}
 
   build-executables:
-    needs: [create-tag, build-and-publish]
+    needs: [create-tag]
     if: needs.create-tag.outputs.should_release == 'true'
     strategy:
       matrix:
