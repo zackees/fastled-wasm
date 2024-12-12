@@ -1,0 +1,1 @@
+https://github.com/marketplace/actions/code-sign-action
