@@ -41,7 +41,7 @@ jobs:
           ./dist/fastled --version
         fi
 
-        if [ "$${{ matrix }}" = "ubuntu-latest" ]; then
+        if [ "$${{ matrix.os }}" = "ubuntu-latest" ]; then
           ./dist/fastled --init wasm && ./dist/fastled --just-compile --local fastled/wasm
         fi
       
