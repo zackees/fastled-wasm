@@ -236,6 +236,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
+  * 1.1.47 - Try again.
   * 1.1.46 - Add mac x86 exe
   * 1.1.45 - Aniother try for web publishing from github.
   * 1.1.42 - Second test for web publishing from github.
