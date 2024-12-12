@@ -68,10 +68,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            arch: X64
-          - os: ubuntu-latest
-            arch: ARM64
-            runs-on: ubuntu-latest-arm64
+            platform: linux/amd64
+          # Not available on GitHub Actions unless i run qemu
+          #- os: ubuntu-latest
+          #  platform: ARM64
+          #  runs-on: ubuntu-latest-arm64
           - os: windows-latest
             arch: X64
           - os: macos-latest  # arm64
