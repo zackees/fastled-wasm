@@ -63,13 +63,19 @@ jobs:
     if: needs.create-tag.outputs.should_release == 'true'
     strategy:
       matrix:
-        os: [
-            ubuntu-latest,
-            windows-latest,
-            macos-latest, # arm64
-            macos-13  # x86
-        ]
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: ubuntu-latest
+            arch: X64
+          - os: ubuntu-latest
+            arch: ARM64
+            runs-on: ubuntu-latest-arm64
+          - os: windows-latest
+            arch: X64
+          - os: macos-latest  # arm64
+            arch: ARM64
+          - os: macos-13  # x86
+            arch: X64
+    runs-on: ${{ matrix.runs-on || matrix.os }}
     
     steps:
     - uses: actions/checkout@v4
@@ -113,6 +119,7 @@ jobs:
         # Rename files with platform-specific names
         [ -f artifacts/fastled-Windows-X64/fastled.exe ] && cp artifacts/fastled-Windows-X64/fastled.exe release/fastled-windows-x64.exe
         [ -f artifacts/fastled-Linux-X64/fastled ] && cp artifacts/fastled-Linux-X64/fastled release/fastled-linux-x64
+        [ -f artifacts/fastled-Linux-ARM64/fastled ] && cp artifacts/fastled-Linux-ARM64/fastled release/fastled-linux-arm64
         [ -f artifacts/fastled-macOS-ARM64/fastled ] && cp artifacts/fastled-macOS-ARM64/fastled release/fastled-macos-arm64
         [ -f artifacts/fastled-macOS-X64/fastled ] && cp artifacts/fastled-macOS-X64/fastled release/fastled-macos-x64
         chmod +x release/fastled-*
