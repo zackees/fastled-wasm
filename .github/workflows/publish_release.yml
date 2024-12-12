@@ -68,7 +68,6 @@ jobs:
       with:
         pypi-token: ${{ secrets.PYPI_API_TOKEN }}
         gh-token: ${{ secrets.GITHUB_TOKEN }}
-        parse-changelog: true
 
   build-executables:
     needs: [create-tag, build-and-publish]
