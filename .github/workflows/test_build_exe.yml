@@ -26,6 +26,15 @@ jobs:
 
     - name: Build executable
       run: uv run build_exe.py
+
+    - name: Test executable
+      shell: bash
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          ./dist/fastled.exe --version
+        else
+          ./dist/fastled --version
+        fi
       
     - name: Upload artifacts
       uses: actions/upload-artifact@v3
