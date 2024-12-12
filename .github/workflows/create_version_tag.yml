@@ -1,4 +1,4 @@
-name: Create Version Tag
+name: Create Version Tag and Release
 
 on:
   push:
@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      new_version: ${{ steps.current_version.outputs.current }}
+      should_release: ${{ steps.current_version.outputs.current != steps.prev_version.outputs.previous }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -40,6 +43,7 @@ jobs:
       run: |
         git checkout HEAD~1
         uv run fastled --version > prev_version.txt
+        echo "previous=$(cat prev_version.txt)" >> $GITHUB_OUTPUT
 
     - name: Create Tag if version changed
       if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
@@ -48,3 +52,91 @@ jobs:
         git config --local user.name "GitHub Action"
         git tag -a "v${{ steps.current_version.outputs.current }}" -m "Release v${{ steps.current_version.outputs.current }}"
         git push origin "v${{ steps.current_version.outputs.current }}"
+
+  build-and-publish:
+    needs: create-tag
+    if: needs.create-tag.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+    
+    - name: Build package
+      run: python -m build
+    
+    - name: Publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: twine upload dist/*
+
+  build-executables:
+    needs: [create-tag, build-and-publish]
+    if: needs.create-tag.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install UV
+      run: pip install uv
+
+    - name: Install dependencies  
+      run: ./install
+      shell: bash
+
+    - name: Build executable
+      run: uv run build_exe.py
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: fastled-${{ runner.os }}-${{ runner.arch }}
+        path: |
+          dist/fastled
+          dist/fastled.exe
+
+  create-release:
+    needs: [create-tag, build-executables]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+
+    - name: Prepare release files
+      run: |
+        mkdir release
+        # Rename files with platform-specific names
+        [ -f artifacts/fastled-Windows-X64/fastled.exe ] && cp artifacts/fastled-Windows-X64/fastled.exe release/fastled-windows-x64.exe
+        [ -f artifacts/fastled-Linux-X64/fastled ] && cp artifacts/fastled-Linux-X64/fastled release/fastled-linux-x64
+        [ -f artifacts/fastled-macOS-ARM64/fastled ] && cp artifacts/fastled-macOS-ARM64/fastled release/fastled-macos-arm64
+        [ -f artifacts/fastled-macOS-X64/fastled ] && cp artifacts/fastled-macOS-X64/fastled release/fastled-macos-x64
+        chmod +x release/fastled-*
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.create-tag.outputs.new_version }}
+        files: release/*
+        draft: false
+        prerelease: false
