@@ -8,7 +8,7 @@ Compiles an Arduino/Platformio sketch into a wasm binary that can be run directl
 [![MacOS_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/test_macos.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_macos.yml)
 [![Ubuntu_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/test_ubuntu.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_ubuntu.yml)
 [![Win_Tests](https://github.com/zackees/fastled-wasm/actions/workflows/test_win.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_win.yml)
-
+[![Build Executables](https://github.com/zackees/fastled-wasm/actions/workflows/test_build_exe.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_build_exe.yml)
 
 
 # About
