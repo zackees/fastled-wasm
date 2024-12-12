@@ -1,0 +1,36 @@
+name: Build Executables
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: [3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install UV
+      run: pip install uv
+
+    - name: Install dependencies
+      run: ./install
+      shell: bash
+
+    - name: Build executable
+      run: uv run build_exe.py
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: fastled-${{ matrix.os }}
+        path: |
+          dist/fastled
+          dist/fastled.exe
