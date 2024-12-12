@@ -237,7 +237,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
 
 # Revisions
   
-  * 1.1.42 - Third try for web publishing from github.
+  * 1.1.44 - Aniother try for web publishing from github.
   * 1.1.42 - Second test for web publishing from github.
   * 1.1.41 - Platform executable (through pyinstaller) now enabled.
   * 1.1.40 - Remove `sketch_directory` from Api object. This was only needed before we had a client/server architecture.
