@@ -6,12 +6,14 @@ on:
       - main
     paths:
       - 'src/fastled/__init__.py'
+  workflow_dispatch: # on button click
 
 jobs:
   create-tag:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     outputs:
       new_version: ${{ steps.current_version.outputs.current }}
       should_release: ${{ steps.current_version.outputs.current != steps.prev_version.outputs.previous }}
