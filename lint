@@ -1,15 +1,17 @@
 #!/bin/bash
 set -e
 
+. ./activate
+
 echo Running ruff src
-uv run ruff check --fix src
+ruff check --fix src
 echo Running ruff tests
-uv run ruff check --fix tests
+ruff check --fix tests
 echo Running black src tests
-uv run black src tests
+black src tests
 echo Running isort src tests
-uv run isort --profile black src tests
+isort --profile black src tests
 echo Running mypy src
-uv run mypy src tests
+mypy src tests
 echo Linting complete!
 exit 0

@@ -4,3 +4,4 @@ mypy
 pytest
 ruff
 pytest-xdist
+pyinstaller

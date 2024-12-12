@@ -5,12 +5,15 @@ Unit test file.
 import os
 import platform
 import unittest
-import warnings
 from tempfile import TemporaryDirectory
 
-from fastled import Api, LiveClient, Test
+from fastled import Api, CompileServer, LiveClient
 
-DISABLED = True
+# def override(url) -> None:
+#     """Override the server url."""
+#     assert isinstance(url, str) and "localhost" in url
+
+# client_server.TEST_BEFORE_COMPILE = override
 
 
 def _enabled() -> bool:
@@ -25,15 +28,13 @@ def _enabled() -> bool:
 class ApiTester(unittest.TestCase):
     """Main tester class."""
 
-    @unittest.skipIf(DISABLED, "This test takes a long time.")
-    def test_examples(self) -> None:
-        """Test command line interface (CLI)."""
-        if DISABLED:
-            warnings.warn("This test is disabled.")
+    # @unittest.skipUnless(_enabled(), "This test takes a long time.")
+    # def test_examples(self) -> None:
+    #     """Test command line interface (CLI)."""
 
-        with Api.server() as server:
-            out = Test.test_examples(host=server)
-            self.assertEqual(0, len(out), f"Failed tests: {out}")
+    #     with Api.server() as server:
+    #         out = Test.test_examples(host=server)
+    #         self.assertEqual(0, len(out), f"Failed tests: {out}")
 
     @unittest.skipUnless(_enabled(), "Can only happen with a local server.")
     def test_live_client(self) -> None:
@@ -41,6 +42,7 @@ class ApiTester(unittest.TestCase):
 
         with TemporaryDirectory() as tmpdir:
             with Api.server() as server:
+                assert isinstance(server, CompileServer)
                 sketch_directory = Api.project_init(
                     example="Blink", outputdir=tmpdir, host=server
                 )

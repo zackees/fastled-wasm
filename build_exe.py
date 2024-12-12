@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import subprocess
 import sys
+import os
+
+from pathlib import Path
+
+HERE = Path(__file__).parent
 
 def check_pyinstaller():
     """Check if pyinstaller is installed, install if not."""
@@ -13,6 +18,7 @@ def check_pyinstaller():
                       check=True)
 
 def main():
+    os.chdir(str(HERE))
     # Activate virtual environment if needed
     # Note: This is typically handled by the Python interpreter itself
     # when running the script from the correct environment

@@ -1,9 +1,9 @@
 #!/bin/bash
 
 set -e
-
 # Can't run in parralel because of the shared docker
 # instance.
-uv run pytest -s -v tests "$@"
+. ./activate
+pytest -v -s tests "$@"
 # uv run pytest -n auto tests -v
 

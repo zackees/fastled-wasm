@@ -22,6 +22,11 @@ from fastled.web_compile import (
 )
 
 
+# Override this function in your own code to run tests before compilation
+def TEST_BEFORE_COMPILE(url) -> None:
+    pass
+
+
 def _run_web_compiler(
     directory: Path,
     host: str,
@@ -153,6 +158,7 @@ def run_client(
             profile: bool = profile,
             last_hash_value: str | None = None,
         ) -> CompileResult:
+            TEST_BEFORE_COMPILE(url)
             return _run_web_compiler(
                 directory,
                 host=url,
