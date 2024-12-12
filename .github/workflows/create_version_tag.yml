@@ -41,10 +41,6 @@ jobs:
         git checkout HEAD~1
         uv run fastled --version > prev_version.txt
 
-    - name: Build current executable
-      run: uv run build_exe.py
-
-
     - name: Create Tag if version changed
       if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
       run: |
