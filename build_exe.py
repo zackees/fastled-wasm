@@ -34,7 +34,7 @@ def main():
         "--clean",
         "--argv-emulation",
         "--name", "fastled",
-        "--target-architecture", "universal2"
+        #"--target-architecture", "universal2"
     ]
     
     try:
