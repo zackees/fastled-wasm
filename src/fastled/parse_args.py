@@ -18,9 +18,7 @@ from fastled.sketch import (
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
-    parser.add_argument(
-        "--version", action="version", version=f"{__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"{__version__}")
     parser.add_argument(
         "directory",
         type=str,
