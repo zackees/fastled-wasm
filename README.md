@@ -235,6 +235,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
   
+  * 1.1.61 - Excluded non compiling examples from the Test object as part of the api - no sense in having them if they won't compile.
   * 1.1.60 - Platform executables (macos-arm/macos-x86/windows/linux-x86) now auto building with each release. Add tests.
   * 1.1.52 - Add linux-arm
   * 1.1.49 - Try again.

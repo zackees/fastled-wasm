@@ -11,7 +11,7 @@ lsfjsdklfjdskfjkasdfjdsfds /// the garbage heare should trigger a build failure.
 #include <string>
 
 #include <FastLED.h>
-#include "fx/2d/noisepalette.hpp"
+#include "fx/2d/noisepalette.h"
 #include "fl/json.h"
 #include "fl/slice.h"
 #include "fx/fx_engine.h"

@@ -9,12 +9,19 @@ ENDPOINT_PROJECT_INIT = f"{DEFAULT_URL}/project/init"
 ENDPOINT_INFO = f"{DEFAULT_URL}/info"
 DEFAULT_EXAMPLE = "wasm"
 
+_EXCLUDED_EXAMPLES = [
+    "Pintest",
+    "OctoWS2811",
+]
+
 
 def get_examples() -> list[str]:
     response = httpx.get(ENDPOINT_INFO, timeout=4)
     response.raise_for_status()
-    out: list[str] = response.json()["examples"]
-    return sorted(out)
+    examples: list[str] = response.json()["examples"]
+    # filter out excluded examples
+    examples = [example for example in examples if example not in _EXCLUDED_EXAMPLES]
+    return sorted(examples)
 
 
 def _prompt_for_example() -> str:
