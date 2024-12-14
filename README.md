@@ -160,7 +160,7 @@ with Api.server() as server:
 
 ## Hot reload by default
 
-Once launched, the compiler will remain open, listening to changes and recompiling as necessary and hot-reloading the sketch into the current browser.
+Once launched, the compiler will remain open, listening to changes and recompiling as necessary, hot-reloading the sketch into the current browser.
 
 This style of development should be familiar to those doing web development.
 
@@ -169,19 +169,19 @@ This style of development should be familiar to those doing web development.
 If you launch `fastled` in the FastLED repo then this tool will automatically detect this and map the src directory into the
 host container. Whenever there are changes in the source code from the mapped directory, then these will be re-compiled
 on the next change or if you hit the space bar when prompted. Unlike a sketch folder, a re-compile on the FastLED src
-can be much longer, for example if you modify a header file.
+can be much longer, for example, if you modify a header file.
 
 ## Big Data in `/data` directory won't be round-tripped
 
 Huge blobs of data like video will absolutely kill the compile performance as these blobs would normally have to be shuffled
 back and forth. Therefore a special directory `data/` is implicitly used to hold this blob data. Any data in this directory
-will be replaced with a stub containing the size and hash of the file during upload. On download these stubs are swapped back
+will be replaced with a stub containing the size and hash of the file during upload. On download, these stubs are swapped back
 with their originals during decompression.
 
-The wasm compiler will recognize all files in the `data/` directory and generate a `files.json` manifest and can be used
+The wasm compiler will recognize all files in the `data/` directory and generate a `files.json` manifest which can be used
 in your wasm sketch using an emulated SD card system mounted at `/data/` on the SD Card. In order to increase load speed, these
-files will be asynchroniously streamed into the running sketch instance during runtime. Files named with *.json, *.csv, *.txt will be
-immediately injected in the app before setup() is called and can be used immediatly in setup() in their entirety.
+files will be asynchronously streamed into the running sketch instance during runtime. Files named with *.json, *.csv, *.txt will be
+immediately injected in the app before setup() is called and can be used immediately in setup() in their entirety.
 
 All other files will be streamed in. The `Video` element in FastLED is designed to gracefully handle missing data streamed in through
 the file system.
@@ -190,30 +190,30 @@ For an example of how to use this see `examples/SdCard` which is fully wasm comp
 
 ## Compile Speed
 
-The compile speeds for this compiler have been optimized pretty much to the max. There are three compile settings available to the user. The default is `--quick`. Aggressive optimizations are done with `--release` which will aggressively optimize for size. The speed difference between `--release` and `--quick` seems negligable. But `--release` will produce a ~1/3 smaller binary. There is also `--debug`, which will include symbols necessary for debugging and getting the C++ function symbols working correctly in the browser during step through debugging. It works better than expected, but don't expect to have gdb or msvc debugger level of debugging experience.
+There are three compile settings available to the user. The default is `--quick`. Aggressive optimizations are done with `--release` which will optimize for size, although the speed difference between `--release` and `--quick` seems negligible. But `--release` will produce a ~1/3 smaller binary. There is also `--debug`, which will include symbols necessary for debugging and getting the C++ function symbols working correctly in the browser during step-through debugging. In my personal tests it works better than expected, but don't expect to have gdb or msvc debugger level of the debugging experience.
 
-We use `ccache` to cache object files. This seems actually help a lot and is better than platformio's method of tracking what needs to be rebuilt. This works as a two tier cache system. What Platformio misses will be covered by ccache's more advanced file changing system.
+We use `ccache` to cache object files. This seems actually help a lot and is better than Platformio's method of tracking what needs to be rebuilt. This works as a two-tier cache system. What Platformio misses will be covered by ccache's more advanced file changing system.
 
-The compilation to wasm will happen under a lock. Removing this lock requires removing the platformio toolchain as the compiler backend which enforces it's own internal lock preventing parallel use.
+The compilation to wasm will happen under a lock. Removing this lock requires removing the Platformio toolchain as the compiler backend which enforces its own internal lock preventing parallel use.
 
 ## Sketch Cache
 
-Sketchs are aggressively finger-printed and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
-printing while the actual source files are sent to compiler to preserve line numbers and file names.
+Sketches are aggressively fingerprinted and stored in a cache. White space, comments, and other superficial data will be stripped out during pre-processing and minimization for fingerprinting. This source file decimation is only used for finger
+printing while the actual source files are sent to the compiler to preserve line numbers and file names.
 
-This pre-processing done is done via gcc and special regex's and will happen without a lock. This will allow you to have extremely quick recompiles for whitespace and changes in comments even if the compiler is executing under it's lock.
+This pre-processing done is done via gcc and special regex's and will happen without a lock. This will allow you to have extremely quick recompiles for whitespace and changes in comments.
 
 ## Local compiles
 
-If the web-compiler get's congested then it's recommend that you run the compiler locally. This requires docker and will be invoked whenever you pass in `--local`. This will first pull the most recent Docker image of the Fastled compiler, launching a webserver and then connecting to it with the client once it's been up.
+If the web compiler gets congested then it's recommended that you run the compiler locally. This requires docker and will be invoked whenever you pass in `--local`. This will first pull the most recent Docker image of the Fastled compiler, launch a webserver, and then connect to it with the client once it's been up.
 
 ## Auto updates
 
-In server mode the git repository will be cloned as a side repo and then periodically updated and rsync'd to the src directory. This allows a long running instance to stay updated.
+In server mode, the git repository will be cloned as a side repo and then periodically updated and rsync'd to the src directory. This allows a long-running instance to stay updated.
 
-## Compatibility with Arduino sketchs
+## Compatibility with Arduino sketches
 
-The compatibility is actually pretty good. Most simple sketchs should compile out of the box. Even some of the avr platform includes are stubbed out to make it work. The familiar `digitalWrite()`, `Serial.println()` and other common functions work. Although `digitalRead()` will always return 0 and `analogRead()` will return random numbers.
+The compatibility is pretty good. Most simple sketches should compile out of the box. Even some of the AVR platforms are stubbed out to make it work. For Arduino, the familiar `digitalWrite()`, `Serial.println()`, and other common functions work. Although `digitalRead()` will always return 0 and `analogRead()` will return random numbers.
 
 ### Faqs
 
@@ -221,17 +221,17 @@ Q: How often is the docker image updated?
 A: It's scheduled for rebuild once a day at 3am Pacific time, and also on every change to this repo.
 
 Q: How can I run my own cloud instance of the FastLED wasm compiler?
-A: Render.com (which fastled is hosted on) or DigialOcean can accept a github repo and auto-build the docker image.
+A: Render.com (which fastled is hosted on) or DigialOcean can accept a GitHub repo and auto-build the docker image.
 
 Q: Why does FastLED tend to become choppy when the browser is in the background?
 A: FastLED Wasm currently runs on the main thread and therefor Chrome will begin throttling the event loop when the browser is not in the foreground. The solution to this is to move FastLED to a web worker where it will get a background thread that Chrome / Firefox won't throttle.
 
 Q: Why does a long `delay()` cause the browser to freeze and become sluggish?
-A: `delay()` will block `loop()` which blocks the main thread of the browser. The solution is a webworker which will not affect main thread performance of the browser.
+A: `delay()` will block `loop()` which blocks the main thread of the browser. The solution is a webworker which will not affect the main thread performance of the browser.
 
 
 Q: How can I get the compiled size of my FastLED sketch smaller?
-A: A big chunk of space is being used by unnecessary javascript `emscripten` is  bundling. This can be tweeked by the wasm_compiler_settings.py file in the FastLED repo.
+A: A big chunk of space is being used by unnecessary javascript `emscripten` bundling. The wasm_compiler_settings.py file in the FastLED repo can tweak this.
 
 # Revisions
   
@@ -239,7 +239,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` is 
   * 1.1.52 - Add linux-arm
   * 1.1.49 - Try again.
   * 1.1.46 - Add mac x86 exe
-  * 1.1.45 - Aniother try for web publishing from github.
+  * 1.1.45 - Another try for web publishing from github.
   * 1.1.42 - Second test for web publishing from github.
   * 1.1.41 - Platform executable (through pyinstaller) now enabled.
   * 1.1.40 - Remove `sketch_directory` from Api object. This was only needed before we had a client/server architecture.
