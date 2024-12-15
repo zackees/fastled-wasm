@@ -88,9 +88,6 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Check FASTLED_PFX_B64 size
-      run: python -c "print(len(os.environ['FASTLED_PFX_B64']))"
-
     - name: Install UV
       run: pip install uv
 
