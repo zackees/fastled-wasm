@@ -308,9 +308,20 @@ def run_client_server(args: argparse.Namespace) -> int:
     build_mode: BuildMode = BuildMode.from_args(args)
 
     if not force_compile and not looks_like_sketch_directory(directory):
-        print(
-            "Error: Not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
-        )
+        # if there is only one directory in the sketch directory, use that
+        found_valid_child = False
+        if len(list(directory.iterdir())) == 1:
+            child_dir = next(directory.iterdir())
+            if looks_like_sketch_directory(child_dir):
+                found_valid_child = True
+                print(
+                    f"The selected directory is not a valid FastLED sketch directory, the child directory {child_dir} looks like a sketch directory, using that instead."
+                )
+                directory = child_dir
+        if not found_valid_child:
+            print(
+                f"Error: {directory} is not a valid FastLED sketch directory, if you are sure it is, use --force-compile"
+            )
         return 1
 
     # If not explicitly using web compiler, check Docker installation

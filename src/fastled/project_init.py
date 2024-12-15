@@ -51,6 +51,7 @@ def project_init(
     """
     host = host or DEFAULT_URL
     outputdir = Path(outputdir) if outputdir is not None else Path("fastled")
+    outputdir.mkdir(exist_ok=True, parents=True)
     if example == "PROMPT" or example is None:
         try:
             example = _prompt_for_example()
