@@ -28,31 +28,33 @@ body {
     position: fixed;
     left: 0;
     top: 0;
-    width: 250px;  /* Full width of nav pane */
+    width: 250px;
     height: 100%;
     z-index: 999;
+    background-color: transparent; /* Add this to ensure it's clickable */
 }
 
 .nav-pane {
     position: fixed;
-    left: 0;        /* Always positioned at left edge */
+    left: 0;
     top: 0;
     width: 250px;
     height: 100%;
     background-color: #1E1E1E;
     padding: 20px;
     border-right: 1px solid #333;
-    opacity: 0;     /* Start fully transparent */
-    transition: opacity 0.3s ease;  /* Fade transition */
+    opacity: 0;
+    transition: opacity .5s ease 1s; /* Default to slow fade out */
     z-index: 1000;
     box-sizing: border-box;
-    pointer-events: none;  /* Allow hover events to pass through when hidden */
+    pointer-events: none;
+    display: block; /* Add this to ensure it's always in the DOM */
 }
 
-.nav-trigger:hover + .nav-pane,
-.nav-pane:hover {
-    opacity: 1;     /* Fade to fully visible */
-    pointer-events: auto;  /* Re-enable interaction when visible */
+.nav-pane.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.3s ease 0s; /* Quick fade in */
 }
 
 .main-content {
@@ -122,6 +124,23 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                     iframe.src = this.getAttribute('href');
                 }});
             }});
+
+            // Navigation pane visibility handling
+            const navPane = document.querySelector('.nav-pane');
+            const navTrigger = document.querySelector('.nav-trigger');
+
+            function showNav() {{
+                navPane.classList.add('visible');
+            }}
+
+            function hideNav() {{
+                navPane.classList.remove('visible');
+            }}
+
+            navTrigger.addEventListener('mouseenter', showNav);
+            navPane.addEventListener('mouseenter', showNav);
+            navTrigger.addEventListener('mouseleave', hideNav);
+            navPane.addEventListener('mouseleave', hideNav);
         }});
     </script>
 </body>
