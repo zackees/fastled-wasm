@@ -5,6 +5,41 @@ from shutil import which, copytree, rmtree
 from pathlib import Path
 import subprocess
 
+INDEX_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastLED Examples</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .example-link {
+            display: block;
+            padding: 10px;
+            margin: 5px 0;
+            text-decoration: none;
+            color: #0066cc;
+        }
+        .example-link:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>FastLED Examples</h1>
+    {example_links}
+</body>
+</html>
+"""
+
 HERE = Path(__file__).parent.resolve()
 DOCS = HERE / "site"
 
@@ -40,16 +75,17 @@ def gen_index_html(outputdir: Path | None = None) -> None:
     outputdir = outputdir or DOCS
     assert outputdir.exists(), f"Output directory {outputdir} not found, you should run build_example first"
     index_html = outputdir / "index.html"
-    # scan the example folders and generate an index.html. Each example
-    # will be a link to the example's index.html
+    
     examples = [f for f in outputdir.iterdir() if f.is_dir()]
     examples = sorted(examples)
+    
+    example_links = '\n'.join(
+        f'    <a class="example-link" href="{example.name}/index.html">{example.name}</a>'
+        for example in examples
+    )
+    
     with open(index_html, "w") as f:
-        f.write("<html><body>\n")
-        f.write("<h1>FastLED Examples</h1>\n")
-        for example in examples:
-            f.write(f'<a href="{example.name}/index.html">{example.name}</a><br>\n')
-        f.write("</body></html>\n")
+        f.write(INDEX_TEMPLATE.format(example_links=example_links))
 
 
 
