@@ -102,13 +102,17 @@ jobs:
     - name: Decode and Sign Executable (Windows Only)
       if: matrix.os == 'windows-latest'
       run: |
-            echo "Decoding certificate..."
+            echo "Installing Windows SDK..."
+            choco install windows-sdk-10-version-19041 -y
+            RefreshEnv
+
+            echo Decoding PFX file...
             echo %FASTLED_PFX_B64% | certutil -decode - fastled.pfx
-
-            echo "Signing executable..."
+            
+            echo Signing executable...
             "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" sign /f fastled.pfx /p "%FASTLED_PFX_PASSWORD%" /fd sha256 ./dist/fastled.exe
-
-            echo "Verifying signature..."
+        
+            echo Verifying signature...
             "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" verify /pa /v ./dist/fastled.exe
       shell: cmd
 
