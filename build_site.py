@@ -43,18 +43,12 @@ body {
     background-color: #1E1E1E;
     padding: 20px;
     border-right: 1px solid #333;
-    opacity: 0;
-    transition: opacity .5s ease 1s; /* Default to slow fade out */
+    opacity: 1;
+    transition: opacity .5s ease;
     z-index: 1000;
     box-sizing: border-box;
-    pointer-events: none;
-    display: block; /* Add this to ensure it's always in the DOM */
-}
-
-.nav-pane.visible {
-    opacity: 1;
     pointer-events: auto;
-    transition: opacity 0.3s ease 0s; /* Quick fade in */
+    display: block;
 }
 
 .main-content {
@@ -130,17 +124,22 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
             const navTrigger = document.querySelector('.nav-trigger');
 
             function showNav() {{
-                navPane.classList.add('visible');
+                navPane.style.opacity = '1';
+                navPane.style.pointerEvents = 'auto';
             }}
 
             function hideNav() {{
-                navPane.classList.remove('visible');
+                navPane.style.opacity = '0';
+                navPane.style.pointerEvents = 'none';
             }}
 
             navTrigger.addEventListener('mouseenter', showNav);
             navPane.addEventListener('mouseenter', showNav);
             navTrigger.addEventListener('mouseleave', hideNav);
             navPane.addEventListener('mouseleave', hideNav);
+
+            // Add initial timeout to hide nav after 1 second
+            setTimeout(hideNav, 1000);
         }});
     </script>
 </body>
