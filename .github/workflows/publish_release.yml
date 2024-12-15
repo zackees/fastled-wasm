@@ -103,9 +103,11 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
             echo Decoding PFX file...
-            echo %FASTLED_PFX_B64% | python -c "import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" > fastled.pfx
+            echo %FASTLED_PFX_B64% > fastled.pfx.b64
 
-            
+            # Decode the base64 file and write the binary PFX
+            python -c "import base64; open('fastled.pfx', 'wb').write(base64.b64decode(open('fastled.pfx.b64', 'r').read()))"
+
             echo Signing executable...
             "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" sign /f fastled.pfx /p "%FASTLED_PFX_PASSWORD%" /fd sha256 ./dist/fastled.exe
         
