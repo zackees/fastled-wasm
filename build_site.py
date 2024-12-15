@@ -129,7 +129,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
             }}
 
             function hideNav() {{
-                navPane.style.opacity = '0';
+                navPane.style.opacity = '0.2';
                 navPane.style.pointerEvents = 'none';
             }}
 
