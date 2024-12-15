@@ -17,12 +17,12 @@ jobs:
     
     - name: Create index.html
       run: |
-        mkdir -p dist
-        echo '<html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>' > dist/index.html
+        mkdir -p site
+        echo '<html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>' > site/index.html
         
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./dist
+        publish_dir: ./site
         force_orphan: true    # This creates a new orphan branch each time
