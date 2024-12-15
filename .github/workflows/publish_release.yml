@@ -107,8 +107,8 @@ jobs:
       run: |
             echo Decoding PFX file...
 
-            rem Write the environment variable to the file using Python
-            python -c "import os; open('fastled.pfx.b64', 'w').write(os.environ['FASTLED_PFX_B64'])"
+            rem Write the secret directly to the file using Python
+            python -c "import os; open('fastled.pfx.b64', 'w').write(r'${{ secrets.FASTLED_PFX_B64 }}')"
 
             rem Decode the base64 file and write the binary PFX
             python -c "import base64; open('fastled.pfx', 'wb').write(base64.b64decode(open('fastled.pfx.b64', 'r').read()))"
@@ -116,7 +116,7 @@ jobs:
             dir
 
             echo Signing executable...
-            "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" sign /f fastled.pfx /p "%FASTLED_PFX_PASSWORD%" /fd sha256 ./dist/fastled.exe
+            "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" sign /f fastled.pfx /p "${{ secrets.FASTLED_PFX_PASSWORD }}" /fd sha256 ./dist/fastled.exe
         
             echo Verifying signature...
             "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" verify /pa /v ./dist/fastled.exe
