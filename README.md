@@ -22,10 +22,9 @@ This python app will compile your FastLED style sketches into html/js/wasm outpu
 
 Compile times are extremely fast, thanks to aggressive object caching for C++ and sketch fingerprinting with a zip file cache. Recompilation of sketch files with minimal changes will occure in less than a second.
 
-By default the web compiler will always be used unless that user specifies `--local`, in which case this compiler will invoke docker to bring in a runtime necessary to run the compiler toolchain.
+If you have docker installed, the compiler will download the docker image and run a private local server on your machine. If you don't have Docker installed then the app will fall back to using the public web compiler.
 
-The local compiler will be much faster than the web version in most circumstances after the first compile. The web compiler
-has the advantage that as a persistant service the compile cache will remain much more up to date.
+The local compiler will be much faster than the web version in most circumstances after the first compile.
 
 # Demo
 
