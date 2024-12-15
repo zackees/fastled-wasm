@@ -143,15 +143,17 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                 checkmark.style.right = '10px';
                 checkmark.style.top = '50%';
                 checkmark.style.transform = 'translateY(-50%)';
-                checkmark.style.color = '#4CAF50';
+                checkmark.style.color = '#E0E0E0';
                 link.appendChild(checkmark);
             }});
             
             // Now load first example and show its checkmark
             if (links.length > 0) {{
-                iframe.src = links[0].getAttribute('href');
-                links[0].classList.add('active');
-                links[0].querySelector('.fa-check').style.display = 'inline-block';
+                // Try to find SdCard example first
+                let startLink = Array.from(links).find(link => link.textContent === 'SdCard') || links[0];
+                iframe.src = startLink.getAttribute('href');
+                startLink.classList.add('active');
+                startLink.querySelector('.fa-check').style.display = 'inline-block';
             }}
             
             // Add click handlers
