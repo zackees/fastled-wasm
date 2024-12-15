@@ -5,24 +5,21 @@ from shutil import which, copytree, rmtree
 from pathlib import Path
 import subprocess
 
-CSS_CONTENT = """body {
+CSS_CONTENT = """
+body {
     background-color: #121212;
     color: #E0E0E0;
     margin: 0;
-    padding: 20px;
+    padding: 0;
     font-family: 'Roboto Condensed', sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     min-height: 100vh;
-    max-width: 1000px;
-    margin: 0 auto;
+    display: grid;
+    grid-template-rows: auto 1fr;
 }
 
 h1 {
-    font-size: 6em;
-    margin-top: 10vh;
-    margin-bottom: 40px;
+    font-size: 4em;
+    margin: 20px 0;
     text-align: center;
     font-weight: 300;
     letter-spacing: 1px;
@@ -31,22 +28,28 @@ h1 {
     animation: continuousGlow 4s ease-in-out infinite;
 }
 
-@keyframes continuousGlow {
-    0% {
-        text-shadow: 0 0 5px rgba(224, 224, 224, 0.1);
-    }
-    25% {
-        text-shadow: 0 0 20px rgba(224, 224, 224, 0.3);
-    }
-    50% {
-        text-shadow: 0 0 30px rgba(224, 224, 224, 0.5);
-    }
-    75% {
-        text-shadow: 0 0 20px rgba(224, 224, 224, 0.3);
-    }
-    100% {
-        text-shadow: 0 0 5px rgba(224, 224, 224, 0.1);
-    }
+.content-wrapper {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    height: 100%;
+}
+
+.nav-pane {
+    background-color: #1E1E1E;
+    padding: 20px;
+    border-right: 1px solid #333;
+}
+
+.main-content {
+    padding: 20px;
+    height: 100%;
+}
+
+#example-frame {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background-color: #121212;
 }
 
 .example-link {
@@ -55,7 +58,7 @@ h1 {
     margin: 5px 0;
     text-decoration: none;
     color: #E0E0E0;
-    background-color: #1E1E1E;
+    background-color: #252525;
     border-radius: 5px;
     transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
@@ -63,6 +66,14 @@ h1 {
 .example-link:hover {
     background-color: #2E2E2E;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+@keyframes continuousGlow {
+    0% { text-shadow: 0 0 5px rgba(224, 224, 224, 0.1); }
+    25% { text-shadow: 0 0 20px rgba(224, 224, 224, 0.3); }
+    50% { text-shadow: 0 0 30px rgba(224, 224, 224, 0.5); }
+    75% { text-shadow: 0 0 20px rgba(224, 224, 224, 0.3); }
+    100% { text-shadow: 0 0 5px rgba(224, 224, 224, 0.1); }
 }
 """
 
@@ -77,7 +88,32 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <h1>FastLED Examples</h1>
-    {example_links}
+    <div class="content-wrapper">
+        <nav class="nav-pane">
+            {example_links}
+        </nav>
+        <main class="main-content">
+            <iframe id="example-frame" title="Example Content"></iframe>
+        </main>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            const links = document.querySelectorAll('.example-link');
+            const iframe = document.getElementById('example-frame');
+            
+            // Load first example by default
+            if (links.length > 0) {{
+                iframe.src = links[0].getAttribute('href');
+            }}
+            
+            links.forEach(link => {{
+                link.addEventListener('click', function(e) {{
+                    e.preventDefault();
+                    iframe.src = this.getAttribute('href');
+                }});
+            }});
+        }});
+    </script>
 </body>
 </html>
 """
