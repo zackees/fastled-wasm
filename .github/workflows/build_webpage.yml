@@ -14,6 +14,13 @@ jobs:
     
     steps:
     - uses: actions/checkout@v3
+
+    - name: Install UV
+      run: pip install uv
+
+    - name: Install dependencies
+      run: ./install
+      shell: bash
     
     - name: Create index.html
       run: |
