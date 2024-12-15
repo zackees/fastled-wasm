@@ -12,25 +12,25 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastLED Examples</title>
     <style>
-        body {
+        body {{
             font-family: Arial, sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
-        }
-        h1 {
+        }}
+        h1 {{
             color: #333;
-        }
-        .example-link {
+        }}
+        .example-link {{
             display: block;
             padding: 10px;
             margin: 5px 0;
             text-decoration: none;
             color: #0066cc;
-        }
-        .example-link:hover {
+        }}
+        .example-link:hover {{
             background-color: #f0f0f0;
-        }
+        }}
     </style>
 </head>
 <body>
