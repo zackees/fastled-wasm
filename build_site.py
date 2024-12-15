@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    Test.build_site(SITE, fast=args.fast)
+    Test.build_site(SITE, fast=args.fast, check=True)
 
 if __name__ == "__main__":
     main()

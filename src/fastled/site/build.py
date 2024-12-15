@@ -362,17 +362,36 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build(outputdir: Path, fast: bool | None = None) -> None:
+def build(outputdir: Path, fast: bool | None = None, check=False) -> list[Exception]:
     outputdir = outputdir
     fast = fast or False
+    errors: list[Exception] = []
 
     for example in EXAMPLES:
         example_dir = outputdir / example
         if not fast or not example_dir.exists():
-            build_example(example=example, outputdir=outputdir)
+            try:
+                build_example(example=example, outputdir=outputdir)
+            except Exception as e:
+                if check:
+                    raise
+                errors.append(e)
 
-    generate_css(outputdir=outputdir)
-    build_index_html(outputdir=outputdir)
+    try:
+        generate_css(outputdir=outputdir)
+    except Exception as e:
+        if check:
+            raise
+        errors.append(e)
+
+    try:
+        build_index_html(outputdir=outputdir)
+    except Exception as e:
+        if check:
+            raise
+        errors.append(e)
+
+    return errors
 
 
 def main() -> int:
