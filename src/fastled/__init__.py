@@ -7,6 +7,7 @@ from typing import Generator
 
 from .compile_server import CompileServer
 from .live_client import LiveClient
+from .site.build import build
 from .types import BuildMode, CompileResult, CompileServerError
 
 __version__ = "1.1.67"
@@ -116,6 +117,11 @@ class Test:
             host = host.url()
 
         return test_examples(examples=examples, host=host)
+
+    @staticmethod
+    def build_site(outputdir: Path, fast: bool | None = None):
+        """Builds the FastLED compiler site."""
+        build(outputdir, fast=fast)
 
 
 __all__ = [
