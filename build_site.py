@@ -19,9 +19,10 @@ body {
 }
 
 .content-wrapper {
-    position: relative;  /* Changed from grid to relative positioning */
+    position: relative;
     width: 100%;
     height: 100vh;
+    overflow-x: hidden;
 }
 
 .nav-trigger {
@@ -31,7 +32,7 @@ body {
     width: 250px;
     height: 100%;
     z-index: 999;
-    background-color: transparent; /* Add this to ensure it's clickable */
+    background-color: transparent;
 }
 
 .nav-pane {
@@ -54,7 +55,7 @@ body {
 .main-content {
     width: 100%;
     height: 100%;
-    padding: 0;         /* Remove padding */
+    padding: 0;
     overflow: hidden;
 }
 
@@ -81,6 +82,63 @@ body {
     background-color: #2E2E2E;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
+
+@media (max-width: 768px) {
+    .nav-trigger {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        width: 40px;
+        height: 40px;
+        z-index: 1001;
+        background-color: #252525;
+        border-radius: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+    }
+
+    /* Hamburger icon */
+    .nav-trigger::before {
+        content: '===';
+        color: #E0E0E0;
+        font-size: 20px;
+        font-weight: bold;
+        letter-spacing: -2px;  /* Bring the equals signs closer together */
+    }
+
+    .nav-pane {
+        position: fixed;
+        left: 10px;
+        top: 60px;  /* Position below trigger button */
+        width: 250px;  /* Fixed width dropdown */
+        height: auto;
+        background-color: rgba(30, 30, 30, 0.95);
+        border-radius: 5px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        transform: translateY(-20px);
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .nav-pane.visible {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .example-link {
+        margin: 5px 10px;
+        padding: 15px 10px;
+        border-radius: 5px;
+    }
+
+    .example-link:last-child {
+        margin-bottom: 10px;
+    }
+}
 """
 
 INDEX_TEMPLATE = """<!DOCTYPE html>
@@ -106,6 +164,8 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
         document.addEventListener('DOMContentLoaded', function() {{
             const links = document.querySelectorAll('.example-link');
             const iframe = document.getElementById('example-frame');
+            const navPane = document.querySelector('.nav-pane');
+            const navTrigger = document.querySelector('.nav-trigger');
             
             // Load first example by default
             if (links.length > 0) {{
@@ -116,30 +176,75 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                 link.addEventListener('click', function(e) {{
                     e.preventDefault();
                     iframe.src = this.getAttribute('href');
+                    if (isMobile()) {{
+                        hideNav();  // Hide nav after selection on mobile
+                    }}
                 }});
             }});
 
-            // Navigation pane visibility handling
-            const navPane = document.querySelector('.nav-pane');
-            const navTrigger = document.querySelector('.nav-trigger');
+            function isMobile() {{
+                return window.innerWidth <= 768;
+            }}
 
             function showNav() {{
-                navPane.style.opacity = '1';
-                navPane.style.pointerEvents = 'auto';
+                if (isMobile()) {{
+                    navPane.classList.add('visible');
+                }} else {{
+                    navPane.style.opacity = '1';
+                    navPane.style.pointerEvents = 'auto';
+                }}
             }}
 
             function hideNav() {{
-                navPane.style.opacity = '0.2';
-                navPane.style.pointerEvents = 'none';
+                if (isMobile()) {{
+                    navPane.classList.remove('visible');
+                }} else {{
+                    navPane.style.opacity = '0.1';
+                    navPane.style.pointerEvents = 'none';
+                }}
             }}
 
-            navTrigger.addEventListener('mouseenter', showNav);
-            navPane.addEventListener('mouseenter', showNav);
-            navTrigger.addEventListener('mouseleave', hideNav);
-            navPane.addEventListener('mouseleave', hideNav);
+            function toggleNav(e) {{
+                e.stopPropagation();
+                if (navPane.classList.contains('visible')) {{
+                    hideNav();
+                }} else {{
+                    showNav();
+                }}
+            }}
 
-            // Add initial timeout to hide nav after 1 second
-            setTimeout(hideNav, 1000);
+            // Mobile-specific handlers
+            if (isMobile()) {{
+                navTrigger.addEventListener('click', toggleNav);
+                
+                // Close menu when clicking outside
+                document.addEventListener('click', (e) => {{
+                    if (!navPane.contains(e.target) && !navTrigger.contains(e.target)) {{
+                        hideNav();
+                    }}
+                }});
+            }} else {{
+                // Desktop hover behavior
+                navTrigger.addEventListener('mouseenter', showNav);
+                navPane.addEventListener('mouseenter', showNav);
+                navPane.addEventListener('mouseleave', hideNav);
+                navTrigger.addEventListener('mouseleave', hideNav);
+            }}
+
+            // Handle resize events
+            window.addEventListener('resize', () => {{
+                if (!isMobile()) {{
+                    navPane.classList.remove('visible');
+                    navPane.style.transform = 'none';
+                }}
+            }});
+            
+            // Initial state
+            if (isMobile()) {{
+                hideNav();
+            }} else {{
+                setTimeout(hideNav, 1000);
+            }}
         }});
     </script>
 </body>
