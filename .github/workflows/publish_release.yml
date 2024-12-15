@@ -139,11 +139,17 @@ jobs:
       run: |
         mkdir release
         # Rename files with platform-specific names
-        [ -f artifacts/fastled-Windows-X64/fastled.exe ] && cp artifacts/fastled-Windows-X64/fastled.exe release/fastled-windows-x64.exe
-        [ -f artifacts/fastled-Linux-X64/fastled ] && cp artifacts/fastled-Linux-X64/fastled release/fastled-linux-x64
-        [ -f artifacts/fastled-Linux-ARM64/fastled ] && cp artifacts/fastled-Linux-ARM64/fastled release/fastled-linux-arm64
-        [ -f artifacts/fastled-macOS-ARM64/fastled ] && cp artifacts/fastled-macOS-ARM64/fastled release/fastled-macos-arm64
-        [ -f artifacts/fastled-macOS-X64/fastled ] && cp artifacts/fastled-macOS-X64/fastled release/fastled-macos-x64
+        mkdir -p release/windows-x64
+        [ -f artifacts/fastled-Windows-X64/fastled.exe ] && cp artifacts/fastled-Windows-X64/fastled.exe release/windows-x64/fastled.exe
+        mkdir -p release/linux-x64
+        [ -f artifacts/fastled-Linux-X64/fastled ] && cp artifacts/fastled-Linux-X64/fastled release/linux-x64/fastled
+        mkdir -p release/linux-arm64
+        [ -f artifacts/fastled-Linux-ARM64/fastled ] && cp artifacts/fastled-Linux-ARM64/fastled release/linux-arm64/fastled
+        mkdir -p release/macos-arm64
+        [ -f artifacts/fastled-macOS-ARM64/fastled ] && cp artifacts/fastled-macOS-ARM64/fastled release/macos-arm64/fastled
+        mkdir -p release/macos-x64
+        [ -f artifacts/fastled-macOS-X64/fastled ] && cp artifacts/fastled-macOS-X64/fastled release/macos-x64/fastled
+
         chmod +x release/fastled-*
 
     - name: Create Release
