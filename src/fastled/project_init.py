@@ -11,7 +11,8 @@ DEFAULT_EXAMPLE = "wasm"
 
 _EXCLUDED_EXAMPLES = [
     "Pintest",
-    "OctoWS2811",
+    "OctoWS2811", # Teensy specific
+    "SmartMatrix"  # Teensy specific
 ]
 
 
