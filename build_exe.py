@@ -29,7 +29,7 @@ def main():
     # Run pyinstaller with the same arguments as the bash script
     cmd = [
         "pyinstaller",
-        "src/fastled/app.py",
+        "src/fastled/cli.py",
         "--onefile",
         "--clean",
         "--argv-emulation",

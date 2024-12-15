@@ -57,6 +57,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Note that the entry point for the exe is in cli.py
     try:
         sys.exit(main())
     except KeyboardInterrupt:
