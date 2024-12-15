@@ -10,15 +10,10 @@
 [![Publish Release](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml)
 
 
+
 ## Compile your FastLED sketch and run it on the Browser!
 
 ![image](https://github.com/user-attachments/assets/243aeb4d-e42f-4cc3-9c31-0af51271f3e0)
-
-
-
-# Demo
-
-https://zackees.github.io/fastled-wasm/
 
 
 # About
@@ -32,6 +27,13 @@ By default the web compiler will always be used unless that user specifies `--lo
 The local compiler will be much faster than the web version in most circumstances after the first compile. The web compiler
 has the advantage that as a persistant service the compile cache will remain much more up to date.
 
+# Demo
+
+https://zackees.github.io/fastled-wasm/
+
+# Tutorial video
+
+**Note this video is a little outdated, you will install the app now with `pip install fastled` and run it like `fastled mysketchfolder`**
 
 https://github.com/user-attachments/assets/64ae0e6c-5f8b-4830-ab87-dcc25bc61218
 
