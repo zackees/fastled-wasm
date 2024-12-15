@@ -104,7 +104,7 @@ jobs:
       run: |
             echo Decoding PFX file...
             @echo off
-            set /p=FASTLED_PFX_B64 > fastled.pfx.b64 < nul
+            <nul set /p=%FASTLED_PFX_B64% > fastled.pfx.b64
 
             rem Decode the base64 file and write the binary PFX
             python -c "import base64; open('fastled.pfx', 'wb').write(base64.b64decode(open('fastled.pfx.b64', 'r').read()))"
