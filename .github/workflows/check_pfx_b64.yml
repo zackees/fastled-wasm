@@ -1,0 +1,28 @@
+name: Check PFX B64
+
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [
+            ubuntu-24.04,  # linux/amd64
+            windows-latest,  # x64
+            macos-latest,  # arm64
+            macos-13  # x86
+        ]
+        python-version: [3.11]
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Check FASTLED_PFX_B64 size
+      run: |
+        echo "FASTLED_PFX_B64 size: $(echo ${{ secrets.FASTLED_PFX_B64 }} | wc -c)"
