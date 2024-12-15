@@ -7,6 +7,26 @@ from pathlib import Path
 import subprocess
 
 CSS_CONTENT = """
+.splash-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #121212;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    transition: opacity 0.5s ease-out;
+}
+
+.splash-text {
+    font-size: 48px;
+    color: #E0E0E0;
+    font-weight: bold;
+}
+
 body {
     background-color: #121212;
     color: #E0E0E0;
@@ -29,8 +49,7 @@ body {
     position: fixed;
     left: 10px;
     top: 10px;
-    width: 40px;
-    height: 40px;
+    padding: 8px 16px;
     z-index: 1001;
     background-color: #252525;
     border-radius: 5px;
@@ -38,12 +57,8 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-}
-
-/* Hamburger icon */
-.nav-trigger i {
     color: #E0E0E0;
-    font-size: 24px;
+    font-size: 16px;
 }
 
 .nav-pane {
@@ -117,8 +132,11 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
+    <div class="splash-screen">
+        <div class="splash-text">FastLED</div>
+    </div>
     <div class="content-wrapper">
-        <div class="nav-trigger"><i class="fas fa-bars"></i></div>
+        <div class="nav-trigger">Examples</div>
         <nav class="nav-pane">
             {example_links}
         </nav>
@@ -128,6 +146,17 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {{
+            const splashScreen = document.querySelector('.splash-screen');
+    
+            // Wait for page load plus 1 second before fading out
+            window.addEventListener('load', () => {{
+                setTimeout(() => {{
+                    splashScreen.style.opacity = '0';
+                    setTimeout(() => {{
+                        splashScreen.style.display = 'none';
+                    }}, 500); // Remove from DOM after fade completes
+                }}, 1000); // Wait 1 second after load
+            }});
             const links = document.querySelectorAll('.example-link');
             const iframe = document.getElementById('example-frame');
             const navPane = document.querySelector('.nav-pane');
