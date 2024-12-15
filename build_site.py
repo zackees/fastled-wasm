@@ -36,8 +36,24 @@ def build_example(example: str, outputdir: Path | None = None) -> None:
     assert (example_dir / "fastled.wasm").exists()
 
 
-def main() -> int:
+def gen_index_html(outputdir: Path | None = None) -> None:
+    outputdir = outputdir or DOCS
+    assert outputdir.exists(), f"Output directory {outputdir} not found, you should run build_example first"
+    index_html = outputdir / "index.html"
+    # scan the example folders and generate an index.html. Each example
+    # will be a link to the example's index.html
+    examples = [f for f in outputdir.iterdir() if f.is_dir()]
+    examples = sorted(examples)
+    with open(index_html, "w") as f:
+        f.write("<html><body>\n")
+        f.write("<h1>FastLED Examples</h1>\n")
+        for example in examples:
+            f.write(f'<a href="{example.name}/index.html">{example.name}</a><br>\n')
+        f.write("</body></html>\n")
 
+
+
+def main() -> int:
     for example in EXAMPLES:
         build_example(example)
     return 0
