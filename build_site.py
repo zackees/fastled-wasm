@@ -5,33 +5,34 @@ from shutil import which, copytree, rmtree
 from pathlib import Path
 import subprocess
 
+CSS_CONTENT = """body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+h1 {
+    color: #333;
+}
+.example-link {
+    display: block;
+    padding: 10px;
+    margin: 5px 0;
+    text-decoration: none;
+    color: #0066cc;
+}
+.example-link:hover {
+    background-color: #f0f0f0;
+}
+"""
+
 INDEX_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastLED Examples</title>
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        h1 {{
-            color: #333;
-        }}
-        .example-link {{
-            display: block;
-            padding: 10px;
-            margin: 5px 0;
-            text-decoration: none;
-            color: #0066cc;
-        }}
-        .example-link:hover {{
-            background-color: #f0f0f0;
-        }}
-    </style>
+    <link rel="stylesheet" href="index.css">
 </head>
 <body>
     <h1>FastLED Examples</h1>
@@ -71,6 +72,12 @@ def build_example(example: str, outputdir: Path | None = None) -> None:
     assert (example_dir / "fastled.wasm").exists()
 
 
+def generate_css(outputdir: Path | None = None) -> None:
+    outputdir = outputdir or DOCS
+    css_file = outputdir / "index.css"
+    with open(css_file, "w") as f:
+        f.write(CSS_CONTENT)
+
 def build_index_html(outputdir: Path | None = None) -> None:
     outputdir = outputdir or DOCS
     assert outputdir.exists(), f"Output directory {outputdir} not found, you should run build_example first"
@@ -92,6 +99,7 @@ def build_index_html(outputdir: Path | None = None) -> None:
 def main() -> int:
     for example in EXAMPLES:
         build_example(example)
+    generate_css()
     build_index_html()
     return 0
 
