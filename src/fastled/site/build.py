@@ -298,11 +298,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-EXAMPLES = [
-    "wasm",
-    "Chromancer",
-    "SdCard",
-]
+EXAMPLES = ["wasm", "Chromancer", "SdCard", "NoiseRing", "LuminescentGrand", "Water"]
 
 
 def _exec(cmd: str) -> None:
