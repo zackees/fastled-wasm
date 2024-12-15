@@ -33,6 +33,7 @@ body {
 .main-content {
     padding: 20px;
     height: 100%;
+    overflow: hidden;  /* Prevent main content from scrolling */
 }
 
 #example-frame {
@@ -40,6 +41,7 @@ body {
     height: 100%;
     border: none;
     background-color: #121212;
+    overflow: auto;    /* Enable scrolling in iframe */
 }
 
 .example-link {
@@ -156,15 +158,16 @@ def build_index_html(outputdir: Path | None = None) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Build FastLED example site')
-    parser.add_argument('--thin', action='store_true', 
-                       help='Skip regenerating examples, only rebuild index.html and CSS')
+    parser.add_argument('--fast', action='store_true', 
+                       help='Skip regenerating existing examples, only rebuild index.html and CSS')
     return parser.parse_args()
 
 def main() -> int:
     args = parse_args()
     
-    if not args.thin:
-        for example in EXAMPLES:
+    for example in EXAMPLES:
+        example_dir = DOCS / example
+        if not args.fast or not example_dir.exists():
             build_example(example)
     
     generate_css()
