@@ -41,11 +41,9 @@ body {
 }
 
 /* Hamburger icon */
-.nav-trigger::before {
-    content: '≡';  /* This is a triple bar character (Unicode: U+2261) */
+.nav-trigger i {
     color: #E0E0E0;
-    font-size: 28px;  /* Slightly larger for better visibility */
-    font-weight: bold;
+    font-size: 24px;
 }
 
 .nav-pane {
@@ -103,60 +101,6 @@ body {
 .example-link:last-child {
     margin-bottom: 10px;
 }
-    .nav-trigger {
-        position: fixed;
-        left: 10px;
-        top: 10px;
-        width: 40px;
-        height: 40px;
-        z-index: 1001;
-        background-color: #252525;
-        border-radius: 5px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-    }
-
-    /* Hamburger icon */
-    .nav-trigger::before {
-        content: '≡';  /* This is a triple bar character (Unicode: U+2261) */
-        color: #E0E0E0;
-        font-size: 28px;  /* Slightly larger for better visibility */
-        font-weight: bold;
-    }
-
-    .nav-pane {
-        position: fixed;
-        left: 10px;
-        top: 60px;  /* Position below trigger button */
-        width: 250px;  /* Fixed width dropdown */
-        height: auto;
-        background-color: rgba(30, 30, 30, 0.95);
-        border-radius: 5px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-        transform: translateY(-20px);
-        opacity: 0;
-        pointer-events: none;
-        transition: transform 0.3s ease, opacity 0.3s ease;  /* Slightly longer transition */
-    }
-
-    .nav-pane.visible {
-        transform: translateY(0);
-        opacity: 1;
-        pointer-events: auto;
-    }
-
-    .example-link {
-        margin: 5px 10px;
-        padding: 15px 10px;
-        border-radius: 5px;
-    }
-
-    .example-link:last-child {
-        margin-bottom: 10px;
-    }
-}
 """
 
 INDEX_TEMPLATE = """<!DOCTYPE html>
@@ -166,11 +110,12 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastLED Examples</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
     <div class="content-wrapper">
-        <div class="nav-trigger"></div>
+        <div class="nav-trigger"><i class="fas fa-bars"></i></div>
         <nav class="nav-pane">
             {example_links}
         </nav>
