@@ -19,21 +19,47 @@ body {
 }
 
 .content-wrapper {
-    display: grid;
-    grid-template-columns: 250px 1fr;
+    position: relative;  /* Changed from grid to relative positioning */
+    width: 100%;
+    height: 100vh;
+}
+
+.nav-trigger {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 250px;  /* Full width of nav pane */
     height: 100%;
+    z-index: 999;
 }
 
 .nav-pane {
+    position: fixed;
+    left: 0;        /* Always positioned at left edge */
+    top: 0;
+    width: 250px;
+    height: 100%;
     background-color: #1E1E1E;
     padding: 20px;
     border-right: 1px solid #333;
+    opacity: 0;     /* Start fully transparent */
+    transition: opacity 0.3s ease;  /* Fade transition */
+    z-index: 1000;
+    box-sizing: border-box;
+    pointer-events: none;  /* Allow hover events to pass through when hidden */
+}
+
+.nav-trigger:hover + .nav-pane,
+.nav-pane:hover {
+    opacity: 1;     /* Fade to fully visible */
+    pointer-events: auto;  /* Re-enable interaction when visible */
 }
 
 .main-content {
-    padding: 20px;
+    width: 100%;
     height: 100%;
-    overflow: hidden;  /* Prevent main content from scrolling */
+    padding: 0;         /* Remove padding */
+    overflow: hidden;
 }
 
 #example-frame {
@@ -41,7 +67,7 @@ body {
     height: 100%;
     border: none;
     background-color: #121212;
-    overflow: auto;    /* Enable scrolling in iframe */
+    overflow: auto;
 }
 
 .example-link {
@@ -72,6 +98,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <div class="content-wrapper">
+        <div class="nav-trigger"></div>
         <nav class="nav-pane">
             {example_links}
         </nav>
