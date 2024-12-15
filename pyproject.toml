@@ -11,16 +11,16 @@ keywords = ["template-python-cmd"]
 license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
-    "docker",
-    "httpx",
-    "watchdog",
-    "livereload",
-    "download",
-    "filelock",
+    "docker>=7.1.0",
+    "httpx>=0.28.1",
+    "watchdog>=6.0.0",
+    "livereload>=2.7.0",
+    "download>=0.3.5",
+    "filelock>=3.16.1",
     "disklru>=2.0.1",
-    "appdirs",
-    "rapidfuzz",
-    "progress"
+    "appdirs>=1.4.4",
+    "rapidfuzz>=3.10.1",
+    "progress>=1.6"
 ]
 
 dynamic = ["version"]
