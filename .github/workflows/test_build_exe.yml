@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         os: [
-            ubuntu-latest,  # linux/amd64
+            ubuntu-24.04,  # linux/amd64
             windows-latest,  # x64
             macos-latest,  # arm64
             macos-13  # x86
@@ -41,7 +41,7 @@ jobs:
           ./dist/fastled --version
         fi
 
-        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+        if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
           ./dist/fastled --init wasm && ./dist/fastled --just-compile --local fastled/wasm
         fi
       

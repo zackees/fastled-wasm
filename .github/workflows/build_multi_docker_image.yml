@@ -12,7 +12,7 @@ env:
 
 jobs:
   check-if-changed:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
@@ -45,7 +45,7 @@ jobs:
   build:
     needs: check-if-changed
     if: needs.check-if-changed.outputs.should_run == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +98,7 @@ jobs:
             retention-days: 1
   
   merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs:
       - check-if-changed
       - build

@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   create-tag:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
@@ -67,12 +67,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux/amd64
           # Not available on GitHub Actions unless i run qemu
-          #- os: ubuntu-latest
+          #- os: ubuntu-24.04
           #  platform: ARM64
-          #  runs-on: ubuntu-latest-arm64
+          #  runs-on: ubuntu-24.04-arm64
           - os: windows-latest
             arch: X64
           - os: macos-latest  # arm64
@@ -122,7 +122,7 @@ jobs:
 
   create-release:
     needs: [create-tag, build-executables]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -157,7 +157,7 @@ jobs:
   publish-pypi:
     needs: [create-tag]
     if: needs.create-tag.outputs.should_release == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
 
