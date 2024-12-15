@@ -27,29 +27,47 @@ body {
 
 .nav-trigger {
     position: fixed;
-    left: 0;
-    top: 0;
-    width: 250px;
-    height: 100%;
-    z-index: 999;
-    background-color: transparent;
+    left: 10px;
+    top: 10px;
+    width: 40px;
+    height: 40px;
+    z-index: 1001;
+    background-color: #252525;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+/* Hamburger icon */
+.nav-trigger::before {
+    content: '===';
+    color: #E0E0E0;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: -2px;
 }
 
 .nav-pane {
     position: fixed;
-    left: 0;
-    top: 0;
+    left: 10px;
+    top: 60px;
     width: 250px;
-    height: 100%;
-    background-color: #1E1E1E;
-    padding: 20px;
-    border-right: 1px solid #333;
+    height: auto;
+    background-color: rgba(30, 30, 30, 0.95);
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+    transform: translateY(-20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.nav-pane.visible {
+    transform: translateY(0);
     opacity: 1;
-    transition: opacity .5s ease;
-    z-index: 1000;
-    box-sizing: border-box;
     pointer-events: auto;
-    display: block;
 }
 
 .main-content {
@@ -68,13 +86,13 @@ body {
 }
 
 .example-link {
+    margin: 5px 10px;
+    padding: 15px 10px;
+    border-radius: 5px;
     display: block;
-    padding: 10px;
-    margin: 5px 0;
     text-decoration: none;
     color: #E0E0E0;
     background-color: #252525;
-    border-radius: 5px;
     transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
 
@@ -83,7 +101,9 @@ body {
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 
-@media (max-width: 768px) {
+.example-link:last-child {
+    margin-bottom: 10px;
+}
     .nav-trigger {
         position: fixed;
         left: 10px;
@@ -176,87 +196,52 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                 link.addEventListener('click', function(e) {{
                     e.preventDefault();
                     iframe.src = this.getAttribute('href');
-                    if (isMobile()) {{
-                        hideNav();  // Hide nav after selection on mobile
-                    }}
+                    hideNav();  // Hide nav after selection
                 }});
             }});
 
-            function isMobile() {{
-                return window.innerWidth <= 768;
-            }}
-
             function showNav() {{
-                if (isMobile()) {{
-                    navPane.classList.add('visible');
-                }} else {{
-                    navPane.style.opacity = '1';
-                    navPane.style.pointerEvents = 'auto';
-                }}
+                navPane.classList.add('visible');
+                navPane.style.opacity = '1';
             }}
 
             function hideNav() {{
-                if (isMobile()) {{
-                    navPane.style.opacity = '0';  // Start fade out
-                    // Wait for fade before removing visible class
-                    setTimeout(() => {{
-                        navPane.classList.remove('visible');
-                    }}, 300);  // Match the transition duration from CSS
-                }} else {{
-                    navPane.style.opacity = '0.1';
-                    navPane.style.pointerEvents = 'none';
-                }}
+                navPane.style.opacity = '0';  // Start fade out
+                setTimeout(() => {{
+                    navPane.classList.remove('visible');
+                }}, 300);
             }}
 
-            function toggleNav(e) {{
+            // Click handlers for nav
+            navTrigger.addEventListener('click', (e) => {{
                 e.stopPropagation();
                 if (navPane.classList.contains('visible')) {{
                     hideNav();
                 }} else {{
                     showNav();
                 }}
-            }}
-
-            // Mobile-specific handlers
-            if (isMobile()) {{
-                navTrigger.addEventListener('click', (e) => {{
-                    e.stopPropagation();
-                    if (navPane.classList.contains('visible')) {{
-                        hideNav();
-                    }} else {{
-                        navPane.classList.add('visible');
-                        navPane.style.opacity = '1';
-                    }}
-                }});
-                
-                // Close menu when clicking outside
-                document.addEventListener('click', (e) => {{
-                    if (!navPane.contains(e.target) && !navTrigger.contains(e.target)) {{
-                        hideNav();
-                    }}
-                }});
-            }} else {{
-                // Desktop hover behavior
-                navTrigger.addEventListener('mouseenter', showNav);
-                navPane.addEventListener('mouseenter', showNav);
-                navPane.addEventListener('mouseleave', hideNav);
-                navTrigger.addEventListener('mouseleave', hideNav);
-            }}
-
-            // Handle resize events
-            window.addEventListener('resize', () => {{
-                if (!isMobile()) {{
-                    navPane.classList.remove('visible');
-                    navPane.style.transform = 'none';
-                }}
             }});
             
+            // Close menu when clicking anywhere in the document
+            document.addEventListener('click', (e) => {{
+                if (navPane.classList.contains('visible') && 
+                    !navPane.contains(e.target) && 
+                    !navTrigger.contains(e.target)) {{
+                    hideNav();
+                }}
+            }});
+
+            // Close when clicking iframe
+            iframe.addEventListener('load', () => {{
+                iframe.contentDocument?.addEventListener('click', () => {{
+                    if (navPane.classList.contains('visible')) {{
+                        hideNav();
+                    }}
+                }});
+            }});
+
             // Initial state
-            if (isMobile()) {{
-                hideNav();
-            }} else {{
-                setTimeout(hideNav, 1000);
-            }}
+            hideNav();
         }});
     </script>
 </body>
