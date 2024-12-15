@@ -98,6 +98,19 @@ jobs:
     - name: Build executable
       run: uv run build_exe.py
 
+    # Add signing step for Windows
+    - name: Decode and Sign Executable (Windows Only)
+      if: matrix.os == 'windows-latest'
+      run: |
+        # Decode the Base64-encoded certificate
+        echo ${{ secrets.FASTLED_PFX_B64 }} | base64 -d > fastled.pfx
+        
+        # Sign the executable
+        "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" sign /f fastled.pfx /p "${{ secrets.FASTLED_PFX_PASSWORD }}" /fd sha256 ./dist/fastled.exe
+
+        # Verify the signature
+        "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe" verify /pa /v ./dist/fastled.exe
+
     - name: Upload artifact
       uses: actions/upload-artifact@v3
       with:
