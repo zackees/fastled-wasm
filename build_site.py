@@ -91,7 +91,10 @@ body {
     color: #E0E0E0;
     background-color: #252525;
     transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    position: relative;
+    padding-right: 35px;  /* Make room for checkmark */
 }
+
 
 .example-link:hover {
     background-color: #2E2E2E;
@@ -130,14 +133,39 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
             const navPane = document.querySelector('.nav-pane');
             const navTrigger = document.querySelector('.nav-trigger');
             
-            // Load first example by default
+            // First add checkmarks to all links
+            links.forEach(link => {{
+                // Add the checkmark span to each link
+                const checkmark = document.createElement('i');
+                checkmark.className = 'fas fa-check';
+                checkmark.style.display = 'none';
+                checkmark.style.position = 'absolute';
+                checkmark.style.right = '10px';
+                checkmark.style.top = '50%';
+                checkmark.style.transform = 'translateY(-50%)';
+                checkmark.style.color = '#4CAF50';
+                link.appendChild(checkmark);
+            }});
+            
+            // Now load first example and show its checkmark
             if (links.length > 0) {{
                 iframe.src = links[0].getAttribute('href');
+                links[0].classList.add('active');
+                links[0].querySelector('.fa-check').style.display = 'inline-block';
             }}
             
+            // Add click handlers
             links.forEach(link => {{
                 link.addEventListener('click', function(e) {{
                     e.preventDefault();
+                    // Hide all checkmarks
+                    links.forEach(l => {{
+                        l.querySelector('.fa-check').style.display = 'none';
+                        l.classList.remove('active');
+                    }});
+                    // Show this checkmark
+                    this.querySelector('.fa-check').style.display = 'inline-block';
+                    this.classList.add('active');
                     iframe.src = this.getAttribute('href');
                     hideNav();  // Hide nav after selection
                 }});
