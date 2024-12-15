@@ -1,6 +1,7 @@
 
 
 import os
+import argparse
 from shutil import which, copytree, rmtree
 from pathlib import Path
 import subprocess
@@ -14,18 +15,7 @@ body {
     font-family: 'Roboto Condensed', sans-serif;
     min-height: 100vh;
     display: grid;
-    grid-template-rows: auto 1fr;
-}
-
-h1 {
-    font-size: 4em;
-    margin: 20px 0;
-    text-align: center;
-    font-weight: 300;
-    letter-spacing: 1px;
-    line-height: 1.2;
-    position: relative;
-    animation: continuousGlow 4s ease-in-out infinite;
+    grid-template-rows: 1fr;
 }
 
 .content-wrapper {
@@ -67,14 +57,6 @@ h1 {
     background-color: #2E2E2E;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
-
-@keyframes continuousGlow {
-    0% { text-shadow: 0 0 5px rgba(224, 224, 224, 0.1); }
-    25% { text-shadow: 0 0 20px rgba(224, 224, 224, 0.3); }
-    50% { text-shadow: 0 0 30px rgba(224, 224, 224, 0.5); }
-    75% { text-shadow: 0 0 20px rgba(224, 224, 224, 0.3); }
-    100% { text-shadow: 0 0 5px rgba(224, 224, 224, 0.1); }
-}
 """
 
 INDEX_TEMPLATE = """<!DOCTYPE html>
@@ -87,7 +69,6 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
-    <h1>FastLED Examples</h1>
     <div class="content-wrapper">
         <nav class="nav-pane">
             {example_links}
@@ -173,9 +154,19 @@ def build_index_html(outputdir: Path | None = None) -> None:
 
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Build FastLED example site')
+    parser.add_argument('--thin', action='store_true', 
+                       help='Skip regenerating examples, only rebuild index.html and CSS')
+    return parser.parse_args()
+
 def main() -> int:
-    for example in EXAMPLES:
-        build_example(example)
+    args = parse_args()
+    
+    if not args.thin:
+        for example in EXAMPLES:
+            build_example(example)
+    
     generate_css()
     build_index_html()
     return 0
