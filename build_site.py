@@ -42,11 +42,10 @@ body {
 
 /* Hamburger icon */
 .nav-trigger::before {
-    content: '===';
+    content: '≡';  /* This is a triple bar character (Unicode: U+2261) */
     color: #E0E0E0;
-    font-size: 20px;
+    font-size: 28px;  /* Slightly larger for better visibility */
     font-weight: bold;
-    letter-spacing: -2px;
 }
 
 .nav-pane {
@@ -121,11 +120,10 @@ body {
 
     /* Hamburger icon */
     .nav-trigger::before {
-        content: '===';
+        content: '≡';  /* This is a triple bar character (Unicode: U+2261) */
         color: #E0E0E0;
-        font-size: 20px;
+        font-size: 28px;  /* Slightly larger for better visibility */
         font-weight: bold;
-        letter-spacing: -2px;  /* Bring the equals signs closer together */
     }
 
     .nav-pane {
@@ -282,8 +280,9 @@ def build_example(example: str, outputdir: Path | None = None) -> None:
 def generate_css(outputdir: Path | None = None) -> None:
     outputdir = outputdir or DOCS
     css_file = outputdir / "index.css"
-    with open(css_file, "w") as f:
-        f.write(CSS_CONTENT)
+    #with open(css_file, "w") as f:
+    #    f.write(CSS_CONTENT, encoding="utf-8")
+    css_file.write_text(CSS_CONTENT, encoding="utf-8")
 
 def build_index_html(outputdir: Path | None = None) -> None:
     outputdir = outputdir or DOCS
