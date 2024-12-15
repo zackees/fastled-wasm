@@ -5,16 +5,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastled.compile_server import CompileServer
-from fastled.paths import PROJECT_ROOT
 from fastled.project_init import project_init
 from fastled.web_compile import CompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
-
-_USE_LOCALHOST = False
-_HOST = "http://localhost" if _USE_LOCALHOST else None
-_PROJECT_ROOT = PROJECT_ROOT.resolve()
 
 
 EXAMPLES = [

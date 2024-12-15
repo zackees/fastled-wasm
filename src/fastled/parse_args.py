@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
 
     if args.init:
         example = args.init if args.init is not True else None
-        args.directory = project_init(example)
+        args.directory = project_init(example, args.directory)
         print("\nInitialized FastLED project in", args.directory)
         print(f"Use 'fastled {args.directory}' to compile the project.")
         sys.exit(0)
