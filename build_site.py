@@ -1,7 +1,7 @@
 import argparse
 
 from pathlib import Path
-from fastled.site.build import build
+from fastled import Test
 
 HERE = Path(__file__).parent.resolve()
 SITE = HERE / "site"
@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    build(SITE, fast=args.fast)
+    Test.build_site(SITE, fast=args.fast)
 
 if __name__ == "__main__":
     main()
