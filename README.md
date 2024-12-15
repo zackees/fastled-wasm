@@ -236,6 +236,8 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 
 # Revisions
+
+  * 1.1.69 - Changed the binary name to `fastled.exe` instead of something like `fastled-windows-x64.exe`
   * 1.1.68 - Add a site builder to fastled.Test which generates a website with a bunch of demos. This is used to build the demo site automatically.
   * 1.1.67 - Pinned all the minimum versions of dependencies so we don't bind to an out of date py dep: https://github.com/zackees/fastled-wasm/issues/3
   * 1.1.61 - Excluded non compiling examples from the Test object as part of the api - no sense in having them if they won't compile.
