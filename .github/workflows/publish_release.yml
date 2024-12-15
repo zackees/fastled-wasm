@@ -153,3 +153,27 @@ jobs:
         files: release/*
         draft: false
         prerelease: false
+
+  publish-pypi:
+    needs: [create-tag]
+    if: needs.create-tag.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies for PyPI publishing
+      run: |
+        pip install build twine
+
+    - name: Build and Publish to PyPI
+      env:
+        TWINE_USERNAME: "__token__"
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: |
+        python -m build
+        python -m twine upload dist/*
