@@ -103,8 +103,9 @@ jobs:
       if: matrix.os == 'windows-latest'
       run: |
             echo Decoding PFX file...
-            @echo off
-            <nul set /p=%FASTLED_PFX_B64% > fastled.pfx.b64
+
+            rem Write the environment variable to the file using Python
+            python -c "import os; open('fastled.pfx.b64', 'w').write(os.environ['FASTLED_PFX_B64'])"
 
             rem Decode the base64 file and write the binary PFX
             python -c "import base64; open('fastled.pfx', 'wb').write(base64.b64decode(open('fastled.pfx.b64', 'r').read()))"
@@ -117,6 +118,7 @@ jobs:
             echo Verifying signature...
             "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" verify /pa /v ./dist/fastled.exe
       shell: cmd
+
 
     - name: Upload artifact
       uses: actions/upload-artifact@v3
