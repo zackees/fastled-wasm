@@ -12,6 +12,10 @@ Compiles an Arduino/Platformio sketch into a wasm binary that can be run directl
 [![Build Executables](https://github.com/zackees/fastled-wasm/actions/workflows/test_build_exe.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/test_build_exe.yml)
 [![Publish Release](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml)
 
+# Demo
+
+https://zackees.github.io/fastled-wasm/
+
 
 # About
 
@@ -27,9 +31,6 @@ has the advantage that as a persistant service the compile cache will remain muc
 
 https://github.com/user-attachments/assets/64ae0e6c-5f8b-4830-ab87-dcc25bc61218
 
-# Demo
-
-https://zackees.github.io/fastled-wasm/
 
 
 # Install
