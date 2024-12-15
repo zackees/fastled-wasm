@@ -120,7 +120,7 @@ body {
         transform: translateY(-20px);
         opacity: 0;
         pointer-events: none;
-        transition: transform 0.2s ease, opacity 0.2s ease;
+        transition: transform 0.3s ease, opacity 0.3s ease;  /* Slightly longer transition */
     }
 
     .nav-pane.visible {
@@ -197,7 +197,11 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 
             function hideNav() {{
                 if (isMobile()) {{
-                    navPane.classList.remove('visible');
+                    navPane.style.opacity = '0';  // Start fade out
+                    // Wait for fade before removing visible class
+                    setTimeout(() => {{
+                        navPane.classList.remove('visible');
+                    }}, 300);  // Match the transition duration from CSS
                 }} else {{
                     navPane.style.opacity = '0.1';
                     navPane.style.pointerEvents = 'none';
@@ -215,7 +219,15 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 
             // Mobile-specific handlers
             if (isMobile()) {{
-                navTrigger.addEventListener('click', toggleNav);
+                navTrigger.addEventListener('click', (e) => {{
+                    e.stopPropagation();
+                    if (navPane.classList.contains('visible')) {{
+                        hideNav();
+                    }} else {{
+                        navPane.classList.add('visible');
+                        navPane.style.opacity = '1';
+                    }}
+                }});
                 
                 // Close menu when clicking outside
                 document.addEventListener('click', (e) => {{
