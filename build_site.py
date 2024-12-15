@@ -24,7 +24,8 @@ CSS_CONTENT = """
 .splash-text {
     font-size: 48px;
     color: #E0E0E0;
-    font-weight: bold;
+    font-weight: 300;  /* Match the light weight */
+    font-family: 'Roboto Condensed', sans-serif;  /* Match the font family */
     opacity: 0;
     transition: opacity 0.5s ease-in;
 }
