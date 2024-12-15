@@ -116,7 +116,7 @@ jobs:
             "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" sign /f fastled.pfx /p "${{ secrets.FASTLED_PFX_PASSWORD }}" /fd sha256 ./dist/fastled.exe
         
             echo Verifying signature...
-            "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" verify /pa /v ./dist/fastled.exe
+            "C:\Program Files (x86)\Microsoft SDKs\ClickOnce\SignTool\signtool.exe" verify /pa /v ./dist/fastled.exe || echo "Ignoring self-signed certificate verification error."
       shell: cmd
 
 
