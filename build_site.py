@@ -7,40 +7,61 @@ from pathlib import Path
 import subprocess
 
 CSS_CONTENT = """
-.splash-screen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: #121212;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2000;
-    transition: opacity 0.5s ease-out;
-}
-
-.splash-text {
-    font-size: 14vw;
-    color: #E0E0E0;
-    font-weight: 300;  /* Match the light weight */
-    font-family: 'Roboto Condensed', sans-serif;  /* Match the font family */
-    opacity: 0;
-    transition: opacity 0.5s ease-in;
-}
-
-body {
-    background-color: #121212;
-    color: #E0E0E0;
+/* CSS Reset & Variables */
+*, *::before, *::after {
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
-    font-family: 'Roboto Condensed', sans-serif;
+}
+
+:root {
+    --color-background: #121212;
+    --color-surface: #252525;
+    --color-surface-transparent: rgba(30, 30, 30, 0.95);
+    --color-text: #E0E0E0;
+    --spacing-sm: 5px;
+    --spacing-md: 10px;
+    --spacing-lg: 15px;
+    --transition-speed: 0.3s;
+    --font-family: 'Roboto Condensed', sans-serif;
+    --nav-width: 250px;
+    --border-radius: 5px;
+}
+
+/* Base Styles */
+body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-family);
     min-height: 100vh;
     display: grid;
     grid-template-rows: 1fr;
 }
 
+/* Splash Screen */
+.splash-screen {
+    position: fixed;
+    inset: 0;
+    background-color: var(--color-background);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    transition: opacity var(--transition-speed) ease-out;
+}
+
+.splash-text {
+    font-size: 14vw;
+    color: var(--color-text);
+    font-weight: 300;
+    font-family: var(--font-family);
+    opacity: 0;
+    transition: opacity var(--transition-speed) ease-in;
+}
+
+/* Layout */
 .content-wrapper {
     position: relative;
     width: 100%;
@@ -48,35 +69,42 @@ body {
     overflow-x: hidden;
 }
 
+/* Navigation */
 .nav-trigger {
     position: fixed;
-    left: 10px;
-    top: 10px;
-    padding: 8px 16px;
+    left: var(--spacing-md);
+    top: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
     z-index: 1001;
-    background-color: #252525;
-    border-radius: 5px;
+    background-color: var(--color-surface);
+    border-radius: var(--border-radius);
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #E0E0E0;
+    color: var(--color-text);
     font-size: 16px;
+    transition: background-color var(--transition-speed) ease;
+}
+
+.nav-trigger:hover {
+    background-color: var(--color-surface-transparent);
 }
 
 .nav-pane {
     position: fixed;
-    left: 10px;
+    left: var(--spacing-md);
     top: 60px;
-    width: 250px;
+    width: var(--nav-width);
     height: auto;
-    background-color: rgba(30, 30, 30, 0.95);
-    border-radius: 5px;
+    background-color: var(--color-surface-transparent);
+    border-radius: var(--border-radius);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     transform: translateY(-20px);
     opacity: 0;
     pointer-events: none;
-    transition: transform 0.3s ease, opacity 0.3s ease;
+    transition: transform var(--transition-speed) ease,
+                opacity var(--transition-speed) ease;
 }
 
 .nav-pane.visible {
@@ -85,6 +113,7 @@ body {
     pointer-events: auto;
 }
 
+/* Main Content */
 .main-content {
     width: 100%;
     height: 100%;
@@ -96,31 +125,42 @@ body {
     width: 100%;
     height: 100%;
     border: none;
-    background-color: #121212;
+    background-color: var(--color-background);
     overflow: auto;
 }
 
+/* Example Links */
 .example-link {
-    margin: 5px 10px;
-    padding: 15px 10px;
-    border-radius: 5px;
+    margin: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-md);
+    border-radius: var(--border-radius);
     display: block;
     text-decoration: none;
-    color: #E0E0E0;
-    background-color: #252525;
-    transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    color: var(--color-text);
+    background-color: var(--color-surface);
+    transition: background-color var(--transition-speed) ease-in-out,
+                box-shadow var(--transition-speed) ease-in-out;
     position: relative;
-    padding-right: 35px;  /* Make room for checkmark */
+    padding-right: 35px;
 }
 
-
 .example-link:hover {
-    background-color: #2E2E2E;
-    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+    background-color: var(--color-surface-transparent);
+    box-shadow: var(--shadow-hover, 0 0 10px rgba(255, 255, 255, 0.1));
 }
 
 .example-link:last-child {
-    margin-bottom: 10px;
+    margin-bottom: var(--spacing-md);
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 """
 
