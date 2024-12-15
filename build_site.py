@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 
 HERE = Path(__file__).parent.resolve()
-DOCS = HERE / "docs"
+DOCS = HERE / "site"
 
 EXAMPLES = [
     "wasm",

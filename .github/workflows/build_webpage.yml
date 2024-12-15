@@ -24,8 +24,7 @@ jobs:
     
     - name: Create index.html
       run: |
-        mkdir -p site
-        echo '<html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>' > site/index.html
+        uv run build_site.py
         
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
