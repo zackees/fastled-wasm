@@ -25,6 +25,8 @@ CSS_CONTENT = """
     font-size: 48px;
     color: #E0E0E0;
     font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.5s ease-in;
 }
 
 body {
@@ -147,15 +149,22 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <script>
         document.addEventListener('DOMContentLoaded', function() {{
             const splashScreen = document.querySelector('.splash-screen');
-    
-            // Wait for page load plus 1 second before fading out
-            window.addEventListener('load', () => {{
-                setTimeout(() => {{
-                    splashScreen.style.opacity = '0';
+            const splashText = document.querySelector('.splash-text');
+            
+            // Wait for font to load
+            document.fonts.ready.then(() => {{
+                // Fade in the text
+                splashText.style.opacity = '1';
+                
+                // Wait for page load plus fade-in time before starting fade-out sequence
+                window.addEventListener('load', () => {{
                     setTimeout(() => {{
-                        splashScreen.style.display = 'none';
-                    }}, 500); // Remove from DOM after fade completes
-                }}, 1000); // Wait 1 second after load
+                        splashScreen.style.opacity = '0';
+                        setTimeout(() => {{
+                            splashScreen.style.display = 'none';
+                        }}, 500); // Remove from DOM after fade completes
+                    }}, 1500); // Wait for load + 1.5s (giving time for fade-in)
+                }});
             }});
             const links = document.querySelectorAll('.example-link');
             const iframe = document.getElementById('example-frame');
