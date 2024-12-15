@@ -6,23 +6,63 @@ from pathlib import Path
 import subprocess
 
 CSS_CONTENT = """body {
-    font-family: Arial, sans-serif;
-    max-width: 800px;
-    margin: 0 auto;
+    background-color: #121212;
+    color: #E0E0E0;
+    margin: 0;
     padding: 20px;
+    font-family: 'Roboto Condensed', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    max-width: 1000px;
+    margin: 0 auto;
 }
+
 h1 {
-    color: #333;
+    font-size: 6em;
+    margin-top: 10vh;
+    margin-bottom: 40px;
+    text-align: center;
+    font-weight: 300;
+    letter-spacing: 1px;
+    line-height: 1.2;
+    position: relative;
+    animation: continuousGlow 4s ease-in-out infinite;
 }
+
+@keyframes continuousGlow {
+    0% {
+        text-shadow: 0 0 5px rgba(224, 224, 224, 0.1);
+    }
+    25% {
+        text-shadow: 0 0 20px rgba(224, 224, 224, 0.3);
+    }
+    50% {
+        text-shadow: 0 0 30px rgba(224, 224, 224, 0.5);
+    }
+    75% {
+        text-shadow: 0 0 20px rgba(224, 224, 224, 0.3);
+    }
+    100% {
+        text-shadow: 0 0 5px rgba(224, 224, 224, 0.1);
+    }
+}
+
 .example-link {
     display: block;
     padding: 10px;
     margin: 5px 0;
     text-decoration: none;
-    color: #0066cc;
+    color: #E0E0E0;
+    background-color: #1E1E1E;
+    border-radius: 5px;
+    transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
+
 .example-link:hover {
-    background-color: #f0f0f0;
+    background-color: #2E2E2E;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
 }
 """
 
@@ -32,6 +72,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastLED Examples</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
