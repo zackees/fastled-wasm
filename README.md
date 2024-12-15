@@ -24,7 +24,7 @@ Compile times are extremely fast, thanks to aggressive object caching for C++ an
 
 If you have docker installed, the compiler will download the docker image and run a private local server on your machine. If you don't have Docker installed then the app will fall back to using the public web compiler.
 
-The local compiler will be much faster than the web version in most circumstances after the first compile.
+In every conceivable way, the local compiler will be much faster than the web version.
 
 # Demo
 
