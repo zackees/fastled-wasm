@@ -71,7 +71,7 @@ def build_example(example: str, outputdir: Path | None = None) -> None:
     assert (example_dir / "fastled.wasm").exists()
 
 
-def gen_index_html(outputdir: Path | None = None) -> None:
+def build_index_html(outputdir: Path | None = None) -> None:
     outputdir = outputdir or DOCS
     assert outputdir.exists(), f"Output directory {outputdir} not found, you should run build_example first"
     index_html = outputdir / "index.html"
@@ -92,6 +92,7 @@ def gen_index_html(outputdir: Path | None = None) -> None:
 def main() -> int:
     for example in EXAMPLES:
         build_example(example)
+    build_index_html()
     return 0
 
 
