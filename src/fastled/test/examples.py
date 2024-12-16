@@ -1,4 +1,5 @@
 from tempfile import TemporaryDirectory
+from time import time
 
 
 def test_examples(
@@ -14,7 +15,10 @@ def test_examples(
             print(f"Initializing example: {example}")
             sketch_dir = Api.project_init(example, outputdir=tmpdir, host=host)
             print(f"Project initialized at: {sketch_dir}")
+            start = time()
             print(f"Compiling example: {example}")
+            diff = time() - start
+            print(f"Compilation took: {diff:.2f} seconds")
             result = Api.web_compile(sketch_dir, host=host)
             if not result.success:
                 out[example] = Exception(result.stdout)
