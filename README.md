@@ -242,6 +242,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.2.22 - Added `--purge` and added docker api at __init__.
   * 1.2.00 - `fastled.exe` is now a signed binary on windows, however it's a self signed binary so you'll still get the warning on the first open. There's been a small api change between the server and the client for fetching projects.
   * 1.1.69 - Changed the binary name to `fastled.exe` instead of something like `fastled-windows-x64.exe`
   * 1.1.68 - Add a site builder to fastled.Test which generates a website with a bunch of demos. This is used to build the demo site automatically.
