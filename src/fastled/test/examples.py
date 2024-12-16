@@ -1,6 +1,8 @@
 from tempfile import TemporaryDirectory
 from time import time
+from warnings import warn
 
+_FILTER = True
 
 def test_examples(
     examples: list[str] | None = None, host: str | None = None
@@ -9,11 +11,19 @@ def test_examples(
     from fastled import Api
 
     out: dict[str, Exception] = {}
-    examples = Api.get_examples() if examples is None else examples
+    examples = Api.get_examples(host=host) if examples is None else examples
+    if host is None and _FILTER:
+        examples.remove("Chromancer")  # Brutal
+        examples.remove("LuminescentGrand")
     with TemporaryDirectory() as tmpdir:
         for example in examples:
             print(f"Initializing example: {example}")
-            sketch_dir = Api.project_init(example, outputdir=tmpdir, host=host)
+            try:
+                sketch_dir = Api.project_init(example, outputdir=tmpdir, host=host)
+            except Exception as e:
+                warn(f"Failed to initialize example: {example}, error: {e}")
+                out[example] = e
+                continue
             print(f"Project initialized at: {sketch_dir}")
             start = time()
             print(f"Compiling example: {example}")
@@ -26,9 +36,11 @@ def test_examples(
 
 
 def unit_test() -> None:
-    out = test_examples()
-    if out:
-        raise RuntimeError(f"Failed tests: {out}")
+    from fastled import Api
+    with Api.server(auto_updates=True) as server:
+        out = test_examples(host=server.url())
+        if out:
+            raise RuntimeError(f"Failed tests: {out}")
 
 
 if __name__ == "__main__":
