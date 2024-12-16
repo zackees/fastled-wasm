@@ -113,6 +113,7 @@ class Api:
 
 
 class Test:
+    __test__ = False  # This prevents unittest from recognizing it as a test class.
 
     @staticmethod
     def can_run_local_docker_tests() -> bool:

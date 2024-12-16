@@ -10,7 +10,7 @@ HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
 
-EXAMPLES = ["Blink", "wasm", "Chromancer", "SdCard", "fx/NoiseRing"]
+EXAMPLES = ["Blink", "wasm", "Chromancer", "fx/SdCard", "fx/NoiseRing"]
 
 
 def _enabled() -> bool:
@@ -35,7 +35,8 @@ class WebCompileTester(unittest.TestCase):
                     # print out everything in the out dir
                     for f in out.iterdir():
                         print(f)
-                    self.assertTrue((out / example / f"{example}.ino").exists())
+                    name = Path(example).name
+                    self.assertTrue((out / example / f"{name}.ino").exists())
                     # Test the web_compile function with actual server call
                     result: CompileResult = server.web_compile(out / example)
                     self.assertTrue(
