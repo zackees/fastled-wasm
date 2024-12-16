@@ -19,14 +19,10 @@ EXAMPLES = [
     "SdCard",
 ]
 
-
 def _enabled() -> bool:
     """Check if this system can run the tests."""
-    is_github_runner = "GITHUB_ACTIONS" in os.environ
-    if not is_github_runner:
-        return True
-    # this only works in ubuntu at the moment
-    return platform.system() == "Linux"
+    from fastled import Test
+    return Test.can_run_local_docker_tests()
 
 
 class WebCompileTester(unittest.TestCase):

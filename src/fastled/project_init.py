@@ -5,23 +5,15 @@ import httpx
 
 from fastled.settings import DEFAULT_URL
 
-ENDPOINT_PROJECT_INIT = f"{DEFAULT_URL}/project/init"
-ENDPOINT_INFO = f"{DEFAULT_URL}/info"
 DEFAULT_EXAMPLE = "wasm"
 
-_EXCLUDED_EXAMPLES = [
-    "Pintest",
-    "OctoWS2811",  # Teensy specific
-    "SmartMatrix",  # Teensy specific
-]
 
-
-def get_examples() -> list[str]:
-    response = httpx.get(ENDPOINT_INFO, timeout=4)
+def get_examples(host: str | None = None) -> list[str]:
+    host = host or DEFAULT_URL
+    url_info = f"{host}/info"
+    response = httpx.get(url_info, timeout=4)
     response.raise_for_status()
     examples: list[str] = response.json()["examples"]
-    # filter out excluded examples
-    examples = [example for example in examples if example not in _EXCLUDED_EXAMPLES]
     return sorted(examples)
 
 

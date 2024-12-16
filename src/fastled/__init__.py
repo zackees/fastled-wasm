@@ -18,10 +18,13 @@ __version__ = "1.1.88"
 
 class Api:
     @staticmethod
-    def get_examples():
+    def get_examples(host: str | CompileServer | None = None) -> list[str]:
         from fastled.project_init import get_examples
 
-        return get_examples()
+        if isinstance(host, CompileServer):
+            host = host.url()
+
+        return get_examples(host=host)
 
     @staticmethod
     def project_init(
@@ -110,6 +113,13 @@ class Api:
 
 
 class Test:
+
+    @staticmethod
+    def can_run_local_docker_tests() -> bool:
+        from fastled.test.can_run_local_docker_tests import can_run_local_docker_tests
+
+        return can_run_local_docker_tests()
+
     @staticmethod
     def test_examples(
         examples: list[str] | None = None, host: str | CompileServer | None = None

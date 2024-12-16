@@ -13,11 +13,8 @@ TEST_DIR = HERE / "test_ino" / "wasm"
 
 def _enabled() -> bool:
     """Check if this system can run the tests."""
-    is_github_runner = "GITHUB_ACTIONS" in os.environ
-    if not is_github_runner:
-        return True
-    # this only works in ubuntu at the moment
-    return platform.system() == "Linux"
+    from fastled import Test
+    return Test.can_run_local_docker_tests()
 
 
 class ProjectInitTester(unittest.TestCase):
@@ -25,7 +22,8 @@ class ProjectInitTester(unittest.TestCase):
 
     def test_get_examples(self) -> None:
         """Test get_examples function."""
-        examples = get_examples()
+        with Api.server(auto_updates=True) as server:
+            examples = get_examples(server.url())
         self.assertTrue(len(examples) > 0)
         self.assertTrue("wasm" in examples)
 
