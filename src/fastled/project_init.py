@@ -54,8 +54,9 @@ def project_init(
             )
             example = DEFAULT_EXAMPLE
     assert example is not None
-    endpoint_url = f"{host}/project/init/{example}"
-    response = httpx.get(endpoint_url, timeout=20)
+    endpoint_url = f"{host}/project/init"
+    json = example
+    response = httpx.post(endpoint_url, timeout=20, json=json)
     response.raise_for_status()
     content = response.content
     tmpzip = outputdir / "fastled.zip"
@@ -65,6 +66,7 @@ def project_init(
         zip_ref.extractall(outputdir)
     tmpzip.unlink()
     out = outputdir / example
+    print(f"Project initialized at {out}")
     assert out.exists()
     return out
 
