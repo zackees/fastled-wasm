@@ -112,6 +112,38 @@ class Api:
             server.stop()
 
 
+class Docker:
+    @staticmethod
+    def is_installed() -> bool:
+        from fastled.docker_manager import DockerManager
+
+        return DockerManager.is_docker_installed()
+
+    @staticmethod
+    def is_running() -> bool:
+        from fastled.docker_manager import DockerManager
+
+        return DockerManager.is_running()
+
+    @staticmethod
+    def is_container_running(container_name: str | None = None) -> bool:
+        # from fastled.docker import is_container_running
+        from fastled.docker_manager import DockerManager
+        from fastled.settings import CONTAINER_NAME
+
+        docker = DockerManager()
+        container_name = container_name or CONTAINER_NAME
+        return docker.is_container_running(container_name)
+
+    @staticmethod
+    def purge() -> None:
+        from fastled.docker_manager import DockerManager
+        from fastled.settings import CONTAINER_NAME
+
+        docker = DockerManager()
+        docker.purge(CONTAINER_NAME)
+
+
 class Test:
     __test__ = False  # This prevents unittest from recognizing it as a test class.
 

@@ -4,10 +4,9 @@ import sys
 from pathlib import Path
 
 from fastled import __version__
-from fastled.docker_manager import DockerManager
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
-from fastled.settings import DEFAULT_URL
+from fastled.settings import DEFAULT_URL, IMAGE_NAME
 from fastled.sketch import (
     find_sketch_directories,
     looks_like_fastled_repo,
@@ -86,6 +85,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run the server in the current directory, volume mapping fastled if we are in the repo",
     )
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Remove all FastLED containers and images",
+    )
 
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
@@ -102,6 +106,13 @@ def parse_args() -> argparse.Namespace:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+
+    if args.purge:
+        from fastled.docker_manager import DockerManager
+
+        docker = DockerManager()
+        docker.purge(IMAGE_NAME)
+        sys.exit(0)
 
     if args.init:
         example = args.init if args.init is not True else None
@@ -122,6 +133,8 @@ def parse_args() -> argparse.Namespace:
             and not args.web
             and not args.server
         ):
+            from fastled.docker_manager import DockerManager
+
             if DockerManager.is_docker_installed():
                 if not DockerManager.ensure_linux_containers_for_windows():
                     print(

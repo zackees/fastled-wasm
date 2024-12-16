@@ -12,13 +12,9 @@ from fastled.docker_manager import (
     DockerManager,
     RunningContainer,
 )
-from fastled.settings import SERVER_PORT
+from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
-
-_IMAGE_NAME = "niteris/fastled-wasm"
-_DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
-
 
 SERVER_OPTIONS = [
     "--allow-shutdown",  # Allow the server to be shut down without a force kill.
@@ -46,7 +42,7 @@ class CompileServerImpl:
         auto_start: bool = True,
         container_name: str | None = None,
     ) -> None:
-        container_name = container_name or _DEFAULT_CONTAINER_NAME
+        container_name = container_name or DEFAULT_CONTAINER_NAME
         if interactive and not mapped_dir:
             raise ValueError(
                 "Interactive mode requires a mapped directory point to a sketch"
@@ -178,7 +174,7 @@ class CompileServerImpl:
         else:
             upgrade = self.auto_updates
         self.docker.validate_or_download_image(
-            image_name=_IMAGE_NAME, tag="main", upgrade=upgrade
+            image_name=IMAGE_NAME, tag="main", upgrade=upgrade
         )
         DISK_CACHE.put("last-update", now_str)
 
@@ -214,7 +210,7 @@ class CompileServerImpl:
         cmd_str = subprocess.list2cmdline(server_command)
         if not self.interactive:
             container: Container = self.docker.run_container_detached(
-                image_name=_IMAGE_NAME,
+                image_name=IMAGE_NAME,
                 tag="main",
                 container_name=self.container_name,
                 command=cmd_str,
@@ -228,7 +224,7 @@ class CompileServerImpl:
             return port
         else:
             self.docker.run_container_interactive(
-                image_name=_IMAGE_NAME,
+                image_name=IMAGE_NAME,
                 tag="main",
                 container_name=self.container_name,
                 command=cmd_str,

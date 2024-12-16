@@ -610,6 +610,35 @@ class DockerManager:
             print(f"Container {container_name} not found.")
             return False
 
+    def purge(self, image_name: str) -> None:
+        """
+        Remove all containers and images associated with the given image name.
+
+        Args:
+            image_name: The name of the image to purge (without tag)
+        """
+        print(f"Purging all containers and images for {image_name}...")
+
+        # Remove all containers using this image
+        try:
+            containers = self.client.containers.list(all=True)
+            for container in containers:
+                if any(image_name in tag for tag in container.image.tags):
+                    print(f"Removing container {container.name}")
+                    container.remove(force=True)
+        except Exception as e:
+            print(f"Error removing containers: {e}")
+
+        # Remove all images with this name
+        try:
+            images = self.client.images.list()
+            for image in images:
+                if any(image_name in tag for tag in image.tags):
+                    print(f"Removing image {image.tags}")
+                    self.client.images.remove(image.id, force=True)
+        except Exception as e:
+            print(f"Error removing images: {e}")
+
 
 def main():
     # Register SIGINT handler
