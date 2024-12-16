@@ -1,5 +1,4 @@
 import os
-import platform
 import unittest
 from pathlib import Path
 
@@ -13,6 +12,7 @@ CLIENT_CMD = f"fastled --just-compile --localhost {TEST_DIR}"
 def _enabled() -> bool:
     """Check if this system can run the tests."""
     from fastled import Test
+
     return Test.can_run_local_docker_tests()
 
 

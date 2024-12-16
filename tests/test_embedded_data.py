@@ -1,12 +1,10 @@
-import os
-import platform
 import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fastled.compile_server import CompileServer
-from fastled.web_compile import ENABLE_EMBEDDED_DATA, CompileResult
+from fastled.web_compile import CompileResult
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "embedded"
@@ -15,6 +13,7 @@ TEST_DIR = HERE / "test_ino" / "embedded"
 def _enabled() -> bool:
     """Check if this system can run the tests."""
     from fastled import Test
+
     return Test.can_run_local_docker_tests()
 
 

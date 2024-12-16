@@ -1,5 +1,3 @@
-import os
-import platform
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,16 +10,13 @@ HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
 
-EXAMPLES = [
-    "Blink",
-    "wasm",
-    "Chromancer",
-    "SdCard",
-]
+EXAMPLES = ["Blink", "wasm", "Chromancer", "SdCard", "fx/NoiseRing"]
+
 
 def _enabled() -> bool:
     """Check if this system can run the tests."""
     from fastled import Test
+
     return Test.can_run_local_docker_tests()
 
 

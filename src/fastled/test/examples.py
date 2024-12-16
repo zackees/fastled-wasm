@@ -4,6 +4,7 @@ from warnings import warn
 
 _FILTER = True
 
+
 def test_examples(
     examples: list[str] | None = None, host: str | None = None
 ) -> dict[str, Exception]:
@@ -37,6 +38,7 @@ def test_examples(
 
 def unit_test() -> None:
     from fastled import Api
+
     with Api.server(auto_updates=True) as server:
         out = test_examples(host=server.url())
         if out:
