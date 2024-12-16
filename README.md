@@ -239,7 +239,6 @@ A: `delay()` will block `loop()` which blocks the main thread of the browser. Th
 Q: How can I get the compiled size of my FastLED sketch smaller?
 A: A big chunk of space is being used by unnecessary javascript `emscripten` bundling. The wasm_compiler_settings.py file in the FastLED repo can tweak this.
 
-
 # Revisions
 
   * 1.1.69 - Changed the binary name to `fastled.exe` instead of something like `fastled-windows-x64.exe`
