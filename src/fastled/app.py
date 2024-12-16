@@ -16,6 +16,9 @@ def run_server(args: argparse.Namespace) -> int:
     interactive = args.interactive
     auto_update = args.auto_update
     mapped_dir = Path(args.directory).absolute() if args.directory else None
+    if interactive and mapped_dir is None:
+        print("Select a sketch when you enter interactive mode.")
+        return 1
     compile_server = CompileServer(
         interactive=interactive,
         auto_updates=auto_update,
