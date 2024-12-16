@@ -9,7 +9,7 @@ HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
 
-def _enabled() -> bool:
+def _local_server_enabled() -> bool:
     """Check if this system can run the tests."""
     from fastled import Test
 
@@ -21,12 +21,15 @@ class ProjectInitTester(unittest.TestCase):
 
     def test_get_examples(self) -> None:
         """Test get_examples function."""
-        with Api.server(auto_updates=True) as server:
-            examples = get_examples(server.url())
+        if _local_server_enabled():
+            with Api.server(auto_updates=True) as server:
+                examples = get_examples(server.url())
+        else:
+            examples = get_examples()
         self.assertTrue(len(examples) > 0)
         self.assertTrue("wasm" in examples)
 
-    @unittest.skipUnless(_enabled(), "This is not a fast test")
+    @unittest.skipUnless(_local_server_enabled(), "This is not a fast test")
     def test_compile(self) -> None:
         """Test web compilation functionality with real server."""
         # Test the web_compile function with actual server call
