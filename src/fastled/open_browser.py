@@ -1,23 +1,22 @@
 import os
+import shutil
 import socket
+import subprocess
 import sys
 from multiprocessing import Process
 from pathlib import Path
 
-from livereload import Server
-
 DEFAULT_PORT = 8081
 
 
-def _open_browser_python(fastled_js: Path, port: int) -> Server:
+def _open_browser_python(fastled_js: Path) -> None:
     """Start livereload server in the fastled_js directory using API"""
-    print(f"\nStarting livereload server in {fastled_js} on port {port}")
-
-    # server = Server()
-    # server.watch(str(fastled_js / "index.html"), delay=0.1)
-    # server.setHeader("Cache-Control", "no-cache")
-    # server.serve(root=str(fastled_js), port=port, open_url_delay=0.5)
-    # return server
+    print(f"\nStarting livereload server in {fastled_js}")
+    if shutil.which("live-server") is None:
+        print("live-server not found. Installing it with the embedded npm...")
+        subprocess.run(
+            [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
+        )
     os.system(f"cd {fastled_js} && live-server")
 
 
@@ -31,10 +30,10 @@ def _find_open_port(start_port: int) -> int:
             port += 1
 
 
-def _run_server(fastled_js: Path, port: int) -> None:
+def _run_server(fastled_js: Path) -> None:
     """Function to run in separate process that starts the livereload server"""
     sys.stderr = open(os.devnull, "w")  # Suppress stderr output
-    _open_browser_python(fastled_js, port)
+    _open_browser_python(fastled_js)
     try:
         # Keep the process running
         while True:
@@ -43,16 +42,12 @@ def _run_server(fastled_js: Path, port: int) -> None:
         print("\nShutting down livereload server...")
 
 
-def open_browser_process(fastled_js: Path, port: int | None = None) -> Process:
+def open_browser_process(fastled_js: Path) -> Process:
     """Start livereload server in the fastled_js directory and return the process"""
-    if port is None:
-        port = DEFAULT_PORT
-
-    port = _find_open_port(port)
 
     process = Process(
         target=_run_server,
-        args=(fastled_js, port),
+        args=(fastled_js,),
         daemon=True,
     )
     process.start()
