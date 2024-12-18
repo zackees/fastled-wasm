@@ -21,6 +21,7 @@ lsfjsdklfjdskfjkasdfjdsfds /// the garbage heare should trigger a build failure.
 
 #include "fl/ui.h"
 
+using namespace fl;
 
 #define LED_PIN 3
 #define BRIGHTNESS 96
