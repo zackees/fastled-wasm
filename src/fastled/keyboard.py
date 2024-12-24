@@ -4,6 +4,7 @@ import sys
 import time
 from queue import Empty, Queue
 from threading import Thread
+import _thread
 
 _WHITE_SPACE = [" ", "\r", "\n"]
 
@@ -69,6 +70,11 @@ class SpaceBarWatcher:
                     # Check if there's input ready
                     if select.select([sys.stdin], [], [], 0.1)[0]:
                         char = sys.stdin.read(1)
+                        print("got ", ord(char))
+                        if ord(char) == 3: # ctrl+c on mac
+                            _thread.interrupt_main()
+                            break
+
                         if char in _WHITE_SPACE:
                             self.queue.put(ord(" "))
             finally:
