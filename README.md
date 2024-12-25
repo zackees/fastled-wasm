@@ -243,6 +243,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.1.24 - Mac/Linux now properly responds to ctrl-c when waiting for a key event.
   * 1.1.23 - Fixes missing `live-server` on platforms that don't have it already.
   * 1.2.22 - Added `--purge` and added docker api at __init__.
   * 1.2.00 - `fastled.exe` is now a signed binary on windows, however it's a self signed binary so you'll still get the warning on the first open. There's been a small api change between the server and the client for fetching projects.
