@@ -97,10 +97,12 @@ class RunningContainer:
 
 class DockerManager:
     def __init__(self) -> None:
+        from docker.errors import DockerException
+
         try:
             self._client: DockerClient | None = None
             self.first_run = False
-        except docker.errors.DockerException as e:
+        except DockerException as e:
             stack = traceback.format_exc()
             warnings.warn(f"Error initializing Docker client: {e}\n{stack}")
             raise
@@ -609,6 +611,67 @@ class DockerManager:
         except docker.errors.NotFound:
             print(f"Container {container_name} not found.")
             return False
+
+    def build_image(
+        self,
+        image_name: str,
+        tag: str,
+        dockerfile_path: Path,
+        build_context: Path,
+        build_args: dict[str, str] | None = None,
+        platform_tag: str = "",
+    ) -> None:
+        """
+        Build a Docker image from a Dockerfile.
+
+        Args:
+            image_name: Name for the image
+            tag: Tag for the image
+            dockerfile_path: Path to the Dockerfile
+            build_context: Path to the build context directory
+            build_args: Optional dictionary of build arguments
+            platform_tag: Optional platform tag (e.g. "-arm64")
+        """
+        if not dockerfile_path.exists():
+            raise FileNotFoundError(f"Dockerfile not found at {dockerfile_path}")
+
+        if not build_context.exists():
+            raise FileNotFoundError(
+                f"Build context directory not found at {build_context}"
+            )
+
+        print(f"Building Docker image {image_name}:{tag} from {dockerfile_path}")
+
+        # Prepare build arguments
+        buildargs = build_args or {}
+        if platform_tag:
+            buildargs["PLATFORM_TAG"] = platform_tag
+
+        try:
+            cmd_list = [
+                "docker",
+                "build",
+                "-t",
+                f"{image_name}:{tag}",
+            ]
+
+            # Add build args
+            for arg_name, arg_value in buildargs.items():
+                cmd_list.extend(["--build-arg", f"{arg_name}={arg_value}"])
+
+            # Add dockerfile and context paths
+            cmd_list.extend(["-f", str(dockerfile_path), str(build_context)])
+
+            cmd_str = subprocess.list2cmdline(cmd_list)
+            print(f"Running command: {cmd_str}")
+
+            # Run the build command
+            subprocess.run(cmd_list, check=True)
+            print(f"Successfully built image {image_name}:{tag}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error building Docker image: {e}")
+            raise
 
     def purge(self, image_name: str) -> None:
         """

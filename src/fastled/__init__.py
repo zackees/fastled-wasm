@@ -143,6 +143,52 @@ class Docker:
         docker = DockerManager()
         docker.purge(CONTAINER_NAME)
 
+    @staticmethod
+    def build(project_root: Path | str, platform_tag: str = "") -> str:
+        """Build the FastLED WASM compiler Docker image, which will be tagged as "latest".
+
+        Args:
+            project_root: Path to the FastLED project root directory
+            platform_tag: Optional platform tag (e.g. "-arm64" for ARM builds)
+
+        Returns:
+            The string name of the docker container.
+        """
+        from fastled.docker_manager import DockerManager
+        from fastled.settings import CONTAINER_NAME, IMAGE_NAME
+
+        if isinstance(project_root, str):
+            project_root = Path(project_root)
+
+        dockerfile_path = (
+            project_root / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
+        )
+
+        docker = DockerManager()
+
+        # Build the image
+        docker.build_image(
+            image_name=IMAGE_NAME,
+            tag="main",
+            dockerfile_path=dockerfile_path,
+            build_context=project_root,
+            build_args={"NO_PREWARM": "1"},
+            platform_tag=platform_tag,
+        )
+
+        # Run the container and return it
+        container = docker.run_container_detached(
+            image_name=IMAGE_NAME,
+            tag="main",
+            container_name=CONTAINER_NAME,
+            command=None,  # Use default command from Dockerfile
+            volumes=None,  # No volumes needed for build
+            ports=None,  # No ports needed for build
+            remove_previous=True,  # Remove any existing container
+        )
+        container_name = f"{container.name}:main"
+        return container_name
+
 
 class Test:
     __test__ = False  # This prevents unittest from recognizing it as a test class.
@@ -173,6 +219,7 @@ class Test:
 __all__ = [
     "Api",
     "Test",
+    "Build",
     "CompileServer",
     "CompileResult",
     "CompileServerError",
