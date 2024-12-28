@@ -131,20 +131,98 @@ class Docker:
         from fastled.docker_manager import DockerManager
         from fastled.settings import CONTAINER_NAME
 
-        docker = DockerManager()
+        docker_mgr = DockerManager()
         container_name = container_name or CONTAINER_NAME
-        return docker.is_container_running(container_name)
+        return docker_mgr.is_container_running(container_name)
 
     @staticmethod
     def purge() -> None:
         from fastled.docker_manager import DockerManager
         from fastled.settings import CONTAINER_NAME
 
-        docker = DockerManager()
-        docker.purge(CONTAINER_NAME)
+        docker_mgr = DockerManager()
+        docker_mgr.purge(CONTAINER_NAME)
 
     @staticmethod
-    def build(project_root: Path | str, platform_tag: str = "") -> str:
+    def build_from_github(
+        url: str = "https://github.com/fastled/fastled",
+        output_dir: Path | str = Path(".cache/fastled"),
+    ) -> str:
+        """Build the FastLED WASM compiler Docker image from a GitHub repository.
+
+        Args:
+            url: GitHub repository URL (default: https://github.com/fastled/fastled)
+            output_dir: Directory to clone the repo into (default: .cache/fastled)
+
+        Returns:
+            Container name.
+        """
+        import subprocess
+
+        from fastled.docker_manager import DockerManager
+        from fastled.settings import CONTAINER_NAME, IMAGE_NAME
+
+        if isinstance(output_dir, str):
+            output_dir = Path(output_dir)
+
+        # Create output directory if it doesn't exist
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clone or update the repository
+        if (output_dir / ".git").exists():
+            print(f"Updating existing repository in {output_dir}")
+            # Reset local changes and move HEAD back to handle force pushes
+            subprocess.run(
+                ["git", "reset", "--hard", "HEAD~10"],
+                cwd=output_dir,
+                check=True,
+                capture_output=True,  # Suppress output of reset
+            )
+            subprocess.run(
+                ["git", "pull", "origin", "master"], cwd=output_dir, check=True
+            )
+        else:
+            print(f"Cloning {url} into {output_dir}")
+            subprocess.run(["git", "clone", url, str(output_dir)], check=True)
+
+        dockerfile_path = (
+            output_dir / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
+        )
+
+        if not dockerfile_path.exists():
+            raise FileNotFoundError(
+                f"Dockerfile not found at {dockerfile_path}. "
+                "This may not be a valid FastLED repository."
+            )
+
+        docker_mgr = DockerManager()
+
+        # Build the image
+        docker_mgr.build_image(
+            image_name=IMAGE_NAME,
+            tag="main",
+            dockerfile_path=dockerfile_path,
+            build_context=output_dir,
+            build_args={"NO_PREWARM": "1"},
+        )
+
+        # Run the container and return it
+        container = docker_mgr.run_container_detached(
+            image_name=IMAGE_NAME,
+            tag="main",
+            container_name=CONTAINER_NAME,
+            command=None,  # Use default command from Dockerfile
+            volumes=None,  # No volumes needed for build
+            ports=None,  # No ports needed for build
+            remove_previous=True,  # Remove any existing container
+        )
+
+        return container.name
+
+    @staticmethod
+    def build_from_fastled_repo(
+        project_root: Path | str, platform_tag: str = ""
+    ) -> str:
         """Build the FastLED WASM compiler Docker image, which will be tagged as "latest".
 
         Args:
@@ -164,10 +242,10 @@ class Docker:
             project_root / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
         )
 
-        docker = DockerManager()
+        docker_mgr = DockerManager()
 
         # Build the image
-        docker.build_image(
+        docker_mgr.build_image(
             image_name=IMAGE_NAME,
             tag="main",
             dockerfile_path=dockerfile_path,
@@ -177,7 +255,7 @@ class Docker:
         )
 
         # Run the container and return it
-        container = docker.run_container_detached(
+        container = docker_mgr.run_container_detached(
             image_name=IMAGE_NAME,
             tag="main",
             container_name=CONTAINER_NAME,
