@@ -17,7 +17,8 @@ def _open_browser_python(fastled_js: Path) -> None:
         subprocess.run(
             [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
         )
-    os.system(f"cd {fastled_js} && live-server")
+    proc = subprocess.Popen(["cd", fastled_js, "&&", "live-server"])
+    proc.wait()
 
 
 def _find_open_port(start_port: int) -> int:
