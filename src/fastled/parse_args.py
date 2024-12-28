@@ -80,6 +80,12 @@ def parse_args() -> argparse.Namespace:
         help="Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
     )
     parser.add_argument(
+        "--build",
+        "-b",
+        action="store_true",
+        help="Build the wasm compiler image from the FastLED repo",
+    )
+    parser.add_argument(
         "--server",
         "-s",
         action="store_true",

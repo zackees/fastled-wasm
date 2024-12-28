@@ -45,6 +45,17 @@ class LiveClient:
         )
         return rtn
 
+    def url(self) -> str:
+        """Get the URL of the server."""
+        if isinstance(self.host, CompileServer):
+            return self.host.url()
+        if self.host is None:
+            import warnings
+
+            warnings.warn("TODO: use the actual host.")
+            return "http://localhost:9021"
+        return self.host
+
     @property
     def running(self) -> bool:
         return self.thread is not None and self.thread.is_alive()
@@ -67,3 +78,9 @@ class LiveClient:
         """Finalize the client."""
         self.stop()
         self.thread = None
+
+    def __enter__(self) -> "LiveClient":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.finalize()

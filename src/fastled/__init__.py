@@ -221,7 +221,7 @@ class Docker:
 
     @staticmethod
     def build_from_fastled_repo(
-        project_root: Path | str, platform_tag: str = ""
+        project_root: Path | str = Path("."), platform_tag: str = ""
     ) -> str:
         """Build the FastLED WASM compiler Docker image, which will be tagged as "latest".
 

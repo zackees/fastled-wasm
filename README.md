@@ -243,6 +243,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.2.6 - Now builds image from the project root of FastLED.
   * 1.1.25 - Fix up paths for `--init`
   * 1.1.24 - Mac/Linux now properly responds to ctrl-c when waiting for a key event.
   * 1.1.23 - Fixes missing `live-server` on platforms that don't have it already.

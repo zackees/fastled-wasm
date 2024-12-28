@@ -51,6 +51,32 @@ def main() -> int:
         print("Finished updating.")
         return 0
 
+    if args.build:
+        try:
+            project_root = Path(".").absolute()
+            print(f"Building Docker image at {project_root}")
+            from fastled import Api, Docker
+
+            docker_image_name = Docker.build_from_fastled_repo(
+                project_root=project_root
+            )
+            print(f"Built Docker image: {docker_image_name}")
+            print("Running server")
+            with Api.server(
+                auto_updates=False, container_name=docker_image_name
+            ) as server:
+                print(f"Server started at {server.url()}")
+                sketch_dir = Path("examples/wasm")
+                with Api.live_client(
+                    sketch_directory=sketch_dir, host=server
+                ) as client:
+                    print(f"Client started at {client.url()}")
+                    while True:
+                        time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nExiting from client...")
+            return 1
+
     if args.server:
         print("Running in server only mode.")
         return run_server(args)
