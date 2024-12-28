@@ -186,7 +186,7 @@ class Docker:
             ports=None,  # No ports needed for build
             remove_previous=True,  # Remove any existing container
         )
-        container_name = f"{container.name}:main"
+        container_name = f"{container.name}"
         return container_name
 
 
