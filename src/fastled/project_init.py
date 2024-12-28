@@ -56,6 +56,7 @@ def project_init(
     assert example is not None
     endpoint_url = f"{host}/project/init"
     json = example
+    print(f"Initializing project with example '{example}', url={endpoint_url}")
     response = httpx.post(endpoint_url, timeout=20, json=json)
     response.raise_for_status()
     content = response.content
