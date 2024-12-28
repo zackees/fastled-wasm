@@ -302,9 +302,9 @@ EXAMPLES = [
     "wasm",
     "Chromancer",
     "LuminescentGrand",
-    "fx/SdCard",
-    "fx/NoiseRing",
-    "fx/Water",
+    "FxSdCard",
+    "FxNoiseRing",
+    "FxWater",
 ]
 
 

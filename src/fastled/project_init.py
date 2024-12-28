@@ -1,9 +1,13 @@
+import _thread
+import threading
+import time
 import zipfile
 from pathlib import Path
 
 import httpx
 
 from fastled.settings import DEFAULT_URL
+from fastled.spinner import Spinner
 
 DEFAULT_EXAMPLE = "wasm"
 
@@ -34,6 +38,35 @@ def _prompt_for_example() -> str:
             return answer
 
 
+class DownloadThread(threading.Thread):
+    def __init__(self, url: str, json: str):
+        super().__init__(daemon=True)
+        self.url = url
+        self.json = json
+        self.bytes_downloaded = 0
+        self.content: bytes | None = None
+        self.error: Exception | None = None
+        self.success = False
+
+    def run(self) -> None:
+        timeout = httpx.Timeout(5.0, connect=5.0, read=120.0, write=30.0)
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                with client.stream("POST", self.url, json=self.json) as response:
+                    response.raise_for_status()
+                    content = b""
+                    for chunk in response.iter_bytes():
+                        content += chunk
+                        self.bytes_downloaded += len(chunk)
+                    self.content = content
+                    self.success = True
+        except KeyboardInterrupt:
+            self.error = RuntimeError("Download cancelled")
+            _thread.interrupt_main()
+        except Exception as e:
+            self.error = e
+
+
 def project_init(
     example: str | None = "PROMPT",  # prompt for example
     outputdir: Path | None = None,
@@ -57,9 +90,25 @@ def project_init(
     endpoint_url = f"{host}/project/init"
     json = example
     print(f"Initializing project with example '{example}', url={endpoint_url}")
-    response = httpx.post(endpoint_url, timeout=20, json=json)
-    response.raise_for_status()
-    content = response.content
+
+    # Start download thread
+    download_thread = DownloadThread(endpoint_url, json)
+    # spinner = Spinner("Downloading project...")
+    with Spinner(f"Downloading project {example}..."):
+        download_thread.start()
+        while download_thread.is_alive():
+            time.sleep(0.1)
+
+    print()  # New line after progress
+    download_thread.join()
+
+    # Check for errors
+    if not download_thread.success:
+        assert download_thread.error is not None
+        raise download_thread.error
+
+    content = download_thread.content
+    assert content is not None
     tmpzip = outputdir / "fastled.zip"
     outputdir.mkdir(exist_ok=True)
     tmpzip.write_bytes(content)
