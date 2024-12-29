@@ -189,21 +189,53 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
             const splashScreen = document.querySelector('.splash-screen');
             const splashText = document.querySelector('.splash-text');
             
-            // Wait for font to load
-            document.fonts.ready.then(() => {{
-                // Fade in the text
-                splashText.style.opacity = '1';
-                
-                // Wait for page load plus fade-in time before starting fade-out sequence
-                window.addEventListener('load', () => {{
-                    setTimeout(() => {{
-                        splashScreen.style.opacity = '0';
-                        setTimeout(() => {{
-                            splashScreen.style.display = 'none';
-                        }}, 500); // Remove from DOM after fade completes
-                    }}, 1500); // Wait for load + 1.5s (giving time for fade-in)
+            // Ensure splash screen always gets removed
+            const removeSplashScreen = () => {{
+                splashScreen.style.opacity = '0';
+                setTimeout(() => {{
+                    splashScreen.style.display = 'none';
+                }}, 500);
+            }};
+
+            // Set a maximum time the splash screen can stay
+            const maxSplashTime = setTimeout(removeSplashScreen, 2000); // Reduced from 5000ms to 2000ms
+
+            // Try to do nice fade-in/fade-out when possible
+            try {{
+                // Add a fallback timer in case font loading fails silently
+                const fontTimeout = setTimeout(() => {{
+                    splashText.style.opacity = '1';
+                    setTimeout(removeSplashScreen, 1000);
+                }}, 1000);
+
+                Promise.all([
+                    // Wrap font loading in a timeout promise
+                    Promise.race([
+                        document.fonts.ready,
+                        new Promise((_, reject) => setTimeout(reject, 1500))
+                    ]),
+                    new Promise(resolve => {{
+                        if (document.readyState === 'complete') {{
+                            resolve();
+                        }} else {{
+                            window.addEventListener('load', resolve);
+                        }}
+                    }})
+                ]).then(() => {{
+                    clearTimeout(maxSplashTime);
+                    clearTimeout(fontTimeout);
+                    splashText.style.opacity = '1';
+                    setTimeout(removeSplashScreen, 1500);
+                }}).catch(() => {{
+                    // If either promise fails, ensure splash screen is removed
+                    clearTimeout(maxSplashTime);
+                    removeSplashScreen();
                 }});
-            }});
+            }} catch (e) {{
+                // Final fallback if anything goes wrong
+                console.warn('Splash screen error:', e);
+                removeSplashScreen();
+            }}
             const links = document.querySelectorAll('.example-link');
             const iframe = document.getElementById('example-frame');
             const navPane = document.querySelector('.nav-pane');
