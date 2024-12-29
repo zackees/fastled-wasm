@@ -1,6 +1,7 @@
 """FastLED Wasm Compiler package."""
 
 # context
+import subprocess
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
@@ -157,7 +158,6 @@ class Docker:
         Returns:
             Container name.
         """
-        import subprocess
 
         from fastled.docker_manager import DockerManager
         from fastled.settings import CONTAINER_NAME, IMAGE_NAME
@@ -197,6 +197,14 @@ class Docker:
 
         docker_mgr = DockerManager()
 
+        platform_tag = ""
+        # if "arm" in docker_mgr.architecture():
+        if (
+            "arm"
+            in subprocess.run(["uname", "-m"], capture_output=True).stdout.decode()
+        ):
+            platform_tag = "-arm64"
+
         # Build the image
         docker_mgr.build_image(
             image_name=IMAGE_NAME,
@@ -204,6 +212,7 @@ class Docker:
             dockerfile_path=dockerfile_path,
             build_context=output_dir,
             build_args={"NO_PREWARM": "1"},
+            platform_tag=platform_tag,
         )
 
         # Run the container and return it
@@ -243,6 +252,14 @@ class Docker:
         )
 
         docker_mgr = DockerManager()
+
+        platform_tag = ""
+        # if "arm" in docker_mgr.architecture():
+        if (
+            "arm"
+            in subprocess.run(["uname", "-m"], capture_output=True).stdout.decode()
+        ):
+            platform_tag = "-arm64"
 
         # Build the image
         docker_mgr.build_image(
