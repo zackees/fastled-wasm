@@ -478,7 +478,7 @@ class DockerManager:
                     print(
                         f"Container {container_name} did not restart within {timeout} seconds."
                     )
-                    container.stop()
+                    container.stop(timeout=0)
                     print(f"Container {container_name} has been stopped.")
                     container.start()
             elif container.status == "paused":
