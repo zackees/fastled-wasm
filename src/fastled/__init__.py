@@ -223,7 +223,7 @@ class Docker:
     def build_from_fastled_repo(
         project_root: Path | str = Path("."), platform_tag: str = ""
     ) -> str:
-        """Build the FastLED WASM compiler Docker image, which will be tagged as "latest".
+        """Build the FastLED WASM compiler Docker image, which will be tagged as "main".
 
         Args:
             project_root: Path to the FastLED project root directory
