@@ -6,12 +6,10 @@ import time
 from queue import Empty, Queue
 from threading import Thread
 
-_WHITE_SPACE = [" ", "\r", "\n"]
+_WHITE_SPACE = {" ", "\n", "\r"}  # Including Enter key as whitespace
 
 
-# Original space bar, but now also enter key.
 class SpaceBarWatcher:
-
     @classmethod
     def watch_space_bar_pressed(cls, timeout: float = 0) -> bool:
         watcher = cls()
@@ -32,9 +30,7 @@ class SpaceBarWatcher:
         self.process.start()
 
     def _watch_for_space(self) -> None:
-        # Set stdin to non-blocking mode
         fd = sys.stdin.fileno()
-
         if os.name == "nt":  # Windows
             import msvcrt
 
@@ -51,14 +47,13 @@ class SpaceBarWatcher:
                     char = msvcrt.getch().decode()  # type: ignore
                     if char in _WHITE_SPACE:
                         self.queue.put(ord(" "))
-
         else:  # Unix-like systems
             import termios
             import tty
 
             old_settings = termios.tcgetattr(fd)  # type: ignore
             try:
-                tty.setraw(fd)  # type: ignore
+                tty.setcbreak(fd)  # Use cbreak mode to avoid console issues
                 while True:
                     # Check for cancel signal
                     try:
@@ -70,21 +65,22 @@ class SpaceBarWatcher:
                     # Check if there's input ready
                     if select.select([sys.stdin], [], [], 0.1)[0]:
                         char = sys.stdin.read(1)
-                        if ord(char) == 3:  # ctrl+c on mac, maybe also linux?
+                        if ord(char) == 3:  # Ctrl+C
                             _thread.interrupt_main()
                             break
-
                         if char in _WHITE_SPACE:
                             self.queue.put(ord(" "))
             finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)  # type: ignore
+                termios.tcsetattr(
+                    fd, termios.TCSADRAIN, old_settings
+                )  # Restore terminal settings
 
     def space_bar_pressed(self) -> bool:
         found = False
         while not self.queue.empty():
             try:
-                key = self.queue.get(block=False, timeout=0.1)
-                if key == ord(" "):
+                key = self.queue.get(block=False)
+                if key == ord(" "):  # Spacebar
                     found = True
                 self.queue.task_done()
             except Empty:
