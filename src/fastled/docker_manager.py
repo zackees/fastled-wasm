@@ -504,6 +504,7 @@ class DockerManager:
                 tty=True,
                 volumes=volumes,
                 ports=ports,
+                remove=True,
             )
         return container
 
@@ -577,6 +578,7 @@ class DockerManager:
                 container.pause()
             else:
                 container.stop()
+                container.remove()
             print(f"Container {container.name} has been suspended.")
         except KeyboardInterrupt:
             print(f"Container {container.name} interrupted by keyboard interrupt.")
