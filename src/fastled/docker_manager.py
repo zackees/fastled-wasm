@@ -4,6 +4,7 @@ New abstraction for Docker management with improved Ctrl+C handling.
 
 import _thread
 import os
+import platform
 import subprocess
 import sys
 import threading
@@ -572,7 +573,10 @@ class DockerManager:
                 print(f"Could not put container {container_name} to sleep.")
                 return
         try:
-            container.pause()
+            if platform.system() == "Windows":
+                container.pause()
+            else:
+                container.stop()
             print(f"Container {container.name} has been suspended.")
         except KeyboardInterrupt:
             print(f"Container {container.name} interrupted by keyboard interrupt.")
