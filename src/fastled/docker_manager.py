@@ -597,15 +597,14 @@ class DockerManager:
         except Exception as e:
             print(f"Failed to resume container {container.name}: {e}")
 
-    def get_container(self, container_name: str) -> Container:
+    def get_container(self, container_name: str) -> Container | None:
         """
         Get a container by name.
         """
         try:
             return self.client.containers.get(container_name)
         except docker.errors.NotFound:
-            print(f"Container {container_name} not found.")
-            raise
+            return None
 
     def is_container_running(self, container_name: str) -> bool:
         """
