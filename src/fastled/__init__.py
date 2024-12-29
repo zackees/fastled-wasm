@@ -139,10 +139,10 @@ class Docker:
     @staticmethod
     def purge() -> None:
         from fastled.docker_manager import DockerManager
-        from fastled.settings import CONTAINER_NAME
+        from fastled.settings import IMAGE_NAME
 
         docker_mgr = DockerManager()
-        docker_mgr.purge(CONTAINER_NAME)
+        docker_mgr.purge(image_name=IMAGE_NAME)
 
     @staticmethod
     def build_from_github(
@@ -260,6 +260,9 @@ class Docker:
             in subprocess.run(["uname", "-m"], capture_output=True).stdout.decode()
         ):
             platform_tag = "-arm64"
+
+        # if image exists, remove it
+        docker_mgr.purge(image_name=IMAGE_NAME)
 
         # Build the image
         docker_mgr.build_image(

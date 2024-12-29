@@ -556,6 +556,8 @@ class DockerManager:
         if isinstance(container, str):
             container = self.get_container(container)
 
+        assert container is not None, "Container not found."
+
         print(f"Attaching to container {container.name}...")
 
         first_run = self.first_run
@@ -591,6 +593,9 @@ class DockerManager:
         """
         if isinstance(container, str):
             container = self.get_container(container)
+        if not container:
+            print(f"Could not resume container {container}.")
+            return
         try:
             container.unpause()
             print(f"Container {container.name} has been resumed.")
@@ -694,11 +699,13 @@ class DockerManager:
                 if any(image_name in tag for tag in container.image.tags):
                     print(f"Removing container {container.name}")
                     container.remove(force=True)
+
         except Exception as e:
             print(f"Error removing containers: {e}")
 
         # Remove all images with this name
         try:
+            self.client.images.prune(filters={"dangling": False})
             images = self.client.images.list()
             for image in images:
                 if any(image_name in tag for tag in image.tags):
