@@ -1,4 +1,3 @@
-import os
 import shutil
 import socket
 import subprocess
@@ -33,12 +32,10 @@ def _find_open_port(start_port: int) -> int:
 
 def _run_server(fastled_js: Path) -> None:
     """Function to run in separate process that starts the livereload server"""
-    sys.stderr = open(os.devnull, "w")  # Suppress stderr output
-    _open_browser_python(fastled_js)
+
     try:
         # Keep the process running
-        while True:
-            pass
+        _open_browser_python(fastled_js)
     except KeyboardInterrupt:
         print("\nShutting down livereload server...")
 
