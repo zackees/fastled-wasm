@@ -71,7 +71,7 @@ body {
     position: fixed;
     left: var(--spacing-md);
     top: var(--spacing-md);
-    padding: var(--spacing-sm) var(--spacing-lg);
+    padding: 15px 30px;
     z-index: 1001;
     background-color: var(--color-surface);
     border-radius: var(--border-radius);
@@ -80,7 +80,7 @@ body {
     justify-content: center;
     cursor: pointer;
     color: var(--color-text);
-    font-size: 16px;
+    font-size: 24px;
     transition: background-color var(--transition-speed) ease;
 }
 

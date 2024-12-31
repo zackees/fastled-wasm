@@ -4,14 +4,11 @@ Unit test file.
 
 import os
 import platform
-import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import httpx
-
-from fastled import Api, CompileServer, LiveClient, Test
+from fastled import Api, CompileServer, LiveClient
 
 HERE = Path(__file__).parent
 INDEX_HTML = HERE / "html" / "index.html"
