@@ -65,8 +65,12 @@ def main() -> int:
             with Api.server(
                 auto_updates=False, container_name=docker_image_name
             ) as server:
-                print(f"Server started at {server.url()}")
                 sketch_dir = Path("examples/wasm")
+                if args.just_compile:
+                    result = server.web_compile(sketch_dir)
+                    print(result)
+                    return 0
+                print(f"Server started at {server.url()}")
                 with Api.live_client(
                     sketch_directory=sketch_dir, host=server
                 ) as client:
