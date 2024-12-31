@@ -251,6 +251,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.2.12 - Fixes for python npm for launching live-server
   * 1.2.10 - `fastled.Test` now allows you to spawn the http webserver on a folder with an index.html in it.
   * 1.2.7 - A bunch of fixes for MacOS and probably linux.
   * 1.2.6 - Now builds image from the project root of FastLED.
