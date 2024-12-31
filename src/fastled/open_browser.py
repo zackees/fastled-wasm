@@ -19,8 +19,8 @@ def open_http_server(
     if shutil.which("live-server") is None:
         print("live-server not found. Installing it with the embedded npm...")
         # cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
-        npm.call("install", "live-server")
-        npx.run("live-server", check=False)
+        npm.call("install", "-g", "live-server")
+        # npx.run("live-server", check=False)
         #subprocess.run(cmd_list)
     cmd_list = ["live-server"]
     if port is not None:
