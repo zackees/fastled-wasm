@@ -53,7 +53,9 @@ class SpaceBarWatcher:
 
             old_settings = termios.tcgetattr(fd)  # type: ignore
             try:
-                tty.setcbreak(fd)  # Use cbreak mode to avoid console issues
+                tty.setcbreak(  # type: ignore
+                    fd
+                )  # Use cbreak mode to avoid console issues # type: ignore
                 while True:
                     # Check for cancel signal
                     try:
@@ -71,8 +73,8 @@ class SpaceBarWatcher:
                         if char in _WHITE_SPACE:
                             self.queue.put(ord(" "))
             finally:
-                termios.tcsetattr(
-                    fd, termios.TCSADRAIN, old_settings
+                termios.tcsetattr(  # type: ignore
+                    fd, termios.TCSADRAIN, old_settings  # type: ignore
                 )  # Restore terminal settings
 
     def space_bar_pressed(self) -> bool:

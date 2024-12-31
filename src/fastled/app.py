@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from fastled.client_server import run_client_server
+from fastled.client_server import run_client, run_client_server
 from fastled.compile_server import CompileServer
 from fastled.parse_args import parse_args
 
@@ -67,9 +67,15 @@ def main() -> int:
             ) as server:
                 sketch_dir = Path("examples/wasm")
                 if args.just_compile:
-                    result = server.web_compile(sketch_dir)
-                    print(result)
-                    return 0
+                    rtn = run_client(
+                        directory=sketch_dir,
+                        host=server,
+                        open_web_browser=False,
+                        keep_running=False,
+                    )
+                    if rtn != 0:
+                        print(f"Failed to compile: {rtn})")
+                    return rtn
                 print(f"Server started at {server.url()}")
                 with Api.live_client(
                     sketch_directory=sketch_dir, host=server
