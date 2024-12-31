@@ -16,7 +16,7 @@ def open_http_server(
     print(f"\nStarting livereload server in {fastled_js}")
     if shutil.which("live-server") is None:
         print("live-server not found. Installing it with the embedded npm...")
-        cmd_list = [sys.executable, "-m", "npm", "install", "-g", "live-server"]
+        cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
         subprocess.run(cmd_list)
     cmd_list = ["live-server"]
     if port is not None:
