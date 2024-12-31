@@ -5,6 +5,8 @@ import sys
 from multiprocessing import Process
 from pathlib import Path
 
+from nodejs import node, npm, npx
+
 DEFAULT_PORT = 8081
 
 
@@ -16,8 +18,10 @@ def open_http_server(
     print(f"\nStarting livereload server in {fastled_js}")
     if shutil.which("live-server") is None:
         print("live-server not found. Installing it with the embedded npm...")
-        cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
-        subprocess.run(cmd_list)
+        # cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
+        npm.call("install", "live-server")
+        npx.run("live-server", check=False)
+        #subprocess.run(cmd_list)
     cmd_list = ["live-server"]
     if port is not None:
         cmd_list.extend([f"--port={port}"])
