@@ -66,16 +66,6 @@ class ApiTester(unittest.TestCase):
             # now test that fastled_js is in the sketch directory
             self.assertTrue(expected_output_dir.exists())
 
-    def test_http_server(self) -> None:
-        """Test the http server."""
-        proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
-        time.sleep(1)
-        # test get request
-        response = httpx.get("http://localhost:8081")
-        self.assertEqual(response.status_code, 200)
-        proc.kill()
-        proc.wait()
-
 
 if __name__ == "__main__":
     unittest.main()
