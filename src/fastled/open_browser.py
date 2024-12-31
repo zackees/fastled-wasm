@@ -24,7 +24,7 @@ def open_http_server(
     if not open_browser:
         cmd_list.append("--no-browser")
     # subprocess.run(["cd", str(fastled_js), "&&"] + cmd_list)
-    return subprocess.Popen(cmd_list, cwd=fastled_js, shell=True)
+    return subprocess.Popen(cmd_list, cwd=str(fastled_js), shell=True)
 
 
 def _open_browser_python(fastled_js: Path) -> None:
