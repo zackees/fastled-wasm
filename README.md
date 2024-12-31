@@ -31,6 +31,17 @@ In every conceivable way, the local compiler will be much faster than the web ve
 
 https://zackees.github.io/fastled-wasm/
 
+# Install
+
+`pip install fastled`
+
+# Run
+
+```bash
+cd mysketchdirectory
+fastled
+```
+
 # Tutorial video
 
 **Note this video is a little outdated, you will install the app now with `pip install fastled` and run it like `fastled mysketchfolder`**
