@@ -88,6 +88,15 @@ body {
     background-color: var(--color-surface-transparent);
 }
 
+.nav-trigger .fa-chevron-down {
+    margin-left: 10px;
+    transition: transform var(--transition-speed) ease;
+}
+
+.nav-pane.visible + .nav-trigger .fa-chevron-down {
+    transform: rotate(180deg);
+}
+
 .nav-pane {
     position: fixed;
     left: var(--spacing-md);
@@ -176,7 +185,7 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
         <div class="splash-text">FastLED</div>
     </div>
     <div class="content-wrapper">
-        <div class="nav-trigger">Examples</div>
+        <div class="nav-trigger">Examples <i class="fas fa-chevron-down"></i></div>
         <nav class="nav-pane">
             {example_links}
         </nav>
