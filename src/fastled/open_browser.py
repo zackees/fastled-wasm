@@ -8,15 +8,28 @@ from pathlib import Path
 DEFAULT_PORT = 8081
 
 
-def _open_browser_python(fastled_js: Path) -> None:
+def open_http_server(
+    fastled_js: Path, port: int | None = None, open_browser=True
+) -> subprocess.Popen:
     """Start livereload server in the fastled_js directory using API"""
+    cmd_list: list[str]
     print(f"\nStarting livereload server in {fastled_js}")
     if shutil.which("live-server") is None:
         print("live-server not found. Installing it with the embedded npm...")
-        subprocess.run(
-            [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
-        )
-    proc = subprocess.Popen(["cd", fastled_js, "&&", "live-server"])
+        cmd_list = [sys.executable, "-m", "npm", "install", "-g", "live-server"]
+        subprocess.run(cmd_list)
+    cmd_list = ["live-server"]
+    if port is not None:
+        cmd_list.extend([f"--port={port}"])
+    if not open_browser:
+        cmd_list.append("--no-browser")
+    # subprocess.run(["cd", str(fastled_js), "&&"] + cmd_list)
+    return subprocess.Popen(cmd_list, cwd=fastled_js, shell=True)
+
+
+def _open_browser_python(fastled_js: Path) -> None:
+    """Start livereload server in the fastled_js directory using API"""
+    proc = open_http_server(fastled_js)
     proc.wait()
 
 

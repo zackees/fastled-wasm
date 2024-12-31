@@ -4,10 +4,19 @@ Unit test file.
 
 import os
 import platform
+import time
 import unittest
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fastled import Api, CompileServer, LiveClient
+import httpx
+
+from fastled import Api, CompileServer, LiveClient, Test
+
+HERE = Path(__file__).parent
+INDEX_HTML = HERE / "html" / "index.html"
+
+assert INDEX_HTML.exists()
 
 # def override(url) -> None:
 #     """Override the server url."""
@@ -56,6 +65,16 @@ class ApiTester(unittest.TestCase):
             expected_output_dir = sketch_directory / "fastled_js"
             # now test that fastled_js is in the sketch directory
             self.assertTrue(expected_output_dir.exists())
+
+    def test_http_server(self) -> None:
+        """Test the http server."""
+        proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
+        time.sleep(1)
+        # test get request
+        response = httpx.get("http://localhost:8081")
+        self.assertEqual(response.status_code, 200)
+        proc.kill()
+        proc.wait()
 
 
 if __name__ == "__main__":

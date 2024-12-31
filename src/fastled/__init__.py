@@ -313,6 +313,21 @@ class Test:
         """Builds the FastLED compiler site."""
         build(outputdir=outputdir, fast=fast, check=check)
 
+    @staticmethod
+    def spawn_http_server(
+        directory: Path | str = Path("."),
+        port: int = 8000,
+        open_browser: bool = True,
+    ) -> subprocess.Popen:
+        from fastled.open_browser import open_http_server
+
+        if isinstance(directory, str):
+            directory = Path(directory)
+        proc: subprocess.Popen = open_http_server(
+            directory, port=port, open_browser=open_browser
+        )
+        return proc
+
 
 __all__ = [
     "Api",
