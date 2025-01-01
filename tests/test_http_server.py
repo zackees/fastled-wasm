@@ -16,12 +16,6 @@ TIMEOUT = 120
 
 assert INDEX_HTML.exists()
 
-# def override(url) -> None:
-#     """Override the server url."""
-#     assert isinstance(url, str) and "localhost" in url
-
-# client_server.TEST_BEFORE_COMPILE = override
-
 
 class HttpServerTester(unittest.TestCase):
     """Main tester class."""

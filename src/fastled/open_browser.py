@@ -4,9 +4,7 @@ import subprocess
 from multiprocessing import Process
 from pathlib import Path
 
-from static_npm import Npm, Npx
-from static_npm.paths import CACHE_DIR
-from static_npm.running_process import RunningProcess
+from static_npm import NpmTool, RunningProcess
 
 DEFAULT_PORT = 8081
 
@@ -18,7 +16,7 @@ def open_http_server(
     cmd_list: list[str]
     print(f"\nStarting livereload server in {fastled_js}")
 
-    cmd_list = ["live-server"]
+    cmd_list = []
     if port is not None:
         cmd_list.extend([f"--port={port}"])
     if not open_browser:
@@ -27,23 +25,11 @@ def open_http_server(
     live_server_where = shutil.which("live-server")
     if live_server_where is None:
         print("live-server not found. Installing it with the embedded npm...")
-        # cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
-        # npm.call("install -g live-server --force --legacy-peer-deps")
-        tool_dir = CACHE_DIR / "live-server"
-        tool_dir.mkdir(parents=True, exist_ok=True)
-        npm = Npm()
-        npx = Npx()
-        npm.run(["install", "live-server", "--prefix", tool_dir])
-        # npm.run(["install", "live-server", "--prefix", str(tool_dir)])
-        cmd_str = subprocess.list2cmdline(
-            ["npx"] + ["--prefix", str(tool_dir)] + cmd_list
-        )
-        print(f"Running: {cmd_str}")
-        proc = npx.run(["--prefix", str(tool_dir)] + cmd_list, cwd=fastled_js)
+        npm_tool = NpmTool("live-server")
+        npm_tool.install()
+        proc = npm_tool.run(cmd_list, cwd=fastled_js)
         return proc  # type ignore
     else:
-        # npx.run("live-server", check=False)
-        # subprocess.run(cmd_list)
         live_server_where = shutil.which("live-server")
         print(f"Using live-server from {live_server_where}")
         cmd_list = ["live-server"]
