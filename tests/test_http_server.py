@@ -12,6 +12,7 @@ from fastled import Test
 
 HERE = Path(__file__).parent
 INDEX_HTML = HERE / "html" / "index.html"
+TIMEOUT = 120
 
 assert INDEX_HTML.exists()
 
@@ -29,14 +30,13 @@ class HttpServerTester(unittest.TestCase):
         """Test the http server."""
         proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
         time.sleep(1)
-        # test get request
-        for _ in range(60):
+        future_time = time.time() + TIMEOUT
+        while future_time < time.time():
             try:
                 response = httpx.get("http://localhost:8081", timeout=1)
                 break
             except Exception:
-                # print(f"Exception: {exc}")
-                time.sleep(1)
+                pass
         else:
             self.fail("Could not connect to server")
         response = httpx.get("http://localhost:8081", timeout=5)
