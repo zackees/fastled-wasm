@@ -30,7 +30,16 @@ class HttpServerTester(unittest.TestCase):
         proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
         time.sleep(1)
         # test get request
-        response = httpx.get("http://localhost:8081")
+        for _ in range(10):
+            try:
+                response = httpx.get("http://localhost:8081", timeout=1)
+                break
+            except Exception:
+                # print(f"Exception: {exc}")
+                time.sleep(1)
+        else:
+            self.fail("Could not connect to server")
+        response = httpx.get("http://localhost:8081", timeout=5)
         self.assertEqual(response.status_code, 200)
         proc.kill()
         proc.wait()
