@@ -30,6 +30,7 @@ def open_http_server(
         # cmd_list = [sys.executable, "-m", "nodejs.npm", "install", "-g", "live-server"]
         # npm.call("install -g live-server --force --legacy-peer-deps")
         tool_dir = CACHE_DIR / "live-server"
+        tool_dir.mkdir(parents=True, exist_ok=True)
         npm = Npm()
         npx = Npx()
         npm.run(["install", "live-server", "--prefix", tool_dir])
