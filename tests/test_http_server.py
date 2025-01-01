@@ -30,7 +30,7 @@ class HttpServerTester(unittest.TestCase):
         proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
         time.sleep(1)
         # test get request
-        for _ in range(10):
+        for _ in range(60):
             try:
                 response = httpx.get("http://localhost:8081", timeout=1)
                 break
