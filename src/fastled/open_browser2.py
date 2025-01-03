@@ -45,6 +45,10 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
             return response
 
         app.run(port=port, debug=True)
+    except KeyboardInterrupt:
+        import _thread
+
+        _thread.interrupt_main()
     except Exception as e:
         print(f"Failed to run Flask server: {e}")
         import _thread
@@ -72,12 +76,18 @@ def wait_for_server_then_launch_browser(port: int) -> None:
 
 def run(path: Path, port: int, open_browser: bool) -> None:
     """Run the Flask server."""
-    if open_browser:
-        browser_thread = Thread(
-            target=wait_for_server_then_launch_browser, args=(port,), daemon=True
-        )
-        browser_thread.start()
-    _run_flask_server(path, port)
+    try:
+        if open_browser:
+            browser_thread = Thread(
+                target=wait_for_server_then_launch_browser, args=(port,), daemon=True
+            )
+            browser_thread.start()
+        _run_flask_server(path, port)
+    except KeyboardInterrupt:
+        import _thread
+
+        _thread.interrupt_main()
+        pass
 
 
 def parse_args() -> argparse.Namespace:
