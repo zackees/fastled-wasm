@@ -262,6 +262,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.2.15 - Rewrote http server using flask. Reduced install size significantly.
   * 1.2.13 - More fixes for npm live-server, now uses `static-npm` to launch it.
   * 1.2.12 - Fixes for python npm for launching live-server
   * 1.2.10 - `fastled.Test` now allows you to spawn the http webserver on a folder with an index.html in it.
