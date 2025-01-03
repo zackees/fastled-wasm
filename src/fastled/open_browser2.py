@@ -18,7 +18,31 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
 
         @app.route("/<path:path>")
         def serve_files(path):
-            return send_from_directory(fastled_js, path)
+            response = send_from_directory(fastled_js, path)
+            # Some servers don't set the Content-Type header for a bunch of files.
+            if path.endswith(".js"):
+                response.headers["Content-Type"] = "application/javascript"
+            if path.endswith(".css"):
+                response.headers["Content-Type"] = "text/css"
+            if path.endswith(".wasm"):
+                response.headers["Content-Type"] = "application/wasm"
+            if path.endswith(".json"):
+                response.headers["Content-Type"] = "application/json"
+            if path.endswith(".png"):
+                response.headers["Content-Type"] = "image/png"
+            if path.endswith(".jpg"):
+                response.headers["Content-Type"] = "image/jpeg"
+            if path.endswith(".jpeg"):
+                response.headers["Content-Type"] = "image/jpeg"
+            if path.endswith(".gif"):
+                response.headers["Content-Type"] = "image/gif"
+            if path.endswith(".svg"):
+                response.headers["Content-Type"] = "image/svg+xml"
+            if path.endswith(".ico"):
+                response.headers["Content-Type"] = "image/x-icon"
+            if path.endswith(".html"):
+                response.headers["Content-Type"] = "text/html"
+            return response
 
         app.run(port=port, debug=True)
     except Exception as e:
