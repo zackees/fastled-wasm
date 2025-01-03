@@ -12,19 +12,28 @@ def open_http_server_subprocess(
     fastled_js: Path, port: int, open_browser: bool
 ) -> None:
     """Start livereload server in the fastled_js directory and return the process"""
+    try:
+        cmd = [
+            PYTHON_EXE,
+            "-m",
+            "fastled.open_browser2",
+            str(fastled_js),
+            "--port",
+            str(port),
+        ]
+        if not open_browser:
+            cmd.append("--no-browser")
+        # return subprocess.Popen(cmd)  # type ignore
+        # pipe stderr and stdout to null
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )  # type ignore
+    except KeyboardInterrupt:
+        import _thread
 
-    cmd = [
-        PYTHON_EXE,
-        "-m",
-        "fastled.open_browser2",
-        str(fastled_js),
-        "--port",
-        str(port),
-    ]
-    if not open_browser:
-        cmd.append("--no-browser")
-    # return subprocess.Popen(cmd)  # type ignore
-    subprocess.run(cmd)  # type ignore
+        _thread.interrupt_main()
 
 
 def open_browser_process(
