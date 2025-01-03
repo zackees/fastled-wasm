@@ -20,7 +20,7 @@ dependencies = [
     "appdirs>=1.4.4",
     "rapidfuzz>=3.10.1",
     "progress>=1.6",
-    "static-npm>=1.0.8",
+    "Flask>=3.0.0",
 ]
 
 dynamic = ["version"]

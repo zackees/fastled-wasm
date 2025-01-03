@@ -1,79 +1,63 @@
-import shutil
-import socket
 import subprocess
+import sys
 from multiprocessing import Process
 from pathlib import Path
 
-from static_npm import NpmTool, RunningProcess
-
 DEFAULT_PORT = 8081
 
-
-def open_http_server(
-    fastled_js: Path, port: int | None = None, open_browser=True
-) -> subprocess.Popen | RunningProcess:
-    """Start livereload server in the fastled_js directory using API"""
-    cmd_list: list[str]
-    print(f"\nStarting livereload server in {fastled_js}")
-
-    cmd_list = []
-    if port is not None:
-        cmd_list.extend([f"--port={port}"])
-    if not open_browser:
-        cmd_list.append("--no-browser")
-
-    live_server_where = shutil.which("live-server")
-    if live_server_where is None:
-        print("live-server not found. Installing it with the embedded npm...")
-        npm_tool = NpmTool("live-server")
-        npm_tool.install()
-        proc = npm_tool.run(cmd_list, cwd=fastled_js)
-        return proc  # type ignore
-    else:
-        live_server_where = shutil.which("live-server")
-        print(f"Using live-server from {live_server_where}")
-        cmd_list = ["live-server"]
-        if port is not None:
-            cmd_list.extend([f"--port={port}"])
-        if not open_browser:
-            cmd_list.append("--no-browser")
-        # subprocess.run(["cd", str(fastled_js), "&&"] + cmd_list)
-        return subprocess.Popen(cmd_list, cwd=str(fastled_js), shell=True)
+PYTHON_EXE = sys.executable
 
 
-def _open_browser_python(fastled_js: Path) -> None:
-    """Start livereload server in the fastled_js directory using API"""
-    proc = open_http_server(fastled_js)
-    proc.wait()
-
-
-def _find_open_port(start_port: int) -> int:
-    """Find an open port starting from start_port."""
-    port = start_port
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("localhost", port)) != 0:
-                return port
-            port += 1
-
-
-def _run_server(fastled_js: Path) -> None:
-    """Function to run in separate process that starts the livereload server"""
-
-    try:
-        # Keep the process running
-        _open_browser_python(fastled_js)
-    except KeyboardInterrupt:
-        print("\nShutting down livereload server...")
-
-
-def open_browser_process(fastled_js: Path) -> Process:
+def open_http_server_subprocess(
+    fastled_js: Path, port: int, open_browser: bool
+) -> None:
     """Start livereload server in the fastled_js directory and return the process"""
 
-    process = Process(
-        target=_run_server,
-        args=(fastled_js,),
+    cmd = [
+        PYTHON_EXE,
+        "-m",
+        "fastled.open_browser2",
+        str(fastled_js),
+        "--port",
+        str(port),
+    ]
+    if not open_browser:
+        cmd.append("--no-browser")
+    # return subprocess.Popen(cmd)  # type ignore
+    subprocess.run(cmd)  # type ignore
+
+
+def open_browser_process(
+    fastled_js: Path, port: int = DEFAULT_PORT, open_browser: bool = True
+) -> Process:
+    """Start livereload server in the fastled_js directory and return the process"""
+    out: Process = Process(
+        target=open_http_server_subprocess,
+        args=(fastled_js, port, open_browser),
         daemon=True,
     )
-    process.start()
-    return process
+    out.start()
+    return out
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Open a browser to the fastled_js directory"
+    )
+    parser.add_argument(
+        "fastled_js",
+        type=Path,
+        help="Path to the fastled_js directory",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port to run the server on (default: {DEFAULT_PORT})",
+    )
+    args = parser.parse_args()
+
+    proc = open_browser_process(args.fastled_js, args.port, open_browser=True)
+    proc.join()

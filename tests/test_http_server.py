@@ -36,7 +36,6 @@ class HttpServerTester(unittest.TestCase):
         response = httpx.get("http://localhost:8081", timeout=5)
         self.assertEqual(response.status_code, 200)
         proc.kill()
-        proc.wait()
 
 
 if __name__ == "__main__":

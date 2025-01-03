@@ -3,6 +3,7 @@
 # context
 import subprocess
 from contextlib import contextmanager
+from multiprocessing import Process
 from pathlib import Path
 from typing import Generator
 
@@ -318,12 +319,12 @@ class Test:
         directory: Path | str = Path("."),
         port: int = 8000,
         open_browser: bool = True,
-    ) -> subprocess.Popen:
-        from fastled.open_browser import open_http_server
+    ) -> Process:
+        from fastled.open_browser import open_browser_process
 
         if isinstance(directory, str):
             directory = Path(directory)
-        proc: subprocess.Popen = open_http_server(
+        proc: Process = open_browser_process(
             directory, port=port, open_browser=open_browser
         )
         return proc
