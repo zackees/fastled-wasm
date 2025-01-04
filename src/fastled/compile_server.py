@@ -81,7 +81,12 @@ class CompileServer:
         return self.impl._start()
 
     def stop(self) -> None:
-        return self.impl.stop()
+        try:
+            return self.impl.stop()
+        except KeyboardInterrupt:
+            import _thread
+
+            _thread.interrupt_main()
 
     def process_running(self) -> bool:
         return self.impl.process_running()
