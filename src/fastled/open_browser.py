@@ -1,5 +1,8 @@
+import socket
 import subprocess
 import sys
+import time
+import webbrowser
 from multiprocessing import Process
 from pathlib import Path
 
@@ -21,8 +24,6 @@ def open_http_server_subprocess(
             "--port",
             str(port),
         ]
-        if not open_browser:
-            cmd.append("--no-browser")
         # return subprocess.Popen(cmd)  # type ignore
         # pipe stderr and stdout to null
         subprocess.run(
@@ -55,6 +56,16 @@ def find_free_port(start_port: int) -> int:
     raise ValueError("Could not find a free port")
 
 
+def wait_for_server(port: int, timeout: int = 10) -> None:
+    """Wait for the server to start."""
+    future_time = time.time() + timeout
+    while future_time > time.time():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            if sock.connect_ex(("localhost", port)) == 0:
+                return
+    raise TimeoutError("Could not connect to server")
+
+
 def open_browser_process(
     fastled_js: Path, port: int | None = None, open_browser: bool = True
 ) -> Process:
@@ -62,13 +73,18 @@ def open_browser_process(
     if port is not None:
         if not is_port_free(port):
             raise ValueError(f"Port {port} was specified but in use in use")
-    port = port or find_free_port(DEFAULT_PORT)
+    else:
+        port = find_free_port(DEFAULT_PORT)
     out: Process = Process(
         target=open_http_server_subprocess,
         args=(fastled_js, port, open_browser),
         daemon=True,
     )
     out.start()
+    wait_for_server(port)
+    if open_browser:
+        print(f"Opening browser to http://localhost:{port}")
+        webbrowser.open(url=f"http://localhost:{port}", new=1, autoraise=True)
     return out
 
 

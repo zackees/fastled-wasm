@@ -21,6 +21,7 @@ dependencies = [
     "rapidfuzz>=3.10.1",
     "progress>=1.6",
     "Flask>=3.0.0",
+    "livereload",
 ]
 
 dynamic = ["version"]

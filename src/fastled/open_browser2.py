@@ -1,8 +1,7 @@
 import argparse
-import socket
-import time
 from pathlib import Path
-from threading import Thread
+
+from livereload import Server
 
 
 def _run_flask_server(fastled_js: Path, port: int) -> None:
@@ -52,7 +51,13 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
             response.headers["Expires"] = "0"
             return response
 
-        app.run(port=port, debug=True)
+        server = Server(app.wsgi_app)
+        # Watch index.html for changes
+        server.watch(str(fastled_js / "index.html"))
+        # server.watch(str(fastled_js / "index.js"))
+        # server.watch(str(fastled_js / "index.css"))
+        # Start the server
+        server.serve(port=port, debug=True)
     except KeyboardInterrupt:
         import _thread
 
@@ -64,33 +69,13 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
         _thread.interrupt_main()
 
 
-def wait_for_server(port: int, timeout: int = 10) -> None:
-    """Wait for the server to start."""
-    future_time = time.time() + timeout
-    while future_time > time.time():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("localhost", port)) == 0:
-                return
-    raise TimeoutError("Could not connect to server")
-
-
-def wait_for_server_then_launch_browser(port: int) -> None:
-    """Wait for the server to start, then launch the browser."""
-    wait_for_server(port)
-    import webbrowser
-
-    webbrowser.open(f"http://localhost:{port}")
-
-
-def run(path: Path, port: int, open_browser: bool) -> None:
+def run(path: Path, port: int) -> None:
     """Run the Flask server."""
     try:
-        if open_browser:
-            browser_thread = Thread(
-                target=wait_for_server_then_launch_browser, args=(port,), daemon=True
-            )
-            browser_thread.start()
         _run_flask_server(path, port)
+        import warnings
+
+        warnings.warn("Flask server has stopped")
     except KeyboardInterrupt:
         import _thread
 
@@ -113,19 +98,13 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Port to run the server on (default: %(default)s)",
     )
-    parser.add_argument(
-        "--no-browser",
-        action="store_true",
-        help="Do not open the browser",
-    )
     return parser.parse_args()
 
 
 def main() -> None:
     """Main function."""
     args = parse_args()
-    open_browser = not args.no_browser
-    run(args.fastled_js, args.port, open_browser)
+    run(args.fastled_js, args.port)
 
 
 if __name__ == "__main__":

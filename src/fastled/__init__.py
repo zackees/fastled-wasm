@@ -184,7 +184,7 @@ class Docker:
             )
         else:
             print(f"Cloning {url} into {output_dir}")
-            subprocess.run(["git", "clone", url, str(output_dir)], check=True)
+            subprocess.run(["git", "clone", "--depth", "1", url, str(output_dir)], check=True)
 
         dockerfile_path = (
             output_dir / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
