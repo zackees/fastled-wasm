@@ -12,6 +12,9 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
 
         app = Flask(__name__)
 
+        # Must be a full path or flask will fail to find the file.
+        fastled_js = fastled_js.resolve()
+
         @app.route("/")
         def serve_index():
             return send_from_directory(fastled_js, "index.html")
