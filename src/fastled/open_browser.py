@@ -36,10 +36,33 @@ def open_http_server_subprocess(
         _thread.interrupt_main()
 
 
+def is_port_free(port: int) -> bool:
+    """Check if a port is free"""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(("localhost", port)) != 0
+
+
+def find_free_port(start_port: int) -> int:
+    """Find a free port starting at start_port"""
+    for port in range(start_port, start_port + 100):
+        if is_port_free(port):
+            print(f"Found free port: {port}")
+            return port
+        else:
+            print(f"Port {port} is in use, finding next")
+    raise ValueError("Could not find a free port")
+
+
 def open_browser_process(
-    fastled_js: Path, port: int = DEFAULT_PORT, open_browser: bool = True
+    fastled_js: Path, port: int | None = None, open_browser: bool = True
 ) -> Process:
     """Start livereload server in the fastled_js directory and return the process"""
+    if port is not None:
+        if not is_port_free(port):
+            raise ValueError(f"Port {port} was specified but in use in use")
+    port = port or find_free_port(DEFAULT_PORT)
     out: Process = Process(
         target=open_http_server_subprocess,
         args=(fastled_js, port, open_browser),

@@ -317,7 +317,7 @@ class Test:
     @staticmethod
     def spawn_http_server(
         directory: Path | str = Path("."),
-        port: int = 8000,
+        port: int | None = None,
         open_browser: bool = True,
     ) -> Process:
         from fastled.open_browser import open_browser_process
