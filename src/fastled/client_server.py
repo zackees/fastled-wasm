@@ -22,6 +22,41 @@ from fastled.web_compile import (
 )
 
 
+def _create_error_html(error_message: str) -> str:
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <!-- no cache -->
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>FastLED Compilation Error ZACH</title>
+    <style>
+        body {{
+            background-color: #1a1a1a;
+            color: #ffffff;
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+        }}
+        pre {{
+            color: #ffffff;
+            background-color: #1a1a1a;
+            border: 1px solid #444444;
+            border-radius: 4px;
+            padding: 15px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }}
+    </style>
+</head>
+<body>
+    <h1>Compilation Failed</h1>
+    <pre>{error_message}</pre>
+</body>
+</html>"""
+
+
 # Override this function in your own code to run tests before compilation
 def TEST_BEFORE_COMPILE(url) -> None:
     pass
@@ -45,6 +80,10 @@ def _run_web_compiler(
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
         print(web_result.stdout)
+        # Create error page
+        output_dir.mkdir(exist_ok=True)
+        error_html = _create_error_html(web_result.stdout)
+        (output_dir / "index.html").write_text(error_html, encoding="utf-8")
         return web_result
 
     def print_results() -> None:

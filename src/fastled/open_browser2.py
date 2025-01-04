@@ -42,6 +42,11 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
                 response.headers["Content-Type"] = "image/x-icon"
             if path.endswith(".html"):
                 response.headers["Content-Type"] = "text/html"
+
+            # now also add headers to force no caching
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
             return response
 
         app.run(port=port, debug=True)
