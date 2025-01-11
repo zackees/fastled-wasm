@@ -72,7 +72,7 @@ def open_browser_process(
     """Start livereload server in the fastled_js directory and return the process"""
     if port is not None:
         if not is_port_free(port):
-            raise ValueError(f"Port {port} was specified but in use in use")
+            raise ValueError(f"Port {port} was specified but in use")
     else:
         port = find_free_port(DEFAULT_PORT)
     out: Process = Process(
