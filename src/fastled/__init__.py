@@ -291,6 +291,15 @@ class Docker:
         return container_name
 
 
+class Tools:
+    @staticmethod
+    def string_diff(needle: str, haystack: list[str]) -> list[tuple[float, str]]:
+        """Returns a sorted list with the top matches at the beginning."""
+        from fastled.string_diff import string_diff
+
+        return string_diff(needle, haystack)
+
+
 class Test:
     __test__ = False  # This prevents unittest from recognizing it as a test class.
 
