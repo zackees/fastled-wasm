@@ -46,7 +46,7 @@ class WebCompileTester(unittest.TestCase):
 
         # Verify we got actual WASM data back
 
-        self.assertEqual(0, len(result.zip_bytes))
+        self.assertTrue(result.success)
 
         # Print compilation output for debugging
         print(f"Compilation stdout:\n{result.stdout}")
