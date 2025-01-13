@@ -262,6 +262,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # Revisions
 
+  * 1.2.22 - Prefer to use `live-server` from npm. If npm exists on the system then do a background install of `live-server` for next run.
   * 1.2.20 - Fixed up path issue for web browser launch for hot reload.
   * 1.2.19 - Compilation failure now overwrites the index.html file with error message.
   * 1.2.16 - Force mime types in web browser as some users may not have it correct in their registry.
