@@ -6,7 +6,7 @@ import webbrowser
 from multiprocessing import Process
 from pathlib import Path
 
-DEFAULT_PORT = 8081
+DEFAULT_PORT = 8089  # different than live version.
 
 PYTHON_EXE = sys.executable
 
