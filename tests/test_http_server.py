@@ -2,7 +2,6 @@
 Unit test file.
 """
 
-import time
 import unittest
 from pathlib import Path
 
@@ -23,17 +22,7 @@ class HttpServerTester(unittest.TestCase):
     def test_http_server(self) -> None:
         """Test the http server."""
         proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
-        time.sleep(1)
-        future_time = time.time() + TIMEOUT
-        while future_time > time.time():
-            try:
-                response = httpx.get("http://localhost:8081", timeout=1)
-                break
-            except Exception:
-                continue
-        else:
-            self.fail("Could not connect to server")
-        response = httpx.get("http://localhost:8081", timeout=5)
+        response = httpx.get("http://localhost:8081", timeout=1)
         self.assertEqual(response.status_code, 200)
         proc.terminate()
 

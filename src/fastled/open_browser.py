@@ -15,6 +15,18 @@ def open_http_server_subprocess(
     fastled_js: Path, port: int, open_browser: bool
 ) -> None:
     """Start livereload server in the fastled_js directory and return the process"""
+    import shutil
+
+    if shutil.which("live-server") is not None:
+        cmd = [
+            "live-server",
+            f"--port={port}",
+            "--host=localhost",
+            "--no-browser",
+            ".",
+        ]
+        subprocess.run(cmd, shell=True, cwd=fastled_js)
+        return
     try:
         cmd = [
             PYTHON_EXE,
@@ -39,7 +51,6 @@ def open_http_server_subprocess(
 
 def is_port_free(port: int) -> bool:
     """Check if a port is free"""
-    import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) != 0
@@ -58,11 +69,16 @@ def find_free_port(start_port: int) -> int:
 
 def wait_for_server(port: int, timeout: int = 10) -> None:
     """Wait for the server to start."""
+    from httpx import get
+
     future_time = time.time() + timeout
     while future_time > time.time():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("localhost", port)) == 0:
+        try:
+            response = get(f"http://localhost:{port}", timeout=1)
+            if response.status_code == 200:
                 return
+        except Exception:
+            continue
     raise TimeoutError("Could not connect to server")
 
 
