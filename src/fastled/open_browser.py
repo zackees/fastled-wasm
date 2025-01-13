@@ -22,9 +22,10 @@ def open_http_server_subprocess(
             "live-server",
             f"--port={port}",
             "--host=localhost",
-            "--no-browser",
             ".",
         ]
+        if not open_browser:
+            cmd.append("--no-browser")
         subprocess.run(cmd, shell=True, cwd=fastled_js)
         return
     try:
@@ -82,9 +83,22 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
     raise TimeoutError("Could not connect to server")
 
 
+def _background_npm_install_live_server() -> None:
+    import time
+
+    time.sleep(3)
+    subprocess.run(
+        ["npm", "install", "-g", "live-server"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def open_browser_process(
     fastled_js: Path, port: int | None = None, open_browser: bool = True
 ) -> Process:
+    import shutil
+
     """Start livereload server in the fastled_js directory and return the process"""
     if port is not None:
         if not is_port_free(port):
@@ -101,6 +115,14 @@ def open_browser_process(
     if open_browser:
         print(f"Opening browser to http://localhost:{port}")
         webbrowser.open(url=f"http://localhost:{port}", new=1, autoraise=True)
+
+    # start a deamon thread to install live-server
+    if shutil.which("live-server") is None:
+        import threading
+
+        t = threading.Thread(target=_background_npm_install_live_server)
+        t.daemon = True
+        t.start()
     return out
 
 
