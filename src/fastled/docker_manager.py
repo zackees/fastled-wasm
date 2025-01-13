@@ -676,7 +676,22 @@ class DockerManager:
             print(f"Running command: {cmd_str}")
 
             # Run the build command
-            subprocess.run(cmd_list, check=True)
+            # cp = subprocess.run(cmd_list, check=True, capture_output=True)
+            proc: subprocess.Popen = subprocess.Popen(
+                cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
+            stdout = proc.stdout
+            assert stdout is not None, "stdout is None"
+            for line in iter(stdout.readline, b""):
+                try:
+                    line_str = line.decode("utf-8")
+                    print(line_str, end="")
+                except UnicodeDecodeError:
+                    print("Error decoding line")
+            rtn = proc.wait()
+            if rtn != 0:
+                print(f"Error building Docker image: {rtn}")
+                raise subprocess.CalledProcessError(rtn, cmd_str)
             print(f"Successfully built image {image_name}:{tag}")
 
         except subprocess.CalledProcessError as e:
