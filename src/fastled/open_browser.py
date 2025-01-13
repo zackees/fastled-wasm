@@ -1,4 +1,3 @@
-import socket
 import subprocess
 import sys
 import time
@@ -52,9 +51,14 @@ def open_http_server_subprocess(
 
 def is_port_free(port: int) -> bool:
     """Check if a port is free"""
+    import httpx
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("localhost", port)) != 0
+    try:
+        response = httpx.get(f"http://localhost:{port}", timeout=1)
+        response.raise_for_status()
+        return False
+    except (httpx.HTTPError, httpx.ConnectError):
+        return True
 
 
 def find_free_port(start_port: int) -> int:
@@ -84,7 +88,14 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
 
 
 def _background_npm_install_live_server() -> None:
+    import shutil
     import time
+
+    if shutil.which("npm") is None:
+        return
+
+    if shutil.which("live-server") is not None:
+        return
 
     time.sleep(3)
     subprocess.run(
