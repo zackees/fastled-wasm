@@ -7,6 +7,8 @@ from fastled.web_compile import web_compile
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "bad"
 
+TEST_DIR_2 = HERE / "test_ino" / "bad_platformio"
+
 
 class WebCompileTester(unittest.TestCase):
     """Main tester class."""
@@ -29,6 +31,25 @@ class WebCompileTester(unittest.TestCase):
         # Print compilation output for debugging
         print(f"Compilation stdout:\n{result.stdout}")
         self.assertIn("lsfjsdklfjdskfjkasdfjdsfds", result.stdout)
+
+        print(f"Zip size: {len(result.zip_bytes)} bytes")
+
+    def test_platform_ini_does_not_make_it_in(self) -> None:
+        """Test that platformio.ini does not make it into the zip."""
+        start = time.time()
+        result = web_compile(TEST_DIR_2)
+        diff = time.time() - start
+        print(f"Time taken: {diff:.2f} seconds")
+
+        # Verify we got a successful result
+        self.assertTrue(result.success)
+
+        # Verify we got actual WASM data back
+
+        self.assertEqual(0, len(result.zip_bytes))
+
+        # Print compilation output for debugging
+        print(f"Compilation stdout:\n{result.stdout}")
 
         print(f"Zip size: {len(result.zip_bytes)} bytes")
 
