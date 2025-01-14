@@ -21,8 +21,8 @@ class HttpServerTester(unittest.TestCase):
 
     def test_http_server(self) -> None:
         """Test the http server."""
-        proc = Test.spawn_http_server(INDEX_HTML.parent, port=8081, open_browser=False)
-        response = httpx.get("http://localhost:8081", timeout=1)
+        proc = Test.spawn_http_server(INDEX_HTML.parent, port=8021, open_browser=False)
+        response = httpx.get("http://localhost:8021", timeout=1)
         self.assertEqual(response.status_code, 200)
         proc.terminate()
 

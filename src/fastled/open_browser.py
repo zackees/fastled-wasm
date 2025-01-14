@@ -16,18 +16,19 @@ def open_http_server_subprocess(
     """Start livereload server in the fastled_js directory and return the process"""
     import shutil
 
-    if shutil.which("live-server") is not None:
-        cmd = [
-            "live-server",
-            f"--port={port}",
-            "--host=localhost",
-            ".",
-        ]
-        if not open_browser:
-            cmd.append("--no-browser")
-        subprocess.run(cmd, shell=True, cwd=fastled_js)
-        return
     try:
+        if shutil.which("live-server") is not None:
+            cmd = [
+                "live-server",
+                f"--port={port}",
+                "--host=localhost",
+                ".",
+            ]
+            if not open_browser:
+                cmd.append("--no-browser")
+            subprocess.run(cmd, shell=True, cwd=fastled_js)
+            return
+
         cmd = [
             PYTHON_EXE,
             "-m",
