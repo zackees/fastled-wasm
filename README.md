@@ -40,7 +40,7 @@ In every conceivable way, the local compiler will be much faster than the web ve
 You can get the latest ubuntu binary of the FastLED cli compiler like this:
 
 ```
-curl -L -o fastled-linux-x64.zip https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-linux-x64.zip && unzip fastled-linux-x64.zip -d /tmp && mv /tmp/fastled-linux-x64/* /usr/local/bin/
+curl -L https://raw.githubusercontent.com/zackees/fastled-wasm/refs/heads/main/install_linux.sh | /bin/bash
 ```
 
 # Run
