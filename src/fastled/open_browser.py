@@ -118,7 +118,7 @@ def open_browser_process(
         port = find_free_port(DEFAULT_PORT)
     out: Process = Process(
         target=open_http_server_subprocess,
-        args=(fastled_js, port, open_browser),
+        args=(fastled_js, port, False),
         daemon=True,
     )
     out.start()
