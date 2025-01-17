@@ -523,6 +523,7 @@ class DockerManager:
             container.remove(force=True)
         except docker.errors.NotFound:
             pass
+        start_time = time.time()
         try:
             docker_command: list[str] = [
                 "docker",
@@ -546,7 +547,10 @@ class DockerManager:
             subprocess.run(docker_command, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error running Docker command: {e}")
-            raise
+            diff = time.time() - start_time
+            if diff < 5:
+                raise
+            sys.exit(1)  # Probably a user exit.
 
     def attach_and_run(self, container: Container | str) -> RunningContainer:
         """
