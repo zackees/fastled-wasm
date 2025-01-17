@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from fastled.client_server import run_client_server
+from fastled.client_server import run_client, run_client_server
 from fastled.compile_server import CompileServer
 from fastled.parse_args import parse_args
 
@@ -55,14 +55,37 @@ def main() -> int:
         try:
             project_root = Path(".").absolute()
             print(f"Building Docker image at {project_root}")
-            from fastled import Docker
+            from fastled import Api, Docker
 
             docker_image_name = Docker.build_from_fastled_repo(
                 project_root=project_root
             )
             print(f"Built Docker image: {docker_image_name}")
-            print("Exiting...")
-            return 0
+            if not args.directory:
+                print("No sketch directory specified. So exiting...")
+                return 0
+            print("Running server")
+            with Api.server(
+                auto_updates=False, container_name=docker_image_name
+            ) as server:
+                sketch_dir = Path("examples/wasm")
+                if args.just_compile:
+                    rtn = run_client(
+                        directory=sketch_dir,
+                        host=server,
+                        open_web_browser=False,
+                        keep_running=False,
+                    )
+                    if rtn != 0:
+                        print(f"Failed to compile: {rtn})")
+                    return rtn
+                print(f"Server started at {server.url()}")
+                with Api.live_client(
+                    sketch_directory=sketch_dir, host=server
+                ) as client:
+                    print(f"Client started at {client.url()}")
+                    while True:
+                        time.sleep(0.1)
         except KeyboardInterrupt:
             print("\nExiting from client...")
             return 1
