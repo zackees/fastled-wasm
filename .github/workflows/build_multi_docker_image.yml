@@ -42,7 +42,7 @@ jobs:
             echo "should_run=false" >> $GITHUB_OUTPUT
           fi
 
-  build:
+  build-amd64:
     needs: check-if-changed
     if: needs.check-if-changed.outputs.should_run == 'true'
     runs-on: ubuntu-24.04
@@ -51,6 +51,57 @@ jobs:
       matrix:
         platform:
           - linux/amd64
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV          
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          platforms: ${{ matrix.platform }}
+          context: https://github.com/fastled/fastled.git
+          file: src/platforms/wasm/compiler/Dockerfile
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            PLATFORM_TAG=${{ matrix.platform == 'linux/arm64' && '-arm64' || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max,compression=zstd
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+            name: digests-${{ env.PLATFORM_PAIR }}
+            path: /tmp/digests/*
+            if-no-files-found: error
+            retention-days: 1
+
+  build-arm:
+    needs: check-if-changed
+    if: needs.check-if-changed.outputs.should_run == 'true'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
           - linux/arm64
     steps:
       - name: Prepare
@@ -62,8 +113,6 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -101,7 +150,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs:
       - check-if-changed
-      - build
+      - build-amd64
+      - build-arm
     if: needs.check-if-changed.outputs.should_run == 'true'
     steps:
       - name: Download digests
