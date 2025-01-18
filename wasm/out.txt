@@ -1,0 +1,118 @@
+Starting FastLED WASM compilation script...
+Keep files flag: False
+Using mapped directory: /tmp/tmpe8kueft6
+Copying files from mapped directory to container...
+Copying file: /tmp/tmpe8kueft6/wasm/build_mode.txt
+Copying file: /tmp/tmpe8kueft6/wasm/wasm.ino
+Copying Arduino.h to src/Arduino.h
+Transforming files to cpp...
+Found .ino file: /js/src/wasm.ino
+Renaming /js/src/wasm.ino to wasm.ino.cpp
+Inserting headers in source files...
+Inserting header in file: /js/src/wasm.ino.cpp
+Processed: /js/src/wasm.ino.cpp
+Transform to cpp and insert header operations completed.
+Starting compilation...
+Starting compilation process...
+Build mode: QUICK
+Attempting compilation (attempt 1/1)...
+0.00 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm]
+0.00 Processing wasm (platform: native)
+0.00 --------------------------------------------------------------------------------
+0.23 Verbose mode can be enabled via `-v, --verbose` option
+0.24 LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+0.24 LDF Modes: Finder ~ chain, Compatibility ~ off
+0.24 Found 1 compatible libraries
+0.24 Scanning dependencies...
+0.38 Dependency Graph
+0.38 |-- FastLED @ 3.9.11
+0.40 Building in release mode
+0.46 Compiling .pio/build/wasm/libbb9/fastled/FastLED.o
+0.46 Compiling .pio/build/wasm/libbb9/fastled/bitswap.o
+0.47 Compiling .pio/build/wasm/libbb9/fastled/cled_controller.o
+0.48 Compiling .pio/build/wasm/libbb9/fastled/colorpalettes.o
+0.48 Compiling .pio/build/wasm/libbb9/fastled/colorutils.o
+0.51 Compiling .pio/build/wasm/libbb9/fastled/crgb.o
+0.52 Compiling .pio/build/wasm/libbb9/fastled/five_bit_hd_gamma.o
+0.53 Compiling .pio/build/wasm/libbb9/fastled/fl/allocator.o
+0.54 Compiling .pio/build/wasm/libbb9/fastled/fl/bytestreammemory.o
+0.55 Compiling .pio/build/wasm/libbb9/fastled/fl/engine_events.o
+0.55 Compiling .pio/build/wasm/libbb9/fastled/fl/file_system.o
+0.56 Compiling .pio/build/wasm/libbb9/fastled/fl/json.o
+0.56 Compiling .pio/build/wasm/libbb9/fastled/fl/rectangular_draw_buffer.o
+0.57 Compiling .pio/build/wasm/libbb9/fastled/fl/ref.o
+0.58 Compiling .pio/build/wasm/libbb9/fastled/fl/screenmap.o
+0.58 Compiling .pio/build/wasm/libbb9/fastled/fl/str.o
+0.59 Compiling .pio/build/wasm/libbb9/fastled/fl/stub_main.o
+0.59 Compiling .pio/build/wasm/libbb9/fastled/fl/xmap.o
+0.60 Compiling .pio/build/wasm/libbb9/fastled/fl/xymap.o
+0.60 Compiling .pio/build/wasm/libbb9/fastled/fx/2d/bilinear_expansion.o
+0.61 Compiling .pio/build/wasm/libbb9/fastled/fx/2d/noisepalette.o
+0.61 Compiling .pio/build/wasm/libbb9/fastled/fx/2d/scale_up.o
+0.62 Compiling .pio/build/wasm/libbb9/fastled/fx/frame.o
+0.64 Compiling .pio/build/wasm/libbb9/fastled/fx/fx_engine.o
+0.64 Compiling .pio/build/wasm/libbb9/fastled/fx/time.o
+0.65 Compiling .pio/build/wasm/libbb9/fastled/fx/video.o
+0.66 Compiling .pio/build/wasm/libbb9/fastled/fx/video/frame_interpolator.o
+0.67 Compiling .pio/build/wasm/libbb9/fastled/fx/video/frame_tracker.o
+0.67 Compiling .pio/build/wasm/libbb9/fastled/fx/video/pixel_stream.o
+0.68 Compiling .pio/build/wasm/libbb9/fastled/fx/video/video_impl.o
+0.68 Compiling .pio/build/wasm/libbb9/fastled/hsv2rgb.o
+0.69 Compiling .pio/build/wasm/libbb9/fastled/lib8tion.o
+0.69 Compiling .pio/build/wasm/libbb9/fastled/noise.o
+0.72 Compiling .pio/build/wasm/libbb9/fastled/platforms.o
+0.73 Compiling .pio/build/wasm/libbb9/fastled/platforms/arm/k20/clockless_objectfled.o
+0.74 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/clockless_i2s_esp32s3.o
+0.74 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_4/idf4_rmt.o
+0.75 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_4/idf4_rmt_impl.o
+0.75 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_5/idf5_rmt.o
+0.76 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_5/strip_rmt.o
+0.76 Compiling .pio/build/wasm/libbb9/fastled/platforms/esp/32/spi_ws2812/strip_spi.o
+0.76 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/active_strip_data.o
+0.77 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/compiler/Arduino.o
+0.77 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/engine_listener.o
+0.80 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/fs_wasm.o
+0.80 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/js.o
+0.81 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/timer.o
+0.83 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/button.o
+0.84 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/checkbox.o
+0.84 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/description.o
+0.85 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/slider.o
+0.87 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/title.o
+0.87 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/ui_internal.o
+0.88 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/ui_manager.o
+0.89 Compiling .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/ui_number_field.o
+0.90 Compiling .pio/build/wasm/libbb9/fastled/power_mgt.o
+0.90 Compiling .pio/build/wasm/libbb9/fastled/rgbw.o
+0.91 Compiling .pio/build/wasm/libbb9/fastled/sensors/digital_pin.o
+0.92 Compiling .pio/build/wasm/libbb9/fastled/sensors/pir.o
+0.93 Compiling .pio/build/wasm/libbb9/fastled/simplex.o
+0.94 Compiling .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_api.o
+0.95 Compiling .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_rmt_dev.o
+0.95 Compiling .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_rmt_encoder.o
+0.95 Compiling .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_spi_dev.o
+0.96 Compiling .pio/build/wasm/libbb9/fastled/third_party/object_fled/src/OjectFLED.o
+0.96 Compiling .pio/build/wasm/libbb9/fastled/transpose8x1_noinline.o
+0.97 Compiling .pio/build/wasm/libbb9/fastled/wiring.o
+0.98 Compiling .pio/build/wasm/src/wasm.ino.o
+1.01 Linking .pio/build/wasm/program
+1.46 ========================= [SUCCESS] Took 1.46 seconds =========================
+Compilation successful on attempt 1
+Compilation return code: 0
+Compilation successful.
+Copying output files...
+Copying /js/.pio/build/wasm/fastled.js to /tmp/tmpe8kueft6/wasm/fastled_js/fastled.js
+Copying /js/.pio/build/wasm/fastled.wasm to /tmp/tmpe8kueft6/wasm/fastled_js/fastled.wasm
+Copying /js/fastled/src/platforms/wasm/compiler/index.html to output directory
+Copying /js/fastled/src/platforms/wasm/compiler/index.css to output directory
+Copying /js/fastled/src/platforms/wasm/compiler/modules/ui_manager.js to output directory
+Copying /js/fastled/src/platforms/wasm/compiler/modules/graphics_manager.js to output directory
+Copying /js/fastled/src/platforms/wasm/compiler/modules/graphics_manager_threejs.js to output directory
+Copying /js/.pio/build/wasm/fastled.wasm.map to output directory
+Copying /js/.pio/build/wasm/fastled.js.symbols to output directory
+Copying index.js to output directory
+Writing manifest files.json
+Removing temporary source files
+Compilation process completed successfully
+Running...
+Skipping rsync, as fastled src volume not mapped
