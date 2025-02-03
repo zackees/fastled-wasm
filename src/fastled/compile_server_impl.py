@@ -111,7 +111,10 @@ class CompileServerImpl:
         return self.docker.is_container_running(self.container_name)
 
     def using_fastled_src_dir_volume(self) -> bool:
-        return self.fastled_src_dir is not None
+        out = self.fastled_src_dir is not None
+        if out:
+            print(f"Using FastLED source directory: {self.fastled_src_dir}")
+        return out
 
     def port(self) -> int:
         if self._port == 0:
@@ -206,6 +209,24 @@ class CompileServerImpl:
                 "bind": f"/mapped/{dir_name}",
                 "mode": "rw",
             }
+            if self.fastled_src_dir is not None:
+                # add volume for src/platforms/wasm/compiler/CMakelists.txt
+                # to allow for interactive compilation
+                interactive_sources = [
+                    "src/platforms/wasm/compiler/CMakeLists.txt",
+                    "src/platforms/wasm/compiler/build_archive.sh",
+                ]
+                for src in interactive_sources:
+                    src_path = Path(src).absolute()
+                    if src_path.exists():
+                        print(f"Mounting {src} into container")
+                        src_str = str(src_path)
+                        volumes[src_str] = {
+                            "bind": f"/js/fastled/{src}",
+                            "mode": "rw",
+                        }
+                    else:
+                        print(f"Could not find {src}")
 
         cmd_str = subprocess.list2cmdline(server_command)
         if not self.interactive:
@@ -223,6 +244,7 @@ class CompileServerImpl:
             print("Compile server starting")
             return port
         else:
+
             self.docker.run_container_interactive(
                 image_name=IMAGE_NAME,
                 tag="main",
