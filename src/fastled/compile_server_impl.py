@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import time
 import warnings
 from datetime import datetime, timezone
@@ -69,6 +70,10 @@ class CompileServerImpl:
         if wait_for_startup:
             ok = self.wait_for_startup()
             if not ok:
+                if self.interactive:
+                    print("Exited from container.")
+                    sys.exit(0)
+                    return
                 raise CompileServerError("Server did not start")
         if not self.interactive:
             msg = f"# FastLED Compile Server started at {self.url()} #"

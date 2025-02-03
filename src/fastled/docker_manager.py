@@ -544,7 +544,7 @@ class DockerManager:
                 docker_command.append(command)
             cmd_str: str = subprocess.list2cmdline(docker_command)
             print(f"Running command: {cmd_str}")
-            subprocess.run(docker_command, check=True)
+            subprocess.run(docker_command, check=False)
         except subprocess.CalledProcessError as e:
             print(f"Error running Docker command: {e}")
             diff = time.time() - start_time
