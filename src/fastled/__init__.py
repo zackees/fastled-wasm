@@ -101,7 +101,7 @@ class Api:
         interactive=False,
         auto_updates=None,
         auto_start=True,
-        mapped_dir: Path | None = None,
+        mapped_dir: Path | None = None,  # Sketch directory.
         container_name: str | None = None,
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
