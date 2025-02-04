@@ -16,6 +16,16 @@ from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
 
+def file_watcher_enabled() -> bool:
+    """Check if watchdog is disabled"""
+    return os.getenv("NO_FILE_WATCHING", "0") == "1"
+
+
+def file_watcher_set(enabled: bool) -> None:
+    """Set the file watcher enabled state"""
+    os.environ["NO_FILE_WATCHING"] = "1" if not enabled else "0"
+
+
 class MyEventHandler(FileSystemEventHandler):
     def __init__(
         self,
@@ -119,6 +129,9 @@ class FileChangedNotifier(threading.Thread):
         Returns:
             Changed filepath or None if no change within timeout
         """
+        if file_watcher_enabled():
+            time.sleep(timeout)
+            return None
         try:
             filepath = self.change_queue.get(timeout=timeout)
             current_time = time.time()

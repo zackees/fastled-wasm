@@ -42,6 +42,7 @@ class CompileServerImpl:
         mapped_dir: Path | None = None,
         auto_start: bool = True,
         container_name: str | None = None,
+        remove_previous: bool = False,
     ) -> None:
         container_name = container_name or DEFAULT_CONTAINER_NAME
         if interactive and not mapped_dir:
@@ -49,7 +50,9 @@ class CompileServerImpl:
                 "Interactive mode requires a mapped directory point to a sketch"
             )
         if not interactive and mapped_dir:
-            raise ValueError("Mapped directory is only used in interactive mode")
+            warnings.warn(
+                f"Mapped directory {mapped_dir} is ignored in non-interactive mode"
+            )
         self.container_name = container_name
         self.mapped_dir = mapped_dir
         self.docker = DockerManager()
@@ -57,6 +60,7 @@ class CompileServerImpl:
         self.interactive = interactive
         self.running_container: RunningContainer | None = None
         self.auto_updates = auto_updates
+        self.remove_previous = remove_previous
         self._port = 0  # 0 until compile server is started
         if auto_start:
             self.start()
@@ -242,7 +246,7 @@ class CompileServerImpl:
                 command=cmd_str,
                 ports=ports,
                 volumes=volumes,
-                remove_previous=self.interactive,
+                remove_previous=self.interactive or self.remove_previous,
             )
             self.running_container = self.docker.attach_and_run(container)
             assert self.running_container is not None, "Container should be running"

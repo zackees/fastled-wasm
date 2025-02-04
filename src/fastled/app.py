@@ -7,8 +7,9 @@ import sys
 import time
 from pathlib import Path
 
-from fastled.client_server import run_client, run_client_server
+from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
+from fastled.filewatcher import file_watcher_set
 from fastled.parse_args import parse_args
 
 
@@ -49,13 +50,15 @@ def main() -> int:
     update: bool = args.update
     build: bool = args.build
     just_compile: bool = args.just_compile
-    directory: Path | None = Path(args.directory).absolute() if args.directory else None
+    # directory: Path | None = Path(args.directory).absolute() if args.directory else None
+    directory: Path | None = Path(args.directory) if args.directory else None
 
-    if directory is None and interactive:
-        # if examples/wasm exists
-        if Path("examples/wasm").exists():
-            print(f"Using {Path('examples/wasm')} as the sketch directory")
-            directory = Path("examples/wasm").absolute()
+    # broken for now
+    # if directory is None and interactive:
+    #     # if examples/wasm exists
+    #     if Path("examples/wasm").exists():
+    #         print(f"Using {Path('examples/wasm')} as the sketch directory")
+    #         directory = Path("examples/wasm").absolute()
 
     if update:
         # Force auto_update to ensure update check happens
@@ -66,42 +69,36 @@ def main() -> int:
 
     if build:
         try:
+            file_watcher_set(False)
             project_root = Path(".").absolute()
             print(f"Building Docker image at {project_root}")
             from fastled import Api, Docker
 
-            docker_image_name = Docker.build_from_fastled_repo(
-                project_root=project_root
+            server = Docker.build_from_fastled_repo(
+                project_root=project_root, interactive=interactive
             )
-            print(f"Built Docker image: {docker_image_name}")
-            if not directory:
-                print("No sketch directory specified. So exiting...")
+            assert isinstance(server, CompileServer)
+
+            if interactive:
+                server.stop()
                 return 0
+            print(f"Built Docker image: {server.name}")
+            if not directory:
+                if not directory:
+                    print("No directory specified")
+                server.stop()
+                return 0
+
             print("Running server")
-            with Api.server(
+            with Api.live_client(
                 auto_updates=False,
-                container_name=docker_image_name,
-                interactive=interactive,
-                mapped_dir=directory,
-            ) as server:
-                sketch_dir = Path("examples/wasm")
-                if just_compile:
-                    rtn = run_client(
-                        directory=sketch_dir,
-                        host=server,
-                        open_web_browser=False,
-                        keep_running=False,
-                    )
-                    if rtn != 0:
-                        print(f"Failed to compile: {rtn})")
-                    return rtn
-                print(f"Server started at {server.url()}")
-                with Api.live_client(
-                    sketch_directory=sketch_dir, host=server
-                ) as client:
-                    print(f"Client started at {client.url()}")
-                    while True:
-                        time.sleep(0.1)
+                sketch_directory=directory,
+                host=server,
+                auto_start=True,
+                keep_running=not just_compile,
+            ) as client:
+                print(f"Exited client {client.url()}")
+                print(f"Exiting {server.name}")
         except KeyboardInterrupt:
             print("\nExiting from client...")
             return 1
@@ -118,7 +115,8 @@ if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
         sys.argv.append("-b")
-        sys.argv.append("-i")
+        sys.argv.append("examples/wasm")
+        # sys.argv.append()
         import os
 
         os.chdir("../fastled")

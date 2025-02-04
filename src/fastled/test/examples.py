@@ -32,6 +32,7 @@ def test_examples(
             print(f"Compilation took: {diff:.2f} seconds")
             result = Api.web_compile(sketch_dir, host=host)
             if not result.success:
+                print(f"Compilation failed for {example}: {result.stdout}")
                 out[example] = Exception(result.stdout)
     return out
 

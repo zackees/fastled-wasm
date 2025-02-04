@@ -60,6 +60,7 @@ class Api:
     def live_client(
         sketch_directory: Path,
         host: str | CompileServer | None = None,
+        auto_updates: bool = True,
         auto_start=True,
         open_web_browser=True,
         keep_running=True,
@@ -69,6 +70,7 @@ class Api:
         return LiveClient(
             sketch_directory=sketch_directory,
             host=host,
+            auto_updates=auto_updates,
             auto_start=auto_start,
             open_web_browser=open_web_browser,
             keep_running=keep_running,
@@ -82,8 +84,10 @@ class Api:
         auto_updates=None,
         auto_start=True,
         mapped_dir: Path | None = None,  # Sketch directory.
-        container_name: str | None = None,
+        container_name: str | None = None,  # Specific docker container name.
+        remove_previous: bool = False,
     ) -> CompileServer:
+        """Uses docker to spawn a compile server from the given name."""
         from fastled.compile_server import CompileServer
 
         out = CompileServer(
@@ -92,6 +96,7 @@ class Api:
             auto_updates=auto_updates,
             mapped_dir=mapped_dir,
             auto_start=auto_start,
+            remove_previous=remove_previous,
         )
         return out
 
@@ -102,7 +107,8 @@ class Api:
         auto_updates=None,
         auto_start=True,
         mapped_dir: Path | None = None,  # Sketch directory.
-        container_name: str | None = None,
+        container_name: str | None = None,  # Specific docker container name.
+        remove_previous=False,
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
             interactive=interactive,
@@ -110,6 +116,7 @@ class Api:
             auto_start=auto_start,
             mapped_dir=mapped_dir,
             container_name=container_name,
+            remove_previous=remove_previous,
         )
         try:
             yield server
@@ -232,12 +239,12 @@ class Docker:
             remove_previous=True,  # Remove any existing container
         )
 
-        return container.name
+        return container.name  # Todo, create an external docker container api.
 
     @staticmethod
     def build_from_fastled_repo(
-        project_root: Path | str = Path("."), platform_tag: str = ""
-    ) -> str:
+        project_root: Path | str = Path("."), interactive: bool = False
+    ) -> CompileServer:
         """Build the FastLED WASM compiler Docker image, which will be tagged as "main".
 
         Args:
@@ -280,18 +287,16 @@ class Docker:
             platform_tag=platform_tag,
         )
 
-        # Run the container and return it
-        container = docker_mgr.run_container_detached(
-            image_name=IMAGE_NAME,
-            tag="main",
+        out: CompileServer = CompileServer(
             container_name=CONTAINER_NAME,
-            command=None,  # Use default command from Dockerfile
-            volumes=None,  # No volumes needed for build
-            ports=None,  # No ports needed for build
-            remove_previous=True,  # Remove any existing container
+            interactive=interactive,
+            auto_updates=False,
+            mapped_dir=None,
+            auto_start=True,
+            remove_previous=True,
         )
-        container_name = f"{container.name}"
-        return container_name
+
+        return out
 
 
 class Tools:

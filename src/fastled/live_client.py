@@ -1,4 +1,5 @@
 import threading
+import warnings
 from pathlib import Path
 
 from fastled.compile_server import CompileServer
@@ -13,6 +14,7 @@ class LiveClient:
         sketch_directory: Path,
         host: str | CompileServer | None = None,
         auto_start: bool = True,
+        auto_updates: bool = True,
         open_web_browser: bool = True,
         keep_running: bool = True,
         build_mode: BuildMode = BuildMode.QUICK,
@@ -27,8 +29,11 @@ class LiveClient:
         self.auto_start = auto_start
         self.shutdown = threading.Event()
         self.thread: threading.Thread | None = None
+        self.auto_updates = auto_updates
         if auto_start:
             self.start()
+        if self.auto_updates is False:
+            warnings.warn("Auto updates False are not supported yet.")
 
     def run(self) -> int:
         """Run the client."""

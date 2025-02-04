@@ -14,6 +14,7 @@ class CompileServer:
         auto_start: bool = True,
         container_name: str | None = None,
         platform: Platform = Platform.WASM,
+        remove_previous: bool = False,
     ) -> None:
         from fastled.compile_server_impl import (  # avoid circular import
             CompileServerImpl,
@@ -27,6 +28,7 @@ class CompileServer:
             auto_updates=auto_updates,
             mapped_dir=mapped_dir,
             auto_start=auto_start,
+            remove_previous=remove_previous,
         )
 
     # May throw CompileServerError if server could not be started.
@@ -50,6 +52,10 @@ class CompileServer:
         from fastled.project_init import project_init  # avoid circular import
 
         project_init(example=example, outputdir=outputdir)
+
+    @property
+    def name(self) -> str:
+        return self.impl.container_name
 
     @property
     def running(self) -> bool:
