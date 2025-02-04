@@ -44,14 +44,27 @@ def run_server(args: argparse.Namespace) -> int:
 
 def main() -> int:
     args = parse_args()
-    if args.update:
+    interactive: bool = args.interactive
+    server: str | CompileServer | None = args.server
+    update: bool = args.update
+    build: bool = args.build
+    just_compile: bool = args.just_compile
+    directory: Path | None = Path(args.directory).absolute() if args.directory else None
+
+    if directory is None and interactive:
+        # if examples/wasm exists
+        if Path("examples/wasm").exists():
+            print(f"Using {Path('examples/wasm')} as the sketch directory")
+            directory = Path("examples/wasm").absolute()
+
+    if update:
         # Force auto_update to ensure update check happens
         compile_server = CompileServer(interactive=False, auto_updates=True)
         compile_server.stop()
         print("Finished updating.")
         return 0
 
-    if args.build:
+    if build:
         try:
             project_root = Path(".").absolute()
             print(f"Building Docker image at {project_root}")
@@ -61,15 +74,18 @@ def main() -> int:
                 project_root=project_root
             )
             print(f"Built Docker image: {docker_image_name}")
-            if not args.directory:
+            if not directory:
                 print("No sketch directory specified. So exiting...")
                 return 0
             print("Running server")
             with Api.server(
-                auto_updates=False, container_name=docker_image_name
+                auto_updates=False,
+                container_name=docker_image_name,
+                interactive=interactive,
+                mapped_dir=directory,
             ) as server:
                 sketch_dir = Path("examples/wasm")
-                if args.just_compile:
+                if just_compile:
                     rtn = run_client(
                         directory=sketch_dir,
                         host=server,
@@ -90,7 +106,7 @@ def main() -> int:
             print("\nExiting from client...")
             return 1
 
-    if args.server:
+    if server:
         print("Running in server only mode.")
         return run_server(args)
     else:
@@ -101,6 +117,11 @@ def main() -> int:
 if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
+        sys.argv.append("-b")
+        sys.argv.append("-i")
+        import os
+
+        os.chdir("../fastled")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")

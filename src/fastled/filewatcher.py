@@ -1,5 +1,4 @@
-"""File system watcher implementation using watchdog
-"""
+"""File system watcher implementation using watchdog"""
 
 import hashlib
 import os

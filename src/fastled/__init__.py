@@ -81,6 +81,7 @@ class Api:
         interactive=False,
         auto_updates=None,
         auto_start=True,
+        mapped_dir: Path | None = None,
         container_name: str | None = None,
     ) -> CompileServer:
         from fastled.compile_server import CompileServer
@@ -89,7 +90,7 @@ class Api:
             container_name=container_name,
             interactive=interactive,
             auto_updates=auto_updates,
-            mapped_dir=None,
+            mapped_dir=mapped_dir,
             auto_start=auto_start,
         )
         return out
@@ -100,12 +101,14 @@ class Api:
         interactive=False,
         auto_updates=None,
         auto_start=True,
+        mapped_dir: Path | None = None,
         container_name: str | None = None,
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
             interactive=interactive,
             auto_updates=auto_updates,
             auto_start=auto_start,
+            mapped_dir=mapped_dir,
             container_name=container_name,
         )
         try:
