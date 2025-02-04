@@ -13,6 +13,15 @@ from fastled.sketch import (
     looks_like_sketch_directory,
 )
 
+def _find_fastled_repo(start: Path) -> Path:
+    """Find the FastLED repo directory by searching upwards from the current directory."""
+    current = start
+    while current != current.parent:
+        if looks_like_fastled_repo(current):
+            return current
+        current = current.parent
+    return None
+
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
@@ -131,7 +140,17 @@ def parse_args() -> argparse.Namespace:
         print(f"Use 'fastled {args.directory}' to compile the project.")
         sys.exit(0)
 
-    if args.build:
+    if args.build or args.interactive:
+        cwd: Path = Path(os.getcwd())
+        fastled_dir: Path | None = _find_fastled_repo(cwd)
+        if fastled_dir is None:
+            print(
+                "This command must be run from within the FastLED repo. Exiting..."
+            )
+            sys.exit(1)
+        if cwd != fastled_dir:
+            print(f"Switching to FastLED repo at {fastled_dir}")
+            os.chdir(fastled_dir)
         return args
 
     if not args.update:
