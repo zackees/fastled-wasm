@@ -1,6 +1,7 @@
 """FastLED Wasm Compiler package."""
 
 # context
+import shutil
 import subprocess
 from contextlib import contextmanager
 from multiprocessing import Process
@@ -179,14 +180,37 @@ class Docker:
         # Create output directory if it doesn't exist
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        git_dir = output_dir / ".git"
+        library_properties = output_dir / "library.properties"
+
+        git_dir_exists = git_dir.exists()
+        library_properties_exists = library_properties.exists()
+        library_properties_text = (
+            library_properties.read_text().strip() if library_properties_exists else ""
+        )
+
+        already_exists = (
+            git_dir_exists
+            and library_properties_exists
+            and "FastLED" in library_properties_text
+        )
+        if git_dir_exists and not already_exists:
+            if ".cache/fastled" in str(output_dir.as_posix()):
+                shutil.rmtree(output_dir)
+                already_exists = False
+            else:
+                raise ValueError(
+                    f"Output directory {output_dir} already exists but does not appear to be a FastLED repository."
+                )
+
         # Clone or update the repository
-        if (output_dir / ".git").exists():
+        if already_exists:
             print(f"Updating existing repository in {output_dir}")
             # Reset local changes and move HEAD back to handle force pushes
             subprocess.run(
                 ["git", "reset", "--hard", "HEAD~10"],
                 cwd=output_dir,
-                check=True,
+                check=False,
                 capture_output=True,  # Suppress output of reset
             )
             subprocess.run(
