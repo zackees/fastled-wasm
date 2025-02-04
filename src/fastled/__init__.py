@@ -243,7 +243,9 @@ class Docker:
 
     @staticmethod
     def build_from_fastled_repo(
-        project_root: Path | str = Path("."), interactive: bool = False
+        project_root: Path | str = Path("."),
+        interactive: bool = False,
+        sketch_folder: Path | None = None,
     ) -> CompileServer:
         """Build the FastLED WASM compiler Docker image, which will be tagged as "main".
 
@@ -257,15 +259,22 @@ class Docker:
         from fastled.docker_manager import DockerManager
         from fastled.settings import CONTAINER_NAME, IMAGE_NAME
 
+        project_root = Path(project_root)
+        if interactive:
+            if sketch_folder is None:
+                sketch_folder = project_root / "examples" / "wasm"
+        else:
+            if sketch_folder is not None:
+                raise ValueError(
+                    "Cannot specify sketch_folder when not in interactive mode."
+                )
         if isinstance(project_root, str):
             project_root = Path(project_root)
 
         dockerfile_path = (
             project_root / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
         )
-
         docker_mgr = DockerManager()
-
         platform_tag = ""
         # if "arm" in docker_mgr.architecture():
         if (
@@ -291,7 +300,7 @@ class Docker:
             container_name=CONTAINER_NAME,
             interactive=interactive,
             auto_updates=False,
-            mapped_dir=None,
+            mapped_dir=sketch_folder,
             auto_start=True,
             remove_previous=True,
         )

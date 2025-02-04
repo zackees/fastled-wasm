@@ -54,11 +54,11 @@ def main() -> int:
     directory: Path | None = Path(args.directory) if args.directory else None
 
     # broken for now
-    # if directory is None and interactive:
-    #     # if examples/wasm exists
-    #     if Path("examples/wasm").exists():
-    #         print(f"Using {Path('examples/wasm')} as the sketch directory")
-    #         directory = Path("examples/wasm").absolute()
+    if directory is None and interactive:
+        # if examples/wasm exists
+        if Path("examples/wasm").exists():
+            print(f"Using {Path('examples/wasm')} as the sketch directory")
+            directory = Path("examples/wasm").absolute()
 
     if update:
         # Force auto_update to ensure update check happens
