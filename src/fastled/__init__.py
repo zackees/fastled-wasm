@@ -157,7 +157,7 @@ class Docker:
         docker_mgr.purge(image_name=IMAGE_NAME)
 
     @staticmethod
-    def build_from_github(
+    def spawn_server_from_github(
         url: str = "https://github.com/fastled/fastled",
         output_dir: Path | str = Path(".cache/fastled"),
     ) -> CompileServer:
@@ -277,7 +277,7 @@ class Docker:
         return out
 
     @staticmethod
-    def build_from_fastled_repo(
+    def spawn_server_from_fastled_repo(
         project_root: Path | str = Path("."),
         interactive: bool = False,
         sketch_folder: Path | None = None,

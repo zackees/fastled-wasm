@@ -66,7 +66,7 @@ def main() -> int:
             print(f"Building Docker image at {project_root}")
             from fastled import Api, Docker
 
-            server = Docker.build_from_fastled_repo(
+            server = Docker.spawn_server_from_fastled_repo(
                 project_root=project_root, interactive=interactive
             )
             assert isinstance(server, CompileServer)

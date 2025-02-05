@@ -35,7 +35,9 @@ class BuildDockerFromGithubTester(unittest.TestCase):
         """Builds the docker file from the fastled repo."""
         url = DEFAULT_GITHUB_URL
         print("Building from github")
-        server: CompileServer = Docker.build_from_github(url=url, output_dir=OUTPUT_DIR)
+        server: CompileServer = Docker.spawn_server_from_github(
+            url=url, output_dir=OUTPUT_DIR
+        )
         self.assertTrue(server, "Failed to build docker image")
         try:
             self.assertTrue(server.ping())

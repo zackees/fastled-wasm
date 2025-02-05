@@ -34,7 +34,9 @@ class BuildDockerFromRepoTester(unittest.TestCase):
     @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
     def test_build_docker(self) -> None:
         """Builds the docker file from the fastled repo."""
-        server: CompileServer = Docker.build_from_fastled_repo(FASTLED_SISTER_REPO)
+        server: CompileServer = Docker.spawn_server_from_fastled_repo(
+            FASTLED_SISTER_REPO
+        )
         self.assertIsNotNone(server, "Failed to build docker image")
 
         try:

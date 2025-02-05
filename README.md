@@ -185,7 +185,7 @@ with Api.server() as server:
 **Build Docker Image from a local copy of the FastLED repo**
 ```python
 from fastapi import Docker, Api
-container_name: str = Docker.build_from_fastled_repo()
+container_name: str = Docker.spawn_server_from_fastled_repo()
 with Api.server(container_name=container_name) as server:
   ...
 ```
