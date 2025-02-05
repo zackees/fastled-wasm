@@ -13,6 +13,7 @@ from fastled.docker_manager import (
     DockerManager,
     RunningContainer,
 )
+from fastled.interactive_srcs import INTERACTIVE_SOURCES
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
@@ -221,10 +222,7 @@ class CompileServerImpl:
             if self.fastled_src_dir is not None:
                 # add volume for src/platforms/wasm/compiler/CMakelists.txt
                 # to allow for interactive compilation
-                interactive_sources = [
-                    "src/platforms/wasm/compiler/CMakeLists.txt",
-                    "src/platforms/wasm/compiler/build_archive.sh",
-                ]
+                interactive_sources = list(INTERACTIVE_SOURCES)
                 for src in interactive_sources:
                     src_path = Path(src).absolute()
                     if src_path.exists():
