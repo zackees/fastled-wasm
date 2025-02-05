@@ -52,13 +52,6 @@ def main() -> int:
     # directory: Path | None = Path(args.directory).absolute() if args.directory else None
     directory: Path | None = Path(args.directory) if args.directory else None
 
-    # broken for now
-    if directory is None and interactive:
-        # if examples/wasm exists
-        if Path("examples/wasm").exists():
-            print(f"Using {Path('examples/wasm')} as the sketch directory")
-            directory = Path("examples/wasm").absolute()
-
     if update:
         # Force auto_update to ensure update check happens
         compile_server = CompileServer(interactive=False, auto_updates=True)
@@ -113,8 +106,8 @@ def main() -> int:
 if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
-        sys.argv.append("-b")
-        sys.argv.append("examples/wasm")
+        sys.argv.append("-i")
+        # sys.argv.append("examples/wasm")
         # sys.argv.append()
         import os
 

@@ -145,12 +145,16 @@ def parse_args() -> Args:
     if args.build or args.interactive:
         cwd: Path = Path(os.getcwd())
         fastled_dir: Path | None = _find_fastled_repo(cwd)
+        if args.directory is not None:
+            args.directory = str(Path(args.directory).absolute())
         if fastled_dir is None:
             print("This command must be run from within the FastLED repo. Exiting...")
             sys.exit(1)
         if cwd != fastled_dir:
             print(f"Switching to FastLED repo at {fastled_dir}")
             os.chdir(fastled_dir)
+        if args.directory is None:
+            args.directory = str(Path("examples/wasm").absolute())
         return Args.from_namespace(args)
 
     if not args.update:
