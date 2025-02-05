@@ -13,7 +13,8 @@ from fastled.sketch import (
     looks_like_sketch_directory,
 )
 
-def _find_fastled_repo(start: Path) -> Path:
+
+def _find_fastled_repo(start: Path) -> Path | None:
     """Find the FastLED repo directory by searching upwards from the current directory."""
     current = start
     while current != current.parent:
@@ -144,9 +145,7 @@ def parse_args() -> argparse.Namespace:
         cwd: Path = Path(os.getcwd())
         fastled_dir: Path | None = _find_fastled_repo(cwd)
         if fastled_dir is None:
-            print(
-                "This command must be run from within the FastLED repo. Exiting..."
-            )
+            print("This command must be run from within the FastLED repo. Exiting...")
             sys.exit(1)
         if cwd != fastled_dir:
             print(f"Switching to FastLED repo at {fastled_dir}")
