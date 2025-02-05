@@ -298,11 +298,7 @@ class Docker:
         if interactive:
             if sketch_folder is None:
                 sketch_folder = project_root / "examples" / "wasm"
-        else:
-            if sketch_folder is not None:
-                raise ValueError(
-                    "Cannot specify sketch_folder when not in interactive mode."
-                )
+
         if isinstance(project_root, str):
             project_root = Path(project_root)
 

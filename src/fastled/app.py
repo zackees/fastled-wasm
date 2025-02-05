@@ -67,7 +67,9 @@ def main() -> int:
             from fastled import Api, Docker
 
             server = Docker.spawn_server_from_fastled_repo(
-                project_root=project_root, interactive=interactive
+                project_root=project_root,
+                interactive=interactive,
+                sketch_folder=directory,
             )
             assert isinstance(server, CompileServer)
 
@@ -90,6 +92,7 @@ def main() -> int:
                 keep_running=not just_compile,
             ) as client:
                 print(f"Exited client {client.url()}")
+                server.stop()
                 print(f"Exiting {server.name}")
         except KeyboardInterrupt:
             print("\nExiting from client...")
@@ -106,12 +109,13 @@ def main() -> int:
 if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
-        sys.argv.append("-i")
+        sys.argv.append("-b")
         # sys.argv.append("examples/wasm")
         # sys.argv.append()
         import os
 
         os.chdir("../fastled")
+        sys.argv.append("examples/wasm")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
