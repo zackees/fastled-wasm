@@ -5,7 +5,7 @@ Unit test file.
 import unittest
 from pathlib import Path
 
-from fastled import Api, CompileServer, Docker, Test  # type: ignore
+from fastled import CompileServer, Docker, Test  # type: ignore
 
 HERE = Path(__file__).parent
 PROJECT_ROOT = HERE.parent
@@ -35,11 +35,12 @@ class BuildDockerFromGithubTester(unittest.TestCase):
         """Builds the docker file from the fastled repo."""
         url = DEFAULT_GITHUB_URL
         print("Building from github")
-        docker_image_name = Docker.build_from_github(url=url, output_dir=OUTPUT_DIR)
-        self.assertTrue(docker_image_name, "Failed to build docker image")
-        server: CompileServer
-        with Api.server(auto_updates=True, container_name=docker_image_name) as server:
+        server: CompileServer = Docker.build_from_github(url=url, output_dir=OUTPUT_DIR)
+        self.assertTrue(server, "Failed to build docker image")
+        try:
             self.assertTrue(server.ping())
+        finally:
+            server.stop()
 
 
 if __name__ == "__main__":

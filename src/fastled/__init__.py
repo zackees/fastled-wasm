@@ -160,7 +160,7 @@ class Docker:
     def build_from_github(
         url: str = "https://github.com/fastled/fastled",
         output_dir: Path | str = Path(".cache/fastled"),
-    ) -> str:
+    ) -> CompileServer:
         """Build the FastLED WASM compiler Docker image from a GitHub repository.
 
         Args:
@@ -252,18 +252,29 @@ class Docker:
             platform_tag=platform_tag,
         )
 
-        # Run the container and return it
-        container = docker_mgr.run_container_detached(
-            image_name=IMAGE_NAME,
-            tag="main",
+        # # Run the container and return it
+        # container = docker_mgr.run_container_detached(
+        #     image_name=IMAGE_NAME,
+        #     tag="main",
+        #     container_name=CONTAINER_NAME,
+        #     command=None,  # Use default command from Dockerfile
+        #     volumes=None,  # No volumes needed for build
+        #     ports=None,  # No ports needed for build
+        #     remove_previous=True,  # Remove any existing container
+        # )
+        # name = container.name
+        # container.stop()
+
+        out: CompileServer = CompileServer(
             container_name=CONTAINER_NAME,
-            command=None,  # Use default command from Dockerfile
-            volumes=None,  # No volumes needed for build
-            ports=None,  # No ports needed for build
-            remove_previous=True,  # Remove any existing container
+            interactive=False,
+            auto_updates=False,
+            mapped_dir=None,
+            auto_start=True,
+            remove_previous=True,
         )
 
-        return container.name  # Todo, create an external docker container api.
+        return out
 
     @staticmethod
     def build_from_fastled_repo(
