@@ -2,7 +2,6 @@
 Uses the latest wasm compiler image to compile the FastLED sketch.
 """
 
-import argparse
 import sys
 import time
 from pathlib import Path
@@ -10,10 +9,10 @@ from pathlib import Path
 from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
 from fastled.filewatcher import file_watcher_set
-from fastled.parse_args import parse_args
+from fastled.parse_args import Args, parse_args
 
 
-def run_server(args: argparse.Namespace) -> int:
+def run_server(args: Args) -> int:
     interactive = args.interactive
     auto_update = args.auto_update
     mapped_dir = Path(args.directory).absolute() if args.directory else None
@@ -46,7 +45,7 @@ def run_server(args: argparse.Namespace) -> int:
 def main() -> int:
     args = parse_args()
     interactive: bool = args.interactive
-    server: str | CompileServer | None = args.server
+    has_server = args.server
     update: bool = args.update
     build: bool = args.build
     just_compile: bool = args.just_compile
@@ -103,7 +102,7 @@ def main() -> int:
             print("\nExiting from client...")
             return 1
 
-    if server:
+    if has_server:
         print("Running in server only mode.")
         return run_server(args)
     else:

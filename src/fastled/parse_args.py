@@ -12,6 +12,7 @@ from fastled.sketch import (
     looks_like_fastled_repo,
     looks_like_sketch_directory,
 )
+from fastled.types import Args
 
 
 def _find_fastled_repo(start: Path) -> Path | None:
@@ -24,7 +25,7 @@ def _find_fastled_repo(start: Path) -> Path | None:
     return None
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args() -> Args:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
     parser.add_argument("--version", action="version", version=f"{__version__}")
@@ -150,7 +151,7 @@ def parse_args() -> argparse.Namespace:
         if cwd != fastled_dir:
             print(f"Switching to FastLED repo at {fastled_dir}")
             os.chdir(fastled_dir)
-        return args
+        return Args.from_namespace(args)
 
     if not args.update:
         if args.no_auto_updates:
@@ -213,4 +214,4 @@ def parse_args() -> argparse.Namespace:
                 print(f"Using sketch directory: {dir_path}")
                 args.directory = str(dir_path)
 
-    return args
+    return Args.from_namespace(args)

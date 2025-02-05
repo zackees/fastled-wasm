@@ -1,4 +1,3 @@
-import argparse
 import shutil
 import tempfile
 import threading
@@ -11,6 +10,7 @@ from fastled.docker_manager import DockerManager
 from fastled.filewatcher import FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
+from fastled.parse_args import Args
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
 from fastled.types import BuildMode, CompileResult, CompileServerError
@@ -334,12 +334,12 @@ def run_client(
             browser_proc.kill()
 
 
-def run_client_server(args: argparse.Namespace) -> int:
+def run_client_server(args: Args) -> int:
     profile = bool(args.profile)
     web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
     auto_update = bool(args.auto_update)
     localhost = bool(args.localhost)
-    directory = Path(args.directory)
+    directory = args.directory if args.directory else Path(".")
     just_compile = bool(args.just_compile)
     interactive = bool(args.interactive)
     force_compile = bool(args.force_compile)

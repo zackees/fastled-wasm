@@ -72,7 +72,10 @@ def _lots_and_lots_of_files(directory: Path) -> bool:
     return len(get_sketch_files(directory)) > 100
 
 
-def looks_like_sketch_directory(directory: Path, quick=False) -> bool:
+def looks_like_sketch_directory(directory: Path | str | None, quick=False) -> bool:
+    if directory is None:
+        return False
+    directory = Path(directory)
     if looks_like_fastled_repo(directory):
         print("Directory looks like the FastLED repo")
         return False
