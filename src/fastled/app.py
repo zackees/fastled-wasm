@@ -60,19 +60,19 @@ def main() -> int:
         return 0
 
     if build:
+        file_watcher_set(False)
+        project_root = Path(".").absolute()
+        print(f"Building Docker image at {project_root}")
+        from fastled import Api, Docker
+
+        server = Docker.spawn_server_from_fastled_repo(
+            project_root=project_root,
+            interactive=interactive,
+            sketch_folder=directory,
+        )
+        assert isinstance(server, CompileServer)
+
         try:
-            file_watcher_set(False)
-            project_root = Path(".").absolute()
-            print(f"Building Docker image at {project_root}")
-            from fastled import Api, Docker
-
-            server = Docker.spawn_server_from_fastled_repo(
-                project_root=project_root,
-                interactive=interactive,
-                sketch_folder=directory,
-            )
-            assert isinstance(server, CompileServer)
-
             if interactive:
                 server.stop()
                 return 0
@@ -84,18 +84,19 @@ def main() -> int:
                 return 0
 
             print("Running server")
+
             with Api.live_client(
                 auto_updates=False,
                 sketch_directory=directory,
                 host=server,
                 auto_start=True,
                 keep_running=not just_compile,
-            ) as client:
-                print(f"Exited client {client.url()}")
-                server.stop()
-                print(f"Exiting {server.name}")
+            ) as _:
+                while True:
+                    time.sleep(0.2)  # wait for user to exit
         except KeyboardInterrupt:
             print("\nExiting from client...")
+            server.stop()
             return 1
 
     if has_server:

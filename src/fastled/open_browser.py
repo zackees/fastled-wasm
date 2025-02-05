@@ -45,9 +45,8 @@ def open_http_server_subprocess(
             stderr=subprocess.DEVNULL,
         )  # type ignore
     except KeyboardInterrupt:
-        import _thread
-
-        _thread.interrupt_main()
+        print("Exiting from server...")
+        sys.exit(0)
 
 
 def is_port_free(port: int) -> bool:
