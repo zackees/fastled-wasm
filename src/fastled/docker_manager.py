@@ -694,7 +694,9 @@ class DockerManager:
                     print("Error decoding line")
             rtn = proc.wait()
             if rtn != 0:
-                print(f"Error building Docker image: {rtn}")
+                warnings.warn(
+                    f"Error building Docker image, is docker running? {rtn}, stdout: {stdout}, stderr: {proc.stderr}"
+                )
                 raise subprocess.CalledProcessError(rtn, cmd_str)
             print(f"Successfully built image {image_name}:{tag}")
 

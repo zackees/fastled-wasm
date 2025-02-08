@@ -305,7 +305,14 @@ class Docker:
         dockerfile_path = (
             project_root / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
         )
+
+        if DockerManager.is_docker_installed() is False:
+            raise Exception("Docker is not installed.")
+
         docker_mgr = DockerManager()
+        if DockerManager.is_running() is False:
+            docker_mgr.start()
+
         platform_tag = ""
         # if "arm" in docker_mgr.architecture():
         if (
