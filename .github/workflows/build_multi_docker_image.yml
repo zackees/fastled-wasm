@@ -20,11 +20,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
-      - name: Check FastLED repo
-        uses: actions/checkout@v4
-        with:
-          repository: fastled/fastled
-          path: fastled
       - id: check
         run: |
           # Check if there are any changes in workflow repository
