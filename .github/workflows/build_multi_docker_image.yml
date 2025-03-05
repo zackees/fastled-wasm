@@ -28,19 +28,10 @@ jobs:
       - id: check
         run: |
           # Check if there are any changes in workflow repository
-          WORKFLOW_CHANGED=$(git diff --quiet HEAD^1 HEAD || echo "changed")
-          
-          # Check FastLED repo for changes in last 24 hours
-          cd fastled
-          FASTLED_CHANGED=$(git log --since="24 hours ago" --oneline | wc -l)
-          
-          if [[ -n "$WORKFLOW_CHANGED" ]] || [[ "$FASTLED_CHANGED" -gt 0 ]]; then
-            echo "Changes detected in workflow repository or FastLED in last 24h"
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "No recent changes detected"
-            echo "should_run=false" >> $GITHUB_OUTPUT
-          fi
+          # At this point always run, this used to trigger on changes to fastled repo (mostly for the compiler stuff)
+          # but that has been moved to this repo.
+          echo "should_run=true" >> $GITHUB_OUTPUT
+
 
   build-amd64:
     needs: check-if-changed
@@ -73,8 +64,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          context: https://github.com/fastled/fastled.git
-          file: src/platforms/wasm/compiler/Dockerfile
+          context: https://github.com/zackeees/fastled-wasm
+          file: Dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
@@ -125,8 +116,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           platforms: ${{ matrix.platform }}
-          context: https://github.com/fastled/fastled.git
-          file: src/platforms/wasm/compiler/Dockerfile
+          context: https://github.com/zackeees/fastled-wasm
+          file: Dockerfile
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
