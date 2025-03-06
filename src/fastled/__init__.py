@@ -3,10 +3,13 @@
 # context
 import shutil
 import subprocess
+import tempfile
 from contextlib import contextmanager
 from multiprocessing import Process
 from pathlib import Path
 from typing import Generator
+
+import httpx
 
 from .compile_server import CompileServer
 from .live_client import LiveClient
@@ -17,6 +20,10 @@ from .types import BuildMode, CompileResult, CompileServerError
 # that has any other change in the repo. Please bump the version as the
 # ONLY change in a commit, or else the pypi update and the release will fail.
 __version__ = "1.2.40"
+
+DOCKER_FILE = (
+    "https://raw.githubusercontent.com/zackees/fastled-wasm/refs/heads/main/Dockerfile"
+)
 
 
 class Api:
@@ -222,35 +229,39 @@ class Docker:
                 ["git", "clone", "--depth", "1", url, str(output_dir)], check=True
             )
 
-        dockerfile_path = (
-            output_dir / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
-        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            dockerfiles_dst = Path(tempdir) / "Dockerfile"
+            # download the file and write it to dockerfiles_dst path
+            with open(dockerfiles_dst, "wb") as f:
+                with httpx.stream("GET", DOCKER_FILE) as response:
+                    for chunk in response.iter_bytes():
+                        f.write(chunk)
 
-        if not dockerfile_path.exists():
-            raise FileNotFoundError(
-                f"Dockerfile not found at {dockerfile_path}. "
-                "This may not be a valid FastLED repository."
+            if not dockerfiles_dst.exists():
+                raise FileNotFoundError(
+                    f"Dockerfile not found at {dockerfiles_dst}. "
+                    "This may not be a valid FastLED repository."
+                )
+
+            docker_mgr = DockerManager()
+
+            platform_tag = ""
+            # if "arm" in docker_mgr.architecture():
+            if (
+                "arm"
+                in subprocess.run(["uname", "-m"], capture_output=True).stdout.decode()
+            ):
+                platform_tag = "-arm64"
+
+            # Build the image
+            docker_mgr.build_image(
+                image_name=IMAGE_NAME,
+                tag="main",
+                dockerfile_path=dockerfiles_dst,
+                build_context=output_dir,
+                build_args={"NO_PREWARM": "1"},
+                platform_tag=platform_tag,
             )
-
-        docker_mgr = DockerManager()
-
-        platform_tag = ""
-        # if "arm" in docker_mgr.architecture():
-        if (
-            "arm"
-            in subprocess.run(["uname", "-m"], capture_output=True).stdout.decode()
-        ):
-            platform_tag = "-arm64"
-
-        # Build the image
-        docker_mgr.build_image(
-            image_name=IMAGE_NAME,
-            tag="main",
-            dockerfile_path=dockerfile_path,
-            build_context=output_dir,
-            build_args={"NO_PREWARM": "1"},
-            platform_tag=platform_tag,
-        )
 
         # # Run the container and return it
         # container = docker_mgr.run_container_detached(
@@ -302,10 +313,6 @@ class Docker:
         if isinstance(project_root, str):
             project_root = Path(project_root)
 
-        dockerfile_path = (
-            project_root / "src" / "platforms" / "wasm" / "compiler" / "Dockerfile"
-        )
-
         if DockerManager.is_docker_installed() is False:
             raise Exception("Docker is not installed.")
 
@@ -324,15 +331,24 @@ class Docker:
         # if image exists, remove it
         docker_mgr.purge(image_name=IMAGE_NAME)
 
-        # Build the image
-        docker_mgr.build_image(
-            image_name=IMAGE_NAME,
-            tag="main",
-            dockerfile_path=dockerfile_path,
-            build_context=project_root,
-            build_args={"NO_PREWARM": "1"},
-            platform_tag=platform_tag,
-        )
+        with tempfile.TemporaryDirectory() as tempdir:
+            dockerfile_dst = Path(tempdir) / "Dockerfile"
+
+            # download the file and write it to dockerfiles_dst path
+            with open(dockerfile_dst, "wb") as f:
+                with httpx.stream("GET", DOCKER_FILE) as response:
+                    for chunk in response.iter_bytes():
+                        f.write(chunk)
+
+            # Build the image
+            docker_mgr.build_image(
+                image_name=IMAGE_NAME,
+                tag="main",
+                dockerfile_path=dockerfile_dst,
+                build_context=project_root,
+                build_args={"NO_PREWARM": "1"},
+                platform_tag=platform_tag,
+            )
 
         out: CompileServer = CompileServer(
             container_name=CONTAINER_NAME,

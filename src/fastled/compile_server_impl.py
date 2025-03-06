@@ -220,7 +220,6 @@ class CompileServerImpl:
                 "mode": "rw",
             }
             if self.fastled_src_dir is not None:
-                # add volume for src/platforms/wasm/compiler/CMakelists.txt
                 # to allow for interactive compilation
                 interactive_sources = list(INTERACTIVE_SOURCES)
                 for src in interactive_sources:

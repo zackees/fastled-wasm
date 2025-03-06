@@ -57,18 +57,19 @@ _COMPILER_PATH = "em++"
 JS_DIR = Path("/js")
 FASTLED_DIR = JS_DIR / "fastled"
 FASTLED_SRC = FASTLED_DIR / "src"
-FASTLED_SRC_PLATFORMS = FASTLED_SRC / "platforms"
-FASTLED_SRC_PLATFORMS_WASM = FASTLED_SRC_PLATFORMS / "wasm"
-FASTLED_SRC_PLATFORMS_WASM_COMPILER = FASTLED_SRC_PLATFORMS_WASM / "compiler"
+# FASTLED_SRC_PLATFORMS = FASTLED_SRC / "platforms"
+# FASTLED_SRC_PLATFORMS_WASM = FASTLED_SRC_PLATFORMS / "wasm"
+# FASTLED_SRC_PLATFORMS_WASM_COMPILER = FASTLED_SRC_PLATFORMS_WASM / "compiler"
+FASTLED_SRC_PLATFORMS_WASM_COMPILER = JS_DIR / "compiler"
 
 
 JS_SRC = JS_DIR / "src"
 
 FASTLED_DIR = JS_DIR / "fastled"
-FASTLED_SRC_DIR = FASTLED_DIR / "src"
-FASTLED_PLATFORMS_DIR = FASTLED_SRC_DIR / "platforms"
-FASTLED_WASM_DIR = FASTLED_PLATFORMS_DIR / "wasm"
-FASTLED_COMPILER_DIR = FASTLED_WASM_DIR / "compiler"
+# FASTLED_SRC_DIR = FASTLED_DIR / "src"
+# FASTLED_PLATFORMS_DIR = FASTLED_SRC_DIR / "platforms"
+# FASTLED_WASM_DIR = FASTLED_PLATFORMS_DIR / "wasm"
+FASTLED_COMPILER_DIR = JS_DIR / "compiler"
 FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 
 PIO_BUILD_DIR = JS_DIR / ".pio/build"
@@ -85,21 +86,7 @@ FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
 MAX_COMPILE_ATTEMPTS = 1  # Occasionally the compiler fails for unknown reasons, but disabled because it increases the build time on failure.
 FASTLED_OUTPUT_DIR_NAME = "fastled_js"
 
-assert JS_DIR.exists()
-assert ARDUINO_H_SRC.exists()
-assert INDEX_HTML_SRC.exists()
-assert INDEX_CSS_SRC.exists(), f"Index CSS not found at {INDEX_CSS_SRC}"
-assert INDEX_JS_SRC.exists()
-assert WASM_COMPILER_SETTTINGS.exists()
-assert FASTLED_SRC_PLATFORMS_WASM_COMPILER.exists()
-assert JS_DIR.exists(), f"JS_DIR does not exist: {JS_DIR}"
-assert ARDUINO_H_SRC.exists(), f"ARDUINO_H_SRC does not exist: {ARDUINO_H_SRC}"
-assert INDEX_HTML_SRC.exists(), f"INDEX_HTML_SRC does not exist: {INDEX_HTML_SRC}"
-assert INDEX_CSS_SRC.exists(), f"INDEX_CSS_SRC does not exist: {INDEX_CSS_SRC}"
-assert INDEX_JS_SRC.exists(), f"INDEX_JS_SRC does not exist: {INDEX_JS_SRC}"
-assert (
-    WASM_COMPILER_SETTTINGS.exists()
-), f"WASM_COMPILER_SETTTINGS does not exist: {WASM_COMPILER_SETTTINGS}"
+
 
 
 def copy_files(src_dir: Path, js_src: Path) -> None:
@@ -462,6 +449,43 @@ def hash_file(file_path: Path) -> str:
 
 
 def main() -> int:
+
+
+
+    # assert JS_DIR.exists()
+    # assert ARDUINO_H_SRC.exists()
+    # assert INDEX_HTML_SRC.exists()
+    # assert INDEX_CSS_SRC.exists(), f"Index CSS not found at {INDEX_CSS_SRC}"
+    # assert INDEX_JS_SRC.exists()
+    # assert WASM_COMPILER_SETTTINGS.exists()
+    # assert FASTLED_SRC_PLATFORMS_WASM_COMPILER.exists()
+    # assert JS_DIR.exists(), f"JS_DIR does not exist: {JS_DIR}"
+    # assert ARDUINO_H_SRC.exists(), f"ARDUINO_H_SRC does not exist: {ARDUINO_H_SRC}"
+    # assert INDEX_HTML_SRC.exists(), f"INDEX_HTML_SRC does not exist: {INDEX_HTML_SRC}"
+    # assert INDEX_CSS_SRC.exists(), f"INDEX_CSS_SRC does not exist: {INDEX_CSS_SRC}"
+    # assert INDEX_JS_SRC.exists(), f"INDEX_JS_SRC does not exist: {INDEX_JS_SRC}"
+    # assert (
+    #     WASM_COMPILER_SETTTINGS.exists()
+    # ), f"WASM_COMPILER_SETTTINGS does not exist: {WASM_COMPILER_SETTTINGS}"
+
+    check_paths: list[Path] = [
+        JS_DIR,
+        ARDUINO_H_SRC,
+        INDEX_HTML_SRC,
+        INDEX_CSS_SRC,
+        INDEX_JS_SRC,
+        WASM_COMPILER_SETTTINGS,
+        FASTLED_SRC_PLATFORMS_WASM_COMPILER,
+    ]
+
+    missing_paths = [p for p in check_paths if not p.exists()]
+    if missing_paths:
+        print("The following paths are missing:")
+        for p in missing_paths:
+            print(p)
+        missing_paths_str = ",".join(str(p.as_posix()) for p in missing_paths)
+        raise FileNotFoundError(f"Missing required paths: {missing_paths_str}")
+
     print("Starting FastLED WASM compilation script...")
     args = parse_args()
     print(f"Keep files flag: {args.keep_files}")
