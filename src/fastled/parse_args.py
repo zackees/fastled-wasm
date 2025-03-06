@@ -155,6 +155,10 @@ def parse_args() -> Args:
             os.chdir(fastled_dir)
         if args.directory is None:
             args.directory = str(Path("examples/wasm").absolute())
+        if args.interactive:
+            if not args.build:
+                print("Adding --build flag when using --interactive")
+                args.build = True
         return Args.from_namespace(args)
 
     if not args.update:

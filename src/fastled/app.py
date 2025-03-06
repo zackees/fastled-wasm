@@ -60,6 +60,11 @@ def main() -> int:
         return 0
 
     if build:
+        print("Building is disabled")
+        build = False
+
+    if build:
+        raise NotImplementedError("Building is not yet supported.")
         file_watcher_set(False)
         project_root = Path(".").absolute()
         print(f"Building Docker image at {project_root}")
@@ -110,6 +115,7 @@ def main() -> int:
 if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
+        sys.argv.append("-i")
         sys.argv.append("-b")
         # sys.argv.append("examples/wasm")
         # sys.argv.append()

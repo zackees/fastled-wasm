@@ -9,9 +9,10 @@ HERE = Path(__file__).parent
 
 
 _COMPILER_DIR = Path("/js/compiler")
+_FASTLED_SRC_DIR = Path("/js/fastled/src")
+_WASM_DIR = _FASTLED_SRC_DIR / "platforms" / "wasm"
 
-
-def task(src: str | Path) -> None:
+def copy_task(src: str | Path) -> None:
     src = Path(src)
     if "entrypoint.sh" in str(src):
         return
@@ -49,9 +50,12 @@ def make_links() -> None:
     for pattern in patterns:
         files.extend(glob.glob(str(_COMPILER_DIR / pattern)))
 
+    for pattern in patterns:
+        files.extend(glob.glob(str(_WASM_DIR / pattern)))
+
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
-        executor.map(task, files)
+        executor.map(copy_task, files)
 
 
 def init_runtime() -> None:
