@@ -11,6 +11,7 @@ HERE = Path(__file__).parent
 _COMPILER_DIR = Path("/js/compiler")
 _FASTLED_SRC_DIR = Path("/js/fastled/src")
 _WASM_DIR = _FASTLED_SRC_DIR / "platforms" / "wasm"
+_FASTLED_COMPILER_DIR = _WASM_DIR / "compiler"
 
 def copy_task(src: str | Path) -> None:
     src = Path(src)
@@ -51,7 +52,7 @@ def make_links() -> None:
         files.extend(glob.glob(str(_COMPILER_DIR / pattern)))
 
     for pattern in patterns:
-        files.extend(glob.glob(str(_WASM_DIR / pattern)))
+        files.extend(glob.glob(str(_FASTLED_COMPILER_DIR / pattern)))
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
