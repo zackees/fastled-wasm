@@ -19,26 +19,28 @@ jobs:
   parse-credentials:
     runs-on: ubuntu-latest
     env:
-        env_vars: ${{ secrets.env_vars }}
+      env_vars: ${{ secrets.env_vars }}
     steps:
-        - name: Decode credentials as environment variables
-          run: |
-            for i in $env_vars; do
-              i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
-              echo ::add-mask::${i#*=}
-              printf '%s\n' "$i" >> $GITHUB_ENV
-            done
-        - name: Validate credentials
-          run: |
-            # Secrets are now available as masked environment variable.
-            #echo ${{ env.env_docker_username }}
-            #echo ${{ env.env_registry_image }}
-            #print out the length of docker_username
-            echo "docker_username=${#env_docker_username}"
-            if [ "${{ needs.check-if-changed.outputs.docker_username }}" != "niteris" ]; then
-              echo "Error: docker_username is not 'niteris'"
-              exit 1
-            fi
+    - name: Decode credentials as environment variables
+      run: |
+        for i in $env_vars; do
+            i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
+            echo ::add-mask::${i#*=}
+            printf '%s\n' "$i" >> $GITHUB_ENV
+        done
+    - name: Validate credentials
+      run: |
+        # Secrets are now available as masked environment variable.
+        echo $CREDENTIAL1 # or ${{ env.docker_username }}
+        echo $CREDENTIAL2 # or ${{ env.CREDENTIAL2 }}
+        if [ "${{ env.docker_username }}" != "niteris" ]; then
+          echo "Error: CREDENTIAL1 is not 'niteris'"
+          exit 1
+        fi
+        if [ "${{ env.CREDENTIAL2 }}" != "CREDENTIAL2" ]; then
+          echo "Error: CREDENTIAL2 is not 'CREDENTIAL2'"
+          exit 1
+        fi
 
   build:
     runs-on: ${{ inputs.runs_on }}
