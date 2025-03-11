@@ -37,6 +37,18 @@ jobs:
           echo "docker_username=${DOCKER_USERNAME}"
           echo "registry_image=${REGISTRY_IMAGE}"
 
+
+
+  debug:
+    needs: check-if-changed
+    runs-on: ubuntu-24.04
+    if: needs.check-if-changed.outputs.should_run == 'true'
+    steps:
+      - name: Debug
+        run: |
+          echo "docker_username=${{ needs.check-if-changed.outputs.docker_username }}"
+          echo "registry_image=${{ needs.check-if-changed.outputs.registry_image }}"
+
     
   build-amd64:
     needs: check-if-changed
