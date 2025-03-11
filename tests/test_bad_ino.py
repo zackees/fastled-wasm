@@ -30,7 +30,12 @@ class WebCompileTester(unittest.TestCase):
 
         # Print compilation output for debugging
         print(f"Compilation stdout:\n{result.stdout}")
-        self.assertIn("lsfjsdklfjdskfjkasdfjdsfds", result.stdout)
+        if "lsfjsdklfjdskfjkasdfjdsfds" not in result.stdout:
+            print("Expected error not found in stdout")
+            print("stdout:")
+            print(result.stdout)
+            self.fail("Expected error not found in stdout")
+        # self.assertIn("lsfjsdklfjdskfjkasdfjdsfds", result.stdout)
 
         print(f"Zip size: {len(result.zip_bytes)} bytes")
 

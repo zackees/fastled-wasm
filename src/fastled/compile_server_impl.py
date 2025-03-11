@@ -187,7 +187,7 @@ class CompileServerImpl:
         else:
             upgrade = self.auto_updates
         self.docker.validate_or_download_image(
-            image_name=IMAGE_NAME, tag="main", upgrade=upgrade
+            image_name=IMAGE_NAME, tag="latest", upgrade=upgrade
         )
         DISK_CACHE.put("last-update", now_str)
 
@@ -238,7 +238,7 @@ class CompileServerImpl:
         if not self.interactive:
             container: Container = self.docker.run_container_detached(
                 image_name=IMAGE_NAME,
-                tag="main",
+                tag="latest",
                 container_name=self.container_name,
                 command=cmd_str,
                 ports=ports,
@@ -253,7 +253,7 @@ class CompileServerImpl:
 
             self.docker.run_container_interactive(
                 image_name=IMAGE_NAME,
-                tag="main",
+                tag="latest",
                 container_name=self.container_name,
                 command=cmd_str,
                 ports=ports,
