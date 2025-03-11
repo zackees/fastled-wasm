@@ -77,8 +77,7 @@ sketch_flags = [
     "-I",
     "src",
     # add /js/fastled/src/platforms/wasm/compiler to the include path
-    "-I",
-    "/js/fastled/src/platforms/wasm/compiler",
+    "-I/js/fastled/src/platforms/wasm/compiler",
 ]
 
 if QUICK_BUILD:
@@ -138,8 +137,7 @@ fastled_compile_cc_flags = [
     # "-fno-exceptions",
     # "-sDISABLE_EXCEPTION_CATCHING=1",
     # "-sDISABLE_EXCEPTION_THROWING=0",
-    "-I",
-    "/js/fastled/src/platforms/wasm/compiler",
+    "-I/js/fastled/src/platforms/wasm/compiler",
 ]
 
 
