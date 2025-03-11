@@ -119,7 +119,7 @@ RUN echo 'export LANG=en_US.UTF-8' >> /etc/profile && \
 #COPY compiler/install-arduino-cli.sh /install-arduino-cli.sh
 #RUN chmod +x /install-arduino-cli.sh && /install-arduino-cli.sh || echo "Failed to install Arduino CLI"
 
-RUN pip install uv==0.5.6
+RUN pip install uv==0.6.5
 
 # Get the compiler requirements and install them.
 COPY compiler/requirements.txt /install/requirements.txt

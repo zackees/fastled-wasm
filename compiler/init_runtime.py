@@ -58,10 +58,25 @@ def make_links() -> None:
     with ThreadPoolExecutor(max_workers=16) as executor:
         executor.map(copy_task, files)
 
+def check() -> None:
+    print("Checking...")
+    if not Path("/js/Arduino.h").exists():
+        raise RuntimeError("Arduino.h not found")
 
 def init_runtime() -> None:
     os.chdir(str(HERE))
     make_links()
+    try:
+        check()
+    except Exception:
+        # print out the entire directory of /js, one level deep
+        print("Directory listing:")
+        for root, dirs, files in os.walk("/js"):
+            for name in files:
+                print(os.path.join(root, name))
+        raise
+
+
 
 
 if __name__ == "__main__":
