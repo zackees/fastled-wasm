@@ -249,6 +249,8 @@ def check_syntax_with_gcc(file_path, gcc_path="gcc"):
             "/js/fastled/src/",  # Add /js/fastled/src/ to the include path
             "-I",
             "/emsdk/upstream/emscripten/system/include",
+            "-I",
+            "/js/fastled/src/platforms/wasm/compiler",  # Arduino.h and Arduino.cpp
             file_path,
         ]
         cmd_str = subprocess.list2cmdline(cmd_list)
