@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docker_username: ${{ steps.credentials.outputs.docker_username }}
-      registry_image: ${{ steps.credentials.outputs.CREDENTIAL2 }}
+      registry_image: ${{ steps.credentials.outputs.registry_image }}
       docker_password: ${{ steps.credentials.outputs.docker_password }}
       platform_pair: ${{ steps.credentials.outputs.platform_pair }}
     steps:
