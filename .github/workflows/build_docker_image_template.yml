@@ -47,7 +47,6 @@ jobs:
         echo "Length of docker_registry_image: ${#docker_registry_image}"
         echo "Length of docker_username: ${#docker_username}"
         echo "Length of docker_password: ${#docker_password}"
-        echo "Length of platform_pair: ${#platform_pair}"
 
 
 
@@ -92,7 +91,7 @@ jobs:
     - name: Upload digest
       uses: actions/upload-artifact@v4
       with:
-        name: digests-${{ env.platform_pair }}
+        name: digests-${{ env.PLATFORM_PAIR }}
         path: /tmp/digests/*
         if-no-files-found: error
         retention-days: 1
