@@ -72,6 +72,9 @@ sketch_flags = [
     # add /js/src/ to the include path
     "-I",
     "src",
+    # add /js/fastled/src/platforms/wasm/compiler to the include path
+    "-I",
+    "fastled/src/platforms/wasm/compiler",
 ]
 
 if QUICK_BUILD:
