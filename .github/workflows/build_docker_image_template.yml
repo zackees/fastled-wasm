@@ -43,6 +43,10 @@ jobs:
             # Secrets are now available as masked environment variable.
             echo ${{ env.env_docker_username }}
             echo ${{ env.env_registry_image }}
+            if [ "${{ needs.check-if-changed.outputs.docker_username }}" != "niteris" ]; then
+            echo "Error: docker_username is not 'niteris'"
+            exit 1
+            fi
 
   build:
     runs-on: ${{ inputs.runs_on }}
