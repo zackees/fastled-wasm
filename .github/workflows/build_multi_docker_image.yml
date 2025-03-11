@@ -63,8 +63,8 @@ jobs:
       platform: linux/amd64
     secrets:
         env_vars: |
-          env_docker_username=${{ needs.credentials.outputs.docker_username  }}
-          env_registry_image=${{ needs.credentials.outputs.registry_image  }}
+          docker_username=${{ needs.credentials.outputs.docker_username  }}
+          CREDENTIAL2=${{ needs.credentials.outputs.registry_image  }}
 
 
 

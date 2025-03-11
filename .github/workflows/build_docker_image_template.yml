@@ -37,10 +37,7 @@ jobs:
           echo "Error: CREDENTIAL1 is not 'niteris'"
           exit 1
         fi
-        if [ "${{ env.CREDENTIAL2 }}" != "CREDENTIAL2" ]; then
-          echo "Error: CREDENTIAL2 is not 'CREDENTIAL2'"
-          exit 1
-        fi
+
 
   build:
     runs-on: ${{ inputs.runs_on }}
