@@ -30,7 +30,6 @@ jobs:
           # At this point always run, this used to trigger on changes to fastled repo (mostly for the compiler stuff)
           # but that has been moved to this repo.
           echo "should_run=true" >> $GITHUB_OUTPUT
-          echo "size of env.PLATFORM_PAIR: ${#PLATFORM_PAIR}"
 
 
   credentials:
@@ -41,7 +40,6 @@ jobs:
       docker_username: ${{ steps.credentials.outputs.docker_username }}
       registry_image: ${{ steps.credentials.outputs.registry_image }}
       docker_password: ${{ steps.credentials.outputs.docker_password }}
-      platform_pair: ${{ steps.credentials.outputs.platform_pair }}
     steps:
       - name: Output encoded credentials
         id: credentials
@@ -49,12 +47,10 @@ jobs:
           docker_username: ${{ secrets.DOCKER_USERNAME }}
           docker_password: ${{ secrets.DOCKER_PASSWORD }}
           registry_image: ${{ env.REGISTRY_IMAGE }}
-          platform_pair: ${{ env.PLATFORM_PAIR }}
         run: |
           echo "docker_username=$(echo $docker_username | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
           echo "docker_password=$(echo $docker_password | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
           echo "registry_image=$(echo $registry_image | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
-          echo "platform_pair=$(echo $platform_pair | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
 
 
 
@@ -71,7 +67,6 @@ jobs:
           docker_username=${{ needs.credentials.outputs.docker_username  }}
           docker_password=${{ needs.credentials.outputs.docker_password  }}
           docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
-          platform_pair=${{ needs.credentials.outputs.platform_pair  }}
           
 
 
@@ -97,9 +92,6 @@ jobs:
           images: ${{ env.REGISTRY_IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-      - name: Print platform pair size
-        run: |
-          echo "PLATFORM_PAIR=${PLATFORM_PAIR}"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
