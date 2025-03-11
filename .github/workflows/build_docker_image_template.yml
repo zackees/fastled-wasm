@@ -20,8 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       env_vars: ${{ secrets.env_vars }}
+    outputs:
+        docker_username: ${{ steps.check.outputs.docker_username }}
     steps:
     - name: Decode credentials as environment variables
+      id: check
       run: |
         for i in $env_vars; do
             i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
