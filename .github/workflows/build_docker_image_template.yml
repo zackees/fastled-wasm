@@ -40,6 +40,7 @@ jobs:
 
 
   build:
+    needs: parse-credentials
     runs-on: ${{ inputs.runs_on }}
     strategy:
       fail-fast: false
