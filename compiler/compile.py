@@ -73,7 +73,6 @@ FASTLED_COMPILER_DIR = JS_DIR / "compiler"
 FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 
 PIO_BUILD_DIR = JS_DIR / ".pio/build"
-ARDUINO_H_SRC = JS_DIR / "Arduino.h"
 INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
 INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
 INDEX_JS_SRC = FASTLED_COMPILER_DIR / "index.js"
@@ -470,7 +469,6 @@ def main() -> int:
 
     check_paths: list[Path] = [
         JS_DIR,
-        ARDUINO_H_SRC,
         INDEX_HTML_SRC,
         INDEX_CSS_SRC,
         INDEX_JS_SRC,
@@ -510,8 +508,6 @@ def main() -> int:
 
         if do_copy:
             copy_files(src_dir, JS_SRC)
-            print("Copying Arduino.h to src/Arduino.h")
-            shutil.copy(ARDUINO_H_SRC, JS_SRC / "Arduino.h")
             if args.only_copy:
                 return 0
 
