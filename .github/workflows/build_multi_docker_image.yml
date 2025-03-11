@@ -30,6 +30,7 @@ jobs:
           # At this point always run, this used to trigger on changes to fastled repo (mostly for the compiler stuff)
           # but that has been moved to this repo.
           echo "should_run=true" >> $GITHUB_OUTPUT
+          echo "size of env.PLATFORM_PAIR: ${#PLATFORM_PAIR}"
 
 
   credentials:
