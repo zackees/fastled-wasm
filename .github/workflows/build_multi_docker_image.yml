@@ -60,6 +60,10 @@ jobs:
       platform: linux/amd64
       registry_image: ${{ needs.check-if-changed.outputs.registry_image }}
       docker_username: ${{ needs.check-if-changed.outputs.docker_username }}
+    secrets:
+        env_vars: |
+          env_docker_username=${{ needs.check-if-changed.outputs.docker_username }}
+          env_registry_image=${{ needs.check-if-changed.outputs.registry_image }}
 
 
 
