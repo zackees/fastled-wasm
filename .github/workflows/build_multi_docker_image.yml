@@ -34,6 +34,7 @@ jobs:
     with:
       runs_on: ubuntu-24.04
       platform: linux/amd64
+      registry_image: ${{ env.REGISTRY_IMAGE }}
 
 
 

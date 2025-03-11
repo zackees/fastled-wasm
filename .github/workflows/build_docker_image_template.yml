@@ -9,6 +9,9 @@ on:
       platform:
         required: true
         type: string
+      registry_image:
+        required: true
+        type: string
 
 
 jobs:
@@ -25,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY_IMAGE }}
+          images: ${{ inputs.registry_image }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
       - name: Set up Docker Buildx
@@ -43,7 +46,7 @@ jobs:
           context: https://github.com/zackees/fastled-wasm.git
           file: Dockerfile
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ inputs.registry_image }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             PLATFORM_TAG=${{ inputs.platform == 'linux/arm64' && '-arm64' || '' }}
           cache-from: type=gha
