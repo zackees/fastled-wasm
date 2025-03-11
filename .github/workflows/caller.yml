@@ -9,16 +9,16 @@ jobs:
   credentials:
     runs-on: ubuntu-latest
     outputs:
-      CREDENTIAL1: ${{ steps.credentials.outputs.CREDENTIAL1 }}
+      docker_username: ${{ steps.credentials.outputs.docker_username }}
       CREDENTIAL2: ${{ steps.credentials.outputs.CREDENTIAL2 }}
     steps:
       - name: Output encoded credentials
         id: credentials
         env:
-          CREDENTIAL1: ${{ secrets.DOCKER_USERNAME }}
+          docker_username: ${{ secrets.DOCKER_USERNAME }}
           CREDENTIAL2: CREDENTIAL2
         run: |
-          echo "CREDENTIAL1=$(echo $CREDENTIAL1 | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "docker_username=$(echo $docker_username | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
           echo "CREDENTIAL2=$(echo $CREDENTIAL2 | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
 
   reusable-workflow:
@@ -26,5 +26,5 @@ jobs:
     uses: ./.github/workflows/reusable.yml
     secrets:
       env_vars: |
-        CREDENTIAL1=${{ needs.credentials.outputs.CREDENTIAL1 }}
+        docker_username=${{ needs.credentials.outputs.docker_username }}
         CREDENTIAL2=${{ needs.credentials.outputs.CREDENTIAL2 }}

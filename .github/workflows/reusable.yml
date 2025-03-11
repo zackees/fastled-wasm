@@ -22,9 +22,9 @@ jobs:
     - name: Validate credentials
       run: |
         # Secrets are now available as masked environment variable.
-        echo $CREDENTIAL1 # or ${{ env.CREDENTIAL1 }}
+        echo $CREDENTIAL1 # or ${{ env.docker_username }}
         echo $CREDENTIAL2 # or ${{ env.CREDENTIAL2 }}
-        if [ "${{ env.CREDENTIAL1 }}" != "niteris" ]; then
+        if [ "${{ env.docker_username }}" != "niteris" ]; then
           echo "Error: CREDENTIAL1 is not 'niteris'"
           exit 1
         fi
