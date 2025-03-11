@@ -15,8 +15,6 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
-      registry_image: ${{ steps.check.outputs.registry_image }}
-      docker_username: ${{ steps.check.outputs.docker_username }}
     steps:
       - name: Check workflow repo changes
         uses: actions/checkout@v4
@@ -32,8 +30,7 @@ jobs:
           # At this point always run, this used to trigger on changes to fastled repo (mostly for the compiler stuff)
           # but that has been moved to this repo.
           echo "should_run=true" >> $GITHUB_OUTPUT
-          echo "docker_username=$(echo $docker_username | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
-          echo "registry_image=$(echo $registry_image | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+
 
   credentials:
     needs: check-if-changed
@@ -42,15 +39,22 @@ jobs:
     outputs:
       docker_username: ${{ steps.credentials.outputs.docker_username }}
       registry_image: ${{ steps.credentials.outputs.CREDENTIAL2 }}
+      docker_password: ${{ steps.credentials.outputs.docker_password }}
+      platform_pair: ${{ steps.credentials.outputs.platform_pair }}
     steps:
       - name: Output encoded credentials
         id: credentials
         env:
           docker_username: ${{ secrets.DOCKER_USERNAME }}
-          CREDENTIAL2: CREDENTIAL2
+          docker_password: ${{ secrets.DOCKER_PASSWORD }}
+          registry_image: ${{ env.REGISTRY_IMAGE }}
+          platform_pair: ${{ env.PLATFORM_PAIR }}
         run: |
           echo "docker_username=$(echo $docker_username | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
-          echo "CREDENTIAL2=$(echo $CREDENTIAL2 | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "docker_password=$(echo $docker_password | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "registry_image=$(echo $registry_image | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "platform_pair=$(echo $platform_pair | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+
 
 
 
@@ -64,7 +68,10 @@ jobs:
     secrets:
         env_vars: |
           docker_username=${{ needs.credentials.outputs.docker_username  }}
+          docker_password=${{ needs.credentials.outputs.docker_password  }}
           docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
+          platform_pair=${{ needs.credentials.outputs.platform_pair  }}
+          
 
 
 
