@@ -61,7 +61,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
       - name: Debug
         run: |
-          if [ "${{ env.docker_username }}" != "niteris" ]; then
+          if [ "${{ needs.parse-credentials.outputs.docker_username }}" != "niteris" ]; then
             echo "Error: CREDENTIAL1 is not 'niteris'"
             exit 1
           fi
