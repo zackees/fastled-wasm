@@ -52,9 +52,6 @@ jobs:
           echo "docker_password=$(echo $docker_password | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
           echo "registry_image=$(echo $registry_image | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
 
-
-
-
     
   build-amd64:
     needs: credentials
@@ -68,8 +65,6 @@ jobs:
           docker_password=${{ needs.credentials.outputs.docker_password  }}
           docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
           
-
-
 
   build-arm:
     needs: check-if-changed

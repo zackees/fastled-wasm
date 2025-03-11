@@ -31,24 +31,6 @@ jobs:
             echo ::add-mask::${i#*=}
             printf '%s\n' "$i" >> $GITHUB_ENV
         done
-    - name: Validate credentials
-      run: |
-        # Secrets are now available as masked environment variable.
-        #echo $CREDENTIAL1 # or ${{ env.docker_username }}
-        if [ "${{ env.docker_username }}" != "niteris" ]; then
-          echo "Error: docker_username is not 'niteris'"
-          exit 1
-        fi
-        #  docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
-        #if [ "${{ env.docker_registry_image }}" != "niteris/fastled-wasm" ]; then
-        #  echo "Error: docker_registry_image is not 'niteris/fastled-wasm'"
-        #  exit 1
-        #fi
-        echo "Length of docker_registry_image: ${#docker_registry_image}"
-        echo "Length of docker_username: ${#docker_username}"
-        echo "Length of docker_password: ${#docker_password}"
-
-
 
 
     - name: Prepare
