@@ -25,7 +25,7 @@ jobs:
           
       - id: check
         env:
-          REGISTRY_IMAGE: ${{  env.REGISTRY_IMAGE }}
+          REGISTRY_IMAGE: ${{ env.REGISTRY_IMAGE }}
           DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         run: |
           # Check if there are any changes in workflow repository
@@ -34,6 +34,8 @@ jobs:
           echo "should_run=true" >> $GITHUB_OUTPUT
           echo "registry_image=${REGISTRY_IMAGE}" >> $GITHUB_OUTPUT
           echo "docker_username=${DOCKER_USERNAME}" >> $GITHUB_OUTPUT
+          echo "docker_username=${DOCKER_USERNAME}"
+          echo "registry_image=${REGISTRY_IMAGE}"
 
     
   build-amd64:
