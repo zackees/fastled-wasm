@@ -37,6 +37,7 @@ jobs:
       - name: Debug
         run: |
           echo "docker_username=${{ inputs.docker_username }}"
+          echo "registry_image=${{ inputs.registry_image }}"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
