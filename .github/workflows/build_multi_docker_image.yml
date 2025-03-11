@@ -22,9 +22,6 @@ jobs:
           fetch-depth: 2
           
       - id: check
-        env:
-          REGISTRY_IMAGE: ${{ env.REGISTRY_IMAGE }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         run: |
           # Check if there are any changes in workflow repository
           # At this point always run, this used to trigger on changes to fastled repo (mostly for the compiler stuff)
@@ -38,8 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docker_username: ${{ steps.credentials.outputs.docker_username }}
-      registry_image: ${{ steps.credentials.outputs.registry_image }}
       docker_password: ${{ steps.credentials.outputs.docker_password }}
+      registry_image: ${{ steps.credentials.outputs.registry_image }}
     steps:
       - name: Output encoded credentials
         id: credentials
