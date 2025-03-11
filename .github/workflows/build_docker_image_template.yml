@@ -31,9 +31,10 @@ jobs:
         - name: Decode credentials as environment variables
           run: |
             for i in $env_vars; do
-            i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
-            echo ::add-mask::${i#*=}
-            printf '%s\n' "$i" >> $GITHUB_ENV
+            #i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
+            #echo ::add-mask::${i#*=}
+            #printf '%s\n' "$i" >> $GITHUB_ENV
+            echo "$i"
             done
         - name: Validate credentials
           run: |
