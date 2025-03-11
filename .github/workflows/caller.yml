@@ -1,0 +1,30 @@
+name: Caller
+
+on:
+    push:
+      branches:
+        - main  # Adjust this to your default branch
+
+jobs:
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      CREDENTIAL1: ${{ steps.credentials.outputs.CREDENTIAL1 }}
+      CREDENTIAL2: ${{ steps.credentials.outputs.CREDENTIAL2 }}
+    steps:
+      - name: Output encoded credentials
+        id: credentials
+        env:
+          CREDENTIAL1: CREDENTIAL1
+          CREDENTIAL2: CREDENTIAL2
+        run: |
+          echo "CREDENTIAL1=$(echo $CREDENTIAL1 | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+          echo "CREDENTIAL2=$(echo $CREDENTIAL2 | base64 -w0 | base64 -w0)" >> $GITHUB_OUTPUT
+
+  reusable-workflow:
+    needs: credentials
+    uses: ./.github/workflows/reusable.yml
+    secrets:
+      env_vars: |
+        CREDENTIAL1=${{ needs.credentials.outputs.CREDENTIAL1 }}
+        CREDENTIAL2=${{ needs.credentials.outputs.CREDENTIAL2 }}

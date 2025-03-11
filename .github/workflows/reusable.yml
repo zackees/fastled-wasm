@@ -1,0 +1,26 @@
+name: Reusable Workflow
+
+
+on:
+    workflow_call:
+      secrets:
+        env_vars:
+          required: true
+jobs:
+  parse-credentials:
+    runs-on: ubuntu-latest
+    env:
+      env_vars: ${{ secrets.env_vars }}
+    steps:
+    - name: Decode credentials as environment variables
+      run: |
+        for i in $env_vars; do
+            i=$(echo $i | sed 's/=.*//g')=$(echo ${i#*=} | base64 -di | base64 -di)
+            echo ::add-mask::${i#*=}
+            printf '%s\n' "$i" >> $GITHUB_ENV
+        done
+    - name: Validate credentials
+      run: |
+        # Secrets are now available as masked environment variable.
+        echo $CREDENTIAL1 # or ${{ env.CREDENTIAL1 }}
+        echo $CREDENTIAL2 # or ${{ env.CREDENTIAL2 }}
