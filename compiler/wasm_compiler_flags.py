@@ -138,6 +138,8 @@ fastled_compile_cc_flags = [
     # "-fno-exceptions",
     # "-sDISABLE_EXCEPTION_CATCHING=1",
     # "-sDISABLE_EXCEPTION_THROWING=0",
+    "-I",
+    "/js/fastled/src/platforms/wasm/compiler",
 ]
 
 
