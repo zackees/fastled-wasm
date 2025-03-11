@@ -49,6 +49,11 @@ jobs:
         run: |
           echo "docker_username=${{ needs.check-if-changed.outputs.docker_username }}"
           echo "registry_image=${{ needs.check-if-changed.outputs.registry_image }}"
+          # ensure that docker_username == "niteris"
+          if [ "${{ needs.check-if-changed.outputs.docker_username }}" != "niteris" ]; then
+            echo "Error: docker_username is not 'niteris'"
+            exit 1
+          fi
 
     
   build-amd64:
