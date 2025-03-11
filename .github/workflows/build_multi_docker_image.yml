@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
+      registry_image: ${{ steps.check.outputs.registry_image }}
     steps:
       - name: Check workflow repo changes
         uses: actions/checkout@v4
@@ -34,7 +35,7 @@ jobs:
     with:
       runs_on: ubuntu-24.04
       platform: linux/amd64
-      registry_image: ${{ env.REGISTRY_IMAGE }}
+      registry_image: ${{ needs.check-if-changed.outputs.registry_image }}
 
 
 
