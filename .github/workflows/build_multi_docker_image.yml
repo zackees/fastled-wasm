@@ -29,7 +29,7 @@ jobs:
           # but that has been moved to this repo.
           echo "should_run=true" >> $GITHUB_OUTPUT
           echo "registry_image=${REGISTRY_IMAGE}" >> $GITHUB_OUTPUT
-          echo "docker_username=${DOCKER_USERNAME}" >> $GITHUB_OUTPUT
+          echo "docker_username=${{ secrets.DOCKER_USERNAME }}" >> $GITHUB_OUTPUT
 
     
   build-amd64:
