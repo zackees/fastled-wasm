@@ -23,7 +23,10 @@ class ApiTester(unittest.TestCase):
 
         with Api.server(auto_updates=True) as server:
             out = Test.test_examples(host=server)
-            self.assertEqual(0, len(out), f"Failed tests: {out}")
+            for example, exc in out.items():
+                if exc is not None:
+                    print(f"Failed: {example} with {exc}")
+            self.assertEqual(0, len(out), f"Failed tests: {out.keys()}")
 
 
 if __name__ == "__main__":
