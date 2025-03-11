@@ -54,36 +54,36 @@ class SyntaxCheckResult:
 _CHECK_SYNTAX = False
 _COMPILER_PATH = "em++"
 
-JS_DIR = Path("/js")
-FASTLED_DIR = JS_DIR / "fastled"
-FASTLED_SRC = FASTLED_DIR / "src"
-# FASTLED_SRC_PLATFORMS = FASTLED_SRC / "platforms"
+_JS_DIR = Path("/js")
+_FASTLED_DIR = _JS_DIR / "fastled"
+_FASTLED_SRC = _FASTLED_DIR / "src"
+# FASTLED_SRC_PLATFORMS = _FASTLED_SRC / "platforms"
 # FASTLED_SRC_PLATFORMS_WASM = FASTLED_SRC_PLATFORMS / "wasm"
-# FASTLED_SRC_PLATFORMS_WASM_COMPILER = FASTLED_SRC_PLATFORMS_WASM / "compiler"
-FASTLED_SRC_PLATFORMS_WASM_COMPILER = JS_DIR / "compiler"
+# _FASTLED_SRC_PLATFORMS_WASM_COMPILER = FASTLED_SRC_PLATFORMS_WASM / "compiler"
+_FASTLED_SRC_PLATFORMS_WASM_COMPILER = _JS_DIR / "compiler"
 
 
-JS_SRC = JS_DIR / "src"
+_JS_SRC = _JS_DIR / "src"
 
-FASTLED_DIR = JS_DIR / "fastled"
-# FASTLED_SRC_DIR = FASTLED_DIR / "src"
+_FASTLED_DIR = _JS_DIR / "fastled"
+# FASTLED_SRC_DIR = _FASTLED_DIR / "src"
 # FASTLED_PLATFORMS_DIR = FASTLED_SRC_DIR / "platforms"
 # FASTLED_WASM_DIR = FASTLED_PLATFORMS_DIR / "wasm"
-FASTLED_COMPILER_DIR = JS_DIR / "compiler"
-FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
+_FASTLED_COMPILER_DIR = _JS_DIR / "compiler"
+_FASTLED_MODULES_DIR = _FASTLED_COMPILER_DIR / "modules"
 
-PIO_BUILD_DIR = JS_DIR / ".pio/build"
-INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
-INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
-INDEX_JS_SRC = FASTLED_COMPILER_DIR / "index.js"
+_PIO_BUILD_DIR = _JS_DIR / ".pio/build"
+_INDEX_HTML_SRC = _FASTLED_COMPILER_DIR / "index.html"
+_INDEX_CSS_SRC = _FASTLED_COMPILER_DIR / "index.css"
+_INDEX_JS_SRC = _FASTLED_COMPILER_DIR / "index.js"
 
 
-WASM_COMPILER_SETTTINGS = JS_DIR / "wasm_compiler_flags.py"
-OUTPUT_FILES = ["fastled.js", "fastled.wasm"]
-HEADERS_TO_INSERT = ["#include <Arduino.h>", '#include "platforms/wasm/js.h"']
-FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
-MAX_COMPILE_ATTEMPTS = 1  # Occasionally the compiler fails for unknown reasons, but disabled because it increases the build time on failure.
-FASTLED_OUTPUT_DIR_NAME = "fastled_js"
+_WASM_COMPILER_SETTTINGS = _JS_DIR / "wasm_compiler_flags.py"
+_OUTPUT_FILES = ["fastled.js", "fastled.wasm"]
+_HEADERS_TO_INSERT = ["#include <Arduino.h>", '#include "platforms/wasm/js.h"']
+_FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
+_MAX_COMPILE_ATTEMPTS = 1  # Occasionally the compiler fails for unknown reasons, but disabled because it increases the build time on failure.
+_FASTLED_OUTPUT_DIR_NAME = "fastled_js"
 
 
 
@@ -100,7 +100,7 @@ def copy_files(src_dir: Path, js_src: Path) -> None:
 
 
 def compile(
-    js_dir: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
+    _JS_DIR: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
 ) -> int:
     print("Starting compilation process...")
     max_attempts = 1
@@ -123,7 +123,7 @@ def compile(
     def _open_process(cmd_list: list[str] = cmd_list) -> subprocess.Popen:
         out = subprocess.Popen(
             cmd_list,
-            cwd=js_dir,
+            cwd=_JS_DIR,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -164,7 +164,7 @@ def insert_header(file: Path) -> None:
         content = f.read()
 
     # Remove existing includes
-    for header in HEADERS_TO_INSERT:
+    for header in _HEADERS_TO_INSERT:
         content = re.sub(
             rf"^.*{re.escape(header)}.*\n", "", content, flags=re.MULTILINE
         )
@@ -174,7 +174,7 @@ def insert_header(file: Path) -> None:
     content = re.sub(arduino_pattern, "", content, flags=re.MULTILINE)
 
     # Add new headers at the beginning
-    content = "\n".join(HEADERS_TO_INSERT) + "\n" + content
+    content = "\n".join(_HEADERS_TO_INSERT) + "\n" + content
 
     with open(file, "w") as f:
         f.write(content)
@@ -219,7 +219,7 @@ def insert_headers(
 def process_ino_files(src_dir: Path) -> None:
     transform_to_cpp(src_dir)
     exclusion_folders: List[Path] = []
-    insert_headers(src_dir, exclusion_folders, FILE_EXTENSIONS)
+    insert_headers(src_dir, exclusion_folders, _FILE_EXTENSIONS)
     print("Transform to cpp and insert header operations completed.")
 
 
@@ -422,10 +422,10 @@ def find_project_dir(mapped_dir: Path) -> Path:
 
 
 def process_compile(
-    js_dir: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
+    _JS_DIR: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
 ) -> None:
     print("Starting compilation...")
-    rtn = compile(js_dir, build_mode, auto_clean, no_platformio=no_platformio)
+    rtn = compile(_JS_DIR, build_mode, auto_clean, no_platformio=no_platformio)
     print(f"Compilation return code: {rtn}")
     if rtn != 0:
         print("Compilation failed.")
@@ -453,29 +453,29 @@ def main() -> int:
 
 
 
-    # assert JS_DIR.exists()
+    # assert _JS_DIR.exists()
     # assert ARDUINO_H_SRC.exists()
-    # assert INDEX_HTML_SRC.exists()
-    # assert INDEX_CSS_SRC.exists(), f"Index CSS not found at {INDEX_CSS_SRC}"
-    # assert INDEX_JS_SRC.exists()
-    # assert WASM_COMPILER_SETTTINGS.exists()
-    # assert FASTLED_SRC_PLATFORMS_WASM_COMPILER.exists()
-    # assert JS_DIR.exists(), f"JS_DIR does not exist: {JS_DIR}"
+    # assert _INDEX_HTML_SRC.exists()
+    # assert _INDEX_CSS_SRC.exists(), f"Index CSS not found at {_INDEX_CSS_SRC}"
+    # assert _INDEX_JS_SRC.exists()
+    # assert _WASM_COMPILER_SETTTINGS.exists()
+    # assert _FASTLED_SRC_PLATFORMS_WASM_COMPILER.exists()
+    # assert _JS_DIR.exists(), f"_JS_DIR does not exist: {_JS_DIR}"
     # assert ARDUINO_H_SRC.exists(), f"ARDUINO_H_SRC does not exist: {ARDUINO_H_SRC}"
-    # assert INDEX_HTML_SRC.exists(), f"INDEX_HTML_SRC does not exist: {INDEX_HTML_SRC}"
-    # assert INDEX_CSS_SRC.exists(), f"INDEX_CSS_SRC does not exist: {INDEX_CSS_SRC}"
-    # assert INDEX_JS_SRC.exists(), f"INDEX_JS_SRC does not exist: {INDEX_JS_SRC}"
+    # assert _INDEX_HTML_SRC.exists(), f"_INDEX_HTML_SRC does not exist: {_INDEX_HTML_SRC}"
+    # assert _INDEX_CSS_SRC.exists(), f"_INDEX_CSS_SRC does not exist: {_INDEX_CSS_SRC}"
+    # assert _INDEX_JS_SRC.exists(), f"_INDEX_JS_SRC does not exist: {_INDEX_JS_SRC}"
     # assert (
-    #     WASM_COMPILER_SETTTINGS.exists()
-    # ), f"WASM_COMPILER_SETTTINGS does not exist: {WASM_COMPILER_SETTTINGS}"
+    #     _WASM_COMPILER_SETTTINGS.exists()
+    # ), f"_WASM_COMPILER_SETTTINGS does not exist: {_WASM_COMPILER_SETTTINGS}"
 
     check_paths: list[Path] = [
-        JS_DIR,
-        INDEX_HTML_SRC,
-        INDEX_CSS_SRC,
-        INDEX_JS_SRC,
-        WASM_COMPILER_SETTTINGS,
-        FASTLED_SRC_PLATFORMS_WASM_COMPILER,
+        _JS_DIR,
+        _INDEX_HTML_SRC,
+        _INDEX_CSS_SRC,
+        _INDEX_JS_SRC,
+        _WASM_COMPILER_SETTTINGS,
+        _FASTLED_SRC_PLATFORMS_WASM_COMPILER,
     ]
 
     missing_paths = [p for p in check_paths if not p.exists()]
@@ -497,9 +497,9 @@ def main() -> int:
         os.environ["EMPROFILE"] = "2"
 
     try:
-        if JS_SRC.exists():
-            shutil.rmtree(JS_SRC)
-        JS_SRC.mkdir(parents=True, exist_ok=True)
+        if _JS_SRC.exists():
+            shutil.rmtree(_JS_SRC)
+        _JS_SRC.mkdir(parents=True, exist_ok=True)
         src_dir = find_project_dir(args.mapped_dir)
 
         any_only_flags = args.only_copy or args.only_insert_header or args.only_compile
@@ -509,12 +509,12 @@ def main() -> int:
         do_compile = not any_only_flags or args.only_compile
 
         if do_copy:
-            copy_files(src_dir, JS_SRC)
+            copy_files(src_dir, _JS_SRC)
             if args.only_copy:
                 return 0
 
         if do_insert_header:
-            process_ino_files(JS_SRC)
+            process_ino_files(_JS_SRC)
             if args.only_insert_header:
                 print("Transform to cpp and insert header operations completed.")
                 return 0
@@ -522,7 +522,7 @@ def main() -> int:
         if _CHECK_SYNTAX:
             print("Performing syntax check...")
             syntax_results = check_syntax(
-                directory_path=JS_SRC, gcc_path=_COMPILER_PATH
+                directory_path=_JS_SRC, gcc_path=_COMPILER_PATH
             )
             failed_checks = [r for r in syntax_results if not r.is_valid]
             if failed_checks:
@@ -547,7 +547,7 @@ def main() -> int:
                     build_mode = BuildMode.QUICK
 
                 process_compile(
-                    js_dir=JS_DIR,
+                    _JS_DIR=_JS_DIR,
                     build_mode=build_mode,
                     auto_clean=not args.disable_auto_clean,
                     no_platformio=no_platformio,
@@ -557,16 +557,16 @@ def main() -> int:
                 return 1
 
             def _get_build_dir_platformio() -> Path:
-                build_dirs = [d for d in PIO_BUILD_DIR.iterdir() if d.is_dir()]
+                build_dirs = [d for d in _PIO_BUILD_DIR.iterdir() if d.is_dir()]
                 if len(build_dirs) != 1:
                     raise RuntimeError(
-                        f"Expected exactly one build directory in {PIO_BUILD_DIR}, found {len(build_dirs)}: {build_dirs}"
+                        f"Expected exactly one build directory in {_PIO_BUILD_DIR}, found {len(build_dirs)}: {build_dirs}"
                     )
                 build_dir: Path = build_dirs[0]
                 return build_dir
 
             def _get_build_dir_cmake() -> Path:
-                return JS_DIR / "build"
+                return _JS_DIR / "build"
 
             if no_platformio:
                 build_dir = _get_build_dir_cmake()
@@ -574,45 +574,45 @@ def main() -> int:
                 build_dir = _get_build_dir_platformio()
 
             print("Copying output files...")
-            fastled_js_dir: Path = src_dir / FASTLED_OUTPUT_DIR_NAME
-            fastled_js_dir.mkdir(parents=True, exist_ok=True)
+            fastled__JS_DIR: Path = src_dir / _FASTLED_OUTPUT_DIR_NAME
+            fastled__JS_DIR.mkdir(parents=True, exist_ok=True)
 
             for file in ["fastled.js", "fastled.wasm"]:
                 _src = build_dir / file
-                _dst = fastled_js_dir / file
+                _dst = fastled__JS_DIR / file
                 print(f"Copying {_src} to {_dst}")
                 shutil.copy2(_src, _dst)
 
-            print(f"Copying {INDEX_HTML_SRC} to output directory")
-            shutil.copy2(INDEX_HTML_SRC, fastled_js_dir / "index.html")
-            print(f"Copying {INDEX_CSS_SRC} to output directory")
-            shutil.copy2(INDEX_CSS_SRC, fastled_js_dir / "index.css")
+            print(f"Copying {_INDEX_HTML_SRC} to output directory")
+            shutil.copy2(_INDEX_HTML_SRC, fastled__JS_DIR / "index.html")
+            print(f"Copying {_INDEX_CSS_SRC} to output directory")
+            shutil.copy2(_INDEX_CSS_SRC, fastled__JS_DIR / "index.css")
 
-            # copy all js files in FASTLED_COMPILER_DIR to output directory
-            Path(fastled_js_dir / "modules").mkdir(parents=True, exist_ok=True)
-            for _file in FASTLED_MODULES_DIR.iterdir():
+            # copy all js files in _FASTLED_COMPILER_DIR to output directory
+            Path(fastled__JS_DIR / "modules").mkdir(parents=True, exist_ok=True)
+            for _file in _FASTLED_MODULES_DIR.iterdir():
                 if _file.suffix == ".js":
                     print(f"Copying {_file} to output directory")
-                    shutil.copy2(_file, fastled_js_dir / "modules" / _file.name)
+                    shutil.copy2(_file, fastled__JS_DIR / "modules" / _file.name)
 
             fastled_js_mem = build_dir / "fastled.js.mem"
             fastled_wasm_map = build_dir / "fastled.wasm.map"
             fastled_js_symbols = build_dir / "fastled.js.symbols"
             if fastled_js_mem.exists():
                 print(f"Copying {fastled_js_mem} to output directory")
-                shutil.copy2(fastled_js_mem, fastled_js_dir / fastled_js_mem.name)
+                shutil.copy2(fastled_js_mem, fastled__JS_DIR / fastled_js_mem.name)
             if fastled_wasm_map.exists():
                 print(f"Copying {fastled_wasm_map} to output directory")
-                shutil.copy2(fastled_wasm_map, fastled_js_dir / fastled_wasm_map.name)
+                shutil.copy2(fastled_wasm_map, fastled__JS_DIR / fastled_wasm_map.name)
             if fastled_js_symbols.exists():
                 print(f"Copying {fastled_js_symbols} to output directory")
                 shutil.copy2(
-                    fastled_js_symbols, fastled_js_dir / fastled_js_symbols.name
+                    fastled_js_symbols, fastled__JS_DIR / fastled_js_symbols.name
                 )
             print("Copying index.js to output directory")
-            shutil.copy2(INDEX_JS_SRC, fastled_js_dir / "index.js")
+            shutil.copy2(_INDEX_JS_SRC, fastled__JS_DIR / "index.js")
             optional_input_data_dir = src_dir / "data"
-            output_data_dir = fastled_js_dir / optional_input_data_dir.name
+            output_data_dir = fastled__JS_DIR / optional_input_data_dir.name
 
             # Handle data directory if it exists
             manifest: list[dict] = []
@@ -661,9 +661,9 @@ def main() -> int:
             # Write manifest file even if empty
             print("Writing manifest files.json")
             manifest_json_str = json.dumps(manifest, indent=2, sort_keys=True)
-            with open(fastled_js_dir / "files.json", "w") as f:
+            with open(fastled__JS_DIR / "files.json", "w") as f:
                 f.write(manifest_json_str)
-        cleanup(args, JS_SRC)
+        cleanup(args, _JS_SRC)
 
         print("Compilation process completed successfully")
         return 0
