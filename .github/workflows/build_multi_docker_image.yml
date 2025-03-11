@@ -16,7 +16,7 @@ jobs:
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       registry_image: ${{ steps.check.outputs.registry_image }}
-      docker_username: ${{ secrets.DOCKER_USERNAME }}
+      docker_username: ${{ steps.check.outputs.docker_username }}
     steps:
       - name: Check workflow repo changes
         uses: actions/checkout@v4
