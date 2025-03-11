@@ -42,8 +42,8 @@ jobs:
           exit 1
         fi
         #  docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
-        if [ "${{ env.docker_registry_image }}" != "niteris/fastled-wasm" ]; then
-          echo "Error: docker_registry_image is not 'niteris/fastled-wasm'"
+        if [ "${{ env.docker_registry_image }}" != "fastled-wasm" ]; then
+          echo "Error: docker_registry_image is not 'fastled-wasm'"
           exit 1
         fi
 
