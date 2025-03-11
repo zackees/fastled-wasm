@@ -186,7 +186,7 @@ class CompileServerImpl:
                 upgrade = True
         else:
             upgrade = self.auto_updates
-        self.docker.validate_or_download_image(
+        updated = self.docker.validate_or_download_image(
             image_name=IMAGE_NAME, tag="latest", upgrade=upgrade
         )
         DISK_CACHE.put("last-update", now_str)
@@ -243,14 +243,13 @@ class CompileServerImpl:
                 command=cmd_str,
                 ports=ports,
                 volumes=volumes,
-                remove_previous=self.interactive or self.remove_previous,
+                remove_previous=self.interactive or self.remove_previous or updated,
             )
             self.running_container = self.docker.attach_and_run(container)
             assert self.running_container is not None, "Container should be running"
             print("Compile server starting")
             return port
         else:
-
             self.docker.run_container_interactive(
                 image_name=IMAGE_NAME,
                 tag="latest",

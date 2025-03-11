@@ -263,7 +263,7 @@ class DockerManager:
 
     def validate_or_download_image(
         self, image_name: str, tag: str = "latest", upgrade: bool = False
-    ) -> None:
+    ) -> bool:
         """
         Validate if the image exists, and if not, download it.
         If upgrade is True, will pull the latest version even if image exists locally.
@@ -302,7 +302,7 @@ class DockerManager:
                         )
                     if remote_image_hash_from_local_image == remote_image_hash:
                         print(f"Local image {image_name}:{tag} is up to date.")
-                        return
+                        return False
 
                     # Quick check for latest version
                     with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
@@ -316,10 +316,12 @@ class DockerManager:
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     if remote_image_hash is not None:
                         DISK_CACHE.put(local_image_hash, remote_image_hash)
+                    return True
 
             except docker.errors.ImageNotFound:
                 print(f"Image {image_name}:{tag} not found.")
                 with Spinner("Loading "):
+                    # We use docker cli here because it shows the download.
                     cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
                     cmd_str = subprocess.list2cmdline(cmd_list)
                     print(f"Running command: {cmd_str}")
@@ -330,6 +332,7 @@ class DockerManager:
                     print(f"Image {image_name}:{tag} downloaded successfully.")
                 except docker.errors.ImageNotFound:
                     warnings.warn(f"Image {image_name}:{tag} not found after download.")
+        return True
 
     def tag_image(self, image_name: str, old_tag: str, new_tag: str) -> None:
         """
