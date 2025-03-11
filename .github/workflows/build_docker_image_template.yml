@@ -35,6 +35,8 @@ jobs:
             #echo ::add-mask::${i#*=}
             #printf '%s\n' "$i" >> $GITHUB_ENV
             echo "$i"
+            echo "$i" >> envs.txt
+            cat envs.txt
             done
         - name: Validate credentials
           run: |
