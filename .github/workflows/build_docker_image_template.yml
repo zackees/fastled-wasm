@@ -12,13 +12,6 @@ on:
       platform:
         required: true
         type: string
-      registry_image:
-        required: true
-        type: string
-      docker_username:
-        required: true
-        type: string
-
 
 jobs:
 
