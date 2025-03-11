@@ -80,7 +80,7 @@ _INDEX_JS_SRC = _FASTLED_COMPILER_DIR / "index.js"
 
 _WASM_COMPILER_SETTTINGS = _JS_DIR / "wasm_compiler_flags.py"
 _OUTPUT_FILES = ["fastled.js", "fastled.wasm"]
-_HEADERS_TO_INSERT = ["#include <Arduino.h>", '#include "platforms/wasm/js.h"']
+_HEADERS_TO_INSERT = ['#include "Arduino.h"', '#include "platforms/wasm/js.h"']
 _FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
 _MAX_COMPILE_ATTEMPTS = 1  # Occasionally the compiler fails for unknown reasons, but disabled because it increases the build time on failure.
 _FASTLED_OUTPUT_DIR_NAME = "fastled_js"
