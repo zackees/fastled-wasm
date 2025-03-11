@@ -1,9 +1,8 @@
-
-import os
-from pathlib import Path
 import glob
+import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 HERE = Path(__file__).parent
 
@@ -11,15 +10,14 @@ HERE = Path(__file__).parent
 _COMPILER_DIR = Path("/js/compiler")
 
 
-
 def copy_task(src: str | Path) -> None:
     src = Path(src)
     if "entrypoint.sh" in str(src):
         return
     link_dst = Path("/js") / src.name
-    
+
     # Handle shell scripts
-    if src.suffix == '.sh':
+    if src.suffix == ".sh":
         os.system(f"dos2unix {src} && chmod +x {src}")
 
     # if link exists, remove it
@@ -30,7 +28,6 @@ def copy_task(src: str | Path) -> None:
         except Exception as e:
             warnings.warn(f"Failed to remove {link_dst}: {e}")
 
-        
     if not link_dst.exists():
         print(f"Linking {src} to {link_dst}")
         try:
@@ -43,8 +40,18 @@ def copy_task(src: str | Path) -> None:
 
 def make_links() -> None:
     # Define file patterns to include
-    patterns = ['*.h', '*.py', '*.css', '*.sh', "*.ino", "*.hpp", "*.cpp", "*.ini", "*.txt"]
-    
+    patterns = [
+        "*.h",
+        "*.py",
+        "*.css",
+        "*.sh",
+        "*.ino",
+        "*.hpp",
+        "*.cpp",
+        "*.ini",
+        "*.txt",
+    ]
+
     # Get all matching files in compiler directory
     files = []
     for pattern in patterns:
@@ -55,13 +62,9 @@ def make_links() -> None:
         executor.map(copy_task, files)
 
 
-
 def init_runtime() -> None:
     os.chdir(str(HERE))
     make_links()
-
-
-
 
 
 if __name__ == "__main__":

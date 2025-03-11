@@ -86,8 +86,6 @@ _MAX_COMPILE_ATTEMPTS = 1  # Occasionally the compiler fails for unknown reasons
 _FASTLED_OUTPUT_DIR_NAME = "fastled_js"
 
 
-
-
 def copy_files(src_dir: Path, js_src: Path) -> None:
     print("Copying files from mapped directory to container...")
     for item in src_dir.iterdir():
@@ -450,8 +448,6 @@ def hash_file(file_path: Path) -> str:
 
 
 def main() -> int:
-
-
 
     # assert _JS_DIR.exists()
     # assert ARDUINO_H_SRC.exists()

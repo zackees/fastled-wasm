@@ -3,15 +3,15 @@ set -e
 
 . ./activate
 
-echo Running ruff src
-ruff check --fix src
-echo Running ruff tests
-ruff check --fix tests
-echo Running black src tests
-black src tests
-echo Running isort src tests
-isort --profile black src tests
-echo Running mypy src
-mypy src tests
+echo Running ruff src compiler
+ruff check --fix src compiler
+echo Running ruff tests compiler
+ruff check --fix tests compiler
+echo Running black src tests compiler
+black src tests compiler
+echo Running isort src tests compiler
+isort --profile black src tests compiler
+echo Running mypy src compiler
+mypy src tests compiler
 echo Linting complete!
 exit 0

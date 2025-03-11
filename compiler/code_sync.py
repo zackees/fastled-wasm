@@ -1,15 +1,14 @@
-
-import os
-from pathlib import Path
-from typing import Callable
 import subprocess
 import time
+from pathlib import Path
+from typing import Callable
 
 from compile_lock import COMPILE_LOCK
 
 VOLUME_MAPPED_SRC = Path("/host/fastled/src")
 RSYNC_DEST = Path("/js/fastled/src")
 TIME_START = time.time()
+
 
 def sync_src_to_target(
     src: Path, dst: Path, callback: Callable[[], None] | None = None
@@ -28,7 +27,15 @@ def sync_src_to_target(
         with COMPILE_LOCK:
             # Use rsync to copy files, preserving timestamps and deleting removed files
             cp: subprocess.CompletedProcess = subprocess.run(
-                ["rsync", "-av", "--info=NAME", "--delete", f"{src}/", f"{dst}/", exclude_hidden],
+                [
+                    "rsync",
+                    "-av",
+                    "--info=NAME",
+                    "--delete",
+                    f"{src}/",
+                    f"{dst}/",
+                    exclude_hidden,
+                ],
                 check=True,
                 text=True,
                 capture_output=True,
@@ -63,9 +70,8 @@ def sync_src_to_target(
     return False
 
 
-
 def sync_source_directory_if_volume_is_mapped(
-    callback: Callable[[], None] | None = None
+    callback: Callable[[], None] | None = None,
 ) -> bool:
     """Sync the volume mapped source directory to the FastLED source directory."""
     if not VOLUME_MAPPED_SRC.exists():

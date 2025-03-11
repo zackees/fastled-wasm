@@ -1,19 +1,16 @@
 import argparse
-import subprocess
 import os
+import subprocess
 import sys
-from typing import Tuple
 import warnings
 from pathlib import Path
+from typing import Tuple
 
 from code_sync import sync_source_directory_if_volume_is_mapped
 
 _PORT = os.environ.get("PORT", 80)
 
-_CHOICES = [
-    "compile",
-    "server"
-]
+_CHOICES = ["compile", "server"]
 
 HERE = Path(__file__).parent
 
@@ -36,6 +33,7 @@ HERE = Path(__file__).parent
 
 # rsync -av --info=NAME --delete "$git_path/" "$fastled_path/"  --exclude ".git"
 
+
 def _update_fastled() -> None:
     # NOT ENABLED YET
     if True:
@@ -48,15 +46,30 @@ def _update_fastled() -> None:
     fastled_path = "/js/fastled"
     subprocess.run(["git", "fetch", "origin"], cwd=git_path)
     subprocess.run(["git", "reset", "--hard", "origin/master"], cwd=git_path)
-    subprocess.run(["rsync", "-av", "--info=NAME", "--delete", f"{git_path}/", f"{fastled_path}/", "--exclude", ".git"], cwd="/js")
-
-
+    subprocess.run(
+        [
+            "rsync",
+            "-av",
+            "--info=NAME",
+            "--delete",
+            f"{git_path}/",
+            f"{fastled_path}/",
+            "--exclude",
+            ".git",
+        ],
+        cwd="/js",
+    )
 
 
 def _parse_args() -> Tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(description="Run compile.py with additional arguments")
-    parser.add_argument("mode", help="Which mode does this script run in", choices=_CHOICES)
+    parser = argparse.ArgumentParser(
+        description="Run compile.py with additional arguments"
+    )
+    parser.add_argument(
+        "mode", help="Which mode does this script run in", choices=_CHOICES
+    )
     return parser.parse_known_args()
+
 
 def _run_server(unknown_args: list[str]) -> int:
     env = os.environ.copy()
@@ -83,24 +96,26 @@ def _run_server(unknown_args: list[str]) -> int:
         "--workers",
         "1",
         "--port",
-        f"{_PORT}"
+        f"{_PORT}",
     ]
     cp: subprocess.CompletedProcess = subprocess.run(cmd_list, cwd=str(HERE), env=env)
     return cp.returncode
 
+
 def _run_compile(unknown_args: list[str]) -> int:
 
     # Construct the command to call compile.py with unknown arguments
-    command = [sys.executable, 'compile.py'] + unknown_args
+    command = [sys.executable, "compile.py"] + unknown_args
 
     # Call compile.py with the unknown arguments
     result = subprocess.run(command, text=True, cwd=str(HERE))
 
     # Print the output from compile.py
-    #print(result.stdout)
-    #if result.stderr:
+    # print(result.stdout)
+    # if result.stderr:
     #    print(result.stderr, file=sys.stderr)
     return result.returncode
+
 
 def main() -> int:
     print("Running...")

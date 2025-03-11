@@ -1,3 +1,7 @@
+# pylint: skip-file
+# flake8: noqa
+# type: ignore
+
 import os
 
 USE_CCACHE = True if "NO_CCACHE" not in os.environ else False
@@ -12,7 +16,7 @@ if BUILD_MODE not in valid_modes:
 
 # Set flags based on build mode
 DEBUG = BUILD_MODE == "DEBUG"
-QUICK_BUILD = BUILD_MODE == "QUICK" 
+QUICK_BUILD = BUILD_MODE == "QUICK"
 OPTIMIZED = BUILD_MODE == "RELEASE"
 
 # Global variable to control WASM output (0 for asm.js, 1 for WebAssembly)
@@ -21,7 +25,7 @@ OPTIMIZED = BUILD_MODE == "RELEASE"
 USE_WASM = 2
 
 if DEBUG or QUICK_BUILD:
-    USE_WASM=1  # disable wasm2js on these builds.
+    USE_WASM = 1  # disable wasm2js on these builds.
 
 build_mode = "-O1" if QUICK_BUILD else "-Oz"
 
@@ -49,13 +53,13 @@ sketch_flags = [
     "-DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50",
     "-DFASTLED_FORCE_NAMESPACE=1",
     "-DFASTLED_USE_PROGMEM=0",
-    #"-DDISABLE_EXCEPTION_CATCHING=1",
+    # "-DDISABLE_EXCEPTION_CATCHING=1",
     "-sALLOW_MEMORY_GROWTH=0",
-    #"-fno-exceptions",
-    #"-fno-rtti",
-    #"-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
-    #"-sDISABLE_EXCEPTION_CATCHING=1",
-    #"-sDISABLE_EXCEPTION_THROWING=0",
+    # "-fno-exceptions",
+    # "-fno-rtti",
+    # "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
+    # "-sDISABLE_EXCEPTION_CATCHING=1",
+    # "-sDISABLE_EXCEPTION_THROWING=0",
     build_mode,
     "--bind",
     "-DUSE_OFFSET_CONVERTER=0",
@@ -66,7 +70,7 @@ sketch_flags = [
     "-Wnon-c-typedef-for-linkage",
     f"-sWASM={USE_WASM}",
     "-fuse-ld=lld",
-    #-Wbad-function-cast -Wcast-function
+    # -Wbad-function-cast -Wcast-function
     "-Werror=bad-function-cast",
     "-Werror=cast-function-type",
     # add /js/src/ to the include path
@@ -86,13 +90,13 @@ elif DEBUG:
         if opt in sketch_flags:
             sketch_flags.remove(opt)
     sketch_flags += [
-        '-g3',
-        '-gsource-map',
-        '--emit-symbol-map',
-        '-sSTACK_OVERFLOW_CHECK=2',
-        '-ASSERTIONS=1',
-        '-fsanitize=address',
-        '-fsanitize=undefined',
+        "-g3",
+        "-gsource-map",
+        "--emit-symbol-map",
+        "-sSTACK_OVERFLOW_CHECK=2",
+        "-ASSERTIONS=1",
+        "-fsanitize=address",
+        "-fsanitize=undefined",
     ]
 
 
@@ -100,11 +104,11 @@ sketch_flags += [
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8']",
     "-sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files']",
     "--no-entry",
-    #"-fno-exceptions",
-    #"-fno-rtti",
-    #"-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
-    #"-sDISABLE_EXCEPTION_CATCHING=1",
-    #"-sDISABLE_EXCEPTION_THROWING=0",
+    # "-fno-exceptions",
+    # "-fno-rtti",
+    # "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
+    # "-sDISABLE_EXCEPTION_CATCHING=1",
+    # "-sDISABLE_EXCEPTION_THROWING=0",
 ]
 
 if OPTIMIZED:
@@ -127,16 +131,14 @@ env.Append(LINKFLAGS=sketch_flags)
 fastled_compile_cc_flags = [
     "-Werror=bad-function-cast",
     "-Werror=cast-function-type",
-    #"-fno-exceptions",
-    #"-fno-rtti",
+    # "-fno-exceptions",
+    # "-fno-rtti",
     build_mode,
-    #"-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
-    #"-fno-exceptions",
-    #"-sDISABLE_EXCEPTION_CATCHING=1",
-    #"-sDISABLE_EXCEPTION_THROWING=0",
+    # "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
+    # "-fno-exceptions",
+    # "-sDISABLE_EXCEPTION_CATCHING=1",
+    # "-sDISABLE_EXCEPTION_THROWING=0",
 ]
-
-
 
 
 fastled_compile_link_flags = [
@@ -153,5 +155,3 @@ for lb in env.GetLibBuilders():
     # for final linking.
     lb.env.Append(CCFLAGS=fastled_compile_cc_flags)
     lb.env.Append(LINKFLAGS=fastled_compile_link_flags)
-
-

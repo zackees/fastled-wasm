@@ -1,24 +1,23 @@
-
 """
 This module provides functions to generate a hash of all files in a directory.
 Source files like ino,cpp,h,hpp are concatenated and preprocessed with GCC.
 Data date files are hashed as is.
 """
 
-
 __all__ = ["generate_hash_of_project_files"]
 
-from dataclasses import dataclass
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import List
 import hashlib
 import os
 import re
 import subprocess
 import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import List
 
 _SOURCE_EXTENSIONS = [".cpp", ".hpp", ".h", ".ino"]
+
 
 @dataclass
 class ProjectFiles:
@@ -39,7 +38,9 @@ def hash_string(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
 
-def collect_files(directory: Path, src_file_extensions: list[str] | None = None) -> ProjectFiles:
+def collect_files(
+    directory: Path, src_file_extensions: list[str] | None = None
+) -> ProjectFiles:
     """Collect files from a directory and separate them into source and other files.
 
     Args:
