@@ -42,10 +42,14 @@ jobs:
           exit 1
         fi
         #  docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
-        if [ "${{ env.docker_registry_image }}" != "fastled-wasm" ]; then
-          echo "Error: docker_registry_image is not 'fastled-wasm'"
-          exit 1
-        fi
+        #if [ "${{ env.docker_registry_image }}" != "niteris/fastled-wasm" ]; then
+        #  echo "Error: docker_registry_image is not 'niteris/fastled-wasm'"
+        #  exit 1
+        #fi
+        echo "Length of docker_registry_image: ${#docker_registry_image}"
+        echo "Length of docker_username: ${#docker_username}"
+
+
 
 
     - name: Prepare
@@ -56,7 +60,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.registry_image }}
+        images: ${{ env.docker_registry_image }}
         tags: |
           type=raw,value=latest,enable={{is_default_branch}}
 
