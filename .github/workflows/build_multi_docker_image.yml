@@ -64,7 +64,7 @@ jobs:
     secrets:
         env_vars: |
           docker_username=${{ needs.credentials.outputs.docker_username  }}
-          CREDENTIAL2=${{ needs.credentials.outputs.registry_image  }}
+          docker_registry_image=${{ needs.credentials.outputs.registry_image  }}
 
 
 
