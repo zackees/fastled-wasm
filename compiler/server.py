@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import traceback
 import warnings
 import zipfile
 import zlib
@@ -759,15 +760,11 @@ def compile_wasm(
             cache_put(hash_value, data)
         return out
     except HTTPException as e:
-        import traceback
-
         stacktrace = traceback.format_exc()
         print(f"HTTPException in upload process: {str(e)}\n{stacktrace}")
         raise e
 
     except Exception as e:
-        import traceback
-
         stack_trace = traceback.format_exc()
         print(f"Error in upload process: {stack_trace}")
         raise HTTPException(
