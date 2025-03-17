@@ -14,10 +14,7 @@ from tempfile import NamedTemporaryFile
 from threading import Timer
 
 import psutil  # type: ignore
-from code_sync import (  # type: ignore
-    sync_source_directory_if_volume_is_mapped,
-    sync_src_to_target,
-)
+from code_sync import CodeSync
 from compile_lock import COMPILE_LOCK  # type: ignore
 from disklru import DiskLRUCache  # type: ignore
 from fastapi import (  # type: ignore
@@ -124,6 +121,12 @@ class UploadSizeMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+_CODE_SYNC = CodeSync(
+    volume_mapped_src=_VOLUME_MAPPED_SRC,
+    rsync_dest=_RSYNC_DEST,
+)
+
+
 @asynccontextmanager  # type: ignore
 async def lifespan(app: FastAPI):  # type: ignore
     print("Starting FastLED wasm compiler server...")
@@ -136,7 +139,8 @@ async def lifespan(app: FastAPI):  # type: ignore
         print(f"Starting memory watchdog (limit: {_MEMORY_LIMIT_MB}MB)")
         memory_watchdog()
 
-    sync_source_directory_if_volume_is_mapped()
+    _CODE_SYNC.sync_source_directory_if_volume_is_mapped()
+
     if _LIVE_GIT_UPDATES_ENABLED:
         Timer(
             _LIVE_GIT_UPDATES_INTERVAL, sync_live_git_to_target
@@ -212,12 +216,14 @@ def sync_live_git_to_target() -> None:
         print("FastLED source changed from github repo, clearing disk cache.")
         SKETCH_CACHE.clear()
 
-    sync_src_to_target(
-        _LIVE_GIT_FASTLED_DIR / "src", _RSYNC_DEST, callback=on_files_changed
+    _CODE_SYNC.sync_src_to_target(
+        volume_mapped_src=_LIVE_GIT_FASTLED_DIR / "src",
+        rsync_dest=_RSYNC_DEST,
+        callback=on_files_changed,
     )
-    sync_src_to_target(
-        _LIVE_GIT_FASTLED_DIR / "examples",
-        _RSYNC_DEST.parent / "examples",
+    _CODE_SYNC.sync_src_to_target(
+        volume_mapped_src=_LIVE_GIT_FASTLED_DIR / "examples",
+        rsync_dest=_RSYNC_DEST.parent / "examples",
         callback=on_files_changed,
     )
     # Basically a setTimeout() in JS.
@@ -428,7 +434,7 @@ def startup() -> None:
         print(f"Starting memory watchdog (limit: {_MEMORY_LIMIT_MB}MB)")
         memory_watchdog()
 
-    sync_source_directory_if_volume_is_mapped()
+    _CODE_SYNC.sync_source_directory_if_volume_is_mapped()
     if _LIVE_GIT_UPDATES_ENABLED:
         Timer(
             _LIVE_GIT_UPDATES_INTERVAL, sync_live_git_to_target
@@ -698,7 +704,7 @@ def compile_wasm(
             print("Source files changed, clearing cache")
             SKETCH_CACHE.clear()
 
-        sync_source_directory_if_volume_is_mapped(callback=on_files_changed)
+        _CODE_SYNC.sync_source_directory_if_volume_is_mapped(callback=on_files_changed)
 
         entry: bytes | None = None
         if hash_value is not None:

@@ -18,6 +18,7 @@ import docker
 from appdirs import user_data_dir
 from disklru import DiskLRUCache
 from docker.client import DockerClient
+from docker.errors import DockerException
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
@@ -57,7 +58,9 @@ def get_lock(image_name: str) -> FileLock:
     print(CONFIG_DIR)
     if not lock_file.parent.exists():
         lock_file.parent.mkdir(parents=True, exist_ok=True)
-    return FileLock(str(lock_file))
+    out: FileLock
+    out = FileLock(str(lock_file))  # type: ignore
+    return out
 
 
 class RunningContainer:
@@ -182,10 +185,6 @@ class DockerManager:
             return False
 
         except subprocess.CalledProcessError as e:
-            print(f"Error occurred: {e}")
-            return False
-
-        except subprocess.CalledProcessError as e:
             print(f"Failed to switch to Linux containers: {e}")
             if e.stdout:
                 print(f"stdout: {e.stdout}")
@@ -199,6 +198,7 @@ class DockerManager:
     @staticmethod
     def is_running() -> bool:
         """Check if Docker is running by pinging the Docker daemon."""
+
         if not DockerManager.is_docker_installed():
             return False
         try:
@@ -207,7 +207,7 @@ class DockerManager:
             client.ping()
             print("Docker is running.")
             return True
-        except docker.errors.DockerException as e:
+        except DockerException as e:
             print(f"Docker is not running: {str(e)}")
             return False
         except Exception as e:
@@ -289,8 +289,10 @@ class DockerManager:
                     remote_image_hash = remote_image.id
 
                     try:
+                        local_image_id = local_image.id
+                        assert local_image_id is not None
                         remote_image_hash_from_local_image = DISK_CACHE.get(
-                            local_image.id
+                            local_image_id
                         )
                     except KeyboardInterrupt:
                         raise

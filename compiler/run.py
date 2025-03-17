@@ -6,7 +6,7 @@ import warnings
 from pathlib import Path
 from typing import Tuple
 
-from code_sync import sync_source_directory_if_volume_is_mapped
+from code_sync import CodeSync
 
 _PORT = os.environ.get("PORT", 80)
 
@@ -14,24 +14,8 @@ _CHOICES = ["compile", "server"]
 
 HERE = Path(__file__).parent
 
-# if [ "$RENDER" != "true" ]; then
-#   echo "Skipping finalprewarm..."
-#   exit 0
-# fi
-
-# git_path=/git/fastled
-# fastled_path=/js/fastled
-
-# # update the fastled git repo
-# cd $git_path
-
-# git fetch origin
-# git reset --hard origin/master
-# #  ["rsync", "-av", "--info=NAME", "--delete", f"{src}/", f"{dst}/"],
-
-# cd /js
-
-# rsync -av --info=NAME --delete "$git_path/" "$fastled_path/"  --exclude ".git"
+_VOLUME_MAPPED_SRC = Path("/host/fastled/src")
+_RSYNC_DEST = Path("/js/fastled/src")
 
 
 def _update_fastled() -> None:
@@ -121,7 +105,12 @@ def main() -> int:
     print("Running...")
     args, unknown_args = _parse_args()
     _update_fastled()
-    sync_source_directory_if_volume_is_mapped()
+
+    code_sync = CodeSync(
+        volume_mapped_src=_VOLUME_MAPPED_SRC,
+        rsync_dest=_RSYNC_DEST,
+    )
+    code_sync.sync_source_directory_if_volume_is_mapped()
 
     try:
         if args.mode == "compile":

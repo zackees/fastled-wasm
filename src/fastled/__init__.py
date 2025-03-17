@@ -211,7 +211,6 @@ class Test:
 __all__ = [
     "Api",
     "Test",
-    "Build",
     "CompileServer",
     "CompileResult",
     "CompileServerError",

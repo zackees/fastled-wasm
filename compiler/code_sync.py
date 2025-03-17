@@ -5,12 +5,10 @@ from typing import Callable
 
 from compile_lock import COMPILE_LOCK
 
-VOLUME_MAPPED_SRC = Path("/host/fastled/src")
-RSYNC_DEST = Path("/js/fastled/src")
 TIME_START = time.time()
 
 
-def sync_src_to_target(
+def _sync_src_to_target(
     src: Path, dst: Path, callback: Callable[[], None] | None = None
 ) -> bool:
     """Sync the volume mapped source directory to the FastLED source directory."""
@@ -70,13 +68,39 @@ def sync_src_to_target(
     return False
 
 
-def sync_source_directory_if_volume_is_mapped(
-    callback: Callable[[], None] | None = None,
-) -> bool:
-    """Sync the volume mapped source directory to the FastLED source directory."""
-    if not VOLUME_MAPPED_SRC.exists():
-        # Volume is not mapped in so we don't rsync it.
-        print("Skipping rsync, as fastled src volume not mapped")
-        return False
-    print("Syncing source directories because host is mapped in")
-    return sync_src_to_target(VOLUME_MAPPED_SRC, RSYNC_DEST, callback=callback)
+class CodeSync:
+
+    def __init__(self, volume_mapped_src: Path, rsync_dest: Path):
+        self.volume_mapped_src = volume_mapped_src
+        self.rsync_dest = rsync_dest
+
+    def sync_src_to_target(
+        self,
+        volume_mapped_src: Path | None = None,
+        rsync_dest: Path | None = None,
+        callback: Callable[[], None] | None = None,
+    ) -> bool:
+        """Sync the volume mapped source directory to the FastLED source directory."""
+
+        if volume_mapped_src is None or rsync_dest is None:
+            assert (
+                volume_mapped_src is None and rsync_dest is None
+            ), f"Both must be None: {volume_mapped_src} {rsync_dest}"
+        volume_mapped_src = volume_mapped_src or self.volume_mapped_src
+        rsync_dest = rsync_dest or self.rsync_dest
+        return _sync_src_to_target(
+            self.volume_mapped_src, self.rsync_dest, callback=callback
+        )
+
+    def sync_source_directory_if_volume_is_mapped(
+        self,
+        callback: Callable[[], None] | None = None,
+    ) -> bool:
+        """Sync the volume mapped source directory to the FastLED source directory."""
+        if not self.volume_mapped_src.exists():
+            # Volume is not mapped in so we don't rsync it.
+            print("Skipping rsync, as fastled src volume not mapped")
+            return False
+        print("Syncing source directories because host is mapped in")
+        out: bool = self.sync_src_to_target(callback=callback)
+        return out
