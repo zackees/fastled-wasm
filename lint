@@ -15,8 +15,7 @@ echo Running mypy src compiler
 mypy src tests compiler
 echo Running pyright src tests compiler
 #pyright src tests compiler
-# pyright src  # later
+pyright src compiler
 # pyright tests # later
-pyright compiler
 echo Linting complete!
 exit 0

@@ -45,6 +45,7 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
     # Function static cache
     host = _sanitize_host(host)
     transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
+    result: ConnectionResult | None = None
     try:
         with httpx.Client(
             timeout=_TIMEOUT,
@@ -56,7 +57,7 @@ def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
             result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
     except KeyboardInterrupt:
         _thread.interrupt_main()
-
+        result = ConnectionResult(host, False, use_ipv4)
     except TimeoutError:
         result = ConnectionResult(host, False, use_ipv4)
     except Exception:

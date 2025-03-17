@@ -18,7 +18,7 @@ import docker
 from appdirs import user_data_dir
 from disklru import DiskLRUCache
 from docker.client import DockerClient
-from docker.errors import DockerException, NotFound
+from docker.errors import DockerException, ImageNotFound, NotFound
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
@@ -97,6 +97,11 @@ class RunningContainer:
         """Stop monitoring the container logs"""
         self.running = False
         self.thread.join()
+
+    def stop(self) -> None:
+        """Stop the container"""
+        self.container.stop()
+        self.detach()
 
 
 class DockerManager:
@@ -316,11 +321,12 @@ class DockerManager:
                         subprocess.run(cmd_list, check=True)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
+                    assert local_image_hash is not None
                     if remote_image_hash is not None:
                         DISK_CACHE.put(local_image_hash, remote_image_hash)
                     return True
 
-            except docker.errors.ImageNotFound:
+            except ImageNotFound:
                 print(f"Image {image_name}:{tag} not found.")
                 with Spinner("Loading "):
                     # We use docker cli here because it shows the download.
@@ -332,7 +338,7 @@ class DockerManager:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id
                     print(f"Image {image_name}:{tag} downloaded successfully.")
-                except docker.errors.ImageNotFound:
+                except ImageNotFound:
                     warnings.warn(f"Image {image_name}:{tag} not found after download.")
         return True
 
@@ -354,8 +360,11 @@ class DockerManager:
         """Compare if existing container has matching configuration"""
         try:
             # Check if container is using the same image
-            container_image_id = container.image.id
-            container_image_tags = container.image.tags
+            image = container.image
+            assert image is not None
+            container_image_id = image.id
+            container_image_tags = image.tags
+            assert container_image_id is not None
 
             # Simplified image comparison - just compare the IDs directly
             if not container_image_tags:
@@ -421,7 +430,7 @@ class DockerManager:
                         return False
         except KeyboardInterrupt:
             raise
-        except docker.errors.NotFound:
+        except NotFound:
             print("Container not found.")
             return False
         except Exception as e:
@@ -502,13 +511,13 @@ class DockerManager:
             print(out_msg)
             print("#" * msg_len + "\n")
             container = self.client.containers.run(
-                image_name,
-                command,
+                image=image_name,
+                command=command,
                 name=container_name,
                 detach=True,
                 tty=True,
                 volumes=volumes,
-                ports=ports,
+                ports=ports,  # type: ignore
                 remove=True,
             )
         return container
@@ -563,7 +572,10 @@ class DockerManager:
         Returns a RunningContainer object that can be used to stop monitoring.
         """
         if isinstance(container, str):
-            container = self.get_container(container)
+            container_name = container
+            tmp = self.get_container(container)
+            assert tmp is not None, f"Container {container_name} not found."
+            container = tmp
 
         assert container is not None, "Container not found."
 
@@ -580,10 +592,13 @@ class DockerManager:
         """
         if isinstance(container, str):
             container_name = container
-            container = self.get_container(container)
-            if not container:
+            # container = self.get_container(container)
+            tmp = self.get_container(container_name)
+            if not tmp:
                 print(f"Could not put container {container_name} to sleep.")
                 return
+            container = tmp
+        assert isinstance(container, Container)
         try:
             if platform.system() == "Windows":
                 container.pause()
@@ -600,16 +615,27 @@ class DockerManager:
         """
         Resume (unpause) the container.
         """
+        container_name = "UNKNOWN"
         if isinstance(container, str):
-            container = self.get_container(container)
+            container_name = container
+            container_or_none = self.get_container(container)
+            if container_or_none is None:
+                print(f"Could not resume container {container}.")
+                return
+            container = container_or_none
+            container_name = container.name
+        elif isinstance(container, Container):
+            container_name = container.name
+        assert isinstance(container, Container)
         if not container:
             print(f"Could not resume container {container}.")
             return
         try:
+            assert isinstance(container, Container)
             container.unpause()
             print(f"Container {container.name} has been resumed.")
         except Exception as e:
-            print(f"Failed to resume container {container.name}: {e}")
+            print(f"Failed to resume container {container_name}: {e}")
 
     def get_container(self, container_name: str) -> Container | None:
         """
@@ -753,6 +779,7 @@ def main():
     # new_tag = "my-python"
     container_name = "my-python-container"
     command = "python -m http.server"
+    running_container: RunningContainer | None = None
 
     try:
         # Step 1: Validate or download the image
@@ -775,13 +802,18 @@ def main():
 
     except KeyboardInterrupt:
         print("\nStopping container...")
-        running_container.stop()
-        container = docker_manager.get_container(container_name)
-        docker_manager.suspend_container(container)
+        if isinstance(running_container, RunningContainer):
+            running_container.stop()
+        container_or_none = docker_manager.get_container(container_name)
+        if container_or_none is not None:
+            docker_manager.suspend_container(container_or_none)
+        else:
+            warnings.warn(f"Container {container_name} not found.")
 
     try:
         # Suspend and resume the container
         container = docker_manager.get_container(container_name)
+        assert container is not None, "Container not found."
         docker_manager.suspend_container(container)
 
         input("Press Enter to resume the container...")

@@ -3,6 +3,7 @@ Unit test file.
 """
 
 import random
+import time
 import unittest
 from pathlib import Path
 
@@ -18,7 +19,7 @@ assert INDEX_HTML.exists()
 
 
 # realistic range, 8021 - 8030
-PORT = random.randint(8021, 8030)
+PORT = random.randint(8030, 8040)
 PORT2 = PORT + 1
 
 
@@ -32,6 +33,7 @@ class HttpServerTester(unittest.TestCase):
         response = httpx.get(f"http://localhost:{port}", timeout=1)
         self.assertEqual(response.status_code, 200)
         proc.terminate()
+        time.sleep(1)
 
     def test_http_server_404(self) -> None:
         """Test the http server returns 404 for non-existent files."""
@@ -40,6 +42,7 @@ class HttpServerTester(unittest.TestCase):
         response = httpx.get(f"http://localhost:{port}/nonexistent.html", timeout=1)
         self.assertEqual(response.status_code, 404)
         proc.terminate()
+        time.sleep(1)
 
 
 if __name__ == "__main__":
