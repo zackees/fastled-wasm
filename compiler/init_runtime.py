@@ -4,11 +4,9 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from paths import COMPILER_DIR, FASTLED_COMPILER_DIR
+
 HERE = Path(__file__).parent
-
-
-_COMPILER_DIR = Path("/js/compiler")
-_FASTLED_COMPILER_DIR = Path("/js/fastled/src/platforms/wasm/compiler")
 
 
 def copy_task(src: str | Path) -> None:
@@ -56,10 +54,10 @@ def make_links() -> None:
     # Get all matching files in compiler directory
     files = []
     for pattern in patterns:
-        files.extend(glob.glob(str(_COMPILER_DIR / pattern)))
+        files.extend(glob.glob(str(COMPILER_DIR / pattern)))
 
     for pattern in patterns:
-        files.extend(glob.glob(str(_FASTLED_COMPILER_DIR / pattern)))
+        files.extend(glob.glob(str(FASTLED_COMPILER_DIR / pattern)))
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
