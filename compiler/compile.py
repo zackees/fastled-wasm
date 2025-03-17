@@ -23,6 +23,8 @@ from enum import Enum
 from pathlib import Path
 from typing import List
 
+from paths import FASTLED_COMPILER_DIR
+
 
 @dataclass
 class DateLine:
@@ -56,29 +58,19 @@ _COMPILER_PATH = "em++"
 
 _JS_DIR = Path("/js")
 _FASTLED_DIR = _JS_DIR / "fastled"
-_FASTLED_SRC = _FASTLED_DIR / "src"
-# FASTLED_SRC_PLATFORMS = _FASTLED_SRC / "platforms"
-# FASTLED_SRC_PLATFORMS_WASM = FASTLED_SRC_PLATFORMS / "wasm"
-# _FASTLED_SRC_PLATFORMS_WASM_COMPILER = FASTLED_SRC_PLATFORMS_WASM / "compiler"
-_FASTLED_SRC_PLATFORMS_WASM_COMPILER = _JS_DIR / "compiler"
 
 
 _JS_SRC = _JS_DIR / "src"
-
 _FASTLED_DIR = _JS_DIR / "fastled"
-# FASTLED_SRC_DIR = _FASTLED_DIR / "src"
-# FASTLED_PLATFORMS_DIR = FASTLED_SRC_DIR / "platforms"
-# FASTLED_WASM_DIR = FASTLED_PLATFORMS_DIR / "wasm"
-_FASTLED_COMPILER_DIR = _JS_DIR / "compiler"
-_FASTLED_MODULES_DIR = _FASTLED_COMPILER_DIR / "modules"
+_FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 
 _PIO_BUILD_DIR = _JS_DIR / ".pio/build"
-_INDEX_HTML_SRC = _FASTLED_COMPILER_DIR / "index.html"
-_INDEX_CSS_SRC = _FASTLED_COMPILER_DIR / "index.css"
-_INDEX_JS_SRC = _FASTLED_COMPILER_DIR / "index.js"
+_INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
+_INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
+_INDEX_JS_SRC = FASTLED_COMPILER_DIR / "index.js"
 
 
-_WASM_COMPILER_SETTTINGS = _JS_DIR / "wasm_compiler_flags.py"
+_WASM_COMPILER_SETTTINGS = FASTLED_COMPILER_DIR / "wasm_compiler_flags.py"
 _OUTPUT_FILES = ["fastled.js", "fastled.wasm"]
 _HEADERS_TO_INSERT = ["#include <Arduino.h>", '#include "platforms/wasm/js.h"']
 _FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
@@ -471,7 +463,7 @@ def main() -> int:
         _INDEX_CSS_SRC,
         _INDEX_JS_SRC,
         _WASM_COMPILER_SETTTINGS,
-        _FASTLED_SRC_PLATFORMS_WASM_COMPILER,
+        FASTLED_COMPILER_DIR,
     ]
 
     missing_paths = [p for p in check_paths if not p.exists()]

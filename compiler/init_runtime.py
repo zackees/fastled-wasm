@@ -4,7 +4,8 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from paths import COMPILER_DIR, FASTLED_COMPILER_DIR
+COMPILER_DIR = Path("/js/compiler")
+FASTLED_COMPILER_DIR = Path("/js/fastled/src/platforms/wasm/compiler")
 
 HERE = Path(__file__).parent
 
