@@ -15,6 +15,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
+_WATCHER_TIMEOUT = 0.1
+
 
 def file_watcher_enabled() -> bool:
     """Check if watchdog is disabled"""
@@ -120,7 +122,7 @@ class FileChangedNotifier(threading.Thread):
         finally:
             self.stop()
 
-    def get_next_change(self, timeout: float = 0.001) -> str | None:
+    def get_next_change(self, timeout: float = _WATCHER_TIMEOUT) -> str | None:
         """Get the next file change event from the queue
 
         Args:
@@ -148,7 +150,7 @@ class FileChangedNotifier(threading.Thread):
         except queue.Empty:
             return None
 
-    def get_all_changes(self, timeout: float = 0.001) -> list[str]:
+    def get_all_changes(self, timeout: float = _WATCHER_TIMEOUT) -> list[str]:
         """Get all file change events from the queue
 
         Args:
@@ -185,12 +187,22 @@ def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
             watcher.stop()
 
 
+class ProcessWraperTask:
+    def __init__(self, root: Path, excluded_patterns: list[str], queue: Queue) -> None:
+        self.root = root
+        self.excluded_patterns = excluded_patterns
+        self.queue = queue
+
+    def run(self):
+        _process_wrapper(self.root, self.excluded_patterns, self.queue)
+
+
 class FileWatcherProcess:
     def __init__(self, root: Path, excluded_patterns: list[str]) -> None:
         self.queue: Queue = Queue()
+        task = ProcessWraperTask(root, excluded_patterns, self.queue)
         self.process = Process(
-            target=_process_wrapper,
-            args=(root, excluded_patterns, self.queue),
+            target=task.run,
             daemon=True,
         )
         self.process.start()

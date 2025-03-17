@@ -230,13 +230,17 @@ def run_client(
         print("\nExiting from main")
         return 1
 
-    sketch_filewatcher = FileWatcherProcess(directory, excluded_patterns=["fastled_js"])
+    excluded_patterns = ["fastled_js"]
+
+    sketch_filewatcher = FileWatcherProcess(
+        directory, excluded_patterns=excluded_patterns
+    )
 
     source_code_watcher: FileWatcherProcess | None = None
     if compile_server and compile_server.using_fastled_src_dir_volume():
         assert compile_server.fastled_src_dir is not None
         source_code_watcher = FileWatcherProcess(
-            compile_server.fastled_src_dir, excluded_patterns=[]
+            compile_server.fastled_src_dir, excluded_patterns=excluded_patterns
         )
 
     def trigger_rebuild_if_sketch_changed(
