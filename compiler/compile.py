@@ -26,8 +26,6 @@ from typing import List
 
 from paths import COMPILER_ROOT, FASTLED_COMPILER_DIR, PIO_BUILD_DIR, SKETCH_SRC
 
-_CHECK_SYNTAX = False
-_COMPILER_PATH = "em++"
 _FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 _INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
 _INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
@@ -94,7 +92,7 @@ def compile(
         cmd_list = [
             "/bin/bash",
             "-c",
-            "/js/build_fast.sh",
+            (compiler_root / "build_fast.sh").as_posix(),
         ]
     else:
         cmd_list.extend(["pio", "run"])
@@ -118,6 +116,7 @@ def compile(
             print(f"Attempting compilation (attempt {attempt}/{max_attempts})...")
             process = _open_process()
             assert process.stdout is not None
+            line: str
             for line in process.stdout:
                 processed_line = line.replace("fastled/src", "src")
                 timestamped_line = _timestamp_output(processed_line)
@@ -202,89 +201,6 @@ def process_ino_files(src_dir: Path) -> None:
     exclusion_folders: List[Path] = []
     insert_headers(src_dir, exclusion_folders, _FILE_EXTENSIONS)
     print("Transform to cpp and insert header operations completed.")
-
-
-def check_syntax_with_gcc(file_path, gcc_path="gcc"):
-    """
-    Perform syntax checking on a C or C++ source file using GCC.
-
-    Parameters:
-        file_path (str): Path to the source file to check.
-        gcc_path (str): Path to the GCC executable (default is 'gcc').
-
-    Returns:
-        bool: True if syntax is correct, False otherwise.
-        str: Output or error message from GCC.
-    """
-    try:
-        # Run GCC with -fsyntax-only flag for syntax checking
-        cmd_list = [
-            gcc_path,
-            "-fsyntax-only",
-            "-std=gnu++20",
-            "-fpermissive",
-            "-Wno-everything",  # Suppress all warnings
-            "-I",
-            "/js/src/",  # Add /js/src/ to the include path
-            "-I",
-            "/js/fastled/src/",  # Add /js/fastled/src/ to the include path
-            "-I",
-            "/emsdk/upstream/emscripten/system/include",
-            "-I",
-            "/js/fastled/src/platforms/wasm/compiler",  # Arduino.h and Arduino.cpp
-            file_path,
-        ]
-        cmd_str = subprocess.list2cmdline(cmd_list)
-        print(f"Running command: {cmd_str}")
-        result = subprocess.run(
-            cmd_list,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        # Check the return code to determine if syntax is valid
-        if result.returncode == 0:
-            return True, "Syntax check passed successfully."
-        else:
-            return False, result.stderr
-    except FileNotFoundError:
-        return False, f"GCC not found at {gcc_path}."
-    except Exception as e:
-        return False, str(e)
-
-
-def check_syntax(
-    directory_path: Path, gcc_path: str = "gcc"
-) -> list[SyntaxCheckResult]:
-    # os walk
-    out: list[SyntaxCheckResult] = []
-    exclusion_list = set("fastled_js")
-    for root, dirs, files in os.walk(directory_path):
-        # if sub directory is in exclusion list, skip
-        dirs[:] = [d for d in dirs if d not in exclusion_list]
-        for file in files:
-            if file.endswith(".cpp") or file.endswith(".ino"):
-                file_path = os.path.join(root, file)
-                is_valid, message = check_syntax_with_gcc(file_path, gcc_path)
-                if not is_valid:
-                    print(f"Syntax check failed for file: {file_path}")
-                    print(f"Error message: {message}")
-                    out.append(
-                        SyntaxCheckResult(
-                            file_path=Path(file_path), is_valid=False, message=message
-                        )
-                    )
-                else:
-                    print(f"Syntax check passed for file: {file_path}")
-                    out.append(
-                        SyntaxCheckResult(
-                            file_path=Path(file_path),
-                            is_valid=True,
-                            message="Syntax check passed successfully.",
-                        )
-                    )
-    return out
 
 
 def _make_timestamps_relative(stdout: str) -> str:
@@ -471,7 +387,7 @@ def hash_file(file_path: Path) -> str:
     return hasher.hexdigest()
 
 
-def main() -> int:
+def run(args: Args) -> int:
     check_paths: list[Path] = [
         COMPILER_ROOT,
         _INDEX_HTML_SRC,
@@ -489,7 +405,6 @@ def main() -> int:
         raise FileNotFoundError(f"Missing required paths: {missing_paths_str}")
 
     print("Starting FastLED WASM compilation script...")
-    args = parse_args()
     print(f"Keep files flag: {args.keep_files}")
     print(f"Using mapped directory: {args.mapped_dir}")
 
@@ -499,9 +414,7 @@ def main() -> int:
         os.environ["EMPROFILE"] = "2"
 
     try:
-        if SKETCH_SRC.exists():
-            shutil.rmtree(SKETCH_SRC)
-        SKETCH_SRC.mkdir(parents=True, exist_ok=True)
+
         src_dir = find_project_dir(args.mapped_dir)
 
         any_only_flags = args.only_copy or args.only_insert_header or args.only_compile
@@ -509,6 +422,12 @@ def main() -> int:
         do_copy = not any_only_flags or args.only_copy
         do_insert_header = not any_only_flags or args.only_insert_header
         do_compile = not any_only_flags or args.only_compile
+
+        if not any_only_flags:
+            if SKETCH_SRC.exists():
+                shutil.rmtree(SKETCH_SRC)
+
+        SKETCH_SRC.mkdir(parents=True, exist_ok=True)
 
         if do_copy:
             copy_files(src_dir, SKETCH_SRC)
@@ -520,20 +439,6 @@ def main() -> int:
             if args.only_insert_header:
                 print("Transform to cpp and insert header operations completed.")
                 return 0
-
-        if _CHECK_SYNTAX:
-            print("Performing syntax check...")
-            syntax_results = check_syntax(
-                directory_path=SKETCH_SRC, gcc_path=_COMPILER_PATH
-            )
-            failed_checks = [r for r in syntax_results if not r.is_valid]
-            if failed_checks:
-                print("\nSyntax check failed!")
-                for result in failed_checks:
-                    print(f"\nFile: {result.file_path}")
-                    print(f"Error: {result.message}")
-                return 1
-            print("Syntax check passed for all files.")
 
         no_platformio: bool = args.no_platformio
 
@@ -674,6 +579,11 @@ def main() -> int:
         print(stacktrace)
         print(f"Error: {str(e)}")
         return 1
+
+
+def main() -> int:
+    args = parse_args()
+    return run(args)
 
 
 if __name__ == "__main__":

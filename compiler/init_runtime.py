@@ -4,8 +4,9 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-COMPILER_DIR = Path("/js/compiler")
-FASTLED_COMPILER_DIR = Path("/js/fastled/src/platforms/wasm/compiler")
+COMPILER_ROOT = Path("/js")
+COMPILER_DIR = COMPILER_ROOT / "compiler"
+FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
 
 HERE = Path(__file__).parent
 
@@ -14,7 +15,7 @@ def copy_task(src: str | Path) -> None:
     src = Path(src)
     if "entrypoint.sh" in str(src):
         return
-    link_dst = Path("/js") / src.name
+    link_dst = COMPILER_ROOT / src.name
 
     # Handle shell scripts
     if src.suffix == ".sh":
@@ -45,7 +46,6 @@ def make_links() -> None:
         "*.hpp",
         "*.cpp",
         "*.py",
-        "*.css",
         "*.sh",
         "*.ino",
         "*.ini",
