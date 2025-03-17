@@ -18,7 +18,7 @@ import docker
 from appdirs import user_data_dir
 from disklru import DiskLRUCache
 from docker.client import DockerClient
-from docker.errors import DockerException
+from docker.errors import DockerException, NotFound
 from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
@@ -457,14 +457,14 @@ class DockerManager:
             if remove_previous:
                 print(f"Removing existing container {container_name}...")
                 container.remove(force=True)
-                raise docker.errors.NotFound("Container removed due to remove_previous")
+                raise NotFound("Container removed due to remove_previous")
             # Check if configuration matches
             elif not self._container_configs_match(container, command, volumes, ports):
                 print(
                     f"Container {container_name} exists but with different configuration. Removing and recreating..."
                 )
                 container.remove(force=True)
-                raise docker.errors.NotFound("Container removed due to config mismatch")
+                raise NotFound("Container removed due to config mismatch")
             print(f"Container {container_name} found with matching configuration.")
 
             # Existing container with matching config - handle various states
@@ -494,7 +494,7 @@ class DockerManager:
                 print(f"Starting existing container {container_name}.")
                 self.first_run = True
                 container.start()
-        except docker.errors.NotFound:
+        except NotFound:
             print(f"Creating and starting {container_name}")
             out_msg = f"# Running in container: {command}"
             msg_len = len(out_msg)
@@ -526,7 +526,7 @@ class DockerManager:
         try:
             container: Container = self.client.containers.get(container_name)
             container.remove(force=True)
-        except docker.errors.NotFound:
+        except NotFound:
             pass
         start_time = time.time()
         try:
@@ -617,7 +617,7 @@ class DockerManager:
         """
         try:
             return self.client.containers.get(container_name)
-        except docker.errors.NotFound:
+        except NotFound:
             return None
 
     def is_container_running(self, container_name: str) -> bool:
@@ -627,7 +627,7 @@ class DockerManager:
         try:
             container = self.client.containers.get(container_name)
             return container.status == "running"
-        except docker.errors.NotFound:
+        except NotFound:
             print(f"Container {container_name} not found.")
             return False
 
