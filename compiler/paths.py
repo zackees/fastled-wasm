@@ -15,3 +15,4 @@ LIVE_GIT_FASTLED_DIR = Path("/git/fastled")
 # COMPILER_DIR = Path("/js/compiler")
 COMPIER_DIR = COMPILER_ROOT / "compiler"
 FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
+PIO_BUILD_DIR = COMPILER_ROOT / ".pio/build"

@@ -24,13 +24,11 @@ from enum import Enum
 from pathlib import Path
 from typing import List
 
-from paths import COMPILER_ROOT, FASTLED_COMPILER_DIR, SKETCH_SRC
+from paths import COMPILER_ROOT, FASTLED_COMPILER_DIR, PIO_BUILD_DIR, SKETCH_SRC
 
 _CHECK_SYNTAX = False
 _COMPILER_PATH = "em++"
 _FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
-
-_PIO_BUILD_DIR = COMPILER_ROOT / ".pio/build"
 _INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
 _INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
 _INDEX_JS_SRC = FASTLED_COMPILER_DIR / "index.js"
@@ -83,7 +81,7 @@ def copy_files(src_dir: Path, js_src: Path) -> None:
 
 
 def compile(
-    _JS_DIR: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
+    compiler_root: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
 ) -> int:
     print("Starting compilation process...")
     max_attempts = 1
@@ -106,7 +104,7 @@ def compile(
     def _open_process(cmd_list: list[str] = cmd_list) -> subprocess.Popen:
         out = subprocess.Popen(
             cmd_list,
-            cwd=_JS_DIR,
+            cwd=compiler_root,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -561,10 +559,10 @@ def main() -> int:
                 return 1
 
             def _get_build_dir_platformio() -> Path:
-                build_dirs = [d for d in _PIO_BUILD_DIR.iterdir() if d.is_dir()]
+                build_dirs = [d for d in PIO_BUILD_DIR.iterdir() if d.is_dir()]
                 if len(build_dirs) != 1:
                     raise RuntimeError(
-                        f"Expected exactly one build directory in {_PIO_BUILD_DIR}, found {len(build_dirs)}: {build_dirs}"
+                        f"Expected exactly one build directory in {PIO_BUILD_DIR}, found {len(build_dirs)}: {build_dirs}"
                     )
                 build_dir: Path = build_dirs[0]
                 return build_dir
