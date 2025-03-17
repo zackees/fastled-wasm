@@ -336,7 +336,35 @@ def _timestamp_output(line: str) -> str:
     return f"{timestamp} {line.rstrip()}"
 
 
-def parse_args() -> argparse.Namespace:
+@dataclass
+class Args:
+    mapped_dir: Path
+    keep_files: bool
+    only_copy: bool
+    only_insert_header: bool
+    only_compile: bool
+    profile: bool
+    disable_auto_clean: bool
+    no_platformio: bool
+    debug: bool
+    quick: bool
+    release: bool
+
+    def __post_init__(self):
+        assert isinstance(self.mapped_dir, Path)
+        assert isinstance(self.keep_files, bool)
+        assert isinstance(self.only_copy, bool)
+        assert isinstance(self.only_insert_header, bool)
+        assert isinstance(self.only_compile, bool)
+        assert isinstance(self.profile, bool)
+        assert isinstance(self.disable_auto_clean, bool)
+        assert isinstance(self.no_platformio, bool)
+        assert isinstance(self.debug, bool)
+        assert isinstance(self.quick, bool)
+        assert isinstance(self.release, bool)
+
+
+def parse_args() -> Args:
     parser = argparse.ArgumentParser(description="Compile FastLED for WASM")
     parser.add_argument(
         "--mapped-dir",
@@ -390,7 +418,20 @@ def parse_args() -> argparse.Namespace:
         "--release", action="store_true", help="Build in release mode"
     )
 
-    return parser.parse_args()
+    tmp = parser.parse_args()
+    return Args(
+        mapped_dir=tmp.mapped_dir,
+        keep_files=tmp.keep_files,
+        only_copy=tmp.only_copy,
+        only_insert_header=tmp.only_insert_header,
+        only_compile=tmp.only_compile,
+        profile=tmp.profile,
+        disable_auto_clean=tmp.disable_auto_clean,
+        no_platformio=tmp.no_platformio,
+        debug=tmp.debug,
+        quick=tmp.quick,
+        release=tmp.release,
+    )
 
 
 def find_project_dir(mapped_dir: Path) -> Path:
@@ -405,10 +446,10 @@ def find_project_dir(mapped_dir: Path) -> Path:
 
 
 def process_compile(
-    _JS_DIR: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
+    js_dir: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
 ) -> None:
     print("Starting compilation...")
-    rtn = compile(_JS_DIR, build_mode, auto_clean, no_platformio=no_platformio)
+    rtn = compile(js_dir, build_mode, auto_clean, no_platformio=no_platformio)
     print(f"Compilation return code: {rtn}")
     if rtn != 0:
         print("Compilation failed.")
@@ -416,7 +457,7 @@ def process_compile(
     print("Compilation successful.")
 
 
-def cleanup(args: argparse.Namespace, js_src: Path) -> None:
+def cleanup(args: Args, js_src: Path) -> None:
     if not args.keep_files and not (args.only_copy or args.only_insert_header):
         print("Removing temporary source files")
         shutil.rmtree(js_src)
@@ -510,7 +551,7 @@ def main() -> int:
                     build_mode = BuildMode.QUICK
 
                 process_compile(
-                    _JS_DIR=COMPILER_ROOT,
+                    js_dir=COMPILER_ROOT,
                     build_mode=build_mode,
                     auto_clean=not args.disable_auto_clean,
                     no_platformio=no_platformio,
@@ -537,45 +578,43 @@ def main() -> int:
                 build_dir = _get_build_dir_platformio()
 
             print("Copying output files...")
-            fastled__JS_DIR: Path = src_dir / _FASTLED_OUTPUT_DIR_NAME
-            fastled__JS_DIR.mkdir(parents=True, exist_ok=True)
+            out_dir: Path = src_dir / _FASTLED_OUTPUT_DIR_NAME
+            out_dir.mkdir(parents=True, exist_ok=True)
 
             for file in ["fastled.js", "fastled.wasm"]:
                 _src = build_dir / file
-                _dst = fastled__JS_DIR / file
+                _dst = out_dir / file
                 print(f"Copying {_src} to {_dst}")
                 shutil.copy2(_src, _dst)
 
             print(f"Copying {_INDEX_HTML_SRC} to output directory")
-            shutil.copy2(_INDEX_HTML_SRC, fastled__JS_DIR / "index.html")
+            shutil.copy2(_INDEX_HTML_SRC, out_dir / "index.html")
             print(f"Copying {_INDEX_CSS_SRC} to output directory")
-            shutil.copy2(_INDEX_CSS_SRC, fastled__JS_DIR / "index.css")
+            shutil.copy2(_INDEX_CSS_SRC, out_dir / "index.css")
 
             # copy all js files in _FASTLED_COMPILER_DIR to output directory
-            Path(fastled__JS_DIR / "modules").mkdir(parents=True, exist_ok=True)
+            Path(out_dir / "modules").mkdir(parents=True, exist_ok=True)
             for _file in _FASTLED_MODULES_DIR.iterdir():
                 if _file.suffix == ".js":
                     print(f"Copying {_file} to output directory")
-                    shutil.copy2(_file, fastled__JS_DIR / "modules" / _file.name)
+                    shutil.copy2(_file, out_dir / "modules" / _file.name)
 
             fastled_js_mem = build_dir / "fastled.js.mem"
             fastled_wasm_map = build_dir / "fastled.wasm.map"
             fastled_js_symbols = build_dir / "fastled.js.symbols"
             if fastled_js_mem.exists():
                 print(f"Copying {fastled_js_mem} to output directory")
-                shutil.copy2(fastled_js_mem, fastled__JS_DIR / fastled_js_mem.name)
+                shutil.copy2(fastled_js_mem, out_dir / fastled_js_mem.name)
             if fastled_wasm_map.exists():
                 print(f"Copying {fastled_wasm_map} to output directory")
-                shutil.copy2(fastled_wasm_map, fastled__JS_DIR / fastled_wasm_map.name)
+                shutil.copy2(fastled_wasm_map, out_dir / fastled_wasm_map.name)
             if fastled_js_symbols.exists():
                 print(f"Copying {fastled_js_symbols} to output directory")
-                shutil.copy2(
-                    fastled_js_symbols, fastled__JS_DIR / fastled_js_symbols.name
-                )
+                shutil.copy2(fastled_js_symbols, out_dir / fastled_js_symbols.name)
             print("Copying index.js to output directory")
-            shutil.copy2(_INDEX_JS_SRC, fastled__JS_DIR / "index.js")
+            shutil.copy2(_INDEX_JS_SRC, out_dir / "index.js")
             optional_input_data_dir = src_dir / "data"
-            output_data_dir = fastled__JS_DIR / optional_input_data_dir.name
+            output_data_dir = out_dir / optional_input_data_dir.name
 
             # Handle data directory if it exists
             manifest: list[dict] = []
@@ -624,7 +663,7 @@ def main() -> int:
             # Write manifest file even if empty
             print("Writing manifest files.json")
             manifest_json_str = json.dumps(manifest, indent=2, sort_keys=True)
-            with open(fastled__JS_DIR / "files.json", "w") as f:
+            with open(out_dir / "files.json", "w") as f:
                 f.write(manifest_json_str)
         cleanup(args, SKETCH_SRC)
 
