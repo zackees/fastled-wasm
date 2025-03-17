@@ -63,6 +63,7 @@ export class GraphicsManagerThreeJS {
     this.previousTotalLeds = 0;
     this.bloom_stength = 1;
     this.bloom_radius = 16;
+    this.outside_bounds_warning_count = 0;
   }
 
   reset() {
@@ -307,8 +308,17 @@ export class GraphicsManagerThreeJS {
       const y_array = stripData.map.y;
       const length = Math.min(x_array.length, y_array.length);
 
+      const WARNING_COUNT = 10;
+
       for (let j = 0; j < pixelCount; j++) {
         if (j >= length) {
+          this.outside_bounds_warning_count++;
+          if (this.outside_bounds_warning_count < WARNING_COUNT) {
+            console.warn(`Strip ${strip_id}: Pixel ${j} is outside the screen map ${map.length}, skipping update`);
+            if (this.outside_bounds_warning_count === WARNING_COUNT) {
+              console.warn('Suppressing further warnings about pixels outside the screen map');
+            }
+          }
           console.warn(`Strip ${strip_id}: Pixel ${j} is outside the screen map ${map.length}, skipping update`);
           continue;
         }
