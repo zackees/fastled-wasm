@@ -7,15 +7,13 @@ from pathlib import Path
 from typing import Tuple
 
 from code_sync import CodeSync
+from paths import RSYNC_DEST, VOLUME_MAPPED_SRC
 
 _PORT = os.environ.get("PORT", 80)
 
 _CHOICES = ["compile", "server"]
 
 HERE = Path(__file__).parent
-
-_VOLUME_MAPPED_SRC = Path("/host/fastled/src")
-_RSYNC_DEST = Path("/js/fastled/src")
 
 
 def _update_fastled() -> None:
@@ -107,8 +105,8 @@ def main() -> int:
     _update_fastled()
 
     code_sync = CodeSync(
-        volume_mapped_src=_VOLUME_MAPPED_SRC,
-        rsync_dest=_RSYNC_DEST,
+        volume_mapped_src=VOLUME_MAPPED_SRC,
+        rsync_dest=RSYNC_DEST,
     )
     code_sync.sync_source_directory_if_volume_is_mapped()
 

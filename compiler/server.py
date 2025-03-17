@@ -27,6 +27,15 @@ from fastapi import (  # type: ignore
     UploadFile,
 )
 from fastapi.responses import FileResponse, RedirectResponse, Response  # type: ignore
+from paths import (
+    LIVE_GIT_FASTLED_DIR,
+    OUTPUT_DIR,
+    RSYNC_DEST,
+    SKETCH_CACHE_FILE,
+    TEMP_DIR,
+    UPLOAD_DIR,
+    VOLUME_MAPPED_SRC,
+)
 from sketch_hasher import generate_hash_of_project_files  # type: ignore
 from starlette.middleware.base import BaseHTTPMiddleware  # type: ignore
 from starlette.requests import Request  # type: ignore
@@ -46,10 +55,7 @@ _EXAMPLES: list[str] = [
     "FxSdCard",
     "FxWater",
 ]
-_VOLUME_MAPPED_SRC = Path("/host/fastled/src")
-_RSYNC_DEST = Path("/js/fastled/src")
 
-_TEMP_DIR = Path("/tmp")
 
 _TEST = False
 _UPLOAD_LIMIT = 10 * 1024 * 1024
@@ -66,12 +72,11 @@ _LIVE_GIT_UPDATES_INTERVAL = int(
 )  # Update every 24 hours
 _ALLOW_SHUTDOWN = os.environ.get("ALLOW_SHUTDOWN", "false").lower() in ["true", "1"]
 _NO_SKETCH_CACHE = os.environ.get("NO_SKETCH_CACHE", "false").lower() in ["true", "1"]
-_LIVE_GIT_FASTLED_DIR = Path("/git/fastled")
+
 
 # TODO - cleanup
 _NO_AUTO_UPDATE = (
-    os.environ.get("NO_AUTO_UPDATE", "0") in ["1", "true"]
-    or _VOLUME_MAPPED_SRC.exists()
+    os.environ.get("NO_AUTO_UPDATE", "0") in ["1", "true"] or VOLUME_MAPPED_SRC.exists()
 )
 # This feature is broken. To fix, issue a git update, THEN invoke the compiler command to re-warm the cache.
 # otherwise you get worst case scenario on a new compile.
@@ -84,18 +89,17 @@ _LIVE_GIT_UPDATES_ENABLED = False
 if _NO_SKETCH_CACHE:
     print("Sketch caching disabled")
 
-UPLOAD_DIR = Path("/uploads")
+
 UPLOAD_DIR.mkdir(exist_ok=True)
 COMPILE_COUNT = 0
 COMPILE_FAILURES = 0
 COMPILE_SUCCESSES = 0
 START_TIME = time.time()
 
-OUTPUT_DIR = Path("/output")
+
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # Initialize disk cache
-SKETCH_CACHE_FILE = OUTPUT_DIR / "compile_cache.db"
 SKETCH_CACHE_MAX_ENTRIES = 50
 SKETCH_CACHE = DiskLRUCache(str(SKETCH_CACHE_FILE), SKETCH_CACHE_MAX_ENTRIES)
 
@@ -122,8 +126,8 @@ class UploadSizeMiddleware(BaseHTTPMiddleware):
 
 
 _CODE_SYNC = CodeSync(
-    volume_mapped_src=_VOLUME_MAPPED_SRC,
-    rsync_dest=_RSYNC_DEST,
+    volume_mapped_src=VOLUME_MAPPED_SRC,
+    rsync_dest=RSYNC_DEST,
 )
 
 
@@ -160,13 +164,13 @@ def update_live_git_repo() -> None:
     if not _LIVE_GIT_UPDATES_ENABLED:
         return
     try:
-        if not _LIVE_GIT_FASTLED_DIR.exists():
+        if not LIVE_GIT_FASTLED_DIR.exists():
             subprocess.run(
                 [
                     "git",
                     "clone",
                     "https://github.com/fastled/fastled.git",
-                    str(_LIVE_GIT_FASTLED_DIR),
+                    str(LIVE_GIT_FASTLED_DIR),
                     "--depth=1",
                 ],
                 check=True,
@@ -178,13 +182,13 @@ def update_live_git_repo() -> None:
                 ["git", "fetch", "origin"],
                 check=True,
                 capture_output=True,
-                cwd=_LIVE_GIT_FASTLED_DIR,
+                cwd=LIVE_GIT_FASTLED_DIR,
             )
             subprocess.run(
                 ["git", "reset", "--hard", "origin/master"],
                 check=True,
                 capture_output=True,
-                cwd=_LIVE_GIT_FASTLED_DIR,
+                cwd=LIVE_GIT_FASTLED_DIR,
             )
             print("Live FastLED repository updated successfully")
     except subprocess.CalledProcessError as e:
@@ -217,13 +221,13 @@ def sync_live_git_to_target() -> None:
         SKETCH_CACHE.clear()
 
     _CODE_SYNC.sync_src_to_target(
-        volume_mapped_src=_LIVE_GIT_FASTLED_DIR / "src",
-        rsync_dest=_RSYNC_DEST,
+        volume_mapped_src=LIVE_GIT_FASTLED_DIR / "src",
+        rsync_dest=RSYNC_DEST,
         callback=on_files_changed,
     )
     _CODE_SYNC.sync_src_to_target(
-        volume_mapped_src=_LIVE_GIT_FASTLED_DIR / "examples",
-        rsync_dest=_RSYNC_DEST.parent / "examples",
+        volume_mapped_src=LIVE_GIT_FASTLED_DIR / "examples",
+        rsync_dest=RSYNC_DEST.parent / "examples",
         callback=on_files_changed,
     )
     # Basically a setTimeout() in JS.
@@ -417,8 +421,8 @@ def get_settings() -> dict:
         "LIVE_GIT_UPDATES_ENABLED": _LIVE_GIT_UPDATES_ENABLED,
         "LIVE_GIT_UPDATES_INTERVAL": _LIVE_GIT_UPDATES_INTERVAL,
         "UPLOAD_LIMIT": _UPLOAD_LIMIT,
-        "VOLUME_MAPPED_SRC": str(_VOLUME_MAPPED_SRC),
-        "VOLUME_MAPPED_SRC_EXISTS": _VOLUME_MAPPED_SRC.exists(),
+        "VOLUME_MAPPED_SRC": str(VOLUME_MAPPED_SRC),
+        "VOLUME_MAPPED_SRC_EXISTS": VOLUME_MAPPED_SRC.exists(),
     }
     return settings
 
@@ -481,8 +485,8 @@ async def settings() -> dict:
         "LIVE_GIT_UPDATES_ENABLED": _LIVE_GIT_UPDATES_ENABLED,
         "LIVE_GIT_UPDATES_INTERVAL": _LIVE_GIT_UPDATES_INTERVAL,
         "UPLOAD_LIMIT": _UPLOAD_LIMIT,
-        "VOLUME_MAPPED_SRC": str(_VOLUME_MAPPED_SRC),
-        "VOLUME_MAPPED_SRC_EXISTS": _VOLUME_MAPPED_SRC.exists(),
+        "VOLUME_MAPPED_SRC": str(VOLUME_MAPPED_SRC),
+        "VOLUME_MAPPED_SRC_EXISTS": VOLUME_MAPPED_SRC.exists(),
     }
     return settings
 
@@ -531,7 +535,7 @@ def project_init(background_tasks: BackgroundTasks) -> FileResponse:
     # tmp_zip_file = NamedTemporaryFile(delete=False)
     # tmp_zip_path = Path(tmp_zip_file.name)
 
-    tmp_zip_path = _TEMP_DIR / f"wasm-{make_random_path_string(16)}.zip"
+    tmp_zip_path = TEMP_DIR / f"wasm-{make_random_path_string(16)}.zip"
     zip_example_to_file("wasm", tmp_zip_path)
 
     # assert tmp_zip_path.exists()
@@ -565,7 +569,7 @@ def project_init_example(
     if ".." in example:
         raise HTTPException(status_code=400, detail="Invalid example name.")
     name = Path("example").name
-    tmp_file_path = _TEMP_DIR / f"{name}-{make_random_path_string(16)}.zip"
+    tmp_file_path = TEMP_DIR / f"{name}-{make_random_path_string(16)}.zip"
     zip_example_to_file(example, Path(tmp_file_path))
 
     if not tmp_file_path.exists():
@@ -601,7 +605,6 @@ def info_examples() -> dict:
             Path("/image_timestamp.txt").read_text(encoding="utf-8").strip()
         )
     except Exception as e:
-        import warnings
 
         warnings.warn(f"Error reading build timestamp: {e}")
         build_timestamp = "unknown"
