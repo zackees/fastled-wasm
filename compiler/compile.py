@@ -9,22 +9,32 @@
 #    enforced by the script that sets up the docker container.
 # 2. The docker container has installed compiler dependencies in the /js directory.
 
-import argparse
-import hashlib
-import json
-import os
-import re
-import shutil
-import subprocess
-import sys
-import traceback
-from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
-from pathlib import Path
-from typing import List
 
-from paths import COMPILER_ROOT, FASTLED_COMPILER_DIR, PIO_BUILD_DIR, SKETCH_SRC
+print("Compiler script starting...")
+
+import argparse  # noqa: E402
+import hashlib  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+import traceback  # noqa: E402
+from dataclasses import dataclass  # noqa: E402
+from datetime import datetime  # noqa: E402
+from enum import Enum  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import List  # noqa: E402
+
+from paths import (  # noqa: E402
+    COMPILER_ROOT,
+    FASTLED_COMPILER_DIR,
+    PIO_BUILD_DIR,
+    SKETCH_SRC,
+)
+
+print("Finished imports...")
 
 _FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 _INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
