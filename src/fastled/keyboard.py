@@ -20,6 +20,7 @@ class SpaceBarWatcher:
                     return True
                 if time.time() - start_time > timeout:
                     return False
+                time.sleep(0.1)
         finally:
             watcher.stop()
 
