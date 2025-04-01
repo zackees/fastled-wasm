@@ -40,6 +40,7 @@ _FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 _INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
 _INDEX_CSS_SRC = FASTLED_COMPILER_DIR / "index.css"
 _INDEX_JS_SRC = FASTLED_COMPILER_DIR / "index.js"
+_PIO_VERBOSE = True
 
 
 _WASM_COMPILER_SETTTINGS = FASTLED_COMPILER_DIR / "wasm_compiler_flags.py"
@@ -108,6 +109,8 @@ def compile(
         cmd_list.extend(["pio", "run"])
         if not auto_clean:
             cmd_list.append("--disable-auto-clean")
+        if _PIO_VERBOSE:
+            cmd_list.append("-v")
 
     def _open_process(cmd_list: list[str] = cmd_list) -> subprocess.Popen:
         out = subprocess.Popen(

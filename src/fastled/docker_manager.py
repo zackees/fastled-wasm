@@ -205,6 +205,7 @@ class DockerManager:
         """Check if Docker is running by pinging the Docker daemon."""
 
         if not DockerManager.is_docker_installed():
+            print("Docker is not installed.")
             return False
         try:
             # self.client.ping()

@@ -14,6 +14,6 @@ isort --profile black src tests compiler
 echo Running mypy src compiler
 mypy src tests compiler
 echo Running pyright src tests compiler
-pyright src compiler tests
+uv run pyright src compiler tests
 echo Linting complete!
 exit 0
