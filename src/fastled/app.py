@@ -122,8 +122,7 @@ if __name__ == "__main__":
         import os
 
         os.chdir("../fastled")
-        sys.argv.append("examples/wasm")
-        sys.argv.append("--just-compile")
+        sys.argv.append("examples/FxWave2d")
         sys.exit(main())
     except KeyboardInterrupt:
         print("\nExiting from main...")
