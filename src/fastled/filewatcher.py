@@ -15,6 +15,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
+from fastled.settings import FILE_CHANGED_DEBOUNCE_SECONDS
+
 _WATCHER_TIMEOUT = 0.1
 
 
@@ -70,7 +72,7 @@ class FileChangedNotifier(threading.Thread):
     def __init__(
         self,
         path: str,
-        debounce_seconds: float = 1.0,
+        debounce_seconds: float = FILE_CHANGED_DEBOUNCE_SECONDS,
         excluded_patterns: list[str] | None = None,
     ) -> None:
         """Initialize the notifier with a path to watch

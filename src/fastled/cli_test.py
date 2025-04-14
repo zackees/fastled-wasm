@@ -8,6 +8,8 @@ if __name__ == "__main__":
         import os
 
         os.chdir("../fastled")
+        # sys.argv.append("--server")
+        # sys.argv.append("--local")
         sys.argv.append("examples/FxWave2d")
         sys.exit(app_main())
     except KeyboardInterrupt:
