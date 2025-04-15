@@ -10,7 +10,7 @@ HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
 
-EXAMPLES = ["Blink", "wasm", "Chromancer", "FxSdCard", "FxNoiseRing"]
+EXAMPLES = ["Blink", "wasm", "Chromancer", "FxSdCard", "FxNoiseRing", "Wave2d"]
 
 
 def _enabled() -> bool:

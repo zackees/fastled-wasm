@@ -346,6 +346,7 @@ EXAMPLES = [
     "FxSdCard",
     "FxNoiseRing",
     "FxWater",
+    "Wave2d",
 ]
 
 
