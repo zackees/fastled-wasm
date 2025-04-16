@@ -3,6 +3,8 @@ import subprocess
 from pathlib import Path
 from shutil import copytree, rmtree, which
 
+from fastled.site.examples import EXAMPLES
+
 CSS_CONTENT = """
 /* CSS Reset & Variables */
 *, *::before, *::after {
@@ -337,17 +339,6 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>
 """
-
-
-EXAMPLES = [
-    "wasm",
-    "Chromancer",
-    "LuminescentGrand",
-    "FxSdCard",
-    "FxNoiseRing",
-    "FxWater",
-    "Wave2d",
-]
 
 
 def _exec(cmd: str) -> None:

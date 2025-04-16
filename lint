@@ -11,8 +11,6 @@ echo Running black src tests compiler
 black src tests compiler
 echo Running isort src tests compiler
 isort --profile black src tests compiler
-echo Running mypy src compiler
-mypy src tests compiler
 echo Running pyright src tests compiler
 uv run pyright src compiler tests
 echo Linting complete!

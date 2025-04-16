@@ -768,7 +768,7 @@ class DockerManager:
             print(f"Error removing images: {e}")
 
 
-def main():
+def main() -> None:
     # Register SIGINT handler
     # signal.signal(signal.SIGINT, handle_sigint)
 
