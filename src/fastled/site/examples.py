@@ -6,4 +6,5 @@ EXAMPLES = [
     "FxNoiseRing",
     "FxWater",
     "Wave2d",
+    "FireCylinder",
 ]
