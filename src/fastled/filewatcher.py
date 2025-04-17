@@ -208,6 +208,7 @@ class FileWatcherProcess:
             daemon=True,
         )
         self.process.start()
+        self.global_debounce = FILE_CHANGED_DEBOUNCE_SECONDS
 
     def stop(self):
         self.process.terminate()
@@ -226,3 +227,26 @@ class FileWatcherProcess:
             except Empty:
                 break
         return changed_files
+
+# DEBOUNCE_SECONDS = 4
+# LAST_TIME = 0.0
+# WATCHED_FILES: list[str] = []
+
+# def debounced_sketch_filewatcher_get_all_changes() -> list[str]:
+#     nonlocal DEBOUNCE_SECONDS
+#     nonlocal LAST_TIME
+#     nonlocal WATCHED_FILES
+#     current_time = time.time()
+#     new_files = sketch_filewatcher.get_all_changes()
+#     if new_files:
+#         WATCHED_FILES.extend(new_files)
+#         print(f"Changes detected in {new_files}")
+#         LAST_TIME = current_time
+#         return []
+#     diff = current_time - LAST_TIME
+#     if diff > DEBOUNCE_SECONDS and len(WATCHED_FILES) > 0:
+#         LAST_TIME = current_time
+#         WATCHED_FILES, changed_files = [], WATCHED_FILES
+#         changed_files = sorted(list(set(changed_files)))
+#         return changed_files
+#     return []

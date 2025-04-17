@@ -236,6 +236,29 @@ def run_client(
         directory, excluded_patterns=excluded_patterns
     )
 
+    DEBOUNCE_SECONDS = 4
+    LAST_TIME = 0.0
+    WATCHED_FILES: list[str] = []
+
+    def debounced_sketch_filewatcher_get_all_changes() -> list[str]:
+        nonlocal DEBOUNCE_SECONDS
+        nonlocal LAST_TIME
+        nonlocal WATCHED_FILES
+        current_time = time.time()
+        new_files = sketch_filewatcher.get_all_changes()
+        if new_files:
+            WATCHED_FILES.extend(new_files)
+            print(f"Changes detected in {new_files}")
+            LAST_TIME = current_time
+            return []
+        diff = current_time - LAST_TIME
+        if diff > DEBOUNCE_SECONDS and len(WATCHED_FILES) > 0:
+            LAST_TIME = current_time
+            WATCHED_FILES, changed_files = [], WATCHED_FILES
+            changed_files = sorted(list(set(changed_files)))
+            return changed_files
+        return []
+
     source_code_watcher: FileWatcherProcess | None = None
     if compile_server and compile_server.using_fastled_src_dir_volume():
         assert compile_server.fastled_src_dir is not None
@@ -246,7 +269,7 @@ def run_client(
     def trigger_rebuild_if_sketch_changed(
         last_compiled_result: CompileResult,
     ) -> tuple[bool, CompileResult]:
-        changed_files = sketch_filewatcher.get_all_changes()
+        changed_files = debounced_sketch_filewatcher_get_all_changes()
         if changed_files:
             print(f"\nChanges detected in {changed_files}")
             last_hash_value = last_compiled_result.hash_value
