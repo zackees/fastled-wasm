@@ -228,6 +228,7 @@ class FileWatcherProcess:
                 break
         return changed_files
 
+
 # DEBOUNCE_SECONDS = 4
 # LAST_TIME = 0.0
 # WATCHED_FILES: list[str] = []
@@ -250,3 +251,48 @@ class FileWatcherProcess:
 #         changed_files = sorted(list(set(changed_files)))
 #         return changed_files
 #     return []
+
+
+class DebouncedFileWatcherProcess:
+    """
+    Wraps a FileWatcherProcess to batch rapid-fire change events
+    and only emit them once the debounce interval has passed.
+    """
+
+    def __init__(
+        self,
+        watcher: FileWatcherProcess,
+        debounce_seconds: float = FILE_CHANGED_DEBOUNCE_SECONDS,
+    ) -> None:
+        self.watcher = watcher
+        self.debounce_seconds = debounce_seconds
+        self._last_time = 0.0
+        self._watched_files: list[str] = []
+
+    def get_all_changes(self, timeout: float | None = None) -> list[str]:
+        """
+        Polls the underlying watcher for raw events, accumulates them,
+        and once no new events arrive for `debounce_seconds`, flushes
+        a sorted, unique list of paths.
+        """
+        now = time.time()
+        # pull in any new raw events
+        new = self.watcher.get_all_changes(timeout=timeout)
+        if new:
+            self._watched_files.extend(new)
+            # reset the window
+            self._last_time = now
+            return []
+
+        # if the window has elapsed, flush
+        if self._watched_files and (now - self._last_time) > self.debounce_seconds:
+            batch = sorted(set(self._watched_files))
+            self._watched_files.clear()
+            self._last_time = now
+            return batch
+
+        return []
+
+    def stop(self) -> None:
+        """Tear down the underlying watcher process."""
+        self.watcher.stop()

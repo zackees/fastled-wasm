@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
-from fastled.filewatcher import FileWatcherProcess
+from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import open_browser_process
 from fastled.parse_args import Args
@@ -231,33 +231,9 @@ def run_client(
         return 1
 
     excluded_patterns = ["fastled_js"]
-
-    sketch_filewatcher = FileWatcherProcess(
-        directory, excluded_patterns=excluded_patterns
+    debounced_sketch_watcher = DebouncedFileWatcherProcess(
+        FileWatcherProcess(directory, excluded_patterns=excluded_patterns),
     )
-
-    DEBOUNCE_SECONDS = 4
-    LAST_TIME = 0.0
-    WATCHED_FILES: list[str] = []
-
-    def debounced_sketch_filewatcher_get_all_changes() -> list[str]:
-        nonlocal DEBOUNCE_SECONDS
-        nonlocal LAST_TIME
-        nonlocal WATCHED_FILES
-        current_time = time.time()
-        new_files = sketch_filewatcher.get_all_changes()
-        if new_files:
-            WATCHED_FILES.extend(new_files)
-            print(f"Changes detected in {new_files}")
-            LAST_TIME = current_time
-            return []
-        diff = current_time - LAST_TIME
-        if diff > DEBOUNCE_SECONDS and len(WATCHED_FILES) > 0:
-            LAST_TIME = current_time
-            WATCHED_FILES, changed_files = [], WATCHED_FILES
-            changed_files = sorted(list(set(changed_files)))
-            return changed_files
-        return []
 
     source_code_watcher: FileWatcherProcess | None = None
     if compile_server and compile_server.using_fastled_src_dir_volume():
@@ -269,7 +245,7 @@ def run_client(
     def trigger_rebuild_if_sketch_changed(
         last_compiled_result: CompileResult,
     ) -> tuple[bool, CompileResult]:
-        changed_files = debounced_sketch_filewatcher_get_all_changes()
+        changed_files = debounced_sketch_watcher.get_all_changes()
         if changed_files:
             print(f"\nChanges detected in {changed_files}")
             last_hash_value = last_compiled_result.hash_value
@@ -324,7 +300,9 @@ def run_client(
                             timeout=1.0
                         )
                         file_changes = source_code_watcher.get_all_changes()
-                        sketch_files_changed = sketch_filewatcher.get_all_changes()
+                        sketch_files_changed = (
+                            debounced_sketch_watcher.get_all_changes()
+                        )
 
                         if file_changes:
                             print(
@@ -354,7 +332,7 @@ def run_client(
         print(f"Error: {e}")
         return 1
     finally:
-        sketch_filewatcher.stop()
+        debounced_sketch_watcher.stop()
         if compile_server:
             compile_server.stop()
         if browser_proc:
