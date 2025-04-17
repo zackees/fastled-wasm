@@ -124,8 +124,8 @@ RUN echo 'export LANG=en_US.UTF-8' >> /etc/profile && \
 RUN pip install uv==0.6.5
 
 # Get the compiler requirements and install them.
-COPY compiler/requirements.txt /install/requirements.txt
-RUN uv pip install --system -r /install/requirements.txt
+COPY compiler/pyproject.toml /install/pyproject.toml
+RUN uv pip install --system -r /install/pyproject.toml
 
 RUN pio settings set check_platformio_interval 9999
 RUN pio settings set enable_telemetry 0

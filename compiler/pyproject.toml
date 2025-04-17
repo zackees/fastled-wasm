@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastled_server"
+version = "0.1.0"
+description = "FastLED Server"
+requires-python = ">=3.10"
+
+dependencies = [
+    "platformio==6.1.17",
+    "fastapi==0.115.11",
+    "uvicorn[standard]==0.34.0",
+    "python-multipart==0.0.20",
+    "disklru==2.0.0",
+    "psutil==6.1.1",
+    "wormhole-tx",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
