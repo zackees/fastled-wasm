@@ -13,10 +13,26 @@ def string_diff(
     def normalize(s: str) -> str:
         return s.lower() if ignore_case else s
 
-    # distances = [
-    #     #Levenshtein.distance(normalize(input_string), normalize(s)) for s in string_list
-    #     fuzz.partial_ratio(normalize(input_string), normalize(s)) for s in string_list
-    # ]
+    map_string: dict[str, str] = {}
+
+    if ignore_case:
+        map_string = {s.lower(): s for s in string_list}
+    else:
+        map_string = {s: s for s in string_list}
+
+    if ignore_case:
+        string_list = [s.lower() for s in string_list]
+        input_string = input_string.lower()
+
+    is_substring = False
+    for s in string_list:
+        if input_string in s:
+            is_substring = True
+            break
+
+    if is_substring:
+        string_list = [s for s in string_list if input_string in s]
+
     distances: list[float] = []
     for s in string_list:
         dist = fuzz.token_sort_ratio(normalize(input_string), normalize(s))
@@ -25,7 +41,9 @@ def string_diff(
     out: list[tuple[float, str]] = []
     for i, d in enumerate(distances):
         if d == min_distance:
-            out.append((i, string_list[i]))
+            s = string_list[i]
+            s_mapped = map_string.get(s, s)
+            out.append((i, s_mapped))
 
     return out
 

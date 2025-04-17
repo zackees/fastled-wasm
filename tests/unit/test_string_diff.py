@@ -3,13 +3,66 @@ import unittest
 from fastled.string_diff import string_diff
 
 _HAYSTACK: list[str] = [
-    "examples/Wave",
-    "examples/Wave2d",
-    "examples/FxWave",
+    "examples\\AnalogOutput",
+    "examples\\Apa102",
+    "examples\\Apa102HD",
+    "examples\\Apa102HDOverride",
+    "examples\\Blink",
+    "examples\\BlinkParallel",
+    "examples\\Blur",
+    "examples\\Blur2d",
+    "examples\\Chromancer",
+    "examples\\ColorPalette",
+    "examples\\ColorTemperature",
+    "examples\\Cylon",
+    "examples\\DemoReel100",
+    "examples\\Esp32S3I2SDemo",
+    "examples\\EspI2SDemo",
+    "examples\\Fire2012",
+    "examples\\Fire2012WithPalette",
+    "examples\\Fire2023",
+    "examples\\FireCylinder",
+    "examples\\FireMatrix",
+    "examples\\FirstLight",
+    "examples\\FxAnimartrix",
+    "examples\\FxCylon",
+    "examples\\FxDemoReel100",
+    "examples\\FxEngine",
+    "examples\\FxFire2012",
+    "examples\\FxGfx2Video",
+    "examples\\FxNoisePlusPalette",
+    "examples\\FxNoiseRing",
+    "examples\\FxPacifica",
+    "examples\\FxPride2015",
+    "examples\\FxSdCard",
+    "examples\\FxTwinkleFox",
+    "examples\\FxWater",
+    "examples\\FxWave2d",
+    "examples\\HD107",
+    "examples\\LuminescentGrand",
+    "examples\\Noise",
+    "examples\\NoisePlayground",
+    "examples\\NoisePlusPalette",
+    "examples\\OctoWS2811",
+    "examples\\Overclock",
+    "examples\\Pacifica",
+    "examples\\PinMode",
+    "examples\\Pintest",
+    "examples\\Pride2015",
+    "examples\\RGBCalibrate",
+    "examples\\RGBSetDemo",
+    "examples\\RGBW",
+    "examples\\RGBWEmulated",
+    "examples\\SmartMatrix",
+    "examples\\TeensyMassiveParallel",
+    "examples\\TeensyParallel",
+    "examples\\TwinkleFox",
+    "examples\\wasm",
+    "examples\\WasmScreenCoords",
+    "examples\\Wave",
+    "examples\\Wave2d",
+    "examples\\WS2816",
 ]
-
-
-
 
 
 class StringDiffTester(unittest.TestCase):
@@ -20,7 +73,7 @@ class StringDiffTester(unittest.TestCase):
         result = string_diff("FxWave", _HAYSTACK)
         self.assertGreater(len(result), 0)
         _, path = result[0]
-        self.assertEqual(path, "examples/FxWave")
+        self.assertEqual("examples\\FxWave2d", path)
 
 
 if __name__ == "__main__":
