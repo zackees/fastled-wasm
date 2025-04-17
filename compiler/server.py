@@ -56,6 +56,7 @@ _EXAMPLES: list[str] = [
     "FxSdCard",
     "FxWater",
     "Wave2d",
+    "FxWave2d",
     "FireCylinder",
 ]
 

@@ -19,8 +19,8 @@ assert INDEX_HTML.exists()
 
 
 # realistic range, 8021 - 8030
-PORT = random.randint(8030, 8040)
-PORT2 = PORT + 1
+PORT = random.randint(8394, 8423)
+PORT2 = PORT + 3
 
 
 class HttpServerTester(unittest.TestCase):
