@@ -1,9 +1,9 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 # Can't run in parralel because of the shared docker
 # instance.
 . ./activate
-pytest -v -s tests "$@"
+pytest -x -v -s --durations=0 tests "$@"
 # uv run pytest -n auto tests -v
 

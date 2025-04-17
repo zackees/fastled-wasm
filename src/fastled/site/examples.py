@@ -5,6 +5,6 @@ EXAMPLES = [
     "FxSdCard",
     "FxNoiseRing",
     "FxWater",
-    "Wave2d",
+    "FxWave2d",
     "FireCylinder",
 ]
