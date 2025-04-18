@@ -1,5 +1,6 @@
 """File system watcher implementation using watchdog"""
 
+import _thread
 import hashlib
 import os
 import queue
@@ -229,10 +230,11 @@ class FileWatcherProcess:
         return changed_files
 
 
-class DebouncedFileWatcherProcess:
+class DebouncedFileWatcherProcess(threading.Thread):
     """
     Wraps a FileWatcherProcess to batch rapid-fire change events
     and only emit them once the debounce interval has passed.
+    Runs in its own thread, polling every 0.1 s.
     """
 
     def __init__(
@@ -240,35 +242,62 @@ class DebouncedFileWatcherProcess:
         watcher: FileWatcherProcess,
         debounce_seconds: float = FILE_CHANGED_DEBOUNCE_SECONDS,
     ) -> None:
+        super().__init__(daemon=True)
         self.watcher = watcher
         self.debounce_seconds = debounce_seconds
-        self._last_time = 0.0
-        self._watched_files: list[str] = []
+
+        # internal buffer & timing
+        self._buffer: list[str] = []
+        self._last_time: float = 0.0
+
+        # queue of flushed batches
+        self._out_queue: queue.Queue[list[str]] = queue.Queue()
+        self._stop_event = threading.Event()
+
+        # record timestamp of last event for external inspection
+        self.last_event_time: float | None = None
+
+        self.start()
+
+    def run(self) -> None:
+        try:
+            while not self._stop_event.is_set():
+                now = time.time()
+                # non-blocking poll of raw watcher events
+                new = self.watcher.get_all_changes(timeout=0)
+                if new:
+                    self._buffer.extend(new)
+                    self._last_time = now
+                    self.last_event_time = now
+
+                # if buffer exists and debounce interval elapsed, flush it
+                if self._buffer and (now - self._last_time) > self.debounce_seconds:
+                    batch = sorted(set(self._buffer))
+                    self._buffer.clear()
+                    self._last_time = now
+                    self._out_queue.put(batch)
+
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            _thread.interrupt_main()
+            raise
 
     def get_all_changes(self, timeout: float | None = None) -> list[str]:
         """
-        Polls the underlying watcher for raw events, accumulates them,
-        and once no new events arrive for `debounce_seconds`, flushes
-        a sorted, unique list of paths.
+        Return the next debounced batch of paths, or [] if none arrives
+        within `timeout` seconds.
         """
-        now = time.time()
-        # pull in any new raw events
-        new = self.watcher.get_all_changes(timeout=timeout)
-        if new:
-            self._watched_files.extend(new)
-            # reset the window
-            self._last_time = now
+        try:
+            if timeout is None:
+                # non-blocking
+                return self._out_queue.get_nowait()
+            else:
+                return self._out_queue.get(timeout=timeout)
+        except queue.Empty:
             return []
 
-        # if the window has elapsed, flush
-        if self._watched_files and (now - self._last_time) > self.debounce_seconds:
-            batch = sorted(set(self._watched_files))
-            self._watched_files.clear()
-            self._last_time = now
-            return batch
-
-        return []
-
     def stop(self) -> None:
-        """Tear down the underlying watcher process."""
+        """Stop the polling thread and tear down the underlying watcher."""
+        self._stop_event.set()
+        self.join()
         self.watcher.stop()
