@@ -47,10 +47,15 @@ class WebCompilerTester(unittest.TestCase):
             with zipfile.ZipFile(temp_dir_path / "output.zip", "r") as zip_ref:
                 zip_ref.extractall(temp_dir_path)
             # check that data/ dir exists
-            self.assertTrue((temp_dir_path / "data").is_dir(), f"{temp_dir_path}/data is not a directory, zip bytes: {len(zip_bytes)}")
+            self.assertTrue(
+                (temp_dir_path / "data").is_dir(),
+                f"{temp_dir_path}/data is not a directory, zip bytes: {len(zip_bytes)}",
+            )
             # check that data/bigdata.dat exists
-            self.assertTrue((temp_dir_path / "data" / "bigdata.dat").is_file(), 
-                            f"{temp_dir_path}/data/bigdata.dat is not a file")
+            self.assertTrue(
+                (temp_dir_path / "data" / "bigdata.dat").is_file(),
+                f"{temp_dir_path}/data/bigdata.dat is not a file",
+            )
 
 
 if __name__ == "__main__":
