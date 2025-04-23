@@ -14,7 +14,7 @@ __pycache__/
 .Python
 prod_env/
 data/
-!tests/test_ino/embedded/data
+!tests/**/embedded/data
 build/
 develop-eggs/
 dist/
