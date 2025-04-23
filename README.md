@@ -270,7 +270,6 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 
 # Revisions
-
   * 1.2.31 - Bunch of fixes and ease of use while compiling code in the repo.
   * 1.2.22 - Prefer to use `live-server` from npm. If npm exists on the system then do a background install of `live-server` for next run.
   * 1.2.20 - Fixed up path issue for web browser launch for hot reload.
