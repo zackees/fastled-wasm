@@ -31,7 +31,7 @@
     <label for="mic-select">Choose microphone:</label>
     <select id="mic-select"></select>
   </div>
-  <div id="volume">0%</div>
+  <div id="volume">-∞ dBFS</div>
   <div id="bar"><div id="fill"></div></div>
 
   <script>
@@ -79,9 +79,16 @@
         const v = Math.abs(dataArray[i]);
         if (v > max) max = v;
       }
-      const percent = Math.round(max * 100);
-      document.getElementById('volume').textContent = percent + '%';
+
+      // Convert peak amplitude to decibels (dBFS)
+      const db = max > 0 ? 20 * Math.log10(max) : -Infinity;
+      const dbDisplay = db === -Infinity ? '-∞' : db.toFixed(1);
+      document.getElementById('volume').textContent = `${dbDisplay} dBFS`;
+
+      // Visual bar: percentage of full scale
+      const percent = Math.min(max * 100, 100);
       document.getElementById('fill').style.width = percent + '%';
+
       requestAnimationFrame(updateVolume);
     }
 
