@@ -1,15 +1,34 @@
 import argparse
 import importlib.resources as pkg_resources
 from dataclasses import dataclass
+from multiprocessing import Process
 from pathlib import Path
 
 from fastled.server_fastapi_cli import run_fastapi_server_process
 from fastled.server_flask import run_flask_server_process
 
-if True:
-    run_server_process = run_flask_server_process
-else:
-    run_server_process = run_fastapi_server_process
+
+def run_server_process(
+    port: int, cwd: Path, certfile: Path | None = None, keyfile: Path | None = None
+) -> Process:
+    """Run the server in a separate process."""
+    if True:
+        # Use Flask server
+        process = run_flask_server_process(
+            port=port,
+            cwd=cwd,
+            certfile=certfile,
+            keyfile=keyfile,
+        )
+    else:
+        # Use FastAPI server
+        process = run_fastapi_server_process(
+            port=port,
+            cwd=cwd,
+            certfile=certfile,
+            keyfile=keyfile,
+        )
+    return process
 
 
 def get_asset_path(filename: str) -> Path | None:
@@ -23,12 +42,12 @@ def get_asset_path(filename: str) -> Path | None:
         return None
 
 
-def run(
+def start_process(
     path: Path,
     port: int,
     certfile: Path | None = None,
     keyfile: Path | None = None,
-) -> None:
+) -> Process:
     """Run the server, using package assets if explicit paths are not provided"""
     # Use package resources if no explicit path
     if certfile is None:
@@ -39,12 +58,13 @@ def run(
     # _run_flask_server(path, port, certfile, keyfile)
     # run_fastapi_server_process(port=port, path=path, certfile=certfile, keyfile=keyfile)
     proc = run_server_process(port=port, cwd=path)
-    try:
-        proc.join()
-    except KeyboardInterrupt:
-        import _thread
+    # try:
+    #     proc.join()
+    # except KeyboardInterrupt:
+    #     import _thread
 
-        _thread.interrupt_main()
+    #     _thread.interrupt_main()
+    return proc
 
 
 @dataclass
@@ -93,12 +113,19 @@ def main() -> None:
     port: int = args.port
     cert: Path | None = args.cert
     key: Path | None = args.key
-    run(
+    proc = start_process(
         path=fastled_js,
         port=port,
         certfile=cert,
         keyfile=key,
     )
+    try:
+        proc.join()
+    except KeyboardInterrupt:
+        import _thread
+
+        _thread.interrupt_main()
+        pass
 
 
 if __name__ == "__main__":
