@@ -23,6 +23,7 @@ dependencies = [
     "fastapi>=0.115.12",
     "uvicorn>=0.34.2",
     "pywebview>=5.4",
+    "watchfiles>=1.0.5",
 ]
 
 dynamic = ["version"]
