@@ -15,6 +15,7 @@ def get_asset_path(filename: str) -> Path | None:
     except (ModuleNotFoundError, AttributeError):
         return None
 
+
 def run(
     path: Path,
     port: int,
