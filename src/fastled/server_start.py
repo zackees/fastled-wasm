@@ -3,6 +3,12 @@ import importlib.resources as pkg_resources
 from pathlib import Path
 
 from fastled.server_fastapi_cli import run_fastapi_server_process
+from fastled.server_flask import run_flask_server_process
+
+if True:
+    run_server_process = run_flask_server_process
+else:
+    run_server_process = run_fastapi_server_process
 
 
 def get_asset_path(filename: str) -> Path | None:
@@ -31,7 +37,7 @@ def run(
 
     # _run_flask_server(path, port, certfile, keyfile)
     # run_fastapi_server_process(port=port, path=path, certfile=certfile, keyfile=keyfile)
-    proc = run_fastapi_server_process(port=port, cwd=path)
+    proc = run_server_process(port=port, cwd=path)
     try:
         proc.join()
     except KeyboardInterrupt:

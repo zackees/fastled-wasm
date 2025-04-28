@@ -102,7 +102,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_fastapi_server_process(
+def run_flask_server_process(
     port: int,
     cwd: Path | None = None,
     certfile: Path | None = None,  # type: ignore[unused-argument]
