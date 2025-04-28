@@ -39,7 +39,7 @@ def _run_fastapi_server(
     )
 
 
-def run_fastapi_server_proces(
+def run_fastapi_server_process(
     port: int,
     cwd: Path | None = None,
     certfile: Path | None = None,
@@ -57,5 +57,5 @@ def run_fastapi_server_proces(
 
 if __name__ == "__main__":
     # Example usage
-    proc = run_fastapi_server_proces(port=8000)
+    proc = run_fastapi_server_process(port=8000)
     proc.join()

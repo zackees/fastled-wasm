@@ -2,7 +2,7 @@ import argparse
 import importlib.resources as pkg_resources
 from pathlib import Path
 
-from .server_fastapi_cli import run_fastapi_server_proces
+from fastled.server_fastapi_cli import run_fastapi_server_process
 
 
 def get_asset_path(filename: str) -> Path | None:
@@ -14,25 +14,6 @@ def get_asset_path(filename: str) -> Path | None:
         return path if path.exists() else None
     except (ModuleNotFoundError, AttributeError):
         return None
-
-
-def _open_browser(url: str) -> None:
-    # import webview
-
-    # print("\n##################################################")
-    # print(f"# Opening browser to {url}")
-    # print("##################################################\n")
-
-    # webview.create_window("FastLED", url)
-    # webview.start()
-    import webbrowser
-
-    webbrowser.open(url, new=1, autoraise=True)
-    while True:
-        import time
-
-        time.sleep(1)
-
 
 def run(
     path: Path,
@@ -48,8 +29,8 @@ def run(
         keyfile = get_asset_path("localhost-key.pem")
 
     # _run_flask_server(path, port, certfile, keyfile)
-    # run_fastapi_server_proces(port=port, path=path, certfile=certfile, keyfile=keyfile)
-    proc = run_fastapi_server_proces(port=port, cwd=path)
+    # run_fastapi_server_process(port=port, path=path, certfile=certfile, keyfile=keyfile)
+    proc = run_fastapi_server_process(port=port, cwd=path)
     try:
         proc.join()
     except KeyboardInterrupt:
