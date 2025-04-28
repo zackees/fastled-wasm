@@ -359,3 +359,11 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 # TODO
   * `live-server --https --cert=localhost.pem --key=localhost-key.pem --port=5500`
+  * `live-server --port=8416 --host=localhost . --https --cert=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost-key.pem --key=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost.pem --no-browser`
+
+
+
+  live-server --https --port=8416 --host=localhost .  --cert=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost-key.pem --key=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost.pem --no-browser
+
+
+  live-server --https --cert=src/fastled/assets/localhost.pem --key=src/fastled/assets/localhost-key.pem --port=5500

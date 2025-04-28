@@ -5,30 +5,23 @@ import webbrowser
 from multiprocessing import Process
 from pathlib import Path
 
-DEFAULT_PORT = 8089  # different than live version.
+from fastled.keyz import get_ssl_config
 
+DEFAULT_PORT = 8089  # different than live version.
 PYTHON_EXE = sys.executable
+SSL_CONFIG = get_ssl_config()
+
+
+# print(f"SSL Config: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}")
 
 
 def open_http_server_subprocess(
-    fastled_js: Path, port: int, open_browser: bool
+    fastled_js: Path,
+    port: int,
+    open_browser: bool,
 ) -> None:
-    """Start livereload server in the fastled_js directory and return the process"""
-    import shutil
-
     try:
-        if shutil.which("live-server") is not None:
-            cmd = [
-                "live-server",
-                f"--port={port}",
-                "--host=localhost",
-                ".",
-            ]
-            if not open_browser:
-                cmd.append("--no-browser")
-            subprocess.run(cmd, shell=True, cwd=fastled_js)
-            return
-
+        # Fallback to our Python server
         cmd = [
             PYTHON_EXE,
             "-m",
@@ -37,8 +30,23 @@ def open_http_server_subprocess(
             "--port",
             str(port),
         ]
-        # return subprocess.Popen(cmd)  # type ignore
-        # pipe stderr and stdout to null
+        if open_browser:
+            cmd.append("--open-browser")
+        # Pass SSL flags if available
+        if SSL_CONFIG.certfile and SSL_CONFIG.keyfile:
+            cmd.extend(
+                [
+                    "--cert",
+                    str(SSL_CONFIG.certfile),
+                    "--key",
+                    str(SSL_CONFIG.keyfile),
+                ]
+            )
+        print(
+            f"Running server on port {port} with certs: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}"
+        )
+        print(f"Command: {subprocess.list2cmdline(cmd)}")
+        # Suppress output
         subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -87,54 +95,34 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
     raise TimeoutError("Could not connect to server")
 
 
-def _background_npm_install_live_server() -> None:
-    import shutil
-    import time
-
-    if shutil.which("npm") is None:
-        return
-
-    if shutil.which("live-server") is not None:
-        return
-
-    time.sleep(3)
-    subprocess.run(
-        ["npm", "install", "-g", "live-server"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-
 def open_browser_process(
-    fastled_js: Path, port: int | None = None, open_browser: bool = True
+    fastled_js: Path,
+    port: int | None = None,
+    open_browser: bool = True,
 ) -> Process:
-    import shutil
 
-    """Start livereload server in the fastled_js directory and return the process"""
-    if port is not None:
-        if not is_port_free(port):
-            raise ValueError(f"Port {port} was specified but in use")
-    else:
+    if port is not None and not is_port_free(port):
+        raise ValueError(f"Port {port} was specified but in use")
+    if port is None:
         port = find_free_port(DEFAULT_PORT)
-    out: Process = Process(
+
+    proc = Process(
         target=open_http_server_subprocess,
-        args=(fastled_js, port, False),
+        args=(fastled_js, port, open_browser),
         daemon=True,
     )
-    out.start()
+    proc.start()
     wait_for_server(port)
     if open_browser:
-        print(f"Opening browser to http://localhost:{port}")
-        webbrowser.open(url=f"http://localhost:{port}", new=1, autoraise=True)
-
-    # start a deamon thread to install live-server
-    if shutil.which("live-server") is None:
-        import threading
-
-        t = threading.Thread(target=_background_npm_install_live_server)
-        t.daemon = True
-        t.start()
-    return out
+        print(
+            f"Opening browser to http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}"
+        )
+        webbrowser.open(
+            url=f"http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}",
+            new=1,
+            autoraise=True,
+        )
+    return proc
 
 
 if __name__ == "__main__":
@@ -144,9 +132,7 @@ if __name__ == "__main__":
         description="Open a browser to the fastled_js directory"
     )
     parser.add_argument(
-        "fastled_js",
-        type=Path,
-        help="Path to the fastled_js directory",
+        "fastled_js", type=Path, help="Path to the fastled_js directory"
     )
     parser.add_argument(
         "--port",
