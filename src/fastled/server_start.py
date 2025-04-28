@@ -1,5 +1,6 @@
 import argparse
 import importlib.resources as pkg_resources
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastled.server_fastapi_cli import run_fastapi_server_process
@@ -46,7 +47,15 @@ def run(
         _thread.interrupt_main()
 
 
-def parse_args() -> argparse.Namespace:
+@dataclass
+class Args:
+    fastled_js: Path
+    port: int
+    cert: Path | None
+    key: Path | None
+
+
+def parse_args() -> Args:
     parser = argparse.ArgumentParser(
         description="Open a browser to the fastled_js directory"
     )
@@ -66,11 +75,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--key", type=Path, help="(Optional) Path to SSL private key (PEM format)"
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    out: Args = Args(
+        fastled_js=args.fastled_js,
+        port=args.port,
+        cert=args.cert,
+        key=args.key,
+    )
+    if args.fastled_js is None:
+        raise ValueError("fastled_js directory is required")
+    return out
 
 
 def main() -> None:
-    args = parse_args()
+    args: Args = parse_args()
     fastled_js: Path = args.fastled_js
     port: int = args.port
     cert: Path | None = args.cert
