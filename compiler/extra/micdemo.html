@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mic Volume Demo</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 2rem; }
+    #controls { margin-bottom: 1rem; }
+    #volume { font-size: 2rem; margin-bottom: 1rem; }
+    #bar {
+      width: 300px;
+      height: 30px;
+      background: #eee;
+      margin: 0 auto;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    #fill {
+      height: 100%;
+      width: 0%;
+      background: #76ce60;
+      transition: width 0.1s ease;
+    }
+  </style>
+</head>
+<body>
+  <h1>Mic Volume Demo</h1>
+  <div id="controls">
+    <label for="mic-select">Choose microphone:</label>
+    <select id="mic-select"></select>
+  </div>
+  <div id="volume">0%</div>
+  <div id="bar"><div id="fill"></div></div>
+
+  <script>
+    let audioCtx, analyser, dataArray;
+    let currentStream;
+
+    async function listAudioInputs() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      const select = document.getElementById('mic-select');
+      mics.forEach((mic, i) => {
+        const option = document.createElement('option');
+        option.value = mic.deviceId;
+        option.text = mic.label || `Microphone ${i+1}`;
+        select.appendChild(option);
+      });
+      select.onchange = () => startStream(select.value);
+      if (mics.length) startStream(mics[0].deviceId);
+    }
+
+    async function startStream(deviceId) {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+      try {
+        currentStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const source = audioCtx.createMediaStreamSource(currentStream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        dataArray = new Float32Array(analyser.fftSize);
+        updateVolume();
+      } catch (err) {
+        alert('Error accessing microphone: ' + err.message);
+      }
+    }
+
+    function updateVolume() {
+      analyser.getFloatTimeDomainData(dataArray);
+      let max = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = Math.abs(dataArray[i]);
+        if (v > max) max = v;
+      }
+      const percent = Math.round(max * 100);
+      document.getElementById('volume').textContent = percent + '%';
+      document.getElementById('fill').style.width = percent + '%';
+      requestAnimationFrame(updateVolume);
+    }
+
+    // initialize
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      listAudioInputs();
+    } else {
+      alert('enumerateDevices() not supported.');
+    }
+  </script>
+</body>
+</html>
