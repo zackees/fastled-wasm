@@ -3,9 +3,28 @@ from pathlib import Path
 
 from livereload import Server
 
+MAPPING = {
+    "js": "application/javascript",
+    "css": "text/css",
+    "wasm": "application/wasm",
+    "json": "application/json",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "svg": "image/svg+xml",
+    "ico": "image/x-icon",
+    "html": "text/html",
+}
 
-def _run_flask_server(fastled_js: Path, port: int) -> None:
-    """Run Flask server with live reload in a subprocess"""
+
+def _run_flask_server(
+    fastled_js: Path,
+    port: int,
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
+) -> None:
+    """Run Flask server with live reload or HTTPS depending on args"""
     try:
         from flask import Flask, send_from_directory
 
@@ -22,28 +41,11 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
         def serve_files(path):
             response = send_from_directory(fastled_js, path)
             # Some servers don't set the Content-Type header for a bunch of files.
-            if path.endswith(".js"):
-                response.headers["Content-Type"] = "application/javascript"
-            if path.endswith(".css"):
-                response.headers["Content-Type"] = "text/css"
-            if path.endswith(".wasm"):
-                response.headers["Content-Type"] = "application/wasm"
-            if path.endswith(".json"):
-                response.headers["Content-Type"] = "application/json"
-            if path.endswith(".png"):
-                response.headers["Content-Type"] = "image/png"
-            if path.endswith(".jpg"):
-                response.headers["Content-Type"] = "image/jpeg"
-            if path.endswith(".jpeg"):
-                response.headers["Content-Type"] = "image/jpeg"
-            if path.endswith(".gif"):
-                response.headers["Content-Type"] = "image/gif"
-            if path.endswith(".svg"):
-                response.headers["Content-Type"] = "image/svg+xml"
-            if path.endswith(".ico"):
-                response.headers["Content-Type"] = "image/x-icon"
-            if path.endswith(".html"):
-                response.headers["Content-Type"] = "text/html"
+            pathending = path.split(".")[-1]
+
+            mapped_value = MAPPING.get(pathending)
+            if mapped_value:
+                response.headers["Content-Type"] = mapped_value
 
             # now also add headers to force no caching
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
@@ -51,40 +53,40 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
             response.headers["Expires"] = "0"
             return response
 
+        # If SSL cert and key provided, use Flask's built-in HTTPS support
+        if certfile and keyfile:
+            app.run(
+                host="127.0.0.1",
+                port=port,
+                ssl_context=(str(certfile), str(keyfile)),
+                debug=True,
+            )
+            return
+
+        # Otherwise, fallback to livereload
         server = Server(app.wsgi_app)
-        # Watch index.html for changes
         server.watch(str(fastled_js / "index.html"))
-        # server.watch(str(fastled_js / "index.js"))
-        # server.watch(str(fastled_js / "index.css"))
-        # Start the server
         server.serve(port=port, debug=True)
     except KeyboardInterrupt:
         import _thread
 
         _thread.interrupt_main()
     except Exception as e:
-        print(f"Failed to run Flask server: {e}")
+        print(f"Failed to run server: {e}")
         import _thread
 
         _thread.interrupt_main()
 
 
-def run(path: Path, port: int) -> None:
-    """Run the Flask server."""
-    try:
-        _run_flask_server(path, port)
-        import warnings
-
-        warnings.warn("Flask server has stopped")
-    except KeyboardInterrupt:
-        import _thread
-
-        _thread.interrupt_main()
-        pass
+def run(
+    path: Path, port: int, certfile: Path | None = None, keyfile: Path | None = None
+) -> None:
+    """Run the server, optionally over HTTPS"""
+    _run_flask_server(path, port, certfile, keyfile)
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse the command line arguments."""
+    """Parse command line args"""
     parser = argparse.ArgumentParser(
         description="Open a browser to the fastled_js directory"
     )
@@ -92,19 +94,18 @@ def parse_args() -> argparse.Namespace:
         "fastled_js", type=Path, help="Path to the fastled_js directory"
     )
     parser.add_argument(
-        "--port",
-        "-p",
-        type=int,
-        required=True,
-        help="Port to run the server on (default: %(default)s)",
+        "--port", "-p", type=int, default=5500, help="Port to run the server on"
     )
+    parser.add_argument(
+        "--cert", type=Path, help="Path to SSL certificate (PEM format)"
+    )
+    parser.add_argument("--key", type=Path, help="Path to SSL private key (PEM format)")
     return parser.parse_args()
 
 
 def main() -> None:
-    """Main function."""
     args = parse_args()
-    run(args.fastled_js, args.port)
+    run(args.fastled_js, args.port, args.cert, args.key)
 
 
 if __name__ == "__main__":
