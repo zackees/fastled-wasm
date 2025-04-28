@@ -26,7 +26,7 @@ def _open_http_server_subprocess(
         cmd = [
             PYTHON_EXE,
             "-m",
-            "fastled.open_browser2",
+            "fastled.server_start",
             str(fastled_js),
             "--port",
             str(port),
