@@ -20,7 +20,7 @@ MAPPING = {
 
 
 """Run FastAPI server with live reload or HTTPS depending on args."""
-app = FastAPI()
+app = FastAPI(debug=True)
 base = Path(".")
 
 
