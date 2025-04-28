@@ -19,7 +19,7 @@ def get_asset_path(filename: str) -> Path | None:
 def _open_browser(url: str) -> None:
     import webview
 
-    webview.create_window("FastLED", url, fullscreen=True)
+    webview.create_window("FastLED", url, width=1280, height=1024)
     webview.start()
 
 
