@@ -37,7 +37,6 @@ def _open_browser(url: str) -> None:
 def run(
     path: Path,
     port: int,
-    open_browser: bool,
     certfile: Path | None = None,
     keyfile: Path | None = None,
 ) -> None:
@@ -51,8 +50,6 @@ def run(
     # _run_flask_server(path, port, certfile, keyfile)
     # run_fastapi_server_proces(port=port, path=path, certfile=certfile, keyfile=keyfile)
     proc = run_fastapi_server_proces(port=port, cwd=path)
-    if open_browser:
-        _open_browser(f"http://localhost:{port}/")
     try:
         proc.join()
     except KeyboardInterrupt:
@@ -81,16 +78,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--key", type=Path, help="(Optional) Path to SSL private key (PEM format)"
     )
-    parser.add_argument(
-        "--open-browser",
-        action="store_true",
-    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    open_browser: bool = args.open_browser
     fastled_js: Path = args.fastled_js
     port: int = args.port
     cert: Path | None = args.cert
@@ -98,7 +90,6 @@ def main() -> None:
     run(
         path=fastled_js,
         port=port,
-        open_browser=open_browser,
         certfile=cert,
         keyfile=key,
     )

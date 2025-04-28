@@ -14,10 +14,9 @@ SSL_CONFIG = get_ssl_config()
 # print(f"SSL Config: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}")
 
 
-def open_http_server_subprocess(
+def _open_http_server_subprocess(
     fastled_js: Path,
     port: int,
-    open_browser: bool,
 ) -> None:
     print("\n################################################################")
     print(f"# Opening browser to {fastled_js} on port {port}")
@@ -32,8 +31,6 @@ def open_http_server_subprocess(
             "--port",
             str(port),
         ]
-        if open_browser:
-            cmd.append("--open-browser")
         # Pass SSL flags if available
         if SSL_CONFIG.certfile and SSL_CONFIG.keyfile:
             cmd.extend(
@@ -52,7 +49,7 @@ def open_http_server_subprocess(
         subprocess.run(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            # stderr=subprocess.DEVNULL,
         )  # type ignore
     except KeyboardInterrupt:
         print("Exiting from server...")
@@ -111,21 +108,21 @@ def open_browser_process(
         port = find_free_port(DEFAULT_PORT)
 
     proc = Process(
-        target=open_http_server_subprocess,
-        args=(fastled_js, port, open_browser),
+        target=_open_http_server_subprocess,
+        args=(fastled_js, port),
         daemon=True,
     )
     proc.start()
     wait_for_server(port)
-    # if open_browser:
-    #     print(
-    #         f"Opening browser to http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}"
-    #     )
-    #     webbrowser.open(
-    #         url=f"http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}",
-    #         new=1,
-    #         autoraise=True,
-    #     )
+    if open_browser:
+        print(f"Opening browser to http://localhost:{port}")
+        import webbrowser
+
+        webbrowser.open(
+            url=f"http://localhost:{port}",
+            new=1,
+            autoraise=True,
+        )
     return proc
 
 
