@@ -1,7 +1,6 @@
 import subprocess
 import sys
 import time
-import webbrowser
 from multiprocessing import Process
 from pathlib import Path
 
@@ -20,6 +19,9 @@ def open_http_server_subprocess(
     port: int,
     open_browser: bool,
 ) -> None:
+    print("\n################################################################")
+    print(f"# Opening browser to {fastled_js} on port {port}")
+    print("################################################################\n")
     try:
         # Fallback to our Python server
         cmd = [
@@ -71,7 +73,7 @@ def is_port_free(port: int) -> bool:
 
 def find_free_port(start_port: int) -> int:
     """Find a free port starting at start_port"""
-    for port in range(start_port, start_port + 100):
+    for port in range(start_port, start_port + 100, 2):
         if is_port_free(port):
             print(f"Found free port: {port}")
             return port
@@ -87,7 +89,9 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
     future_time = time.time() + timeout
     while future_time > time.time():
         try:
-            response = get(f"http://localhost:{port}", timeout=1)
+            url = f"http://localhost:{port}"
+            # print(f"Waiting for server to start at {url}")
+            response = get(url, timeout=1)
             if response.status_code == 200:
                 return
         except Exception:
@@ -113,15 +117,15 @@ def open_browser_process(
     )
     proc.start()
     wait_for_server(port)
-    if open_browser:
-        print(
-            f"Opening browser to http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}"
-        )
-        webbrowser.open(
-            url=f"http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}",
-            new=1,
-            autoraise=True,
-        )
+    # if open_browser:
+    #     print(
+    #         f"Opening browser to http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}"
+    #     )
+    #     webbrowser.open(
+    #         url=f"http{'s' if SSL_CONFIG.certfile else ''}://localhost:{port}",
+    #         new=1,
+    #         autoraise=True,
+    #     )
     return proc
 
 

@@ -17,10 +17,21 @@ def get_asset_path(filename: str) -> Path | None:
 
 
 def _open_browser(url: str) -> None:
-    import webview
+    # import webview
 
-    webview.create_window("FastLED", url, width=1280, height=1024)
-    webview.start()
+    # print("\n##################################################")
+    # print(f"# Opening browser to {url}")
+    # print("##################################################\n")
+
+    # webview.create_window("FastLED", url)
+    # webview.start()
+    import webbrowser
+
+    webbrowser.open(url, new=1, autoraise=True)
+    while True:
+        import time
+
+        time.sleep(1)
 
 
 def run(
