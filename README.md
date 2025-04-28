@@ -355,3 +355,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
   * 1.0.2 - Small bug with new installs.
   * 1.0.1 - Re-use is no longer the default, due to problems.
   * 1.0.0 - Initial release.
+
+
+# TODO
+  * `live-server --https --cert=localhost.pem --key=localhost-key.pem --port=5500`

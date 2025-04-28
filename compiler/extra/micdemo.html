@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mic Volume Demo</title>
+  <title>Mic & System Audio Demo</title>
   <style>
     body { font-family: sans-serif; text-align: center; padding: 2rem; }
     #controls { margin-bottom: 1rem; }
@@ -23,12 +23,14 @@
       background: #76ce60;
       transition: width 0.1s ease;
     }
+    #mic-select { margin-left: 0.5rem; }
   </style>
 </head>
 <body>
-  <h1>Mic Volume Demo</h1>
+  <h1>Audio Volume Demo</h1>
   <div id="controls">
-    <label for="mic-select">Choose microphone:</label>
+    <label><input type="radio" name="source" value="mic" checked> Microphone</label>
+    <label><input type="radio" name="source" value="tab"> Tab/Screen Audio</label>
     <select id="mic-select"></select>
   </div>
   <div id="volume">-∞ dBFS</div>
@@ -42,34 +44,53 @@
       const devices = await navigator.mediaDevices.enumerateDevices();
       const mics = devices.filter(d => d.kind === 'audioinput');
       const select = document.getElementById('mic-select');
+      select.innerHTML = '';
       mics.forEach((mic, i) => {
         const option = document.createElement('option');
         option.value = mic.deviceId;
         option.text = mic.label || `Microphone ${i+1}`;
         select.appendChild(option);
       });
-      select.onchange = () => startStream(select.value);
-      if (mics.length) startStream(mics[0].deviceId);
+      select.onchange = () => startMic(select.value);
+      if (mics.length) startMic(mics[0].deviceId);
     }
 
-    async function startStream(deviceId) {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-      }
+    async function startMic(deviceId) {
+      stopStream();
       try {
         currentStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } } });
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        const source = audioCtx.createMediaStreamSource(currentStream);
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
-        source.connect(analyser);
-        dataArray = new Float32Array(analyser.fftSize);
-        updateVolume();
+        setupAudioGraph(currentStream);
       } catch (err) {
         alert('Error accessing microphone: ' + err.message);
       }
+    }
+
+    async function startTabAudio() {
+      stopStream();
+      try {
+        currentStream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: false });
+        setupAudioGraph(currentStream);
+      } catch (err) {
+        alert('Error capturing tab/screen audio: ' + err.message);
+      }
+    }
+
+    function stopStream() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+      }
+    }
+
+    function setupAudioGraph(stream) {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      dataArray = new Float32Array(analyser.fftSize);
+      updateVolume();
     }
 
     function updateVolume() {
@@ -80,19 +101,31 @@
         if (v > max) max = v;
       }
 
-      // Convert peak amplitude to decibels (dBFS)
       const db = max > 0 ? 20 * Math.log10(max) : -Infinity;
       const dbDisplay = db === -Infinity ? '-∞' : db.toFixed(1);
       document.getElementById('volume').textContent = `${dbDisplay} dBFS`;
 
-      // Visual bar: percentage of full scale
       const percent = Math.min(max * 100, 100);
       document.getElementById('fill').style.width = percent + '%';
 
       requestAnimationFrame(updateVolume);
     }
 
-    // initialize
+    // Switcher
+    document.querySelectorAll('input[name="source"]').forEach(radio => {
+      radio.addEventListener('change', e => {
+        const mode = e.target.value;
+        if (mode === 'mic') {
+          document.getElementById('mic-select').style.display = '';
+          listAudioInputs();
+        } else {
+          document.getElementById('mic-select').style.display = 'none';
+          startTabAudio();
+        }
+      });
+    });
+
+    // Initialize
     if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
       listAudioInputs();
     } else {
