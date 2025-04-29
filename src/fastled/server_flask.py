@@ -5,8 +5,20 @@ from pathlib import Path
 from livereload import Server
 
 
-def _run_flask_server(fastled_js: Path, port: int) -> None:
-    """Run Flask server with live reload in a subprocess"""
+def _run_flask_server(
+    fastled_js: Path,
+    port: int,
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
+) -> None:
+    """Run Flask server with live reload in a subprocess
+
+    Args:
+        fastled_js: Path to the fastled_js directory
+        port: Port to run the server on
+        certfile: Path to the SSL certificate file
+        keyfile: Path to the SSL key file
+    """
     try:
         from flask import Flask, send_from_directory
 
@@ -70,10 +82,12 @@ def _run_flask_server(fastled_js: Path, port: int) -> None:
         _thread.interrupt_main()
 
 
-def run(port: int, cwd: Path) -> None:
+def run(
+    port: int, cwd: Path, certfile: Path | None = None, keyfile: Path | None = None
+) -> None:
     """Run the Flask server."""
     try:
-        _run_flask_server(cwd, port)
+        _run_flask_server(cwd, port, certfile, keyfile)
         import warnings
 
         warnings.warn("Flask server has stopped")
@@ -99,20 +113,30 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Port to run the server on (default: %(default)s)",
     )
+    parser.add_argument(
+        "--certfile",
+        type=Path,
+        help="Path to the SSL certificate file for HTTPS",
+    )
+    parser.add_argument(
+        "--keyfile",
+        type=Path,
+        help="Path to the SSL key file for HTTPS",
+    )
     return parser.parse_args()
 
 
 def run_flask_server_process(
     port: int,
     cwd: Path | None = None,
-    certfile: Path | None = None,  # type: ignore[unused-argument]
-    keyfile: Path | None = None,  # type: ignore[unused-argument]
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
 ) -> Process:
-    """Run the FastAPI server in a separate process."""
+    """Run the Flask server in a separate process."""
     cwd = cwd or Path(".")
     process = Process(
         target=run,
-        args=(port, cwd),
+        args=(port, cwd, certfile, keyfile),
     )
     process.start()
     return process
@@ -121,7 +145,7 @@ def run_flask_server_process(
 def main() -> None:
     """Main function."""
     args = parse_args()
-    run(args.fastled_js, args.port)
+    run(args.port, args.fastled_js, args.certfile, args.keyfile)
 
 
 if __name__ == "__main__":
