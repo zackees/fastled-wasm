@@ -32,7 +32,7 @@ def _run_fastapi_server(
         "fastled.server_fastapi:app",
         host="127.0.0.1",
         port=port,
-        reload=True,
+        reload=False,
         # reload_includes=["index.html"],
         ssl_certfile=certfile,
         ssl_keyfile=keyfile,
