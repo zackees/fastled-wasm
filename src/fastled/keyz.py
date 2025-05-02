@@ -20,11 +20,12 @@ def get_asset_path(filename: str) -> Path | None:
         return None
 
 
-def get_ssl_config() -> SslConfig:
+def get_ssl_config() -> SslConfig | None:
     """Get the keys for the server"""
-    certfile = get_asset_path("localhost-key.pem")
-    keyfile = get_asset_path("localhost.pem")
-    if certfile is None or keyfile is None:
-        raise ValueError("Could not find keys for server")
-    # return certfile, keyfile
-    return SslConfig(certfile=certfile, keyfile=keyfile)
+    # certfile = get_asset_path("localhost-key.pem")
+    # keyfile = get_asset_path("localhost.pem")
+    # if certfile is None or keyfile is None:
+    #     raise ValueError("Could not find keys for server")
+    # # return certfile, keyfile
+    # return SslConfig(certfile=certfile, keyfile=keyfile)
+    return None

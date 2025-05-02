@@ -32,7 +32,7 @@ def _open_http_server_subprocess(
             str(port),
         ]
         # Pass SSL flags if available
-        if SSL_CONFIG.certfile and SSL_CONFIG.keyfile:
+        if SSL_CONFIG and SSL_CONFIG.certfile and SSL_CONFIG.keyfile:
             cmd.extend(
                 [
                     "--cert",
@@ -41,9 +41,10 @@ def _open_http_server_subprocess(
                     str(SSL_CONFIG.keyfile),
                 ]
             )
-        print(
-            f"Running server on port {port} with certs: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}"
-        )
+            print(
+                f"Running server on port {port} with certs: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}"
+            )
+        print(f"Running server on port {port}.")
         print(f"Command: {subprocess.list2cmdline(cmd)}")
         # Suppress output
         subprocess.run(
