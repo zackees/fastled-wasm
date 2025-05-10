@@ -139,9 +139,12 @@ class RunningContainer:
         self.detach()
 
 
+
 class DockerManager:
     def __init__(self) -> None:
         from docker.errors import DockerException
+
+        self.is_suspended: bool = False
 
         try:
             self._client: DockerClient | None = None
@@ -649,6 +652,8 @@ class DockerManager:
         """
         Suspend (pause) the container.
         """
+        if self.is_suspended:
+            return
         if isinstance(container, str):
             container_name = container
             # container = self.get_container(container)

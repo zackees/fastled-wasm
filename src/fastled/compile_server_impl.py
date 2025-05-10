@@ -285,6 +285,8 @@ class CompileServerImpl:
         return self.docker.is_container_running(self.container_name)
 
     def stop(self) -> None:
+        if self.docker.is_suspended:
+            return
         if self.running_container:
             self.running_container.detach()
             self.running_container = None
