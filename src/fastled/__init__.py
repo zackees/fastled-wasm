@@ -137,7 +137,9 @@ class Docker:
     def is_running() -> bool:
         from fastled.docker_manager import DockerManager
 
-        return DockerManager.is_running()
+        ok: bool
+        ok, _ = DockerManager.is_running()
+        return ok
 
     @staticmethod
     def is_container_running(container_name: str | None = None) -> bool:

@@ -59,7 +59,8 @@ class CompileServer:
 
     @property
     def running(self) -> bool:
-        return self.impl.running
+        ok, _ = self.impl.running
+        return ok
 
     @property
     def fastled_src_dir(self) -> Path | None:

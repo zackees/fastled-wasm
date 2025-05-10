@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import time
+import traceback
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -111,14 +112,24 @@ class CompileServerImpl:
         project_init(example=example, outputdir=outputdir)
 
     @property
-    def running(self) -> bool:
+    def running(self) -> tuple[bool, Exception | None]:
         if not self._port:
-            return False
+            return False, Exception("Docker hasn't been initialzed with a port yet")
         if not DockerManager.is_docker_installed():
-            return False
-        if not DockerManager.is_running():
-            return False
-        return self.docker.is_container_running(self.container_name)
+            return False, Exception("Docker is not installed")
+        docker_running, err = self.docker.is_running()
+        if not docker_running:
+            IS_MAC = sys.platform == "darwin"
+            if IS_MAC:
+                if "FileNotFoundError" in str(err):
+                    traceback.print_exc()
+                    print("\n\nNone fatal debug print for MacOS\n")
+            return False, err
+        ok: bool = self.docker.is_container_running(self.container_name)
+        if ok:
+            return True, None
+        else:
+            return False, Exception("Docker is not running")
 
     def using_fastled_src_dir_volume(self) -> bool:
         out = self.fastled_src_dir is not None

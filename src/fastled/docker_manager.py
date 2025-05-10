@@ -201,24 +201,24 @@ class DockerManager:
             return False
 
     @staticmethod
-    def is_running() -> bool:
+    def is_running() -> tuple[bool, Exception | None]:
         """Check if Docker is running by pinging the Docker daemon."""
 
         if not DockerManager.is_docker_installed():
             print("Docker is not installed.")
-            return False
+            return False, Exception("Docker is not installed.")
         try:
             # self.client.ping()
             client = docker.from_env()
             client.ping()
             print("Docker is running.")
-            return True
+            return True, None
         except DockerException as e:
             print(f"Docker is not running: {str(e)}")
-            return False
+            return False, e
         except Exception as e:
             print(f"Error pinging Docker daemon: {str(e)}")
-            return False
+            return False, e
 
     def start(self) -> bool:
         """Attempt to start Docker Desktop (or the Docker daemon) automatically."""
