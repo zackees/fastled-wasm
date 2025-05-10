@@ -8,7 +8,6 @@ from fastled.keyz import get_ssl_config
 
 DEFAULT_PORT = 8089  # different than live version.
 PYTHON_EXE = sys.executable
-SSL_CONFIG = get_ssl_config()
 
 
 # print(f"SSL Config: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}")
@@ -21,6 +20,7 @@ def _open_http_server_subprocess(
     print("\n################################################################")
     print(f"# Opening browser to {fastled_js} on port {port}")
     print("################################################################\n")
+    ssl = get_ssl_config()
     try:
         # Fallback to our Python server
         cmd = [
@@ -32,18 +32,8 @@ def _open_http_server_subprocess(
             str(port),
         ]
         # Pass SSL flags if available
-        if SSL_CONFIG and SSL_CONFIG.certfile and SSL_CONFIG.keyfile:
-            cmd.extend(
-                [
-                    "--cert",
-                    str(SSL_CONFIG.certfile),
-                    "--key",
-                    str(SSL_CONFIG.keyfile),
-                ]
-            )
-            print(
-                f"Running server on port {port} with certs: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}"
-            )
+        if ssl:
+            raise NotImplementedError("SSL is not implemented yet")
         print(f"Running server on port {port}.")
         print(f"Command: {subprocess.list2cmdline(cmd)}")
         # Suppress output
