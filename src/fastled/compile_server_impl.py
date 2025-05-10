@@ -13,6 +13,7 @@ from fastled.docker_manager import (
     Container,
     DockerManager,
     RunningContainer,
+    Volume,
 )
 from fastled.interactive_srcs import INTERACTIVE_SOURCES
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
@@ -209,27 +210,32 @@ class CompileServerImpl:
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
         ports = {80: port}
-        volumes = None
+        volumes = []
         if self.fastled_src_dir:
             print(
                 f"Mounting FastLED source directory {self.fastled_src_dir} into container /host/fastled/src"
             )
-            volumes = {
-                str(self.fastled_src_dir): {"bind": "/host/fastled/src", "mode": "ro"}
-            }
+            volumes.append(
+                Volume(
+                    host_path=str(self.fastled_src_dir),
+                    container_path="/host/fastled/src",
+                    mode="ro",
+                )
+            )
         if self.interactive:
             # add the mapped directory to the container
             print(f"Mounting {self.mapped_dir} into container /mapped")
-            # volumes = {str(self.mapped_dir): {"bind": "/mapped", "mode": "rw"}}
-            # add it
             assert self.mapped_dir is not None
             dir_name = self.mapped_dir.name
             if not volumes:
-                volumes = {}
-            volumes[str(self.mapped_dir)] = {
-                "bind": f"/mapped/{dir_name}",
-                "mode": "rw",
-            }
+                volumes = []
+            volumes.append(
+                Volume(
+                    host_path=str(self.mapped_dir),
+                    container_path=f"/mapped/{dir_name}",
+                    mode="rw",
+                )
+            )
             if self.fastled_src_dir is not None:
                 # to allow for interactive compilation
                 interactive_sources = list(INTERACTIVE_SOURCES)
@@ -237,11 +243,13 @@ class CompileServerImpl:
                     src_path = Path(src).absolute()
                     if src_path.exists():
                         print(f"Mounting {src} into container")
-                        src_str = str(src_path)
-                        volumes[src_str] = {
-                            "bind": f"/js/fastled/{src}",
-                            "mode": "rw",
-                        }
+                        volumes.append(
+                            Volume(
+                                host_path=str(src_path),
+                                container_path=f"/js/fastled/{src}",
+                                mode="rw",
+                            )
+                        )
                     else:
                         print(f"Could not find {src}")
 
