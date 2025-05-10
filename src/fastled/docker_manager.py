@@ -139,6 +139,15 @@ class RunningContainer:
         self.detach()
 
 
+def _hack_to_fix_mac(volumes: list[Volume] | None) -> list[Volume] | None:
+    """Fixes the volume mounts on MacOS by removing the mode."""
+    return volumes
+    # if sys.platform == "darwin":
+    #     for v in volumes:
+    #         if v.mode == "rw":
+    #             v.mode = ""
+    # return volumes
+
 
 class DockerManager:
     def __init__(self) -> None:
@@ -495,6 +504,7 @@ class DockerManager:
             ports: Dict mapping host ports to container ports
                     Example: {8080: 80} maps host port 8080 to container port 80
         """
+        volumes = _hack_to_fix_mac(volumes)
         # Convert volumes to the format expected by Docker API
         volumes_dict = None
         if volumes is not None:
@@ -584,6 +594,7 @@ class DockerManager:
         ports: dict[int, int] | None = None,
     ) -> None:
         # Convert volumes to the format expected by Docker API
+        volumes = _hack_to_fix_mac(volumes)
         volumes_dict = None
         if volumes is not None:
             volumes_dict = {}
