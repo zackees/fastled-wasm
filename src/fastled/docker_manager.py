@@ -3,6 +3,7 @@ New abstraction for Docker management with improved Ctrl+C handling.
 """
 
 import _thread
+import json
 import os
 import platform
 import subprocess
@@ -152,7 +153,7 @@ def _hack_to_fix_mac(volumes: list[Volume] | None) -> list[Volume] | None:
     # the host is not mounted correctly. This was actually fixed in recent versions
     # of docker client but there is a large chunk of Docker clients out there with
     # this bug in it.
-    # 
+    #
     # This hack is done by mounting the socket directly to the container.
     # This socket talks to the docker daemon on the host.
     #
@@ -538,8 +539,6 @@ class DockerManager:
 
         # Serialize the volumes to a json string
         if volumes_dict:
-            import json
-
             volumes_str = json.dumps(volumes_dict)
             print(f"Volumes: {volumes_str}")
             print("Done")
