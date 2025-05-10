@@ -232,7 +232,7 @@ class DockerManager:
                     return False
                 subprocess.run(["start", "", docker_path], shell=True)
             elif sys.platform == "darwin":
-                subprocess.run(["open", "/Applications/Docker.app"])
+                subprocess.run(["open", "-a", "Docker"])
             elif sys.platform.startswith("linux"):
                 subprocess.run(["sudo", "systemctl", "start", "docker"])
             else:
