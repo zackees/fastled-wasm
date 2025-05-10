@@ -141,12 +141,36 @@ class RunningContainer:
 
 def _hack_to_fix_mac(volumes: list[Volume] | None) -> list[Volume] | None:
     """Fixes the volume mounts on MacOS by removing the mode."""
+    if volumes is None:
+        return None
+    if sys.platform != "darwin":
+        # Only macos needs hacking.
+        return volumes
+
+    volumes = volumes.copy()
+    # Work around a Docker bug on MacOS where the expected network socket to the
+    # the host is not mounted correctly. This was actually fixed in recent versions
+    # of docker client but there is a large chunk of Docker clients out there with
+    # this bug in it.
+    # 
+    # This hack is done by mounting the socket directly to the container.
+    # This socket talks to the docker daemon on the host.
+    #
+    # Found here.
+    # https://github.com/docker/docker-py/issues/3069#issuecomment-1316778735
+    # if it exists already then return the input
+    for volume in volumes:
+        if volume.host_path == "/var/run/docker.sock":
+            return volumes
+    # ok it doesn't exist, so add it
+    volumes.append(
+        Volume(
+            host_path="/var/run/docker.sock",
+            container_path="/var/run/docker.sock",
+            mode="rw",
+        )
+    )
     return volumes
-    # if sys.platform == "darwin":
-    #     for v in volumes:
-    #         if v.mode == "rw":
-    #             v.mode = ""
-    # return volumes
 
 
 class DockerManager:
