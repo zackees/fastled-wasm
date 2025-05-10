@@ -45,7 +45,6 @@ def run_server(args: Args) -> int:
 def main() -> int:
     from fastled import __version__
 
-    print(f"FastLED version: {__version__}")
     args = parse_args()
     interactive: bool = args.interactive
     has_server = args.server
@@ -54,6 +53,9 @@ def main() -> int:
     just_compile: bool = args.just_compile
     # directory: Path | None = Path(args.directory).absolute() if args.directory else None
     directory: Path | None = Path(args.directory) if args.directory else None
+
+    # now it is safe to print out the version
+    print(f"FastLED version: {__version__}")
 
     if update:
         # Force auto_update to ensure update check happens

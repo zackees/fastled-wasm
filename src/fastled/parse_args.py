@@ -3,7 +3,6 @@ import os
 import sys
 from pathlib import Path
 
-from fastled import __version__
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
 from fastled.settings import DEFAULT_URL, IMAGE_NAME
@@ -27,6 +26,8 @@ def _find_fastled_repo(start: Path) -> Path | None:
 
 def parse_args() -> Args:
     """Parse command-line arguments."""
+    from fastled import __version__
+
     parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
     parser.add_argument("--version", action="version", version=f"{__version__}")
     parser.add_argument(
