@@ -2,17 +2,15 @@ import unittest
 
 from fastled import Api
 
-_DISABLE = False
-
 
 def _enabled() -> bool:
     """Check if this system can run the tests."""
     from fastled import Test
 
-    return Test.can_run_local_docker_tests() and not _DISABLE
+    return Test.can_run_local_docker_tests()
 
 
-class WebCompilerTester(unittest.TestCase):
+class FetchSourceFileTester(unittest.TestCase):
     """Main tester class."""
 
     @unittest.skipUnless(
