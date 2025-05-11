@@ -52,10 +52,7 @@ _FILE_EXTENSIONS = [".ino", ".h", ".hpp", ".cpp"]
 _FASTLED_OUTPUT_DIR_NAME = "fastled_js"
 
 
-@dataclass
-class DateLine:
-    dt: datetime
-    line: str
+# DateLine class removed as it's no longer needed with streaming timestamps
 
 
 class BuildMode(Enum):
@@ -175,19 +172,23 @@ def compile(
         )
         return out
 
-    output_lines = []
     for attempt in range(1, max_attempts + 1):
         try:
             print(f"Attempting compilation (attempt {attempt}/{max_attempts})...")
             process = _open_process()
             assert process.stdout is not None
+
+            # Create a new timestamper for this compilation attempt
+            timestamper = StreamingTimestamper()
+
+            # Process and print each line as it comes in with relative timestamp
             line: str
             for line in process.stdout:
-                timestamped_line = _timestamp_output(line)
-                output_lines.append(timestamped_line)
+                timestamped_line = timestamper.timestamp_line(line)
+                print(timestamped_line)
+
             process.wait()
-            relative_output = _make_timestamps_relative("\n".join(output_lines))
-            _chunked_print(relative_output)
+
             if process.returncode == 0:
                 print(_banner(f"Compilation successful on attempt {attempt}"))
                 return 0
@@ -267,51 +268,25 @@ def process_ino_files(src_dir: Path) -> None:
     print(_banner("Transform to cpp and insert header operations completed."))
 
 
-def _make_timestamps_relative(stdout: str) -> str:
-    def parse(line: str) -> DateLine:
-        parts = line.split(" ")
-        if len(parts) < 2:
-            raise ValueError(f"Invalid line: {line}")
+class StreamingTimestamper:
+    """
+    A class that provides streaming relative timestamps for output lines.
+    Instead of processing all lines at the end, this timestamps each line
+    as it's received with a relative time from when the object was created.
+    """
 
-        date_str, time_str = parts[:2]
-        rest = " ".join(parts[2:])
-        # Parse with microsecond precision
-        dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S.%f")
-        return DateLine(dt, rest)
+    def __init__(self):
+        self.start_time = datetime.now()
 
-    lines = stdout.split("\n")
-    if not lines:
-        return stdout
-    parsed: list[DateLine] = []
-    for line in lines:
-        if not line.strip():  # Skip empty lines
-            continue
-        try:
-            parsed.append(parse(line))
-        except ValueError:
-            print(f"Failed to parse line: {line}")
-            continue
-
-    if not parsed:
-        return stdout
-
-    outlines: list[str] = []
-    start_time = parsed[0].dt
-
-    # Calculate relative times with
-    for p in parsed:
-        delta = p.dt - start_time
+    def timestamp_line(self, line: str) -> str:
+        """
+        Add a relative timestamp to a line of text.
+        The timestamp shows seconds elapsed since the StreamingTimestamper was created.
+        """
+        now = datetime.now()
+        delta = now - self.start_time
         seconds = delta.total_seconds()
-        line_str = f"{seconds:3.2f} {p.line}"
-        outlines.append(line_str)
-
-    return "\n".join(outlines)
-
-
-def _timestamp_output(line: str) -> str:
-    now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d %H:%M:%S.%f")
-    return f"{timestamp} {line.rstrip()}"
+        return f"{seconds:3.2f} {line.rstrip()}"
 
 
 @dataclass
