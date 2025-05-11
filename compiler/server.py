@@ -602,7 +602,32 @@ def project_init_example(
 def static_files(file_path: str) -> Response:
     """Serve static files."""
     print(f"Endpoint accessed: /static/{file_path}")
-    return Response(content="hello world", media_type="text/plain")
+
+    # Check if path matches the pattern js/fastled/src/...
+    if file_path.startswith("js/fastled/src/"):
+        # Extract the path after "js/fastled/src/"
+        relative_path = file_path[len("js/fastled/src/") :]
+        full_path = FASTLED_SRC / relative_path
+
+        if full_path.exists() and full_path.is_file():
+            content = full_path.read_bytes()
+            # Determine media type based on file extension
+            media_type = "text/plain"
+            if full_path.suffix in [".h", ".cpp"]:
+                media_type = "text/plain"
+            elif full_path.suffix == ".html":
+                media_type = "text/html"
+            elif full_path.suffix == ".js":
+                media_type = "application/javascript"
+            elif full_path.suffix == ".css":
+                media_type = "text/css"
+
+            return Response(content=content, media_type=media_type)
+
+    # If file not found or path doesn't match expected format
+    return Response(
+        content=f"File not found: {file_path}", media_type="text/plain", status_code=404
+    )
 
 
 @app.get("/info")
