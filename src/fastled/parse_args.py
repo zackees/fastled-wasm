@@ -188,6 +188,9 @@ def parse_args() -> Args:
             if not args.build:
                 print("Adding --build flag when using --interactive")
                 args.build = True
+        user_wants_update = args.update
+        if user_wants_update is not True:
+            args.no_auto_updates = True
         return Args.from_namespace(args)
 
     if not args.update:
