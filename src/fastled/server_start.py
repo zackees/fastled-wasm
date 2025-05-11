@@ -9,7 +9,11 @@ from fastled.server_flask import run_flask_server_process
 
 
 def run_server_process(
-    port: int, cwd: Path, certfile: Path | None = None, keyfile: Path | None = None
+    port: int,
+    cwd: Path,
+    compile_server_port: int,
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
 ) -> Process:
     """Run the server in a separate process."""
     if True:
@@ -17,6 +21,7 @@ def run_server_process(
         process = run_flask_server_process(
             port=port,
             cwd=cwd,
+            compile_server_port=compile_server_port,
             certfile=certfile,
             keyfile=keyfile,
         )
@@ -45,19 +50,18 @@ def get_asset_path(filename: str) -> Path | None:
 def start_process(
     path: Path,
     port: int,
-    certfile: Path | None = None,
-    keyfile: Path | None = None,
+    compile_server_port: int,
+    certfile: Path | None = None,  # reserved for future use
+    keyfile: Path | None = None,  # reserved for future use
 ) -> Process:
     """Run the server, using package assets if explicit paths are not provided"""
     # Use package resources if no explicit path
-    if certfile is None:
-        certfile = get_asset_path("localhost.pem")
-    if keyfile is None:
-        keyfile = get_asset_path("localhost-key.pem")
 
     # _run_flask_server(path, port, certfile, keyfile)
     # run_fastapi_server_process(port=port, path=path, certfile=certfile, keyfile=keyfile)
-    proc = run_server_process(port=port, cwd=path)
+    proc = run_server_process(
+        port=port, cwd=path, compile_server_port=compile_server_port
+    )
     # try:
     #     proc.join()
     # except KeyboardInterrupt:
@@ -71,6 +75,7 @@ def start_process(
 class Args:
     fastled_js: Path
     port: int
+    compile_server_port: int
     cert: Path | None
     key: Path | None
 
@@ -90,6 +95,12 @@ def parse_args() -> Args:
         help="Port to run the server on (default: 5500)",
     )
     parser.add_argument(
+        "--compile-server-port",
+        type=int,
+        required=True,
+        help="Used to forward requests to the compile server",
+    )
+    parser.add_argument(
         "--cert", type=Path, help="(Optional) Path to SSL certificate (PEM format)"
     )
     parser.add_argument(
@@ -99,6 +110,7 @@ def parse_args() -> Args:
     out: Args = Args(
         fastled_js=args.fastled_js,
         port=args.port,
+        compile_server_port=args.compile_server_port,
         cert=args.cert,
         key=args.key,
     )
@@ -116,6 +128,7 @@ def main() -> None:
     proc = start_process(
         path=fastled_js,
         port=port,
+        compile_server_port=args.compile_server_port,
         certfile=cert,
         keyfile=key,
     )

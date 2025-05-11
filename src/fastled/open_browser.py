@@ -14,8 +14,7 @@ PYTHON_EXE = sys.executable
 
 
 def _open_http_server_subprocess(
-    fastled_js: Path,
-    port: int,
+    fastled_js: Path, port: int, compile_server_port: int
 ) -> None:
     print("\n################################################################")
     print(f"# Opening browser to {fastled_js} on port {port}")
@@ -30,6 +29,8 @@ def _open_http_server_subprocess(
             str(fastled_js),
             "--port",
             str(port),
+            "--compile-server-port",
+            str(compile_server_port),
         ]
         # Pass SSL flags if available
         if ssl:
@@ -89,6 +90,7 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
 
 def open_browser_process(
     fastled_js: Path,
+    compile_server_port: int,
     port: int | None = None,
     open_browser: bool = True,
 ) -> Process:
@@ -100,7 +102,7 @@ def open_browser_process(
 
     proc = Process(
         target=_open_http_server_subprocess,
-        args=(fastled_js, port),
+        args=(fastled_js, port, compile_server_port),
         daemon=True,
     )
     proc.start()

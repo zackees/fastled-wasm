@@ -194,14 +194,19 @@ class Test:
     def spawn_http_server(
         directory: Path | str = Path("."),
         port: int | None = None,
+        compile_server_port: int | None = None,
         open_browser: bool = True,
     ) -> Process:
         from fastled.open_browser import open_browser_process
 
+        compile_server_port = compile_server_port or -1
         if isinstance(directory, str):
             directory = Path(directory)
         proc: Process = open_browser_process(
-            directory, port=port, open_browser=open_browser
+            directory,
+            port=port,
+            compile_server_port=compile_server_port,
+            open_browser=open_browser,
         )
         return proc
 

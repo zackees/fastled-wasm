@@ -8,6 +8,7 @@ from livereload import Server
 def _run_flask_server(
     fastled_js: Path,
     port: int,
+    compile_server_port: int,
     certfile: Path | None = None,
     keyfile: Path | None = None,
 ) -> None:
@@ -26,6 +27,8 @@ def _run_flask_server(
 
         # Must be a full path or flask will fail to find the file.
         fastled_js = fastled_js.resolve()
+
+        print(f"Compile server port is at {compile_server_port}")
 
         @app.route("/")
         def serve_index():
@@ -83,11 +86,15 @@ def _run_flask_server(
 
 
 def run(
-    port: int, cwd: Path, certfile: Path | None = None, keyfile: Path | None = None
+    port: int,
+    cwd: Path,
+    compile_server_port: int,
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
 ) -> None:
     """Run the Flask server."""
     try:
-        _run_flask_server(cwd, port, certfile, keyfile)
+        _run_flask_server(cwd, port, compile_server_port, certfile, keyfile)
         import warnings
 
         warnings.warn("Flask server has stopped")
@@ -128,12 +135,12 @@ def parse_args() -> argparse.Namespace:
 
 def run_flask_server_process(
     port: int,
-    cwd: Path | None = None,
+    cwd: Path,
+    compile_server_port: int,
     certfile: Path | None = None,
     keyfile: Path | None = None,
 ) -> Process:
     """Run the Flask server in a separate process."""
-    cwd = cwd or Path(".")
     process = Process(
         target=run,
         args=(port, cwd, certfile, keyfile),

@@ -188,6 +188,15 @@ def run_client(
         return DEFAULT_URL
 
     url = get_url()
+    # parse out the port from the url
+    # use a standard host address parser to grab it
+    import urllib.parse
+
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.port is not None:
+        port = parsed_url.port
+    else:
+        port = 80
 
     try:
 
@@ -214,7 +223,9 @@ def run_client(
 
         browser_proc: Process | None = None
         if open_web_browser:
-            browser_proc = open_browser_process(directory / "fastled_js")
+            browser_proc = open_browser_process(
+                directory / "fastled_js", compile_server_port=port
+            )
         else:
             print("\nCompilation successful.")
             if compile_server:
