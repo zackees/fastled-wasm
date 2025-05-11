@@ -116,6 +116,23 @@ def _banner(msg: str) -> str:
     return banner
 
 
+def _chunked_print(text: str, lines_per_print: int = 10) -> None:
+    """Prints the text in chunks of the specified size."""
+    lines = text.splitlines()
+    buffer: list[str] = []
+
+    def flush() -> None:
+        if buffer:
+            print("\n".join(buffer))
+            buffer.clear()
+
+    for line in lines:
+        buffer.append(line)
+        if len(buffer) >= lines_per_print:
+            flush()
+    flush()
+
+
 def compile(
     compiler_root: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
 ) -> int:
@@ -140,7 +157,11 @@ def compile(
             cmd_list.append("-v")
 
     def _open_process(cmd_list: list[str] = cmd_list) -> subprocess.Popen:
-        print(_banner("Running command:\n  " + subprocess.list2cmdline(cmd_list)))
+        print(
+            _banner(
+                "Build started with command:\n  " + subprocess.list2cmdline(cmd_list)
+            )
+        )
         out = subprocess.Popen(
             cmd_list,
             cwd=compiler_root,
@@ -164,7 +185,7 @@ def compile(
                 output_lines.append(timestamped_line)
             process.wait()
             relative_output = _make_timestamps_relative("\n".join(output_lines))
-            print(relative_output)
+            _chunked_print(relative_output)
             if process.returncode == 0:
                 print(_banner(f"Compilation successful on attempt {attempt}"))
                 return 0
