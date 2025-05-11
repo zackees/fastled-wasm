@@ -25,6 +25,7 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
 
+from fastled.print_filter import PrintFilter
 from fastled.spinner import Spinner
 
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
@@ -99,25 +100,10 @@ class Volume:
         return volumes
 
 
-class PrintFilter:
-    """Provides filtering for text output so that source files match up with local names."""
-
-    def __init__(self) -> None:
-        pass
-
-    def _remove_ino_cpp(self, text: str) -> str:
-        return text.replace(".ino.cpp", ".ino")
-
-    def _filter_all(self, text: str) -> str:
-        text = self._remove_ino_cpp(text)
-        return text
-
-    def print(self, text: str | bytes) -> None:
-        """Prints the text to the console."""
-        if isinstance(text, bytes):
-            text = text.decode("utf-8")
-        text = self._filter_all(text)
-        print(text, end="")
+# Override the default PrintFilter to use a custom one.
+def make_default_print_filter() -> PrintFilter:
+    """Create a default PrintFilter instance."""
+    return PrintFilter()
 
 
 class RunningContainer:
@@ -127,7 +113,7 @@ class RunningContainer:
         first_run: bool = False,
         filter: PrintFilter | None = None,
     ) -> None:
-        self.filter = filter or PrintFilter()
+        self.filter = filter or make_default_print_filter()
         self.container = container
         self.first_run = first_run
         self.running = True
