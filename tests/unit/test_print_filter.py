@@ -21,5 +21,6 @@ class PrintFitlerTester(unittest.TestCase):
             "examples/XYPath/XYPath.ino", result, "Expected path to be transformed"
         )
 
+
 if __name__ == "__main__":
     unittest.main()
