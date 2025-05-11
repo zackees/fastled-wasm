@@ -194,13 +194,15 @@ def compile(
 
             process.wait()
 
+            print(_banner("Compilation process Finsished."))
+
             if process.returncode == 0:
-                print(_banner(f"Compilation successful on attempt {attempt}"))
+                print("\nCompilation successful.\n")
                 return 0
             else:
                 raise subprocess.CalledProcessError(process.returncode, ["pio", "run"])
         except subprocess.CalledProcessError:
-            print(f"Compilation failed on attempt {attempt}")
+            print(_banner(f"Compilation failed on attempt {attempt}"))
             if attempt == max_attempts:
                 print("Max attempts reached. Compilation failed.")
                 return 1
