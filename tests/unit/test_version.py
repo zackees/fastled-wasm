@@ -18,7 +18,7 @@ class MainTester(unittest.TestCase):
         stdout = subprocess.check_output(COMMAND, shell=True)
         self.assertEqual(
             stdout.decode("utf-8").strip(),
-            "1.2.80",
+            __version__,
             f"Version mismatch: {stdout.decode('utf-8').strip()} != {__version__}",
         )
 
