@@ -71,6 +71,9 @@ class FetchSourceFileTester(unittest.TestCase):
             )
             if resp.status_code != 200:
                 raise Exception(f"Failed to fetch source file: {resp.status_code}")
+            content_length = int(resp.headers["Content-Length"])
+            if content_length == 0:
+                raise Exception("Content-Length is 0")
 
             # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
             url = f"http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
