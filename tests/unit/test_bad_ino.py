@@ -35,12 +35,15 @@ class WebCompileTester(unittest.TestCase):
             print("stdout:")
             print(result.stdout)
             self.fail("Expected error not found in stdout")
-        # self.assertIn("lsfjsdklfjdskfjkasdfjdsfds", result.stdout)
-        if "bad.ino.cpp" in result.stdout:
-            print("Expected error not found in stdout")
+        if "bad/bad.ino:" not in result.stdout:  # No .cpp extension.
+            print(
+                "bad.ino.cpp was not transformed to bad.ino without the cpp extension"
+            )
             print("stdout:")
             print(result.stdout)
-            self.fail("Expected error not found in stdout")
+            self.fail(
+                "bad.ino.cpp was not transformed to bad.ino without the cpp extension"
+            )
 
         print(f"Zip size: {len(result.zip_bytes)} bytes")
 

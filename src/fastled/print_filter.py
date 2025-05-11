@@ -1,4 +1,26 @@
 import re
+from abc import ABC, abstractmethod
+
+
+class PrintFilter(ABC):
+    """Abstract base class for filtering text output."""
+
+    def __init__(self, echo: bool = True) -> None:
+        self.echo = echo
+
+    @abstractmethod
+    def filter(self, text: str) -> str:
+        """Filter the text according to implementation-specific rules."""
+        pass
+
+    def print(self, text: str | bytes) -> str:
+        """Prints the text to the console after filtering."""
+        if isinstance(text, bytes):
+            text = text.decode("utf-8")
+        text = self.filter(text)
+        if self.echo:
+            print(text, end="")
+        return text
 
 
 def _handle_ino_cpp(line: str) -> str:
@@ -17,31 +39,30 @@ def _handle_ino_cpp(line: str) -> str:
     return line
 
 
-class PrintFilter:
-    """Provides filtering for text output so that source files match up with local names."""
+class PrintFilterDefault(PrintFilter):
+    """Provides default filtering for FastLED output."""
+
+    def filter(self, text: str) -> str:
+        return text
+
+
+class PrintFilterFastled(PrintFilter):
+    """Provides filtering for FastLED output so that source files match up with local names."""
 
     def __init__(self, echo: bool = True) -> None:
-        self.echo = echo
+        super().__init__(echo)
         self.build_started = False
-        pass
 
-    def _filter_all(self, text: str) -> str:
+    def filter(self, text: str) -> str:
         lines = text.splitlines()
         out: list[str] = []
         for line in lines:
+            ## DEBUG DO NOT SUBMIT
+            # print(line)
             if "# WASM is building" in line:
                 self.build_started = True
-            if self.build_started:
+            if self.build_started or " error: " in line:
                 line = _handle_ino_cpp(line)
             out.append(line)
         text = "\n".join(out)
-        return text
-
-    def print(self, text: str | bytes) -> str:
-        """Prints the text to the console."""
-        if isinstance(text, bytes):
-            text = text.decode("utf-8")
-        text = self._filter_all(text)
-        if self.echo:
-            print(text, end="")
         return text

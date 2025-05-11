@@ -4,7 +4,7 @@ Unit test file.
 
 import unittest
 
-from fastled.print_filter import PrintFilter
+from fastled.print_filter import PrintFilterFastled
 
 
 class PrintFitlerTester(unittest.TestCase):
@@ -13,7 +13,7 @@ class PrintFitlerTester(unittest.TestCase):
     def test_print_filter(self) -> None:
         """Tests that a project can be filtered"""
         # Test the PrintFilter class
-        pf = PrintFilter(echo=False)
+        pf = PrintFilterFastled(echo=False)
         pf.print("# WASM is building")  # This should trigger the filter.
         result = pf.print(
             "5.36 src/XYPath.ino.cpp:4:1: error: unknown type name 'kdsjfsdkfjsd'"

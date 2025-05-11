@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -154,6 +155,37 @@ def find_good_connection(
     return None
 
 
+def _banner(msg: str) -> str:
+    """
+    Create a banner for the given message.
+    Example:
+    msg = "Hello, World!"
+    print -> "#################"
+             "# Hello, World! #"
+             "#################"
+    """
+    lines = msg.split("\n")
+    # Find the width of the widest line
+    max_width = max(len(line) for line in lines)
+    width = max_width + 4  # Add 4 for "# " and " #"
+
+    # Create the top border
+    banner = "\n" + "#" * width + "\n"
+
+    # Add each line with proper padding
+    for line in lines:
+        padding = max_width - len(line)
+        banner += f"# {line}{' ' * padding} #\n"
+
+    # Add the bottom border
+    banner += "#" * width + "\n"
+    return banner
+
+
+def _print_banner(msg: str) -> None:
+    print(_banner(msg))
+
+
 def web_compile(
     directory: Path | str,
     host: str | None = None,
@@ -161,11 +193,12 @@ def web_compile(
     build_mode: BuildMode | None = None,
     profile: bool = False,
 ) -> CompileResult:
+    start_time = time.time()
     if isinstance(directory, str):
         directory = Path(directory)
     host = _sanitize_host(host or DEFAULT_HOST)
     build_mode = build_mode or BuildMode.QUICK
-    print("Compiling on", host)
+    _print_banner(f"Compiling on {host}")
     auth_token = auth_token or _AUTH_TOKEN
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
@@ -186,7 +219,7 @@ def web_compile(
 
         connection_result = find_good_connection(urls)
         if connection_result is None:
-            print("Connection failed to all endpoints")
+            _print_banner("Connection failed to all endpoints")
             return CompileResult(
                 success=False,
                 stdout="Connection failed",
@@ -270,6 +303,9 @@ def web_compile(
                             relative_path = file_path.relative_to(extract_path)
                             out_zip.write(file_path, relative_path)
 
+                diff_time = time.time() - start_time
+                msg = f"Compilation success, took {diff_time:.2f} seconds"
+                _print_banner(msg)
                 return CompileResult(
                     success=True,
                     stdout=stdout,

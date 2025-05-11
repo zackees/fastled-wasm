@@ -4,6 +4,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from fastled.print_filter import PrintFilterFastled
+
 
 @dataclass
 class Args:
@@ -101,6 +103,11 @@ class CompileResult:
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
+
+    def __post_init__(self):
+        # Filter the stdout.
+        pf = PrintFilterFastled(echo=False)
+        self.stdout = pf.print(self.stdout)
 
 
 class CompileServerError(Exception):
