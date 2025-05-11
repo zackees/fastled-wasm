@@ -381,12 +381,12 @@ def run_client_server(args: Args) -> int:
         url, compile_server = _try_start_server_or_get_url(auto_update, web, localhost)
     except KeyboardInterrupt:
         print("\nExiting from first try...")
-        if compile_server:
+        if compile_server is not None:
             compile_server.stop()
         return 1
     except Exception as e:
         print(f"Error: {e}")
-        if compile_server:
+        if compile_server is not None:
             compile_server.stop()
         return 1
 
