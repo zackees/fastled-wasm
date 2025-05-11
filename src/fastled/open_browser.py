@@ -1,13 +1,11 @@
 import atexit
 import random
-import subprocess
 import sys
 import time
 import weakref
 from multiprocessing import Process
 from pathlib import Path
 
-from fastled.keyz import get_ssl_config
 from fastled.server_flask import run_flask_in_thread
 
 DEFAULT_PORT = 8089  # different than live version.
@@ -33,44 +31,6 @@ def add_cleanup(proc: Process) -> None:
                 pass
 
     atexit.register(cleanup_if_alive)
-
-
-# print(f"SSL Config: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}")
-
-
-def _open_http_server_subprocess(
-    fastled_js: Path, port: int, compile_server_port: int
-) -> None:
-    print("\n################################################################")
-    print(f"# Opening browser to {fastled_js} on port {port}")
-    print("################################################################\n")
-    ssl = get_ssl_config()
-    try:
-        # Fallback to our Python server
-        cmd = [
-            PYTHON_EXE,
-            "-m",
-            "fastled.server_start",
-            str(fastled_js),
-            "--port",
-            str(port),
-            "--compile-server-port",
-            str(compile_server_port),
-        ]
-        # Pass SSL flags if available
-        if ssl:
-            raise NotImplementedError("SSL is not implemented yet")
-        print(f"Running server on port {port}.")
-        print(f"Command: {subprocess.list2cmdline(cmd)}")
-        # Suppress output
-        subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            # stderr=subprocess.DEVNULL,
-        )  # type ignore
-    except KeyboardInterrupt:
-        print("Exiting from server...")
-        sys.exit(0)
 
 
 def is_port_free(port: int) -> bool:
