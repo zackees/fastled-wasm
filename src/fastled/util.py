@@ -17,3 +17,24 @@ def banner_string(msg: str) -> str:
     """
     border = "#" * (len(msg) + 4)
     return f"\n{border}\n# {msg}\n{border}\n"
+
+
+def port_is_free(port: int) -> bool:
+    """Check if a port is free."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            _ = sock.bind(("localhost", port)) and sock.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+
+
+def find_free_port(start_port: int, end_port: int) -> int:
+    """Find a free port on the system."""
+
+    for port in range(start_port, end_port):
+        if port_is_free(port):
+            return port
+    raise RuntimeError(f"No free port found in the range {start_port}-{end_port}")
