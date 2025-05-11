@@ -4,9 +4,17 @@ import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-COMPILER_ROOT = Path("/js")
-COMPILER_DIR = COMPILER_ROOT / "compiler"
-FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
+SRC_MAPPED_HOST_COMPLER_DIR = Path("/host/fastled/src/platforms/wasm/compiler")
+SRC_STANDARD_HOST_COMPILER_DIR = Path(
+    "/js/compiler/fastled/src/platforms/wasm/compiler"
+)
+
+COMPILER_TARGET = Path("/js")
+
+if SRC_MAPPED_HOST_COMPLER_DIR.exists():
+    SRC_COMPILER_DIR = SRC_MAPPED_HOST_COMPLER_DIR
+else:
+    SRC_COMPILER_DIR = SRC_STANDARD_HOST_COMPILER_DIR
 
 HERE = Path(__file__).parent
 
@@ -15,7 +23,7 @@ def copy_task(src: str | Path) -> None:
     src = Path(src)
     if "entrypoint.sh" in str(src):
         return
-    link_dst = COMPILER_ROOT / src.name
+    link_dst = COMPILER_TARGET / src.name
 
     # Handle shell scripts
     if src.suffix == ".sh":
@@ -55,10 +63,7 @@ def make_links() -> None:
     # Get all matching files in compiler directory
     files = []
     for pattern in patterns:
-        files.extend(glob.glob(str(COMPILER_DIR / pattern)))
-
-    for pattern in patterns:
-        files.extend(glob.glob(str(FASTLED_COMPILER_DIR / pattern)))
+        files.extend(glob.glob(str(SRC_COMPILER_DIR / pattern)))
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
