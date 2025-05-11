@@ -431,6 +431,32 @@ def get_settings() -> dict:
     return settings
 
 
+# Return content and media type
+def fetch_file(full_path: Path) -> tuple[bytes, str] | HTTPException:
+    """Fetch the file from the server."""
+    print(f"Fetching file: {full_path}")
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    if not full_path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file.")
+    if not full_path.is_relative_to(FASTLED_SRC):
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+
+    content = full_path.read_bytes()
+    # Determine media type based on file extension
+    media_type = "text/plain"
+    if full_path.suffix in [".h", ".cpp"]:
+        media_type = "text/plain"
+    elif full_path.suffix == ".html":
+        media_type = "text/html"
+    elif full_path.suffix == ".js":
+        media_type = "application/javascript"
+    elif full_path.suffix == ".css":
+        media_type = "text/css"
+
+    return content, media_type
+
+
 def startup() -> None:
     print("Starting FastLED wasm compiler server...")
     try:
@@ -599,37 +625,22 @@ def project_init_example(
 
 
 @app.get("/sourcefiles/{filepath:path}")
-def source_file(filepath: str) -> FileResponse:
+def source_file(filepath: str) -> Response:
     """Get the source file from the server."""
     print(f"Endpoint accessed: /sourcefiles/{filepath}")
     if ".." in filepath:
         raise HTTPException(status_code=400, detail="Invalid file path.")
     full_path = Path(FASTLED_SRC / filepath)
-    if not full_path.exists():
-        raise HTTPException(status_code=404, detail="File not found.")
-    if not full_path.is_file():
-        raise HTTPException(status_code=400, detail="Not a file.")
-    if not full_path.is_relative_to(FASTLED_SRC):
-        raise HTTPException(status_code=400, detail="Invalid file path.")
-
-    suffix = full_path.suffix
-    if suffix in [".h", ".cpp"]:
-        media_type = "text/plain"
-    elif suffix == ".html":
-        media_type = "text/html"
-    elif suffix == ".js":
-        media_type = "application/javascript"
-    elif suffix == ".css":
-        media_type = "text/css"
-    else:
-        media_type = "application/octet-stream"
-
-    fr = FileResponse(
-        path=full_path,
-        media_type=media_type,
-        filename=filepath,
-    )
-    return fr
+    result: tuple[bytes, str] | HTTPException = fetch_file(full_path=full_path)
+    if isinstance(result, HTTPException):
+        assert isinstance(result, HTTPException)
+        return Response(
+            content=result.detail,  # type: ignore
+            media_type="text/plain",
+            status_code=result.status_code,  # type: ignore
+        )
+    content, media_type = result
+    return Response(content=content, media_type=media_type)
 
 
 @app.get("/drawfsource/{file_path:path}")
@@ -642,21 +653,17 @@ async def static_files(file_path: str) -> Response:
         # Extract the path after "js/fastled/src/"
         relative_path = file_path[len("js/fastled/src/") :]
         full_path = FASTLED_SRC / relative_path
+        result: tuple[bytes, str] | HTTPException = fetch_file(full_path=full_path)
 
-        if full_path.exists() and full_path.is_file():
-            content = full_path.read_bytes()
-            # Determine media type based on file extension
-            media_type = "text/plain"
-            if full_path.suffix in [".h", ".cpp"]:
-                media_type = "text/plain"
-            elif full_path.suffix == ".html":
-                media_type = "text/html"
-            elif full_path.suffix == ".js":
-                media_type = "application/javascript"
-            elif full_path.suffix == ".css":
-                media_type = "text/css"
-
-            return Response(content=content, media_type=media_type)
+        # return Response(content=content, media_type=media_type)
+        if isinstance(result, HTTPException):
+            return Response(
+                content=result.detail,  # type: ignore
+                media_type="text/plain",
+                status_code=result.status_code,  # type: ignore
+            )
+        content, media_type = result
+        return Response(content=content, media_type=media_type)
 
     # If file not found or path doesn't match expected format
     return Response(
