@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# if venv doesn't exist, invoke ./install
+if [ ! -d ".venv" ]; then
+    echo "No venv present, so installing..."
+    ./install
+fi
+
 . ./activate
 
 echo Running ruff src compiler

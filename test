@@ -3,6 +3,13 @@
 set -euo pipefail
 # Can't run in parralel because of the shared docker
 # instance.
+
+# if venv doesn't exist, invoke ./install
+if [ ! -d ".venv" ]; then
+    echo "No venv present, so installing..."
+    ./install
+fi
+
 . ./activate
 pytest -x -v -s --durations=0 tests/unit "$@"
 # uv run pytest -n auto tests -v
