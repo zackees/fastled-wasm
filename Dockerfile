@@ -41,8 +41,8 @@
 
 # This will be set to arm64 to support MacOS M1+ devices (and Linux-based arm64 devices)
 ARG PLATFORM_TAG=""
-# ARG EMSDK_VERSION_TAG="4.0.4"
-ARG EMSDK_VERSION_TAG="3.1.70"
+ARG EMSDK_VERSION_TAG="4.0.8"
+# ARG EMSDK_VERSION_TAG="3.1.70"
 
 # Use only Emscripten base image
 FROM emscripten/emsdk:${EMSDK_VERSION_TAG}${PLATFORM_TAG}
