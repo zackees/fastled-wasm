@@ -116,6 +116,11 @@ def _banner(msg: str) -> str:
     return banner
 
 
+def _print_banner(msg: str) -> None:
+    """Prints a banner with the given message."""
+    print(_banner(msg))
+
+
 def _chunked_print(text: str, lines_per_print: int = 10) -> None:
     """Prints the text in chunks of the specified size."""
     lines = text.splitlines()
