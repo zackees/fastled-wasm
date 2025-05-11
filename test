@@ -11,6 +11,10 @@ if [ ! -d ".venv" ]; then
 fi
 
 . ./activate
+
+echo "Rebuilding from local image"
+uv run build_local_docker.py
+
 pytest -x -v -s --durations=0 tests/unit "$@"
 # uv run pytest -n auto tests -v
 
