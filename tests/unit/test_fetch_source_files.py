@@ -67,7 +67,16 @@ class FetchSourceFileTester(unittest.TestCase):
 
             resp = httpx.get(
                 f"http://localhost:{http_port}/sourcefiles/FastLED.h",
-                timeout=10,
+                timeout=100,
+            )
+            if resp.status_code != 200:
+                raise Exception(f"Failed to fetch source file: {resp.status_code}")
+
+            # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
+            url = f"http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
+            resp = httpx.get(
+                url,
+                timeout=100,
             )
             if resp.status_code != 200:
                 raise Exception(f"Failed to fetch source file: {resp.status_code}")

@@ -632,10 +632,10 @@ def source_file(filepath: str) -> FileResponse:
     return fr
 
 
-@app.get("/static/{file_path:path}")
+@app.get("/drawfsource/{file_path:path}")
 async def static_files(file_path: str) -> Response:
     """Serve static files."""
-    print(f"Endpoint accessed: /static/{file_path}")
+    print(f"Endpoint accessed: /drawfsource/{file_path}")
 
     # Check if path matches the pattern js/fastled/src/...
     if file_path.startswith("js/fastled/src/"):

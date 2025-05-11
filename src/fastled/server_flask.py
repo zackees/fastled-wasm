@@ -5,6 +5,8 @@ from pathlib import Path
 import requests
 from livereload import Server
 
+_DRAWF_SOURCE_PREFIX = "drawfsource/js/fastled/src/"
+
 
 def _run_flask_server(
     fastled_js: Path,
@@ -22,7 +24,7 @@ def _run_flask_server(
         keyfile: Path to the SSL key file
     """
     try:
-        from flask import Flask, send_from_directory
+        from flask import Flask, Response, send_from_directory
 
         app = Flask(__name__)
 
@@ -35,36 +37,10 @@ def _run_flask_server(
         def serve_index():
             return send_from_directory(fastled_js, "index.html")
 
-        @app.route("/static/<path:path>")
-        def proxy_static(path):
-            """Proxy requests to /static/* to the compile server"""
-            from flask import Response, request
-
-            # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/static/{path}"
-
-            # Forward the request with the same method, headers, and body
-            resp = requests.request(
-                method=request.method,
-                url=target_url,
-                headers={key: value for key, value in request.headers if key != "Host"},
-                data=request.get_data(),
-                cookies=request.cookies,
-                allow_redirects=True,
-                stream=False,
-            )
-
-            # Create a Flask Response object from the requests response
-            response = Response(
-                resp.raw.read(), status=resp.status_code, headers=dict(resp.headers)
-            )
-
-            return response
-
         @app.route("/sourcefiles/<path:path>")
         def serve_source_files(path):
             """Proxy requests to /sourcefiles/* to the compile server"""
-            from flask import Response, request
+            from flask import request
 
             # Forward the request to the compile server
             target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
@@ -87,8 +63,77 @@ def _run_flask_server(
 
             return response
 
-        @app.route("/<path:path>")
-        def serve_files(path):
+        def handle_dwarfsource(path: str) -> Response:
+            """Handle requests to /drawfsource/js/fastled/src/"""
+            from flask import request
+
+            print("\n##################################")
+            print(f"# Serving source file /drawfsource/ {path}")
+            print("##################################\n")
+
+            if not path.startswith(_DRAWF_SOURCE_PREFIX):
+                # unexpected
+                print(f"Unexpected path: {path}")
+                return Response("Malformed path", status=400)
+
+            path = path.replace("drawfsource/js/fastled/src/", "")
+
+            # Forward the request to the compile server
+            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
+
+            # Forward the request with the same method, headers, and body
+            resp = requests.request(
+                method=request.method,
+                url=target_url,
+                headers={key: value for key, value in request.headers if key != "Host"},
+                data=request.get_data(),
+                cookies=request.cookies,
+                allow_redirects=True,
+                stream=False,
+            )
+
+            # Create a Flask Response object from the requests response
+            response = Response(
+                resp.raw.read(), status=resp.status_code, headers=dict(resp.headers)
+            )
+
+            return response
+
+        def handle_sourcefile(path: str) -> Response:
+            """Handle requests to /sourcefiles/*"""
+            from flask import Response, request
+
+            print("\n##################################")
+            print(f"# Serving source file /sourcefiles/ {path}")
+            print("##################################\n")
+
+            # Forward the request to the compile server
+            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
+
+            # Forward the request with the same method, headers, and body
+            resp = requests.request(
+                method=request.method,
+                url=target_url,
+                headers={key: value for key, value in request.headers if key != "Host"},
+                data=request.get_data(),
+                cookies=request.cookies,
+                allow_redirects=True,
+                stream=False,
+            )
+
+            # Create a Flask Response object from the requests response
+            response = Response(
+                resp.raw.read(), status=resp.status_code, headers=dict(resp.headers)
+            )
+
+            return response
+
+        def handle_local_file_fetch(path: str) -> Response:
+
+            print("\n##################################")
+            print(f"# Servering generic file {path}")
+            print("##################################\n")
+
             response = send_from_directory(fastled_js, path)
             # Some servers don't set the Content-Type header for a bunch of files.
             if path.endswith(".js"):
@@ -119,6 +164,16 @@ def _run_flask_server(
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
             return response
+
+        @app.route("/<path:path>")
+        def serve_files(path: str):
+
+            if path.startswith("drawfsource/"):
+                return handle_dwarfsource(path)
+            elif path.startswith("sourcefiles/"):
+                return handle_sourcefile(path)
+            else:
+                return handle_local_file_fetch(path)
 
         server = Server(app.wsgi_app)
         # Watch index.html for changes
