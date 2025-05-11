@@ -598,6 +598,13 @@ def project_init_example(
     )
 
 
+@app.get("/static/{file_path:path}")
+def static_files(file_path: str) -> Response:
+    """Serve static files."""
+    print(f"Endpoint accessed: /static/{file_path}")
+    return Response(content="hello world", media_type="text/plain")
+
+
 @app.get("/info")
 def info_examples() -> dict:
     """Get a list of examples."""
