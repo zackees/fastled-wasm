@@ -24,9 +24,36 @@ def _find_fastled_repo(start: Path) -> Path | None:
     return None
 
 
+_DEFAULT_HELP_TEXT = """
+FastLED WASM Compiler - Useful options:
+  <directory>           Directory containing the FastLED sketch to compile
+  --init [example]      Initialize one of the top tier WASM examples
+  --web [url]           Use web compiler
+  --server              Run the compiler server
+  --debug               Build with debug symbols for dev-tools debugging
+  --quick               Build in quick mode (default)
+  --release             Build in optimized release mode
+  --profile             Enable profiling the C++ build system
+  --update              Update the docker image for the wasm compiler
+  --purge               Remove all FastLED containers and images
+  --version             Show version information
+  --help                Show detailed help
+Examples:
+  fastled (will auto detect the sketch directory and prompt you)
+  fastled my_sketch
+  fastled my_sketch --web (compiles using the web compiler only)
+  fastled --init Blink (initializes a new sketch directory with the Blink example)
+  fastled --server (runs the compiler server in the current directory)
+"""
+
+
 def parse_args() -> Args:
     """Parse command-line arguments."""
     from fastled import __version__
+
+    # Check if no arguments were provided
+    if len(sys.argv) == 1:
+        print(_DEFAULT_HELP_TEXT)
 
     parser = argparse.ArgumentParser(description=f"FastLED WASM Compiler {__version__}")
     parser.add_argument("--version", action="version", version=f"{__version__}")
