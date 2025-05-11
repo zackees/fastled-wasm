@@ -35,6 +35,36 @@ def symlink_task(src: str | Path, dst: Path) -> None:
         print(f"Target {dst} already exists")
 
 
+def _collect_docker_compile_files(globs: list[str]) -> list[tuple[Path, Path]]:
+    """
+    Collects files matching the given glob patterns from the Docker compile directory.
+    """
+    files = []
+    for pattern in globs:
+        for file_path in glob.glob(str(COMPILER_DIR / pattern)):
+            src = Path(file_path)
+            if "entrypoint.sh" in str(src):
+                continue
+            dst = COMPILER_ROOT / src.name
+            files.append((src, dst))
+    return files
+
+
+def _collect_fastled_compile_files(globs: list[str]) -> list[tuple[Path, Path]]:
+    """
+    Collects files matching the given glob patterns from the FastLED compile directory.
+    """
+    files = []
+    for pattern in globs:
+        for file_path in glob.glob(str(FASTLED_COMPILER_DIR / pattern)):
+            src = Path(file_path)
+            if "entrypoint.sh" in str(src):
+                continue
+            dst = COMPILER_ROOT / src.name
+            files.append((src, dst))
+    return files
+
+
 def make_links() -> None:
     # Define file patterns to include
     patterns = [
@@ -49,14 +79,8 @@ def make_links() -> None:
     ]
 
     # Get all matching files in compiler directory
-    tasks = []
-    for pattern in patterns:
-        for file_path in glob.glob(str(COMPILER_DIR / pattern)):
-            src = Path(file_path)
-            if "entrypoint.sh" in str(src):
-                continue
-            dst = COMPILER_ROOT / src.name
-            tasks.append((src, dst))
+    tasks = _collect_docker_compile_files(globs=patterns)
+    tasks += _collect_fastled_compile_files(globs=patterns)
 
     for pattern in patterns:
         for file_path in glob.glob(str(FASTLED_COMPILER_DIR / pattern)):
@@ -68,6 +92,7 @@ def make_links() -> None:
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
+
         def functor(args):
             src, dst = args
             symlink_task(src, dst)
