@@ -121,7 +121,12 @@ class PrintFilter:
 
 
 class RunningContainer:
-    def __init__(self, container, first_run=False, filter: PrintFilter | None = None) -> None:
+    def __init__(
+        self,
+        container: Container,
+        first_run: bool = False,
+        filter: PrintFilter | None = None,
+    ) -> None:
         self.filter = filter or PrintFilter()
         self.container = container
         self.first_run = first_run
