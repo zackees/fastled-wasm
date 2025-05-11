@@ -23,7 +23,8 @@ else:
     logger = logging.getLogger("flask_server")
     logger.disabled = True
 
-_DRAWF_SOURCE_PREFIX = "drawfsource/js/fastled/src/"
+_DRAWF_SOURCE_FASTLED = "drawfsource/js/fastled/src/"
+_DRAWF_SOURCE_EMSDK = "drawfsource/js/drawfsource/emsdk/"
 
 
 def _run_flask_server(
@@ -126,24 +127,33 @@ def _run_flask_server(
                 return Response(f"Error: {str(e)}", status=500)
 
         def handle_dwarfsource(path: str) -> Response:
-            """Handle requests to /drawfsource/js/fastled/src/"""
+            """Handle requests to /drawfsource/js/fastled/src/
+            or /drawfsource/js/drawfsource/emsdk/*"""
             from flask import request
 
             start_time = time.time()
             logger.info(f"Processing request: {request.method} {request.url}")
 
-            if not path.startswith(_DRAWF_SOURCE_PREFIX):
+            if "../" in path:
+                # Prevent directory traversal attacks
+                error_msg = "Directory traversal attack detected"
+                logger.error(error_msg)
+                return Response(error_msg, status=400)
+
+            if not path.startswith(_DRAWF_SOURCE_FASTLED) and not path.startswith(_DRAWF_SOURCE_EMSDK):
                 # unexpected
                 error_msg = f"Unexpected path: {path}"
                 logger.error(error_msg)
                 # Logging disabled
                 return Response("Malformed path", status=400)
-
-            path = path.replace("drawfsource/js/fastled/src/", "")
-            logger.info(f"Transformed path: {path}")
+            
+            # Weird magic being played with these paths, it's beyond me.
+            if path.startswith(_DRAWF_SOURCE_FASTLED):
+                path = path[len("/drawfsource") :]
+            
 
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
+            target_url = f"http://localhost:{compile_server_port}/drawfsource/{path}"
             logger.info(f"Requesting: {target_url}")
             logger.info(f"Processing dwarfsource request for {path}")
 

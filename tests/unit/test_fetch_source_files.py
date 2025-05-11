@@ -53,7 +53,7 @@ class FetchSourceFileTester(unittest.TestCase):
         "Skipping test because either this is on non-Linux system on github or embedded data is disabled",
     )
     def test_http_server_for_fetch_redirect(self) -> None:
-        """Tests that embedded data is round tripped correctly."""
+        """Tests that we can convert the file paths from emscripten debugging (dwarf) to the actual file paths."""
         http_port = 8932
         client: LiveClient = Api.live_client(
             sketch_directory=TEST_INO_WASM,
@@ -77,6 +77,14 @@ class FetchSourceFileTester(unittest.TestCase):
 
             # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
             url = f"http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
+            resp = httpx.get(
+                url,
+                timeout=100,
+            )
+            if resp.status_code != 200:
+                raise Exception(f"Failed to fetch source file: {resp.status_code}")
+            # error drawfsource/js/drawfsour
+            url = f"http://localhost:{http_port}/drawfsource/js/drawfsource/emsdk/upstream/emscripten/cache/sysroot/include/ctype.h"
             resp = httpx.get(
                 url,
                 timeout=100,
