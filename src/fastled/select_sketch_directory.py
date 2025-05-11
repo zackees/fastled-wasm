@@ -20,7 +20,9 @@ def select_sketch_directory(
         print("\nMultiple Directories found, choose one:")
         for i, sketch_dir in enumerate(sketch_directories):
             print(f"  [{i+1}]: {sketch_dir}")
-        which = input("\nPlease specify a sketch directory: ").strip()
+        which = input(
+            "\nPlease specify a sketch directory\nYou can enter a number or type a fuzzy search: "
+        ).strip()
         try:
             index = int(which) - 1
             return str(sketch_directories[index])
