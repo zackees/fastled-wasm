@@ -86,7 +86,7 @@ def copy_files(src_dir: Path, js_src: Path) -> None:
             print(f"Copying file: {item}")
             shutil.copy2(item, js_src / item.name)
     else:
-        warnings.warn("No files found in the mapped directory.")
+        warnings.warn(f"No files found in the mapped directory: {src_dir.absolute()}")
 
 
 def _banner(msg: str) -> str:

@@ -2,7 +2,7 @@ import unittest
 
 from fastled import Api
 
-_DISABLE = True
+_DISABLE = False
 
 
 def _enabled() -> bool:

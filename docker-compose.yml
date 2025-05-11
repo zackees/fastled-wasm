@@ -4,6 +4,7 @@ services:
     build:
       context: .
     ports:
-      - "80:80"
+      - "8234:80"
     environment:
       - ENVIRONMENT=dev
+    image: niteris/fastled-wasm:latest
