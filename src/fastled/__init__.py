@@ -9,7 +9,7 @@ from .compile_server import CompileServer
 from .live_client import LiveClient
 from .settings import DOCKER_FILE, IMAGE_NAME
 from .site.build import build
-from .types import BuildMode, CompileResult, CompileServerError
+from .types import BuildMode, CompileResult, CompileServerError, FileResponse
 
 # IMPORTANT! There's a bug in github which will REJECT any version update
 # that has any other change in the repo. Please bump the version as the
@@ -218,5 +218,6 @@ __all__ = [
     "CompileResult",
     "CompileServerError",
     "BuildMode",
+    "FileResponse",
     "DOCKER_FILE",
 ]

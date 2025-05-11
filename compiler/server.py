@@ -598,6 +598,40 @@ def project_init_example(
     )
 
 
+@app.get("/sourcefiles/{filepath:path}")
+def source_file(filepath: str) -> FileResponse:
+    """Get the source file from the server."""
+    print(f"Endpoint accessed: /sourcefiles/{filepath}")
+    if ".." in filepath:
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+    full_path = Path(FASTLED_SRC / filepath)
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    if not full_path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file.")
+    if not full_path.is_relative_to(FASTLED_SRC):
+        raise HTTPException(status_code=400, detail="Invalid file path.")
+
+    suffix = full_path.suffix
+    if suffix in [".h", ".cpp"]:
+        media_type = "text/plain"
+    elif suffix == ".html":
+        media_type = "text/html"
+    elif suffix == ".js":
+        media_type = "application/javascript"
+    elif suffix == ".css":
+        media_type = "text/css"
+    else:
+        media_type = "application/octet-stream"
+
+    fr = FileResponse(
+        path=full_path,
+        media_type=media_type,
+        filename=filepath,
+    )
+    return fr
+
+
 @app.get("/static/{file_path:path}")
 async def static_files(file_path: str) -> Response:
     """Serve static files."""

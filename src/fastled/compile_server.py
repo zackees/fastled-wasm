@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastled.types import BuildMode, CompileResult, Platform
+from fastled.types import BuildMode, CompileResult, FileResponse, Platform
 
 
 class CompileServer:
@@ -52,6 +52,10 @@ class CompileServer:
         from fastled.project_init import project_init  # avoid circular import
 
         project_init(example=example, outputdir=outputdir)
+
+    def fetch_source_file(self, filepath: str) -> FileResponse | Exception:
+        """Get the source file from the server."""
+        return self.impl.fetch_source_file(filepath)
 
     @property
     def name(self) -> str:

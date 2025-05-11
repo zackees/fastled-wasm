@@ -151,3 +151,12 @@ class Platform(Enum):
             raise ValueError(
                 f"Platform must be one of {valid_modes}, got {platform_str}"
             )
+
+
+@dataclass
+class FileResponse:
+    """File response from the server."""
+
+    filename: str
+    content: str
+    mimetype: str
