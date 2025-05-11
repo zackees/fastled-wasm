@@ -2,6 +2,7 @@ import argparse
 from multiprocessing import Process
 from pathlib import Path
 
+import requests
 from livereload import Server
 
 
@@ -33,6 +34,32 @@ def _run_flask_server(
         @app.route("/")
         def serve_index():
             return send_from_directory(fastled_js, "index.html")
+
+        @app.route("/static/<path:path>")
+        def proxy_static(path):
+            """Proxy requests to /static/* to the compile server"""
+            from flask import Response, request
+
+            # Forward the request to the compile server
+            target_url = f"http://localhost:{compile_server_port}/static/{path}"
+
+            # Forward the request with the same method, headers, and body
+            resp = requests.request(
+                method=request.method,
+                url=target_url,
+                headers={key: value for key, value in request.headers if key != "Host"},
+                data=request.get_data(),
+                cookies=request.cookies,
+                allow_redirects=True,
+                stream=False,
+            )
+
+            # Create a Flask Response object from the requests response
+            response = Response(
+                resp.raw.read(), status=resp.status_code, headers=dict(resp.headers)
+            )
+
+            return response
 
         @app.route("/<path:path>")
         def serve_files(path):
@@ -143,7 +170,7 @@ def run_flask_server_process(
     """Run the Flask server in a separate process."""
     process = Process(
         target=run,
-        args=(port, cwd, certfile, keyfile),
+        args=(port, cwd, compile_server_port, certfile, keyfile),
     )
     process.start()
     return process
