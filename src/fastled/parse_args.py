@@ -66,7 +66,7 @@ def parse_args() -> Args:
     parser.add_argument(
         "--profile",
         action="store_true",
-        help="Enable profiling for web compilation",
+        help="Enable profiling of the C++ build system used for wasm compilation.",
     )
     parser.add_argument(
         "--force-compile",
@@ -79,6 +79,7 @@ def parse_args() -> Args:
         help="Disable automatic updates of the wasm compiler image when using docker.",
     )
     parser.add_argument(
+        "-u",
         "--update",
         "--upgrade",
         action="store_true",
@@ -89,7 +90,7 @@ def parse_args() -> Args:
         "--local",
         "-l",
         action="store_true",
-        help="Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
+        help="(Default): Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
     )
     parser.add_argument(
         "--build",
