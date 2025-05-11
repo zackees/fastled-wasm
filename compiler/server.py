@@ -439,7 +439,7 @@ def fetch_file(full_path: Path) -> tuple[bytes, str] | HTTPException:
         raise HTTPException(status_code=404, detail="File not found.")
     if not full_path.is_file():
         raise HTTPException(status_code=400, detail="Not a file.")
-    if not full_path.is_relative_to(FASTLED_SRC):
+    if not full_path.is_relative_to(FASTLED_SRC) and not full_path.is_relative_to("/emsdk"):
         raise HTTPException(status_code=400, detail="Invalid file path.")
 
     content = full_path.read_bytes()
@@ -656,6 +656,18 @@ async def static_files(file_path: str) -> Response:
         result: tuple[bytes, str] | HTTPException = fetch_file(full_path=full_path)
 
         # return Response(content=content, media_type=media_type)
+        if isinstance(result, HTTPException):
+            return Response(
+                content=result.detail,  # type: ignore
+                media_type="text/plain",
+                status_code=result.status_code,  # type: ignore
+            )
+        content, media_type = result
+        return Response(content=content, media_type=media_type)
+    elif file_path.startswith("js/drawfsource/emsdk/"):
+        relative_path = file_path[len("js/drawfsource/emsdk/") :]
+        full_path = Path("/") / "emsdk" / relative_path
+        result: tuple[bytes, str] | HTTPException = fetch_file(full_path=full_path)
         if isinstance(result, HTTPException):
             return Response(
                 content=result.detail,  # type: ignore
