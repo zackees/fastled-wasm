@@ -99,14 +99,30 @@ class Volume:
         return volumes
 
 
-# class TextFilter:
-#     """Provides filtering for text output so that source files match up with local names."""
+class PrintFilter:
+    """Provides filtering for text output so that source files match up with local names."""
 
-#     def
+    def __init__(self) -> None:
+        pass
+
+    def _remove_ino_cpp(self, text: str) -> str:
+        return text.replace(".ino.cpp", ".ino")
+
+    def _filter_all(self, text: str) -> str:
+        text = self._remove_ino_cpp(text)
+        return text
+
+    def print(self, text: str | bytes) -> None:
+        """Prints the text to the console."""
+        if isinstance(text, bytes):
+            text = text.decode("utf-8")
+        text = self._filter_all(text)
+        print(text, end="")
 
 
 class RunningContainer:
-    def __init__(self, container, first_run=False):
+    def __init__(self, container, first_run=False, filter: PrintFilter | None = None) -> None:
+        self.filter = filter or PrintFilter()
         self.container = container
         self.first_run = first_run
         self.running = True
@@ -123,7 +139,8 @@ class RunningContainer:
                 for log in self.container.logs(
                     follow=False, since=from_date, until=to_date, stream=True
                 ):
-                    print(log.decode("utf-8"), end="")
+                    # print(log.decode("utf-8"), end="")
+                    self.filter.print(log)
                 time.sleep(0.1)
                 from_date = to_date
                 to_date = _utc_now_no_tz()
