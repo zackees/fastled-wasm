@@ -68,19 +68,37 @@ def main() -> int:
         print("Building is disabled")
         build = False
 
-    if build:
-        raise NotImplementedError("Building is not yet supported.")
+    if interactive:
+        # raise NotImplementedError("Building is not yet supported.")
         file_watcher_set(False)
-        project_root = Path(".").absolute()
-        print(f"Building Docker image at {project_root}")
-        from fastled import Api, Docker
+        # project_root = Path(".").absolute()
+        # print(f"Building Docker image at {project_root}")
+        from fastled import Api
 
-        server = Docker.spawn_server_from_fastled_repo(
-            project_root=project_root,
+        # server = Docker.spawn_server_from_fastled_repo(
+        #     project_root=project_root,
+        #     interactive=interactive,
+        #     sketch_folder=directory,
+        # )
+        # assert isinstance(server, CompileServer)
+        server: CompileServer = CompileServer(
             interactive=interactive,
-            sketch_folder=directory,
+            auto_updates=False,
+            mapped_dir=directory,
+            auto_start=False,
+            remove_previous=False,
         )
-        assert isinstance(server, CompileServer)
+
+        server.start(wait_for_startup=False)
+
+        try:
+            while server.process_running():
+                # wait for ctrl-c
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nExiting from server...")
+            server.stop()
+            return 0
 
         try:
             if interactive:

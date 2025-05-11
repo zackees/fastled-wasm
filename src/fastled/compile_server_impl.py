@@ -37,6 +37,32 @@ def _try_get_fastled_src(path: Path) -> Path | None:
     return None
 
 
+def _port_is_free(port: int) -> bool:
+    """Check if a port is free."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind(("localhost", port)) and sock.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+
+
+def _find_free_port() -> int:
+    """Find a free port on the system."""
+
+    start_port = 49152
+    tries = 10
+
+    for port in range(start_port, start_port + tries):
+        if _port_is_free(port):
+            return port
+    raise RuntimeError(
+        f"No free port found in the range {start_port}-{start_port + tries - 1}"
+    )
+
+
 class CompileServerImpl:
     def __init__(
         self,
@@ -202,6 +228,7 @@ class CompileServerImpl:
             image_name=IMAGE_NAME, tag="latest", upgrade=upgrade
         )
         DISK_CACHE.put("last-update", now_str)
+        CLIENT_PORT = 80  # TODO: Don't use port 80.
 
         print("Docker image now validated")
         port = SERVER_PORT
@@ -209,7 +236,7 @@ class CompileServerImpl:
             server_command = ["/bin/bash"]
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
-        ports = {80: port}
+        ports = {CLIENT_PORT: port}
         volumes = []
         if self.fastled_src_dir:
             print(
@@ -269,6 +296,13 @@ class CompileServerImpl:
             print("Compile server starting")
             return port
         else:
+            client_port_mapped = CLIENT_PORT in ports
+            port_is_free = _port_is_free(CLIENT_PORT)
+            if client_port_mapped and port_is_free:
+                warnings.warn(
+                    f"Can't expose port {CLIENT_PORT}, disabling port forwarding in interactive mode"
+                )
+                ports = {}
             self.docker.run_container_interactive(
                 image_name=IMAGE_NAME,
                 tag="latest",
