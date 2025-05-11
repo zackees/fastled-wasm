@@ -36,6 +36,11 @@ class WebCompileTester(unittest.TestCase):
             print(result.stdout)
             self.fail("Expected error not found in stdout")
         # self.assertIn("lsfjsdklfjdskfjkasdfjdsfds", result.stdout)
+        if "bad.ino.cpp" in result.stdout:
+            print("Expected error not found in stdout")
+            print("stdout:")
+            print(result.stdout)
+            self.fail("Expected error not found in stdout")
 
         print(f"Zip size: {len(result.zip_bytes)} bytes")
 
