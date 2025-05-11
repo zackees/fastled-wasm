@@ -65,6 +65,9 @@ class Api:
         keep_running=True,
         build_mode=BuildMode.QUICK,
         profile=False,
+        http_port: (
+            int | None
+        ) = None,  # None means auto select a free port. -1 means no server.
     ) -> LiveClient:
         return LiveClient(
             sketch_directory=sketch_directory,
@@ -75,6 +78,7 @@ class Api:
             keep_running=keep_running,
             build_mode=build_mode,
             profile=profile,
+            http_port=http_port,
         )
 
     @staticmethod
@@ -197,12 +201,12 @@ class Test:
         compile_server_port: int | None = None,
         open_browser: bool = True,
     ) -> Process:
-        from fastled.open_browser import open_browser_process
+        from fastled.open_browser import spawn_http_server
 
         compile_server_port = compile_server_port or -1
         if isinstance(directory, str):
             directory = Path(directory)
-        proc: Process = open_browser_process(
+        proc: Process = spawn_http_server(
             directory,
             port=port,
             compile_server_port=compile_server_port,

@@ -16,6 +16,9 @@ class LiveClient:
         auto_start: bool = True,
         auto_updates: bool = True,
         open_web_browser: bool = True,
+        http_port: (
+            int | None
+        ) = None,  # None means auto select a free port. -1 means no server.
         keep_running: bool = True,
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
@@ -23,6 +26,7 @@ class LiveClient:
         self.sketch_directory = sketch_directory
         self.host = host
         self.open_web_browser = open_web_browser
+        self.http_port = http_port
         self.keep_running = keep_running
         self.build_mode = build_mode
         self.profile = profile
@@ -47,6 +51,7 @@ class LiveClient:
             build_mode=self.build_mode,
             profile=self.profile,
             shutdown=self.shutdown,
+            http_port=self.http_port,
         )
         return rtn
 

@@ -31,10 +31,15 @@ def port_is_free(port: int) -> bool:
             return False
 
 
-def find_free_port(start_port: int, end_port: int) -> int:
+def find_free_port(start_port: int, end_port: int) -> int | None:
     """Find a free port on the system."""
 
     for port in range(start_port, end_port):
         if port_is_free(port):
             return port
-    raise RuntimeError(f"No free port found in the range {start_port}-{end_port}")
+    import warnings
+
+    warnings.warn(
+        f"No free port found in the range {start_port}-{end_port}. Using {start_port}."
+    )
+    return None

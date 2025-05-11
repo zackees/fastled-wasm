@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import threading
 import time
+import warnings
 from multiprocessing import Process
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
-from fastled.open_browser import open_browser_process
+from fastled.open_browser import spawn_http_server
 from fastled.parse_args import Args
 from fastled.settings import DEFAULT_URL
 from fastled.sketch import looks_like_sketch_directory
@@ -165,6 +166,45 @@ def _try_start_server_or_get_url(
             return (DEFAULT_URL, None)
 
 
+def _try_make_compile_server() -> CompileServer | None:
+    if not DockerManager.is_docker_installed():
+        return None
+    try:
+        print(
+            "\nNo host specified, but Docker is installed, attempting to start a compile server using Docker."
+        )
+        from fastled.util import find_free_port
+
+        free_port = find_free_port(start_port=9723, end_port=9743)
+        if free_port is None:
+            return None
+        compile_server = CompileServer(auto_updates=False)
+        print("Waiting for the local compiler to start...")
+        if not compile_server.ping():
+            print("Failed to start local compiler.")
+            raise CompileServerError("Failed to start local compiler.")
+        return compile_server
+    except KeyboardInterrupt:
+        import _thread
+
+        _thread.interrupt_main()
+        raise
+    except Exception as e:
+        warnings.warn(f"Error starting local compile server: {e}")
+        return None
+
+
+def _is_local_host(host: str) -> bool:
+    return (
+        host.startswith("http://localhost")
+        or host.startswith("http://127.0.0.1")
+        or host.startswith("http://0.0.0.0")
+        or host.startswith("http://[::]")
+        or host.startswith("http://[::1]")
+        or host.startswith("http://[::ffff:127.0.0.1]")
+    )
+
+
 def run_client(
     directory: Path,
     host: str | CompileServer | None,
@@ -173,14 +213,24 @@ def run_client(
     build_mode: BuildMode = BuildMode.QUICK,
     profile: bool = False,
     shutdown: threading.Event | None = None,
+    http_port: (
+        int | None
+    ) = None,  # None means auto select a free port, http_port < 0 means no server.
 ) -> int:
+    compile_server: CompileServer | None = None
 
-    compile_server: CompileServer | None = (
-        host if isinstance(host, CompileServer) else None
-    )
+    if host is None:
+        # attempt to start a compile server if docker is installed.
+        compile_server = _try_make_compile_server()
+        if compile_server is None:
+            host = DEFAULT_URL
+    elif isinstance(host, CompileServer):
+        # if the host is a compile server, use that
+        compile_server = host
+
     shutdown = shutdown or threading.Event()
 
-    def get_url() -> str:
+    def get_url(host=host, compile_server=compile_server) -> str:
         if compile_server is not None:
             return compile_server.url()
         if isinstance(host, str):
@@ -196,6 +246,11 @@ def run_client(
     if parsed_url.port is not None:
         port = parsed_url.port
     else:
+        if _is_local_host(url):
+            raise ValueError(
+                "Cannot use local host without a port. Please specify a port."
+            )
+        # Assume default port for www
         port = 80
 
     try:
@@ -221,10 +276,20 @@ def run_client(
         if not result.success:
             print("\nCompilation failed.")
 
-        browser_proc: Process | None = None
-        if open_web_browser:
-            browser_proc = open_browser_process(
-                directory / "fastled_js", compile_server_port=port
+        use_http_server = http_port is None or http_port >= 0
+        if not use_http_server and open_web_browser:
+            warnings.warn(
+                f"Warning: --http-port={http_port} specified but open_web_browser is False, ignoring --http-port."
+            )
+            use_http_server = False
+
+        http_proc: Process | None = None
+        if use_http_server:
+            http_proc = spawn_http_server(
+                directory / "fastled_js",
+                port=http_port,
+                compile_server_port=port,
+                open_browser=open_web_browser,
             )
         else:
             print("\nCompilation successful.")
@@ -234,8 +299,8 @@ def run_client(
             return 0
 
         if not keep_running or shutdown.is_set():
-            if browser_proc:
-                browser_proc.kill()
+            if http_proc:
+                http_proc.kill()
             return 0 if result.success else 1
     except KeyboardInterrupt:
         print("\nExiting from main")
@@ -346,8 +411,8 @@ def run_client(
         debounced_sketch_watcher.stop()
         if compile_server:
             compile_server.stop()
-        if browser_proc:
-            browser_proc.kill()
+        if http_proc:
+            http_proc.kill()
 
 
 def run_client_server(args: Args) -> int:

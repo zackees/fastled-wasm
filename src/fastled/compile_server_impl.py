@@ -18,6 +18,7 @@ from fastled.docker_manager import (
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError, FileResponse
+from fastled.util import port_is_free
 
 SERVER_OPTIONS = [
     "--allow-shutdown",  # Allow the server to be shut down without a force kill.
@@ -34,32 +35,6 @@ def _try_get_fastled_src(path: Path) -> Path | None:
         fastled_src_dir = path / "src"
         return fastled_src_dir
     return None
-
-
-def _port_is_free(port: int) -> bool:
-    """Check if a port is free."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        try:
-            _ = sock.bind(("localhost", port)) and sock.bind(("0.0.0.0", port))
-            return True
-        except OSError:
-            return False
-
-
-def _find_free_port() -> int:
-    """Find a free port on the system."""
-
-    start_port = 49152
-    tries = 10
-
-    for port in range(start_port, start_port + tries):
-        if _port_is_free(port):
-            return port
-    raise RuntimeError(
-        f"No free port found in the range {start_port}-{start_port + tries - 1}"
-    )
 
 
 class CompileServerImpl:
@@ -250,7 +225,7 @@ class CompileServerImpl:
             image_name=IMAGE_NAME, tag="latest", upgrade=upgrade
         )
         DISK_CACHE.put("last-update", now_str)
-        CLIENT_PORT = 80  # TODO: Don't use port 80.
+        INTERNAL_DOCKER_PORT = 80
 
         print("Docker image now validated")
         port = SERVER_PORT
@@ -262,7 +237,7 @@ class CompileServerImpl:
             print("Disabling port forwarding in interactive mode")
             ports = {}
         else:
-            ports = {CLIENT_PORT: port}
+            ports = {INTERNAL_DOCKER_PORT: port}
         volumes = []
         if self.fastled_src_dir:
             print(
@@ -341,11 +316,11 @@ class CompileServerImpl:
             print("Compile server starting")
             return port
         else:
-            client_port_mapped = CLIENT_PORT in ports
-            port_is_free = _port_is_free(CLIENT_PORT)
-            if client_port_mapped and port_is_free:
+            client_port_mapped = INTERNAL_DOCKER_PORT in ports
+            free_port = port_is_free(INTERNAL_DOCKER_PORT)
+            if client_port_mapped and free_port:
                 warnings.warn(
-                    f"Can't expose port {CLIENT_PORT}, disabling port forwarding in interactive mode"
+                    f"Can't expose port {INTERNAL_DOCKER_PORT}, disabling port forwarding in interactive mode"
                 )
                 ports = {}
             self.docker.run_container_interactive(

@@ -1,13 +1,38 @@
+import atexit
+import random
 import subprocess
 import sys
 import time
+import weakref
 from multiprocessing import Process
 from pathlib import Path
 
 from fastled.keyz import get_ssl_config
+from fastled.server_flask import run_flask_in_thread
 
 DEFAULT_PORT = 8089  # different than live version.
 PYTHON_EXE = sys.executable
+
+# Use a weak reference set to track processes without preventing garbage collection
+_WEAK_CLEANUP_SET = weakref.WeakSet()
+
+
+def add_cleanup(proc: Process) -> None:
+    """Add a process to the cleanup list using weak references"""
+    _WEAK_CLEANUP_SET.add(proc)
+
+    # Register a cleanup function that checks if the process is still alive
+    def cleanup_if_alive():
+        if proc.is_alive():
+            try:
+                proc.terminate()
+                proc.join(timeout=1.0)
+                if proc.is_alive():
+                    proc.kill()
+            except Exception:
+                pass
+
+    atexit.register(cleanup_if_alive)
 
 
 # print(f"SSL Config: {SSL_CONFIG.certfile}, {SSL_CONFIG.keyfile}")
@@ -88,7 +113,7 @@ def wait_for_server(port: int, timeout: int = 10) -> None:
     raise TimeoutError("Could not connect to server")
 
 
-def open_browser_process(
+def spawn_http_server(
     fastled_js: Path,
     compile_server_port: int,
     port: int | None = None,
@@ -98,14 +123,26 @@ def open_browser_process(
     if port is not None and not is_port_free(port):
         raise ValueError(f"Port {port} was specified but in use")
     if port is None:
-        port = find_free_port(DEFAULT_PORT)
+        offset = random.randint(0, 100)
+        port = find_free_port(DEFAULT_PORT + offset)
+
+    # port: int,
+    # cwd: Path,
+    # compile_server_port: int,
+    # certfile: Path | None = None,
+    # keyfile: Path | None = None,
 
     proc = Process(
-        target=_open_http_server_subprocess,
-        args=(fastled_js, port, compile_server_port),
+        target=run_flask_in_thread,
+        args=(port, fastled_js, compile_server_port),
         daemon=True,
     )
+    add_cleanup(proc)
     proc.start()
+
+    # Add to cleanup set with weak reference
+    add_cleanup(proc)
+
     wait_for_server(port)
     if open_browser:
         print(f"Opening browser to http://localhost:{port}")
@@ -136,5 +173,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    proc = open_browser_process(args.fastled_js, args.port, open_browser=True)
+    proc = spawn_http_server(args.fastled_js, args.port, open_browser=True)
     proc.join()
