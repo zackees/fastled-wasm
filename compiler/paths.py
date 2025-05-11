@@ -4,11 +4,12 @@ UPLOAD_DIR = Path("/uploads")
 TEMP_DIR = Path("/tmp")
 OUTPUT_DIR = Path("/output")
 
-
 COMPILER_ROOT = Path("/js")
+FASTLED_SRC = COMPILER_ROOT / "fastled" / "src"
+
+
 SKETCH_SRC = COMPILER_ROOT / "src"
 VOLUME_MAPPED_SRC = Path("/host/fastled/src")
-RSYNC_DEST = COMPILER_ROOT / "fastled" / "src"
 SKETCH_CACHE_FILE = OUTPUT_DIR / "compile_cache.db"
 LIVE_GIT_FASTLED_DIR = Path("/git/fastled")
 

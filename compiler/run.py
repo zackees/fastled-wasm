@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Tuple
 
 from code_sync import CodeSync
-from paths import RSYNC_DEST, VOLUME_MAPPED_SRC
+from paths import FASTLED_SRC, VOLUME_MAPPED_SRC
 
 _PORT = os.environ.get("PORT", 80)
 
@@ -106,7 +106,7 @@ def main() -> int:
 
     code_sync = CodeSync(
         volume_mapped_src=VOLUME_MAPPED_SRC,
-        rsync_dest=RSYNC_DEST,
+        rsync_dest=FASTLED_SRC,
     )
     code_sync.sync_source_directory_if_volume_is_mapped()
 

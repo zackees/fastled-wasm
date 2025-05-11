@@ -21,6 +21,7 @@ import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import sys  # noqa: E402
 import traceback  # noqa: E402
+import warnings  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from datetime import datetime  # noqa: E402
 from enum import Enum  # noqa: E402
@@ -88,7 +89,7 @@ def copy_files(src_dir: Path, js_src: Path) -> None:
             print(f"Copying file: {item}")
             shutil.copy2(item, js_src / item.name)
     else:
-        raise FileNotFoundError("No files found in the mapped directory.")
+        warnings.warn("No files found in the mapped directory.")
 
 
 def _banner(msg: str) -> str:

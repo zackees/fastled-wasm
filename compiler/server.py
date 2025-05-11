@@ -28,10 +28,10 @@ from fastapi import (  # type: ignore
     UploadFile,
 )
 from fastapi.responses import FileResponse, RedirectResponse, Response  # type: ignore
+from paths import FASTLED_SRC  # The folder where the actual source code is located.
 from paths import (
     LIVE_GIT_FASTLED_DIR,
     OUTPUT_DIR,
-    RSYNC_DEST,
     SKETCH_CACHE_FILE,
     TEMP_DIR,
     UPLOAD_DIR,
@@ -131,7 +131,7 @@ class UploadSizeMiddleware(BaseHTTPMiddleware):
 
 _CODE_SYNC = CodeSync(
     volume_mapped_src=VOLUME_MAPPED_SRC,
-    rsync_dest=RSYNC_DEST,
+    rsync_dest=FASTLED_SRC,
 )
 
 
@@ -226,12 +226,12 @@ def sync_live_git_to_target() -> None:
 
     _CODE_SYNC.sync_src_to_target(
         volume_mapped_src=LIVE_GIT_FASTLED_DIR / "src",
-        rsync_dest=RSYNC_DEST,
+        rsync_dest=FASTLED_SRC,
         callback=on_files_changed,
     )
     _CODE_SYNC.sync_src_to_target(
         volume_mapped_src=LIVE_GIT_FASTLED_DIR / "examples",
-        rsync_dest=RSYNC_DEST.parent / "examples",
+        rsync_dest=FASTLED_SRC.parent / "examples",
         callback=on_files_changed,
     )
     # Basically a setTimeout() in JS.
