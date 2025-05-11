@@ -98,6 +98,8 @@ class Volume:
             )
         return volumes
 
+class TextFilter:
+    """Provides filtering for text output so that source files match up with local names."""
 
 class RunningContainer:
     def __init__(self, container, first_run=False):

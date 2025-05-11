@@ -88,15 +88,33 @@ def copy_files(src_dir: Path, js_src: Path) -> None:
             print(f"Copying file: {item}")
             shutil.copy2(item, js_src / item.name)
 
+
 def _banner(msg: str) -> str:
     """
     Create a banner for the given message.
     Example:
     msg = "Hello, World!"
-    banner = "\n####################################"
+    print -> "#################"
+             "# Hello, World! #"
+             "#################"
     """
-    banner = "=" * (len(msg) + 4)
-    return f"{banner}\n| {msg} |\n{banner}"
+    lines = msg.split("\n")
+    # Find the width of the widest line
+    max_width = max(len(line) for line in lines)
+    width = max_width + 4  # Add 4 for "# " and " #"
+
+    # Create the top border
+    banner = "\n" + "#" * width + "\n"
+
+    # Add each line with proper padding
+    for line in lines:
+        padding = max_width - len(line)
+        banner += f"# {line}{' ' * padding} #\n"
+
+    # Add the bottom border
+    banner += "#" * width + "\n"
+    return banner
+
 
 def compile(
     compiler_root: Path, build_mode: BuildMode, auto_clean: bool, no_platformio: bool
@@ -105,7 +123,7 @@ def compile(
     max_attempts = 1
     env = os.environ.copy()
     env["BUILD_MODE"] = build_mode.name
-    print(f"Build mode: {build_mode.name}")
+    print(_banner(f"WASM is building in mode: {build_mode.name}"))
     cmd_list: list[str] = []
     if no_platformio:
         # execute build_archive.syh
@@ -122,6 +140,7 @@ def compile(
             cmd_list.append("-v")
 
     def _open_process(cmd_list: list[str] = cmd_list) -> subprocess.Popen:
+        print(_banner("Running command:\n  " + subprocess.list2cmdline(cmd_list)))
         out = subprocess.Popen(
             cmd_list,
             cwd=compiler_root,
@@ -147,7 +166,7 @@ def compile(
             relative_output = _make_timestamps_relative("\n".join(output_lines))
             print(relative_output)
             if process.returncode == 0:
-                print(f"Compilation successful on attempt {attempt}")
+                print(_banner(f"Compilation successful on attempt {attempt}"))
                 return 0
             else:
                 raise subprocess.CalledProcessError(process.returncode, ["pio", "run"])
@@ -208,7 +227,7 @@ def transform_to_cpp(src_dir: Path) -> None:
 def insert_headers(
     src_dir: Path, exclusion_folders: List[Path], file_extensions: List[str]
 ) -> None:
-    print("Inserting headers in source files...")
+    print(_banner("Inserting headers in source files..."))
     for file in src_dir.rglob("*"):
         if (
             file.suffix in file_extensions
@@ -222,7 +241,7 @@ def process_ino_files(src_dir: Path) -> None:
     transform_to_cpp(src_dir)
     exclusion_folders: List[Path] = []
     insert_headers(src_dir, exclusion_folders, _FILE_EXTENSIONS)
-    print("Transform to cpp and insert header operations completed.")
+    print(_banner("Transform to cpp and insert header operations completed."))
 
 
 def _make_timestamps_relative(stdout: str) -> str:
@@ -390,7 +409,7 @@ def process_compile(
     if rtn != 0:
         print("Compilation failed.")
         raise RuntimeError("Compilation failed.")
-    print("Compilation successful.")
+    print(_banner("Compilation successful."))
 
 
 def cleanup(args: Args, js_src: Path) -> None:
@@ -431,9 +450,15 @@ def run(args: Args) -> int:
     print(f"Using mapped directory: {args.mapped_dir}")
 
     if args.profile:
-        print("Enabling profiling for compilation.")
+        print(_banner("Enabling profiling for compilation."))
         # Profile linking
         os.environ["EMPROFILE"] = "2"
+    else:
+        print(
+            _banner(
+                "Build process profiling is disabled\nuse --profile to get metrics on how long the build process took."
+            )
+        )
 
     try:
 
@@ -504,7 +529,7 @@ def run(args: Args) -> int:
             else:
                 build_dir = _get_build_dir_platformio()
 
-            print("Copying output files...")
+            print(_banner("Copying output files..."))
             out_dir: Path = src_dir / _FASTLED_OUTPUT_DIR_NAME
             out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -565,7 +590,7 @@ def run(args: Args) -> int:
                     if _file.is_file():  # Only copy files, not directories
                         filename: str = _file.name
                         if filename.endswith(".embedded.json"):
-                            print("Embedding data file")
+                            print(_banner("Embedding data file"))
                             filename_no_embedded = filename.replace(
                                 ".embedded.json", ""
                             )
@@ -596,13 +621,13 @@ def run(args: Args) -> int:
                             )
 
             # Write manifest file even if empty
-            print("Writing manifest files.json")
+            print(_banner("Writing manifest files.json"))
             manifest_json_str = json.dumps(manifest, indent=2, sort_keys=True)
             with open(out_dir / "files.json", "w") as f:
                 f.write(manifest_json_str)
         cleanup(args, SKETCH_SRC)
 
-        print("Compilation process completed successfully")
+        print(_banner("Compilation process completed successfully"))
         return 0
 
     except Exception as e:
