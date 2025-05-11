@@ -599,7 +599,7 @@ def project_init_example(
 
 
 @app.get("/static/{file_path:path}")
-def static_files(file_path: str) -> Response:
+async def static_files(file_path: str) -> Response:
     """Serve static files."""
     print(f"Endpoint accessed: /static/{file_path}")
 
