@@ -15,7 +15,6 @@ from fastled.docker_manager import (
     RunningContainer,
     Volume,
 )
-from fastled.interactive_srcs import INTERACTIVE_SOURCES
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
@@ -43,7 +42,7 @@ def _port_is_free(port: int) -> bool:
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
-            sock.bind(("localhost", port)) and sock.bind(("0.0.0.0", port))
+            _ = sock.bind(("localhost", port)) and sock.bind(("0.0.0.0", port))
             return True
         except OSError:
             return False
@@ -269,20 +268,39 @@ class CompileServerImpl:
             )
             if self.fastled_src_dir is not None:
                 # to allow for interactive compilation
-                interactive_sources = list(INTERACTIVE_SOURCES)
-                for src in interactive_sources:
-                    src_path = Path(src).absolute()
+                # interactive_sources = list(INTERACTIVE_SOURCES)
+                interactive_sources: list[tuple[Path, str]] = []
+                init_runtime_py = (
+                    Path(self.fastled_src_dir)
+                    / ".."
+                    / ".."
+                    / "fastled-wasm"
+                    / "compiler"
+                    / "init_runtime.py"
+                )
+                if init_runtime_py.exists():
+                    # fastled-wasm is in a sister directory, mapping this in to the container.
+                    mapping = (
+                        init_runtime_py,
+                        "/js/init_runtime.py",
+                    )
+                    interactive_sources.append(mapping)
+
+                src_host: Path
+                dst_container: str
+                for src_host, dst_container in interactive_sources:
+                    src_path = Path(src_host).absolute()
                     if src_path.exists():
-                        print(f"Mounting {src} into container")
+                        print(f"Mounting {src_host} into container")
                         volumes.append(
                             Volume(
                                 host_path=str(src_path),
-                                container_path=f"/js/fastled/{src}",
+                                container_path=dst_container,
                                 mode="rw",
                             )
                         )
                     else:
-                        print(f"Could not find {src}")
+                        print(f"Could not find {src_path}")
 
         cmd_str = subprocess.list2cmdline(server_command)
         if not self.interactive:
