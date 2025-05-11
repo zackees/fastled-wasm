@@ -9,9 +9,12 @@ COMPILER_DIR = COMPILER_ROOT / "compiler"
 
 SRC_MAPPED_HOST_COMPLER_DIR = Path("/host/fastled/src/platforms/wasm/compiler")
 if SRC_MAPPED_HOST_COMPLER_DIR.exists():
+    print(f"Using mapped host compiler directory: {SRC_MAPPED_HOST_COMPLER_DIR}")
     FASTLED_COMPILER_DIR = SRC_MAPPED_HOST_COMPLER_DIR
 else:
+    print(f"Using standard host compiler directory: {SRC_MAPPED_HOST_COMPLER_DIR}")
     FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
+
 
 HERE = Path(__file__).parent
 
