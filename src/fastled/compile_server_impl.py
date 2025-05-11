@@ -236,7 +236,11 @@ class CompileServerImpl:
             server_command = ["/bin/bash"]
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
-        ports = {CLIENT_PORT: port}
+        if self.interactive:
+            print("Disabling port forwarding in interactive mode")
+            ports = {}
+        else:
+            ports = {CLIENT_PORT: port}
         volumes = []
         if self.fastled_src_dir:
             print(
