@@ -12,3 +12,7 @@ SERVER_PORT = 9021
 IMAGE_NAME = "niteris/fastled-wasm"
 DEFAULT_CONTAINER_NAME = "fastled-wasm-compiler"
 # IMAGE_TAG = "latest"
+
+DOCKER_FILE = (
+    "https://raw.githubusercontent.com/zackees/fastled-wasm/refs/heads/main/Dockerfile"
+)
