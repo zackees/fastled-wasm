@@ -11,32 +11,28 @@ FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
 HERE = Path(__file__).parent
 
 
-def copy_task(src: str | Path) -> None:
+def symlink_task(src: str | Path, dst: Path) -> None:
     src = Path(src)
-    if "entrypoint.sh" in str(src):
-        return
-    link_dst = COMPILER_ROOT / src.name
-
     # Handle shell scripts
     if src.suffix == ".sh":
         os.system(f"dos2unix {src} && chmod +x {src}")
 
     # if link exists, remove it
-    if link_dst.exists():
-        print(f"Removing existing link {link_dst}")
+    if dst.exists():
+        print(f"Removing existing link {dst}")
         try:
-            os.remove(link_dst)
+            os.remove(dst)
         except Exception as e:
-            warnings.warn(f"Failed to remove {link_dst}: {e}")
+            warnings.warn(f"Failed to remove {dst}: {e}")
 
-    if not link_dst.exists():
-        print(f"Linking {src} to {link_dst}")
+    if not dst.exists():
+        print(f"Linking {src} to {dst}")
         try:
-            os.symlink(str(src), str(link_dst))
+            os.symlink(str(src), str(dst))
         except FileExistsError:
-            print(f"Target {link_dst} already exists")
+            print(f"Target {dst} already exists")
     else:
-        print(f"Target {link_dst} already exists")
+        print(f"Target {dst} already exists")
 
 
 def make_links() -> None:
@@ -53,16 +49,30 @@ def make_links() -> None:
     ]
 
     # Get all matching files in compiler directory
-    files = []
+    tasks = []
     for pattern in patterns:
-        files.extend(glob.glob(str(COMPILER_DIR / pattern)))
+        for file_path in glob.glob(str(COMPILER_DIR / pattern)):
+            src = Path(file_path)
+            if "entrypoint.sh" in str(src):
+                continue
+            dst = COMPILER_ROOT / src.name
+            tasks.append((src, dst))
 
     for pattern in patterns:
-        files.extend(glob.glob(str(FASTLED_COMPILER_DIR / pattern)))
+        for file_path in glob.glob(str(FASTLED_COMPILER_DIR / pattern)):
+            src = Path(file_path)
+            if "entrypoint.sh" in str(src):
+                continue
+            dst = COMPILER_ROOT / src.name
+            tasks.append((src, dst))
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
-        executor.map(copy_task, files)
+        def functor(args):
+            src, dst = args
+            symlink_task(src, dst)
+
+        executor.map(functor, tasks)
 
 
 def init_runtime() -> None:
