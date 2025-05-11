@@ -63,6 +63,12 @@ def TEST_BEFORE_COMPILE(url) -> None:
     pass
 
 
+def _chunked_print(stdout: str) -> None:
+    lines = stdout.splitlines()
+    for line in lines:
+        print(line)
+
+
 def _run_web_compiler(
     directory: Path,
     host: str,
@@ -80,7 +86,7 @@ def _run_web_compiler(
     if not web_result.success:
         print("\nWeb compilation failed:")
         print(f"Time taken: {diff:.2f} seconds")
-        print(web_result.stdout)
+        _chunked_print(web_result.stdout)
         # Create error page
         output_dir.mkdir(exist_ok=True)
         error_html = _create_error_html(web_result.stdout)
@@ -117,7 +123,7 @@ def _run_web_compiler(
         # Extract zip contents
         shutil.unpack_archive(temp_zip, output_dir, "zip")
 
-    print(web_result.stdout)
+    _chunked_print(web_result.stdout)
     print_results()
     return web_result
 
