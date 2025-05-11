@@ -6,7 +6,12 @@ from pathlib import Path
 
 COMPILER_ROOT = Path("/js")
 COMPILER_DIR = COMPILER_ROOT / "compiler"
-FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
+
+SRC_MAPPED_HOST_COMPLER_DIR = Path("/host/fastled/src/platforms/wasm/compiler")
+if SRC_MAPPED_HOST_COMPLER_DIR.exists():
+    FASTLED_COMPILER_DIR = SRC_MAPPED_HOST_COMPLER_DIR
+else:
+    FASTLED_COMPILER_DIR = COMPILER_ROOT / "fastled/src/platforms/wasm/compiler"
 
 HERE = Path(__file__).parent
 
