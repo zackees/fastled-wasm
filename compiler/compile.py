@@ -180,8 +180,7 @@ def compile(
             assert process.stdout is not None
             line: str
             for line in process.stdout:
-                processed_line = line.replace("fastled/src", "src")
-                timestamped_line = _timestamp_output(processed_line)
+                timestamped_line = _timestamp_output(line)
                 output_lines.append(timestamped_line)
             process.wait()
             relative_output = _make_timestamps_relative("\n".join(output_lines))

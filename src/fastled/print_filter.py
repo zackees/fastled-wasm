@@ -39,6 +39,10 @@ def _handle_ino_cpp(line: str) -> str:
     return line
 
 
+def _handle_fastled_src(line: str) -> str:
+    return line.replace("fastled/src", "src")
+
+
 class PrintFilterDefault(PrintFilter):
     """Provides default filtering for FastLED output."""
 
@@ -61,6 +65,9 @@ class PrintFilterFastled(PrintFilter):
             # print(line)
             if "# WASM is building" in line:
                 self.build_started = True
+            line = _handle_fastled_src(
+                line
+            )  # Always convert fastled/src to src for file matchups.
             if self.build_started or " error: " in line:
                 line = _handle_ino_cpp(line)
             out.append(line)
