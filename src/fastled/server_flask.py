@@ -140,17 +140,18 @@ def _run_flask_server(
                 logger.error(error_msg)
                 return Response(error_msg, status=400)
 
-            if not path.startswith(_DRAWF_SOURCE_FASTLED) and not path.startswith(_DRAWF_SOURCE_EMSDK):
+            if not path.startswith(_DRAWF_SOURCE_FASTLED) and not path.startswith(
+                _DRAWF_SOURCE_EMSDK
+            ):
                 # unexpected
                 error_msg = f"Unexpected path: {path}"
                 logger.error(error_msg)
                 # Logging disabled
                 return Response("Malformed path", status=400)
-            
+
             # Weird magic being played with these paths, it's beyond me.
             if path.startswith(_DRAWF_SOURCE_FASTLED):
                 path = path[len("/drawfsource") :]
-            
 
             # Forward the request to the compile server
             target_url = f"http://localhost:{compile_server_port}/drawfsource/{path}"
