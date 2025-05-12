@@ -72,7 +72,7 @@ def _run_server(unknown_args: list[str]) -> int:
         unknown_args = []
     cmd_list = [
         "uvicorn",
-        "server:app",
+        "fastled_wasm_server.server:app",
         "--host",
         "0.0.0.0",
         "--workers",

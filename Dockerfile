@@ -161,7 +161,6 @@ RUN python /js/init_runtime.py || true
 RUN mkdir -p /logs
 
 # Force a build if the compiler flags change.
-COPY compiler/wasm_compiler_flags.py /trash/wasm_compiler_flags.py
 COPY compiler/CMakeLists.txt /trash/CMakeLists.txt
 RUN rm -rf /trash
 
