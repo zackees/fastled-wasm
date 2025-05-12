@@ -8,7 +8,7 @@ import httpx
 from livereload import Server
 
 # Logging configuration
-_ENABLE_LOGGING = False  # Set to False to disable logging
+_ENABLE_LOGGING = True  # Set to False to disable logging
 
 if _ENABLE_LOGGING:
     logging.basicConfig(
