@@ -16,7 +16,6 @@ dependencies = [
     "watchdog>=6.0.0",
     ########## Begin Docker Manager Dependencies
     "filelock>=3.16.1",
-    "disklru>=2.0.1",
     "appdirs>=1.4.4",
     "rapidfuzz>=3.10.1",
     "progress>=1.6",
@@ -24,6 +23,8 @@ dependencies = [
     "watchfiles>=1.0.5",
     "Flask>=3.0.0",
     "livereload",
+    ###### WASM SERVER ######
+    "fastled-wasm-server",
 ]
 
 dynamic = ["version"]
