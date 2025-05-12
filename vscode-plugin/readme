@@ -1,0 +1,17 @@
+I want to build a simple Visual Studio Code extension called “FastLED Runner” that adds one button to the status bar and, when clicked, launches my Python-installed CLI tool `fastled` in an integrated terminal. Please generate a complete project scaffold including:
+
+1. `package.json` with correct metadata (`name`, `version`, `publisher`, `engines.vscode`), activation events, and a contributed command `fastled.run`.
+2. `extension.js` (or `extension.ts` if you prefer TypeScript) that:
+   - Activates on the `fastled.run` command
+   - Creates a Status Bar Item at the right with icon and text “FastLED ▶”
+   - Registers `fastled.run` to open/reuse an integrated terminal, send `fastled`, and show it.
+3. A `README.md` that explains:
+   - What the extension does
+   - How to install prerequisites (`npm install`, Python CLI `pip install fastled`)
+   - How to run/debug it (`F5` in VS Code)
+4. A minimal `.vscode/launch.json` for debugging the extension.
+5. A `.gitignore` tuned for VS Code extensions (`node_modules/`, `.vscode/`, etc.).
+6. Dev dependencies in `package.json` for `vscode` and build scripts (if TypeScript, include `tsconfig.json`).
+7. Optionally, a simple VS Code `contributes` section to suggest the extension in the Marketplace.
+
+Structure the output as a ZIP-like tree listing with file contents below each path, ready to drop into a git repo. Use plain JavaScript (no frameworks) unless you choose TypeScript by default; if you go TypeScript, generate the necessary build scripts. Keep it as minimal and copy-&-paste–ready as possible.
