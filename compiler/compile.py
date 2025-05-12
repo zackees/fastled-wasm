@@ -78,14 +78,16 @@ class SyntaxCheckResult:
 
 def copy_files(src_dir: Path, js_src: Path) -> None:
     print("Copying files from mapped directory to container...")
+    found = False
     for item in src_dir.iterdir():
+        found = True
         if item.is_dir():
             print(f"Copying directory: {item}")
             shutil.copytree(item, js_src / item.name, dirs_exist_ok=True)
         else:
             print(f"Copying file: {item}")
             shutil.copy2(item, js_src / item.name)
-    else:
+    if not found:
         warnings.warn(f"No files found in the mapped directory: {src_dir.absolute()}")
 
 
