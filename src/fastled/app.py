@@ -74,7 +74,9 @@ def main() -> int:
     from fastled.select_sketch_directory import select_sketch_directory
 
     if interactive and cwd_looks_like_fastled_repo and directory is None:
-        answer = input("No sketch directory selected, would you like to select one? (y/n): ")
+        answer = input(
+            "No sketch directory selected, would you like to select one? (y/n): "
+        )
         if answer.lower() == "y":
             sketch_list: list[Path] = find_sketch_directories()
             if sketch_list:
