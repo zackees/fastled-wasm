@@ -4,7 +4,9 @@ from pathlib import Path
 _MAX_FILES_SEARCH_LIMIT = 10000
 
 
-def find_sketch_directories(directory: Path) -> list[Path]:
+def find_sketch_directories(directory: Path | None = None) -> list[Path]:
+    if directory is None:
+        directory = Path(".")
     file_count = 0
     sketch_directories: list[Path] = []
     # search all the paths one level deep
@@ -60,7 +62,7 @@ def get_sketch_files(directory: Path) -> list[Path]:
     return files
 
 
-def looks_like_fastled_repo(directory: Path) -> bool:
+def looks_like_fastled_repo(directory: Path = Path(".")) -> bool:
     libprops = directory / "library.properties"
     if not libprops.exists():
         return False

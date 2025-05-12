@@ -30,9 +30,7 @@ FastLED WASM Compiler - Useful options:
   --init [example]      Initialize one of the top tier WASM examples
   --web [url]           Use web compiler
   --server              Run the compiler server
-  --debug               Build with debug symbols for dev-tools debugging
   --quick               Build in quick mode (default)
-  --release             Build in optimized release mode
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
   --purge               Remove all FastLED containers and images
@@ -44,6 +42,11 @@ Examples:
   fastled my_sketch --web (compiles using the web compiler only)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
   fastled --server (runs the compiler server in the current directory)
+
+For those using Docker:
+  --debug               Build with debug symbols for dev-tools debugging
+
+  --release             Build in optimized release mode
 """
 
 

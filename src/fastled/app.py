@@ -10,6 +10,13 @@ from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
 from fastled.filewatcher import file_watcher_set
 from fastled.parse_args import Args, parse_args
+from fastled.sketch import find_sketch_directories, looks_like_fastled_repo
+
+# from fastled.sketch import (
+#     find_sketch_directories,
+#     looks_like_fastled_repo,
+#     looks_like_sketch_directory,
+# )
 
 
 def run_server(args: Args) -> int:
@@ -53,9 +60,34 @@ def main() -> int:
     just_compile: bool = args.just_compile
     # directory: Path | None = Path(args.directory).absolute() if args.directory else None
     directory: Path | None = Path(args.directory) if args.directory else None
+    cwd_looks_like_fastled_repo = looks_like_fastled_repo()
 
     # now it is safe to print out the version
     print(f"FastLED version: {__version__}")
+
+    # Resolve some of the last interactive arguments
+    # 1. If interactive is set and the sketch directory is not given,
+    # then prompt the user for a sketch directory.
+    # 2. Tell the user they can use --server --interactive to
+    # skip this prompt.
+
+    from fastled.select_sketch_directory import select_sketch_directory
+
+    if interactive and cwd_looks_like_fastled_repo and directory is None:
+        answer = input("No sketch directory selected, would you like to select one? (y/n): ")
+        if answer.lower() == "y":
+            sketch_list: list[Path] = find_sketch_directories()
+            if sketch_list:
+                maybe_dir: str | None = select_sketch_directory(
+                    sketch_list, cwd_looks_like_fastled_repo
+                )
+                if maybe_dir is not None:
+                    directory = Path(maybe_dir)
+                    if not directory.exists():
+                        print(
+                            f"Directory {directory} does not exist, entering interactive mode without project mapped in."
+                        )
+                        directory = None
 
     if update:
         # Force auto_update to ensure update check happens
