@@ -135,7 +135,7 @@ RUN pio settings set enable_telemetry 0
 # pre-warm cycle is "sticky" and tends to stay in the cache for a long time since docker is very relaxed about
 # invalidating cache layers that clone a github repo.
 
-RUN echo "force update"
+RUN echo "force update2"
 ARG FASTLED_BUILD_DAY=echo $(date +'%Y-%m-%d')
 ENV FASTLED_BUILD_DAY=${FASTLED_BUILD_DAY}
 
