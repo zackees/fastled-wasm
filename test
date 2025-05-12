@@ -12,8 +12,14 @@ fi
 
 . ./activate
 
-echo "Rebuilding from local image"
-uv run build_local_docker.py
+# --full in args, then rebuild the docker image
+if [[ "$*" == *"--full"* ]]; then
+    echo "Rebuilding docker image"
+    echo "Rebuilding from local image"
+    uv run build_local_docker.py
+fi
+
+
 
 pytest -x -v -s --durations=0 tests/unit "$@"
 # uv run pytest -n auto tests -v

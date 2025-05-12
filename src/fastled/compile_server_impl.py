@@ -25,6 +25,10 @@ SERVER_OPTIONS = [
     "--no-auto-update",  # Don't auto live updates from the git repo.
 ]
 
+LOCAL_DOCKER_ENV = {
+    "ONLY_QUICK_BUILDS": "0"  # When running docker always allow release and debug.
+}
+
 
 def _try_get_fastled_src(path: Path) -> Path | None:
     fastled_src_dir: Path | None = None
@@ -310,6 +314,7 @@ class CompileServerImpl:
                 ports=ports,
                 volumes=volumes,
                 remove_previous=self.interactive or self.remove_previous or updated,
+                environment=LOCAL_DOCKER_ENV,
             )
             self.running_container = self.docker.attach_and_run(container)
             assert self.running_container is not None, "Container should be running"
@@ -330,6 +335,7 @@ class CompileServerImpl:
                 command=cmd_str,
                 ports=ports,
                 volumes=volumes,
+                environment=LOCAL_DOCKER_ENV,
             )
 
             print("Exiting interactive mode")

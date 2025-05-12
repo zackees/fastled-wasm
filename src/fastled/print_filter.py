@@ -59,6 +59,8 @@ class PrintFilterFastled(PrintFilter):
     def __init__(self, echo: bool = True) -> None:
         super().__init__(echo)
         self.build_started = False
+        # self.compile_link_active = False
+        # self.compile_link_filter:
 
     def filter(self, text: str) -> str:
         lines = text.splitlines()
@@ -78,50 +80,6 @@ class PrintFilterFastled(PrintFilter):
         return text
 
 
-class ChunkedBuildConfigGrouper:
-    """
-    Groups compiler invocations by identical flag-sets.
-    Yields:
-      - A blank line + the flags when they change
-      - Then one line per file: "[time] filename"
-    """
-
-    _line_re = re.compile(
-        r"^\s*(?P<time>\d+\.\d+)\s+"
-        r"(?P<flags>.+?)\s+"
-        r"(?P<file>[^ ]+\.(?:cpp|c|ino))\s*$"
-    )
-
-    def __init__(self) -> None:
-        self._prev_key: str | None = None
-
-    def filter(self, text: str) -> str:
-        out: list[str] = []
-        for raw in text.splitlines(keepends=True):
-            m = self._line_re.match(raw)
-            if not m:
-                # passthrough anything that doesn’t match
-                out.append(raw)
-                continue
-
-            time_stamp = m.group("time")
-            flags = m.group("flags")
-            src_file = m.group("file")
-
-            # on a new flag-set, emit a blank line + the flags
-            if flags != self._prev_key:
-                self._prev_key = flags
-                # only emit a blank line if output is non-empty and last line isn't blank
-                if out and not out[-1].isspace():
-                    out.append("\n")
-                out.append(flags + "\n")
-
-            # then emit the timestamp + filename
-            out.append(f"{time_stamp} {src_file}\n")
-
-        return "".join(out)
-
-
 class CompileOrLink(Enum):
     COMPILE = "compile"
     LINK = "link"
@@ -130,6 +88,7 @@ class CompileOrLink(Enum):
 @dataclass
 class BuildArtifact:
     timestamp: float
+    input_artifact: str | None
     output_artifact: str | None
     build_flags: str
     compile_or_link: CompileOrLink
@@ -149,53 +108,83 @@ class BuildArtifact:
         return _parse(input_str)
 
 
-def _parse(input_str: str) -> BuildArtifact | None:
-    """
-    Parse a single build-log line of the form:
-      "<timestamp> ... <some .cpp or .h file> ... <flags>"
+class TokenFilter(ABC):
+    @abstractmethod
+    def extract(self, tokens: list[str]) -> str | None:
+        """
+        Scan `tokens`, remove any tokens this filter is responsible for,
+        and return the extracted string (or None if not found/invalid).
+        """
+        ...
 
-    Returns a BuildArtifact, or None if parsing failed.
-    """
-    parts = input_str.strip().split()
-    if len(parts) < 2:
+
+class TimestampFilter(TokenFilter):
+    def extract(self, tokens: list[str]) -> str | None:
+        if not tokens:
+            return None
+        candidate = tokens[0]
+        try:
+            _ = float(candidate)
+            return tokens.pop(0)
+        except ValueError:
+            return None
+
+
+class InputArtifactFilter(TokenFilter):
+    def extract(self, tokens: list[str]) -> str | None:
+        for i, tok in enumerate(tokens):
+            if tok.endswith(".cpp") or tok.endswith(".h"):
+                return tokens.pop(i)
         return None
 
-    # 1) timestamp
-    try:
-        ts = float(parts[0])
-    except ValueError:
+
+class OutputArtifactFilter(TokenFilter):
+    def extract(self, tokens: list[str]) -> str | None:
+        for i, tok in enumerate(tokens):
+            if tok == "-o" and i + 1 < len(tokens):
+                tokens.pop(i)  # drop '-o'
+                return tokens.pop(i)  # drop & return artifact
         return None
 
-    # 2) find the first .cpp or .h token
-    file_tok = ""
-    file_idx = None
-    for i, tok in enumerate(parts):
-        if tok.endswith(".cpp") or tok.endswith(".h"):
-            file_idx = i
-            file_tok = tok
-            break
-    if file_idx is None:
+
+class ActionFilter(TokenFilter):
+    def extract(self, tokens: list[str]) -> str | None:
+        if "-c" in tokens:
+            return CompileOrLink.COMPILE.value
+        return CompileOrLink.LINK.value
+
+
+def _parse(line: str) -> BuildArtifact | None:
+    tokens = line.strip().split()
+    if not tokens:
         return None
 
-    # 3) build_flags = everything except parts[0] and that file token
-    #    (remove only the one occurrence)
-    flags_tokens = parts[1:]
-    # remove the file token at the adjusted index
-    rel_idx = file_idx - 1
-    if 0 <= rel_idx < len(flags_tokens):
-        del flags_tokens[rel_idx]
-    flags_str = " ".join(flags_tokens)
+    # instantiate in the order we need them
+    filters: list[TokenFilter] = [
+        TimestampFilter(),
+        InputArtifactFilter(),
+        OutputArtifactFilter(),
+        ActionFilter(),
+    ]
 
-    # 4) decide compile vs. link
-    action = CompileOrLink.COMPILE if "-c" in flags_tokens else CompileOrLink.LINK
+    # apply each filter
+    raw_ts = filters[0].extract(tokens)
+    raw_in = filters[1].extract(tokens)
+    raw_out = filters[2].extract(tokens)
+    raw_act = filters[3].extract(tokens)
 
-    # 5) stable integer hash of the flags
+    if raw_ts is None or raw_in is None or raw_act is None:
+        return None
+
+    # the rest of `tokens` are the flags
+    flags_str = " ".join(tokens)
     h = zlib.adler32(flags_str.encode("utf-8"))
 
     return BuildArtifact(
-        timestamp=ts,
-        output_artifact=file_tok,
+        timestamp=float(raw_ts),
+        input_artifact=raw_in,
+        output_artifact=raw_out,
         build_flags=flags_str,
-        compile_or_link=action,
+        compile_or_link=CompileOrLink(raw_act),
         hash=h,
     )

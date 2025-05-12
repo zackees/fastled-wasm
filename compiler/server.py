@@ -16,6 +16,7 @@ from threading import Timer
 
 import psutil  # type: ignore
 from code_sync import CodeSync
+from compile import _banner
 from compile_lock import COMPILE_LOCK  # type: ignore
 from disklru import DiskLRUCache  # type: ignore
 from fastapi import (  # type: ignore
@@ -76,6 +77,12 @@ _LIVE_GIT_UPDATES_INTERVAL = int(
 )  # Update every 24 hours
 _ALLOW_SHUTDOWN = os.environ.get("ALLOW_SHUTDOWN", "false").lower() in ["true", "1"]
 _NO_SKETCH_CACHE = os.environ.get("NO_SKETCH_CACHE", "false").lower() in ["true", "1"]
+
+# debug is a 20mb payload for the symbol information.
+_ONLY_QUICK_BUILDS = os.environ.get("ONLY_QUICK_BUILDS", "false").lower() in [
+    "true",
+    "0",
+]
 
 
 # TODO - cleanup
@@ -254,6 +261,11 @@ def compile_source(
     def _print(msg) -> None:
         diff = time.time() - epoch
         print(f" = SERVER {diff:.2f}s = {msg}")
+
+    if build_mode != "quick" and _ONLY_QUICK_BUILDS:
+        msg = _banner(f"Only quick builds are allowed, setting {build_mode} to quick")
+        build_mode = "quick"
+        _print(msg)
 
     _print("Starting compile_source")
     global COMPILE_COUNT

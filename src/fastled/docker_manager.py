@@ -533,6 +533,7 @@ class DockerManager:
         volumes: list[Volume] | None = None,
         ports: dict[int, int] | None = None,
         remove_previous: bool = False,
+        environment: dict[str, str] | None = None,
     ) -> Container:
         """
         Run a container from an image. If it already exists with matching config, start it.
@@ -617,6 +618,7 @@ class DockerManager:
                 tty=True,
                 volumes=volumes_dict,
                 ports=ports,  # type: ignore
+                environment=environment,
                 remove=True,
             )
         return container
@@ -629,6 +631,7 @@ class DockerManager:
         command: str | None = None,
         volumes: list[Volume] | None = None,
         ports: dict[int, int] | None = None,
+        environment: dict[str, str] | None = None,
     ) -> None:
         # Convert volumes to the format expected by Docker API
         volumes = _hack_to_fix_mac(volumes)
@@ -663,6 +666,9 @@ class DockerManager:
             if ports:
                 for host_port, container_port in ports.items():
                     docker_command.extend(["-p", f"{host_port}:{container_port}"])
+            if environment:
+                for env_name, env_value in environment.items():
+                    docker_command.extend(["-e", f"{env_name}={env_value}"])
             docker_command.append(f"{image_name}:{tag}")
             if command:
                 docker_command.append(command)
