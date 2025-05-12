@@ -182,7 +182,7 @@ RUN /js/prewarm.sh --force >> /logs/prewarm.log.1 || true
 # COPY src/sensors /host/fastled/src/sensors
 # COPY src/platforms /host/fastled/src/platforms
 
-echo "force update"
+RUN echo "force update"
 COPY compiler /js/compiler
 
 COPY compiler/entrypoint.sh /entrypoint.sh
