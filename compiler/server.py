@@ -16,7 +16,6 @@ from threading import Timer
 
 import psutil  # type: ignore
 from code_sync import CodeSync
-from compile import _banner
 from compile_lock import COMPILE_LOCK  # type: ignore
 from disklru import DiskLRUCache  # type: ignore
 from fastapi import (  # type: ignore
@@ -263,9 +262,10 @@ def compile_source(
         print(f" = SERVER {diff:.2f}s = {msg}")
 
     if build_mode != "quick" and _ONLY_QUICK_BUILDS:
-        msg = _banner(f"Only quick builds are allowed, setting {build_mode} to quick")
-        build_mode = "quick"
-        _print(msg)
+        raise HTTPException(
+            status_code=400,
+            detail="Only quick builds are allowed in this version.",
+        )
 
     _print("Starting compile_source")
     global COMPILE_COUNT
