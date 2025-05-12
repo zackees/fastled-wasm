@@ -80,7 +80,7 @@ _NO_SKETCH_CACHE = os.environ.get("NO_SKETCH_CACHE", "false").lower() in ["true"
 # debug is a 20mb payload for the symbol information.
 _ONLY_QUICK_BUILDS = os.environ.get("ONLY_QUICK_BUILDS", "false").lower() in [
     "true",
-    "0",
+    "1",
 ]
 
 
@@ -261,7 +261,7 @@ def compile_source(
         diff = time.time() - epoch
         print(f" = SERVER {diff:.2f}s = {msg}")
 
-    if build_mode != "quick" and _ONLY_QUICK_BUILDS:
+    if build_mode.lower() != "quick" and _ONLY_QUICK_BUILDS:
         raise HTTPException(
             status_code=400,
             detail="Only quick builds are allowed in this version.",
@@ -439,6 +439,7 @@ def get_settings() -> dict:
         "UPLOAD_LIMIT": _UPLOAD_LIMIT,
         "VOLUME_MAPPED_SRC": str(VOLUME_MAPPED_SRC),
         "VOLUME_MAPPED_SRC_EXISTS": VOLUME_MAPPED_SRC.exists(),
+        "ONLY_QUICK_BUILDS": _ONLY_QUICK_BUILDS,
     }
     return settings
 
