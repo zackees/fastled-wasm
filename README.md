@@ -11,7 +11,6 @@
 [![Build Webpage](https://github.com/zackees/fastled-wasm/actions/workflows/build_webpage.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_webpage.yml)
 
 
-
 ## Compile your FastLED sketch and run it on the Browser!!
 
 ![image](https://github.com/user-attachments/assets/243aeb4d-e42f-4cc3-9c31-0af51271f3e0)
