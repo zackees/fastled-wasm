@@ -151,3 +151,4 @@ cache/
 dist/
 /fastled/
 logs
+vscode-plugin
