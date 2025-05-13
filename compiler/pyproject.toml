@@ -16,7 +16,7 @@ dependencies = [
     "disklru==2.0.0",
     "psutil==6.1.1",
     "wormhole-tx",
-    "fastled-wasm-server==0.0.2",
+    "fastled-wasm-server==0.0.3",
 ]
 
 [tool.setuptools]

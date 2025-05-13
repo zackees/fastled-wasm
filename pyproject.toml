@@ -24,7 +24,7 @@ dependencies = [
     "Flask>=3.0.0",
     "livereload",
     ###### WASM SERVER ######
-    "fastled-wasm-server",
+    "fastled-wasm-server",  #  unversioned for the cli
 ]
 
 dynamic = ["version"]

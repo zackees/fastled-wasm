@@ -37,11 +37,6 @@ for line in images.strip().splitlines():
 # Step 4: Optionally remove volumes
 # _exec("docker volume prune -f")  # Uncomment if you want to purge volumes too
 
-# Step 5: Remove local build artifacts (e.g., PlatformIO)
-if os.path.exists("build"):
-    print("Removing local build/ directory")
-    shutil.rmtree("build")
 
-
-# Step 6: Rebuild images
+# Step 5: Rebuild images
 _exec("docker compose build")
