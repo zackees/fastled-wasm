@@ -24,7 +24,6 @@ import traceback  # noqa: E402
 import warnings  # noqa: E402
 from dataclasses import dataclass  # noqa: E402
 from datetime import datetime  # noqa: E402
-from enum import Enum  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import List  # noqa: E402
 
@@ -35,6 +34,7 @@ from fastled_wasm_server.paths import (  # noqa: E402
     SKETCH_SRC,
 )
 from fastled_wasm_server.print_banner import banner  # noqa: E402
+from fastled_wasm_server.types import BuildMode  # noqa: E402
 
 print("Finished imports...")
 
@@ -54,20 +54,6 @@ _FASTLED_OUTPUT_DIR_NAME = "fastled_js"
 
 
 # DateLine class removed as it's no longer needed with streaming timestamps
-
-
-class BuildMode(Enum):
-    DEBUG = "DEBUG"
-    QUICK = "QUICK"
-    RELEASE = "RELEASE"
-
-    @classmethod
-    def from_string(cls, mode_str: str) -> "BuildMode":
-        try:
-            return cls[mode_str.upper()]
-        except KeyError:
-            valid_modes = [mode.name for mode in cls]
-            raise ValueError(f"BUILD_MODE must be one of {valid_modes}, got {mode_str}")
 
 
 @dataclass
