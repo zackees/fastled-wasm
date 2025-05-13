@@ -24,7 +24,7 @@ dependencies = [
     "Flask>=3.0.0",
     "livereload",
     ###### WASM SERVER ######
-    "fastled-wasm-server",  #  unversioned for the cli
+    "fastled-wasm-server>=0.0.4",  # This version can float upwards, while the docker is pinned.
 ]
 
 dynamic = ["version"]
