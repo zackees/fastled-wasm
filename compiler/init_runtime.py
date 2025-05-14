@@ -77,6 +77,7 @@ def make_links() -> None:
     # Define file patterns to include
     patterns = [
         "*.h",
+        "*.py",
         "*.hpp",
         "*.cpp",
         "*.sh",
