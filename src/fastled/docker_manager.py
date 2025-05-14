@@ -353,6 +353,48 @@ class DockerManager:
             print(f"Error starting Docker: {str(e)}")
         return False
 
+    def has_newer_version(
+        self, image_name: str, tag: str = "latest"
+    ) -> tuple[bool, str]:
+        """
+        Check if a newer version of the image is available in the registry.
+
+        Args:
+            image_name: The name of the image to check
+            tag: The tag of the image to check
+
+        Returns:
+            A tuple of (has_newer_version, message)
+            has_newer_version: True if a newer version is available, False otherwise
+            message: A message describing the result
+        """
+        try:
+            # Get the local image
+            local_image = self.client.images.get(f"{image_name}:{tag}")
+            local_image_id = local_image.id
+            assert local_image_id is not None
+
+            # Get the remote image data
+            remote_image = self.client.images.get_registry_data(f"{image_name}:{tag}")
+            remote_image_hash = remote_image.id
+
+            # Check if we have a cached remote hash for this local image
+            try:
+                remote_image_hash_from_local_image = DISK_CACHE.get(local_image_id)
+            except Exception:
+                remote_image_hash_from_local_image = None
+
+            # Compare the hashes
+            if remote_image_hash_from_local_image == remote_image_hash:
+                return False, f"Local image {image_name}:{tag} is up to date."
+            else:
+                return True, f"Newer version of {image_name}:{tag} is available."
+
+        except ImageNotFound:
+            return True, f"Image {image_name}:{tag} not found locally."
+        except DockerException as e:
+            return False, f"Error checking for newer version: {e}"
+
     def validate_or_download_image(
         self, image_name: str, tag: str = "latest", upgrade: bool = False
     ) -> bool:

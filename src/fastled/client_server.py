@@ -12,7 +12,7 @@ from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import spawn_http_server
 from fastled.parse_args import Args
-from fastled.settings import DEFAULT_URL
+from fastled.settings import DEFAULT_URL, IMAGE_NAME
 from fastled.sketch import looks_like_sketch_directory
 from fastled.types import BuildMode, CompileResult, CompileServerError
 from fastled.web_compile import (
@@ -223,6 +223,7 @@ def run_client(
         int | None
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
 ) -> int:
+    has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
 
     if host is None:
@@ -244,6 +245,7 @@ def run_client(
         return DEFAULT_URL
 
     url = get_url()
+    is_local_host = _is_local_host(url)
     # parse out the port from the url
     # use a standard host address parser to grab it
     import urllib.parse
@@ -252,7 +254,7 @@ def run_client(
     if parsed_url.port is not None:
         port = parsed_url.port
     else:
-        if _is_local_host(url):
+        if is_local_host:
             raise ValueError(
                 "Cannot use local host without a port. Please specify a port."
             )
@@ -350,6 +352,29 @@ def run_client(
             if shutdown.is_set():
                 print("\nStopping watch mode...")
                 return 0
+
+            # Check for newer Docker image version after first successful compilation
+            if (
+                not has_checked_newer_version_yet
+                and last_compiled_result.success
+                and is_local_host
+            ):
+                has_checked_newer_version_yet = True
+                try:
+
+                    docker_manager = DockerManager()
+                    has_update, message = docker_manager.has_newer_version(
+                        image_name=IMAGE_NAME, tag="latest"
+                    )
+                    if has_update:
+                        print(f"\n🔄 {message}")
+                        print(
+                            "Run with --auto-update to automatically update to the latest version."
+                        )
+                except Exception as e:
+                    # Don't let Docker check failures interrupt the main flow
+                    warnings.warn(f"Failed to check for Docker image updates: {e}")
+
             if SpaceBarWatcher.watch_space_bar_pressed(timeout=1.0):
                 print("Compiling...")
                 last_compiled_result = compile_function(last_hash_value=None)
