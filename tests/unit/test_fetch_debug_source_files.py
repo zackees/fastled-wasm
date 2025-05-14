@@ -68,7 +68,9 @@ class FetchSourceFileTester(unittest.TestCase):
         )
         with client:
             wait_for_server(f"http://localhost:{http_port}", timeout=100)
-            url = f"http://localhost:{http_port}/dwarfsource/fastledsource/git/fastled/src/FastLED.h"
+            url = (
+                f"http://localhost:{http_port}/fastledsource/git/fastled/src/FastLED.h"
+            )
 
             resp = httpx.get(
                 # This type of request will come from the server during debug mode to

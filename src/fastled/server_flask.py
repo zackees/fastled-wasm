@@ -26,6 +26,16 @@ else:
     logger.disabled = True
 
 
+def _is_dwarf_source(path: str) -> bool:
+    """Check if the path is a dwarf source file."""
+    # Check if the path starts with "fastledsource/" or "sketchsource/"
+    return (
+        path.startswith("fastledsource/")
+        or path.startswith("sketchsource/")
+        or path.startswith("dwarfsource")
+    )
+
+
 def _run_flask_server(
     fastled_js: Path,
     port: int,
@@ -137,13 +147,6 @@ def _run_flask_server(
 
             start_time = time.time()
             logger.info(f"Processing request: {request.method} {request.url}")
-
-            if "../" in path:
-                # Prevent directory traversal attacks
-                error_msg = "Directory traversal attack detected"
-                logger.error(error_msg)
-                return Response(error_msg, status=400)
-
             # Forward the request to the compile server
             target_url = f"http://localhost:{compile_server_port}/{path}"
             logger.info(f"Requesting: {target_url}")
@@ -319,9 +322,8 @@ def _run_flask_server(
             logger.info(f"Received request for path: {path}")
 
             try:
-                if path.startswith("fastledsource/") or path.startswith(
-                    "sketchsource/"
-                ):
+                is_debug_src_code_request = _is_dwarf_source(path)
+                if is_debug_src_code_request:
                     logger.info(f"Handling as drawfsource: {path}")
                     return handle_fastledsource(path)
                 elif path.startswith("sourcefiles/"):
