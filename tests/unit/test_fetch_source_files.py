@@ -11,9 +11,14 @@ HERE = Path(__file__).parent
 TEST_INO_WASM = HERE / "test_ino" / "wasm"
 
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
-_ENABLED = False
+_ENABLED = True
 
-_DWARF_SRC_EXAMPLE = "http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
+_DWARF_SRC_EXAMPLE = (
+    "http://localhost:{http_port}/drawfsource/src/drawfsource/git/fastled/src/FastLED.h"
+)
+
+
+# _DWARF_SRC_EXAMPLE_SKETCH = "http://localhost:{http_port}/drawfsource/js/src/src/wave.cpp"
 
 
 def _enabled() -> bool:
@@ -86,6 +91,7 @@ class FetchSourceFileTester(unittest.TestCase):
                 url,
                 timeout=100,
             )
+            self.assertTrue(resp.status_code == 200, resp.status_code)
 
             # Work in progress: get system include files.
             # if resp.status_code != 200:

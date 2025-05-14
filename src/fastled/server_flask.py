@@ -23,8 +23,21 @@ else:
     logger = logging.getLogger("flask_server")
     logger.disabled = True
 
-_DRAWF_SOURCE_FASTLED = "drawfsource/js/fastled/src/"
+_DRAWF_SOURCE_FASTLED = "drawfsource/src/drawfsource/git/fastled/src"
 _DRAWF_SOURCE_EMSDK = "drawfsource/js/drawfsource/emsdk/"
+
+# Mirrors what's on the server.
+_PATTERNS_FASTLED_SRC = [
+    "drawfsource/js/src/drawfsource/git/fastled/src/",
+    "drawfsource/js/drawfsource/headers/",
+]
+
+
+def _resolve_fastled_src(drawfsource: str) -> str | None:
+    for pattern in _PATTERNS_FASTLED_SRC:
+        if drawfsource.startswith(pattern):
+            return drawfsource[len(pattern) :]
+    return None
 
 
 def _run_flask_server(
@@ -140,21 +153,14 @@ def _run_flask_server(
                 logger.error(error_msg)
                 return Response(error_msg, status=400)
 
-            if not path.startswith(_DRAWF_SOURCE_FASTLED) and not path.startswith(
-                _DRAWF_SOURCE_EMSDK
-            ):
-                # unexpected
-                error_msg = f"Unexpected path: {path}"
-                logger.error(error_msg)
-                # Logging disabled
-                return Response("Malformed path", status=400)
-
-            # Weird magic being played with these paths, it's beyond me.
-            if path.startswith(_DRAWF_SOURCE_FASTLED):
-                path = path[len("/drawfsource") :]
+            resolved: str | None = _resolve_fastled_src(path)
+            if resolved is None:
+                # If the path does not match the expected patterns, return a 404
+                logger.error(f"Path does not match expected patterns: {path}")
+                return Response("Not Found", status=404)
 
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/drawfsource/{path}"
+            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
             logger.info(f"Requesting: {target_url}")
             logger.info(f"Processing dwarfsource request for {path}")
 
