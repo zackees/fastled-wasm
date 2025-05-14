@@ -47,6 +47,7 @@ RUN chmod +x /js/prewarm.sh && \
 RUN /js/prewarm.sh --force >> /logs/prewarm.log.1 || true
 
 
+
 # # Copy the fastled repo from the host machine and prepare for pre-warm
 # # Make sure and delete files that have been removed so that we don't get
 # # duplicate symbols from stale files.
