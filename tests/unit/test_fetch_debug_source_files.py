@@ -21,7 +21,6 @@ _DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/fastledsource/js/src/fastled
 _DWARF_SRC_EXAMPLE2 = (
     "http://localhost:{http_port}/sketchsource/js/sketchsource/headers/FastLED.h"
 )
-# _DWARF_SRC_EXAMPLES = "http://localhost:{http_port}/drawfsource/js/src/direct.h"
 
 _DWARF_SRC_EXAMPLES = [
     _DWARF_SRC_EXAMPLE1,
@@ -58,21 +57,6 @@ class FetchSourceFileTester(unittest.TestCase):
         _enabled(),
         "Skipping test because either this is on non-Linux system on github or embedded data is disabled",
     )
-    def test_backend_server_for_src_file_fetch(self) -> None:
-        """Tests that embedded data is round tripped correctly."""
-        # Todo: make this only run on a local build. Otherwise there are sync issues
-        # with the docker version of this app and will generate false positives until
-        # the docker version is updated - Frustrating.
-        with Api.server() as server:
-            resp = server.fetch_source_file("FastLED.h")
-            if isinstance(resp, Exception):
-                raise resp
-            print("Done")
-
-    @unittest.skipUnless(
-        _enabled(),
-        "Skipping test because either this is on non-Linux system on github or embedded data is disabled",
-    )
     def test_http_server_for_fetch_redirect(self) -> None:
         """Tests that we can convert the file paths from emscripten debugging (dwarf) to the actual file paths."""
         http_port = 8932
@@ -83,11 +67,13 @@ class FetchSourceFileTester(unittest.TestCase):
             http_port=http_port,
         )
         with client:
-            # TODO Make faster.
             wait_for_server(f"http://localhost:{http_port}", timeout=100)
+            url = f"http://localhost:{http_port}/dwarfsource/fastledsource/git/fastled/src/FastLED.h"
 
             resp = httpx.get(
-                f"http://localhost:{http_port}/sourcefiles/FastLED.h",
+                # This type of request will come from the server during debug mode to
+                # enable debugging.
+                url,
                 timeout=100,
             )
             if resp.status_code != 200:

@@ -17,7 +17,7 @@ from fastled.docker_manager import (
 )
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
-from fastled.types import BuildMode, CompileResult, CompileServerError, FileResponse
+from fastled.types import BuildMode, CompileResult, CompileServerError
 from fastled.util import port_is_free
 
 SERVER_OPTIONS = [
@@ -182,29 +182,6 @@ class CompileServerImpl:
             if not self.docker.is_container_running(self.container_name):
                 return False
         return False
-
-    def fetch_source_file(self, filepath: str) -> FileResponse | Exception:
-        """Get the source file from the server."""
-        if not self._port:
-            raise RuntimeError("Server has not been started yet")
-        try:
-            httpx_client = httpx.Client()
-            url = f"http://localhost:{self._port}/sourcefiles/{filepath}"
-            response = httpx_client.get(url, follow_redirects=True)
-            if response.status_code == 200:
-                content = response.text
-                mimetype: str = response.headers.get("Content-Type", "text/plain")
-                return FileResponse(
-                    content=content,
-                    mimetype=mimetype,
-                    filename=filepath,
-                )
-            else:
-                return CompileServerError(
-                    f"Error fetching file {filepath}: {response.status_code}"
-                )
-        except httpx.RequestError as e:
-            return CompileServerError(f"Error fetching file {filepath}: {e}")
 
     def _start(self) -> int:
         print("Compiling server starting")
