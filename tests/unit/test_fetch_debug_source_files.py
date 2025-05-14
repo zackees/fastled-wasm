@@ -15,7 +15,7 @@ HERE = Path(__file__).parent
 TEST_INO_WASM = HERE / "test_ino" / "wasm"
 
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
-_ENABLED = False
+_ENABLED = True
 
 _DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
 _DWARF_SRC_EXAMPLE2 = (

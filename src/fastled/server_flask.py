@@ -125,9 +125,14 @@ def _run_flask_server(
                 logger.error(f"Error forwarding request: {e}", exc_info=True)
                 return Response(f"Error: {str(e)}", status=500)
 
-        def handle_dwarfsource(path: str) -> Response:
-            """Handle requests to /drawfsource/js/fastled/src/
-            or /drawfsource/js/drawfsource/emsdk/*"""
+        def handle_fastledsource(path: str) -> Response:
+            """Handle requests to
+            /fastledsource/js/fastledsource/git/fastled/src/
+            or
+            /sketchsource/js/src/Blink.ino
+
+            The names are a bit mangled due to the way C++ prefixing works near the root directory.
+            """
             from flask import request
 
             start_time = time.time()
@@ -314,9 +319,11 @@ def _run_flask_server(
             logger.info(f"Received request for path: {path}")
 
             try:
-                if path.startswith("drawfsource/"):
+                if path.startswith("fastledsource/") or path.startswith(
+                    "sketchsource/"
+                ):
                     logger.info(f"Handling as drawfsource: {path}")
-                    return handle_dwarfsource(path)
+                    return handle_fastledsource(path)
                 elif path.startswith("sourcefiles/"):
                     logger.info(f"Handling as sourcefiles: {path}")
                     return handle_sourcefile(path)
