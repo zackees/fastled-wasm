@@ -16,33 +16,33 @@ RUN echo "force update4"
 ARG FASTLED_BUILD_DAY=echo $(date +'%Y-%m-%d')
 ENV FASTLED_BUILD_DAY=${FASTLED_BUILD_DAY}
 
-ARG FASTLED_VERSION=master
-ENV FASTLED_VERSION=${FASTLED_VERSION}
-RUN mkdir -p /js/fastled && \
-    rsync -a /git/fastled/ /js/fastled/ --exclude='.git'
+# ARG FASTLED_VERSION=master
+# ENV FASTLED_VERSION=${FASTLED_VERSION}
+# RUN mkdir -p /js/fastled && \
+#     rsync -a /git/fastled/ /js/fastled/ --exclude='.git'
 
 # Create symlinks for wasm platform files.
 COPY compiler/init_runtime.py /js/init_runtime.py
-COPY compiler/prewarm.sh /js/prewarm.sh
+#COPY compiler/prewarm.sh /js/prewarm.sh
 
 WORKDIR /js
 
-ARG NO_PREWARM=0
-ENV NO_PREWARM=${NO_PREWARM}
+#ARG NO_PREWARM=0
+#ENV NO_PREWARM=${NO_PREWARM}
 
-RUN python /js/init_runtime.py || true
+#RUN python /js/init_runtime.py || true
 
 
 # First pre-warm cycle - always do it as part of the build.
-RUN mkdir -p /logs
+# RUN mkdir -p /logs
 
 # Force a build if the compiler flags change.
-COPY compiler/CMakeLists.txt /trash/CMakeLists.txt
-RUN rm -rf /trash
+#COPY compiler/CMakeLists.txt /trash/CMakeLists.txt
+#RUN rm -rf /trash
 
-RUN chmod +x /js/prewarm.sh && \
-    cat /js/prewarm.sh >> /logs/prewarm.log.0
-RUN /js/prewarm.sh --force >> /logs/prewarm.log.1 || true
+#RUN chmod +x /js/prewarm.sh && \
+#    cat /js/prewarm.sh >> /logs/prewarm.log.0
+#RUN /js/prewarm.sh --force >> /logs/prewarm.log.1 || true
 
 
 
@@ -69,12 +69,12 @@ RUN chmod +x /entrypoint.sh && dos2unix /entrypoint.sh
 # now sync local to the source directory.
 # RUN rsync -av /host/fastled/ /js/fastled/ && rm -rf /host/fastled
 
-RUN python /js/init_runtime.py || true
+# RUN python /js/init_runtime.py || true
 
 
 # SECOND PRE-WARM CYCLE: Copy the fastled repo from the host machine and pre-warm the cache with that compilation. This will
 # be much quicker than the first pre-warm cycle.
-RUN /js/prewarm.sh --force > /logs/prewarm.log.2 || true
+# RUN /js/prewarm.sh --force > /logs/prewarm.log.2 || true
 
 # Now timestamp the image and store it at the end of the build.
 RUN date > /image_timestamp.txt
