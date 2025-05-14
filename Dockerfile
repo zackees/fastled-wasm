@@ -20,8 +20,7 @@ ENV FASTLED_BUILD_DAY=${FASTLED_BUILD_DAY}
 
 ARG FASTLED_VERSION=master
 ENV FASTLED_VERSION=${FASTLED_VERSION}
-RUN git clone -b ${FASTLED_VERSION} https://github.com/fastled/FastLED.git --depth 1 /git/fastled && \
-    mkdir -p /js/fastled && \
+RUN mkdir -p /js/fastled && \
     rsync -a /git/fastled/ /js/fastled/ --exclude='.git'
 
 # Create symlinks for wasm platform files.
