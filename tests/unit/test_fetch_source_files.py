@@ -13,9 +13,17 @@ TEST_INO_WASM = HERE / "test_ino" / "wasm"
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
 _ENABLED = True
 
-_DWARF_SRC_EXAMPLE = "http://localhost:{http_port}/drawfsource/js/src/drawfsource/git/fastled/src/FastLED.h"
+_DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/drawfsource/js/src/drawfsource/git/fastled/src/FastLED.h"
+_DWARF_SRC_EXAMPLE2 = (
+    "http://localhost:{http_port}/drawfsource/js/drawfsource/headers/FastLED.h"
+)
+# _DWARF_SRC_EXAMPLES = "http://localhost:{http_port}/drawfsource/js/src/direct.h"
 
-
+_DWARF_SRC_EXAMPLES = [
+    _DWARF_SRC_EXAMPLE1,
+    _DWARF_SRC_EXAMPLE2,
+    # _DWARF_SRC_EXAMPLES
+]
 # _DWARF_SRC_EXAMPLE_SKETCH = "http://localhost:{http_port}/drawfsource/js/src/src/wave.cpp"
 
 
@@ -86,13 +94,16 @@ class FetchSourceFileTester(unittest.TestCase):
             if content_length == 0:
                 raise Exception("Content-Length is 0")
 
-            # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
-            url = _DWARF_SRC_EXAMPLE.format(http_port=http_port)
-            resp = httpx.get(
-                url,
-                timeout=100,
-            )
-            self.assertTrue(resp.status_code == 200, resp.status_code)
+            for ds in _DWARF_SRC_EXAMPLES:
+                # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
+                url = ds.format(http_port=http_port)
+                resp = httpx.get(
+                    url,
+                    timeout=100,
+                )
+                self.assertTrue(resp.status_code == 200, resp.status_code)
+
+            print("Done")
 
             # Work in progress: get system include files.
             # if resp.status_code != 200:
