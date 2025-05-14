@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import time
 from multiprocessing import Process
 from pathlib import Path
@@ -8,7 +9,8 @@ import httpx
 from livereload import Server
 
 # Logging configuration
-_ENABLE_LOGGING = True  # Set to False to disable logging
+_ENABLE_LOGGING = os.environ.get("FLASK_SERVER_LOGGING", "0") == "1"
+
 
 if _ENABLE_LOGGING:
     logging.basicConfig(
@@ -22,22 +24,6 @@ else:
     logging.getLogger("flask_server").propagate = False
     logger = logging.getLogger("flask_server")
     logger.disabled = True
-
-_DRAWF_SOURCE_FASTLED = "drawfsource/src/drawfsource/git/fastled/src"
-_DRAWF_SOURCE_EMSDK = "drawfsource/js/drawfsource/emsdk/"
-
-# Mirrors what's on the server.
-_PATTERNS_FASTLED_SRC = [
-    "drawfsource/js/src/drawfsource/git/fastled/src/",
-    "drawfsource/js/drawfsource/headers/",
-]
-
-
-def _resolve_fastled_src(drawfsource: str) -> str | None:
-    for pattern in _PATTERNS_FASTLED_SRC:
-        if drawfsource.startswith(pattern):
-            return drawfsource[len(pattern) :]
-    return None
 
 
 def _run_flask_server(

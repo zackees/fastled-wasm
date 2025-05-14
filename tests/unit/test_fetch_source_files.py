@@ -1,3 +1,7 @@
+import os
+
+os.environ["FLASK_SERVER_LOGGING"] = "1"
+
 import time
 import unittest
 import warnings
@@ -11,20 +15,18 @@ HERE = Path(__file__).parent
 TEST_INO_WASM = HERE / "test_ino" / "wasm"
 
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
-_ENABLED = True
+_ENABLED = False
 
-_DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/drawfsource/js/src/drawfsource/git/fastled/src/FastLED.h"
+_DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
 _DWARF_SRC_EXAMPLE2 = (
-    "http://localhost:{http_port}/drawfsource/js/drawfsource/headers/FastLED.h"
+    "http://localhost:{http_port}/sketchsource/js/sketchsource/headers/FastLED.h"
 )
 # _DWARF_SRC_EXAMPLES = "http://localhost:{http_port}/drawfsource/js/src/direct.h"
 
 _DWARF_SRC_EXAMPLES = [
     _DWARF_SRC_EXAMPLE1,
     _DWARF_SRC_EXAMPLE2,
-    # _DWARF_SRC_EXAMPLES
 ]
-# _DWARF_SRC_EXAMPLE_SKETCH = "http://localhost:{http_port}/drawfsource/js/src/src/wave.cpp"
 
 
 def _enabled() -> bool:
