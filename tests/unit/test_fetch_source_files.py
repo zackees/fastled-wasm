@@ -52,6 +52,9 @@ class FetchSourceFileTester(unittest.TestCase):
     )
     def test_backend_server_for_src_file_fetch(self) -> None:
         """Tests that embedded data is round tripped correctly."""
+        # Todo: make this only run on a local build. Otherwise there are sync issues
+        # with the docker version of this app and will generate false positives until
+        # the docker version is updated - Frustrating.
         with Api.server() as server:
             resp = server.fetch_source_file("FastLED.h")
             if isinstance(resp, Exception):
