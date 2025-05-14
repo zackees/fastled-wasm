@@ -100,6 +100,9 @@ def zip_files(directory: Path, build_mode: BuildMode) -> ZipResult | Exception:
                 zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9
             ) as zip_file:
                 for file_path in files:
+                    if "fastled_js" in str(file_path):
+                        # These can be huge, don't send the output files back to the server!
+                        continue
                     relative_path = file_path.relative_to(directory)
                     achive_path = str(Path("wasm") / relative_path)
                     if str(relative_path).startswith("data") and ENABLE_EMBEDDED_DATA:

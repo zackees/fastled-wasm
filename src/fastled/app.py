@@ -51,6 +51,7 @@ def run_server(args: Args) -> int:
 
 def main() -> int:
     from fastled import __version__
+    from fastled.select_sketch_directory import select_sketch_directory
 
     args = parse_args()
     interactive: bool = args.interactive
@@ -70,14 +71,11 @@ def main() -> int:
     # then prompt the user for a sketch directory.
     # 2. Tell the user they can use --server --interactive to
     # skip this prompt.
-
-    from fastled.select_sketch_directory import select_sketch_directory
-
     if interactive and cwd_looks_like_fastled_repo and directory is None:
         answer = input(
             "No sketch directory selected, would you like to select one? (y/n): "
         )
-        if answer.lower() == "y":
+        if answer.lower()[:1] == "y" or answer.lower() == "":
             sketch_list: list[Path] = find_sketch_directories()
             if sketch_list:
                 maybe_dir: str | None = select_sketch_directory(
@@ -109,12 +107,6 @@ def main() -> int:
         # print(f"Building Docker image at {project_root}")
         from fastled import Api
 
-        # server = Docker.spawn_server_from_fastled_repo(
-        #     project_root=project_root,
-        #     interactive=interactive,
-        #     sketch_folder=directory,
-        # )
-        # assert isinstance(server, CompileServer)
         server: CompileServer = CompileServer(
             interactive=interactive,
             auto_updates=False,
