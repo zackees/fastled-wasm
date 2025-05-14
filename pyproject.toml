@@ -24,7 +24,7 @@ dependencies = [
     "Flask>=3.0.0",
     "livereload",
     ###### WASM SERVER ######
-    "fastled-wasm-server>=1.0.13",  # Enforced by unit test to match project <--> docker.
+    "fastled-wasm-server>=1.0.14",  # Enforced by unit test to match project <--> docker.
 ]
 
 dynamic = ["version"]
