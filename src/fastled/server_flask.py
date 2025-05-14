@@ -153,14 +153,8 @@ def _run_flask_server(
                 logger.error(error_msg)
                 return Response(error_msg, status=400)
 
-            resolved: str | None = _resolve_fastled_src(path)
-            if resolved is None:
-                # If the path does not match the expected patterns, return a 404
-                logger.error(f"Path does not match expected patterns: {path}")
-                return Response("Not Found", status=404)
-
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/drawfsource/{path}"
+            target_url = f"http://localhost:{compile_server_port}/{path}"
             logger.info(f"Requesting: {target_url}")
             logger.info(f"Processing dwarfsource request for {path}")
 
@@ -219,7 +213,7 @@ def _run_flask_server(
             logger.info(f"Processing sourcefile request for {path}")
 
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
+            target_url = f"http://localhost:{compile_server_port}/{path}"
             logger.info(f"Forwarding to: {target_url}")
 
             # Log request headers
