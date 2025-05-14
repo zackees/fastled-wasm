@@ -13,6 +13,8 @@ TEST_INO_WASM = HERE / "test_ino" / "wasm"
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
 _ENABLED = False
 
+_DWARF_SRC_EXAMPLE = "http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
+
 
 def _enabled() -> bool:
     """Check if this system can run the tests."""
@@ -79,7 +81,7 @@ class FetchSourceFileTester(unittest.TestCase):
                 raise Exception("Content-Length is 0")
 
             # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
-            url = f"http://localhost:{http_port}/drawfsource/js/fastled/src/FastLED.h"
+            url = _DWARF_SRC_EXAMPLE.format(http_port=http_port)
             resp = httpx.get(
                 url,
                 timeout=100,
