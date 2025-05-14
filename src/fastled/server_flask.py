@@ -160,7 +160,7 @@ def _run_flask_server(
                 return Response("Not Found", status=404)
 
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
+            target_url = f"http://localhost:{compile_server_port}/drawfsource/{path}"
             logger.info(f"Requesting: {target_url}")
             logger.info(f"Processing dwarfsource request for {path}")
 
