@@ -11,10 +11,10 @@ keywords = ["template-python-cmd"]
 license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
-    "docker>=7.1.0",
     "httpx>=0.28.1",
     "watchdog>=6.0.0",
     ########## Begin Docker Manager Dependencies
+    "docker>=7.1.0",
     "filelock>=3.16.1",
     "appdirs>=1.4.4",
     "rapidfuzz>=3.10.1",
@@ -24,7 +24,7 @@ dependencies = [
     "Flask>=3.0.0",
     "livereload",
     ###### WASM SERVER ######
-    "fastled-wasm-server>=1.0.5",  # This version can float upwards, while the docker is pinned.
+    "fastled-wasm-server>=1.0.6",  # This version can float upwards, while the docker is pinned.
 ]
 
 dynamic = ["version"]

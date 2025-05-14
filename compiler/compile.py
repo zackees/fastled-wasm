@@ -29,7 +29,6 @@ from typing import List  # noqa: E402
 
 from fastled_wasm_server.paths import (  # noqa: E402
     COMPILER_ROOT,
-    FASTLED_COMPILER_DIR,
     PIO_BUILD_DIR,
     SKETCH_SRC,
 )
@@ -37,6 +36,9 @@ from fastled_wasm_server.print_banner import banner  # noqa: E402
 from fastled_wasm_server.types import BuildMode  # noqa: E402
 
 print("Finished imports...")
+
+# Hack - remove.
+FASTLED_COMPILER_DIR = Path("/git/fastled/src/platforms/wasm/compiler")
 
 _FASTLED_MODULES_DIR = FASTLED_COMPILER_DIR / "modules"
 _INDEX_HTML_SRC = FASTLED_COMPILER_DIR / "index.html"
