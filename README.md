@@ -366,3 +366,79 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 
   live-server --https --cert=src/fastled/assets/localhost.pem --key=src/fastled/assets/localhost-key.pem --port=5500
+
+
+## Performance
+
+```
+###############################
+# Build started with command: #
+#   pio run -v                #
+###############################
+
+0.41 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm]
+0.41 Warning! Ignore unknown configuration option `force_verbose` in section [env:wasm]
+0.41 Processing wasm (platform: native; extra_scripts: post:wasm_compiler_flags.py; lib_compat_mode: off; build_flags: -std=c++17, -DFASTLED_NO_PINMAP, -DHAS_HARDWARE_PIN_SUPPORT, -DFASTLED_FORCE_SOFTWARE_SPI, -I/js/src/platforms/wasm/compiler; custom_wasm_export_name: fastled; lib_deps: FastLED=symlink://fastled; build_dir: build/wasm; force_verbose: yes)
+0.41 --------------------------------------------------------------------------------
+0.99 LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+0.99 LDF Modes: Finder ~ chain, Compatibility ~ off
+0.99 Found 1 compatible libraries
+0.99 Scanning dependencies...
+1.40 Dependency Graph
+1.40 |-- FastLED @ 3.9.16 (License: MIT, Path: /js/fastled)
+1.49 Building in release mode
+1.49
+1.49 #########################
+1.49 # C++/C Compiler Flags: #
+1.49 #########################
+1.49
+1.49 CC/CXX flags:
+1.49   -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50
+1.49   -DFASTLED_FORCE_NAMESPACE=1
+1.49   -DFASTLED_USE_PROGMEM=0
+1.49   -O1
+1.49   -DUSE_OFFSET_CONVERTER=0
+1.49   -std=gnu++17
+1.49   -fpermissive
+1.49   -Wno-constant-logical-operand
+1.49   -Wnon-c-typedef-for-linkage
+1.49   -Werror=bad-function-cast
+1.49   -Werror=cast-function-type
+1.49   -I
+1.49   src
+1.49   -I/js/src/platforms/wasm/compiler
+1.49
+1.49 #################
+1.49 # Linker Flags: #
+1.49 #################
+1.49
+1.49   --bind
+1.49   -fuse-ld=lld
+1.49   -sWASM=1
+1.49   -sALLOW_MEMORY_GROWTH=1
+1.49   -sINITIAL_MEMORY=134217728
+1.49   -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8']
+1.49   -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files']
+1.49   --no-entry
+1.49   -sERROR_ON_WASM_CHANGES_AFTER_LINK
+1.49   -sMODULARIZE=1
+1.49   -sEXPORT_NAME=fastled
+1.49   -o
+1.49   /js/.pio/build/wasm/fastled.js
+1.49
+1.49 ##########################
+1.49 # FastLED Library Flags: #
+1.49 ##########################
+1.49
+1.49   --bind
+1.49   -Wl,--whole-archive,-fuse-ld=lld
+1.49   -Werror=bad-function-cast
+1.49   -Werror=cast-function-type
+1.49
+1.49 ################
+1.49 # End of Flags #
+1.49 ################
+1.49
+2.20 ccache em++ -o .pio/build/wasm/program --bind -fuse-ld=lld -sWASM=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8'] -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files'] --no-entry -sERROR_ON_WASM_CHANGES_AFTER_LINK -sMODULARIZE=1 -sEXPORT_NAME=fastled -o /js/.pio/build/wasm/fastled.js .pio/build/wasm/libbb9/fastled/FastLED.o .pio/build/wasm/libbb9/fastled/bitswap.o .pio/build/wasm/libbb9/fastled/cled_controller.o .pio/build/wasm/libbb9/fastled/colorpalettes.o .pio/build/wasm/libbb9/fastled/crgb.o .pio/build/wasm/libbb9/fastled/fl/allocator.o .pio/build/wasm/libbb9/fastled/fl/audio.o .pio/build/wasm/libbb9/fastled/fl/bilinear_expansion.o .pio/build/wasm/libbb9/fastled/fl/blur.o .pio/build/wasm/libbb9/fastled/fl/bytestreammemory.o .pio/build/wasm/libbb9/fastled/fl/colorutils.o .pio/build/wasm/libbb9/fastled/fl/downscale.o .pio/build/wasm/libbb9/fastled/fl/engine_events.o .pio/build/wasm/libbb9/fastled/fl/fft.o .pio/build/wasm/libbb9/fastled/fl/fft_impl.o .pio/build/wasm/libbb9/fastled/fl/file_system.o .pio/build/wasm/libbb9/fastled/fl/fill.o .pio/build/wasm/libbb9/fastled/fl/five_bit_hd_gamma.o .pio/build/wasm/libbb9/fastled/fl/gradient.o .pio/build/wasm/libbb9/fastled/fl/json.o .pio/build/wasm/libbb9/fastled/fl/leds.o .pio/build/wasm/libbb9/fastled/fl/line_simplification.o .pio/build/wasm/libbb9/fastled/fl/noise_woryley.o .pio/build/wasm/libbb9/fastled/fl/ptr.o .pio/build/wasm/libbb9/fastled/fl/raster_sparse.o .pio/build/wasm/libbb9/fastled/fl/rectangular_draw_buffer.o .pio/build/wasm/libbb9/fastled/fl/screenmap.o .pio/build/wasm/libbb9/fastled/fl/sin32.o .pio/build/wasm/libbb9/fastled/fl/str.o .pio/build/wasm/libbb9/fastled/fl/strstream.o .pio/build/wasm/libbb9/fastled/fl/stub_main.o .pio/build/wasm/libbb9/fastled/fl/tile2x2.o .pio/build/wasm/libbb9/fastled/fl/time_alpha.o .pio/build/wasm/libbb9/fastled/fl/transform.o .pio/build/wasm/libbb9/fastled/fl/type_traits.o .pio/build/wasm/libbb9/fastled/fl/ui.o .pio/build/wasm/libbb9/fastled/fl/wave_simulation.o .pio/build/wasm/libbb9/fastled/fl/wave_simulation_real.o .pio/build/wasm/libbb9/fastled/fl/xmap.o .pio/build/wasm/libbb9/fastled/fl/xymap.o .pio/build/wasm/libbb9/fastled/fl/xypath.o .pio/build/wasm/libbb9/fastled/fl/xypath_impls.o .pio/build/wasm/libbb9/fastled/fl/xypath_renderer.o .pio/build/wasm/libbb9/fastled/fx/2d/blend.o .pio/build/wasm/libbb9/fastled/fx/2d/noisepalette.o .pio/build/wasm/libbb9/fastled/fx/2d/scale_up.o .pio/build/wasm/libbb9/fastled/fx/2d/wave.o .pio/build/wasm/libbb9/fastled/fx/frame.o .pio/build/wasm/libbb9/fastled/fx/fx_engine.o .pio/build/wasm/libbb9/fastled/fx/time.o .pio/build/wasm/libbb9/fastled/fx/video.o .pio/build/wasm/libbb9/fastled/fx/video/frame_interpolator.o .pio/build/wasm/libbb9/fastled/fx/video/frame_tracker.o .pio/build/wasm/libbb9/fastled/fx/video/pixel_stream.o .pio/build/wasm/libbb9/fastled/fx/video/video_impl.o .pio/build/wasm/libbb9/fastled/hsv2rgb.o .pio/build/wasm/libbb9/fastled/lib8tion.o .pio/build/wasm/libbb9/fastled/noise.o .pio/build/wasm/libbb9/fastled/platforms.o .pio/build/wasm/libbb9/fastled/platforms/arm/k20/clockless_objectfled.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/clockless_i2s_esp32s3.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/i2s/i2s_esp32dev.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_4/idf4_rmt.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_4/idf4_rmt_impl.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_5/idf5_rmt.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/rmt_5/strip_rmt.o .pio/build/wasm/libbb9/fastled/platforms/esp/32/spi_ws2812/strip_spi.o .pio/build/wasm/libbb9/fastled/platforms/wasm/active_strip_data.o .pio/build/wasm/libbb9/fastled/platforms/wasm/compiler/Arduino.o .pio/build/wasm/libbb9/fastled/platforms/wasm/engine_listener.o .pio/build/wasm/libbb9/fastled/platforms/wasm/fs_wasm.o .pio/build/wasm/libbb9/fastled/platforms/wasm/js.o .pio/build/wasm/libbb9/fastled/platforms/wasm/timer.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/audio.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/button.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/checkbox.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/description.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/number_field.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/slider.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/title.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/ui_internal.o .pio/build/wasm/libbb9/fastled/platforms/wasm/ui/ui_manager.o .pio/build/wasm/libbb9/fastled/power_mgt.o .pio/build/wasm/libbb9/fastled/rgbw.o .pio/build/wasm/libbb9/fastled/sensors/digital_pin.o .pio/build/wasm/libbb9/fastled/sensors/pir.o .pio/build/wasm/libbb9/fastled/simplex.o .pio/build/wasm/libbb9/fastled/third_party/cq_kernel/cq_kernel.o .pio/build/wasm/libbb9/fastled/third_party/cq_kernel/kiss_fft.o .pio/build/wasm/libbb9/fastled/third_party/cq_kernel/kiss_fftr.o .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_api.o .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_rmt_dev.o .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_rmt_encoder.o .pio/build/wasm/libbb9/fastled/third_party/espressif/led_strip/src/led_strip_spi_dev.o .pio/build/wasm/libbb9/fastled/third_party/object_fled/src/OjectFLED.o .pio/build/wasm/libbb9/fastled/transpose8x1_noinline.o .pio/build/wasm/libbb9/fastled/wiring.o .pio/build/wasm/src/wasm.ino.o -L.pio/build/wasm
+3.61 ========================= [SUCCESS] Took 3.20 seconds =========================
+```
