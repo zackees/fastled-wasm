@@ -79,24 +79,18 @@ def make_links() -> None:
         "*.h",
         "*.hpp",
         "*.cpp",
-        "*.py",
         "*.sh",
         "*.ino",
-        "*.ini",
         "*.txt",
     ]
 
     # Get all matching files in compiler directory
     tasks = _collect_docker_compile_files(globs=patterns)
     tasks += _collect_fastled_compile_files(globs=patterns)
-
-    for pattern in patterns:
-        for file_path in glob.glob(str(FASTLED_COMPILER_DIR / pattern)):
-            src = Path(file_path)
-            if "entrypoint.sh" in str(src):
-                continue
-            dst = COMPILER_ROOT / src.name
-            tasks.append((src, dst))
+    tasks += [
+        ("/platformio/wasm_compiler_flags.py", COMPILER_ROOT / "wasm_compiler_flags.py")
+    ]
+    tasks += [("/platformio/fastled.json", COMPILER_ROOT / "fastled.json")]
 
     # Process files in parallel using ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=16) as executor:
