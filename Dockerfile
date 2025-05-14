@@ -3,8 +3,6 @@
 FROM niteris/fastled-wasm-compiler:latest
 
 
-RUN pip install uv==0.6.5
-
 # Get the compiler requirements and install them.
 COPY compiler/pyproject.toml /install/pyproject.toml
 RUN uv pip install --system -r /install/pyproject.toml
