@@ -36,7 +36,7 @@ _IS_GITHUB = "GITHUB_ACTIONS" in os.environ
 _DEFAULT_BUILD_DIR = "/js/.pio/build"
 
 
-os.environ.get("FASTLED_FORCE_CLEAR", "0") == "1"
+FORCE_CLEAR: bool = bool(os.environ.get("FASTLED_FORCE_CLEAR", "0") == "1")
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -66,6 +66,11 @@ def get_ramdisk_size() -> str | None:
         return os.environ.get("TMPFS_SIZE", None)
     except ValueError:
         return None  # Defaults to off
+
+
+def get_force_remove_image_previous() -> bool:
+    """Get the force remove image previous value."""
+    return os.environ.get("FASTLED_FORCE_CLEAR", "0") == "1"
 
 
 def set_clear() -> None:
@@ -216,6 +221,18 @@ def _hack_to_fix_mac(volumes: list[Volume] | None) -> list[Volume] | None:
         )
     )
     return volumes
+
+
+def set_force_remove_image_previous(new_value: str | None = None) -> None:
+    if new_value is not None:
+        os.environ["FASTLED_FORCE_CLEAR"] = new_value
+    else:
+        os.environ["FASTLED_FORCE_CLEAR"] == "1"
+
+
+def force_image_removal() -> bool:
+    """Get the force remove image previous value."""
+    return os.environ.get("FASTLED_FORCE_CLEAR", "0") == "1"
 
 
 class DockerManager:
@@ -635,6 +652,13 @@ class DockerManager:
             ports: Dict mapping host ports to container ports
                     Example: {8080: 80} maps host port 8080 to container port 80
         """
+        remove_previous = remove_previous or get_force_remove_image_previous()
+        if remove_previous:
+            # make a banner print
+            print(
+                "Force removing previous image due to FASTLED_FORCE_CLEAR environment variable."
+            )
+
         tmpfs_size = tmpfs_size or get_ramdisk_size()
         sys_admin = tmpfs_size is not None and tmpfs_size != "0"
         volumes = _hack_to_fix_mac(volumes)

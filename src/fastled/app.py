@@ -2,6 +2,7 @@
 Uses the latest wasm compiler image to compile the FastLED sketch.
 """
 
+import os
 import sys
 import time
 from pathlib import Path

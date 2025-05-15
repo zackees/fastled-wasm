@@ -62,6 +62,7 @@ class Args:
         assert isinstance(
             args.release, bool
         ), f"expected bool, got {type(args.release)}"
+
         init: bool | str = False
         if args.init is None:
             init = False

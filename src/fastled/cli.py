@@ -3,7 +3,6 @@ Main entry point.
 """
 
 import multiprocessing
-import os
 import sys
 
 
@@ -16,9 +15,9 @@ def run_app() -> int:
 
 def main() -> int:
     """Main entry point for the template_python_cmd package."""
-    if "--debug" in sys.argv:
-        # Debug mode
-        os.environ["FLASK_SERVER_LOGGING"] = "1"
+    # if "--debug" in sys.argv:
+    #     # Debug mode
+    #     os.environ["FLASK_SERVER_LOGGING"] = "1"
     return run_app()
 
 

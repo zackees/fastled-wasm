@@ -146,6 +146,12 @@ def parse_args() -> Args:
         help="Remove all FastLED containers and images",
     )
 
+    parser.add_argument(
+        "--clear",
+        action="store_true",
+        help="Remove all FastLED containers and images",
+    )
+
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
     build_mode.add_argument(
@@ -162,13 +168,24 @@ def parse_args() -> Args:
 
     args = parser.parse_args()
 
-    if args.ram_disk_size != "0":
-        from fastled.docker_manager import set_ramdisk_size
-        from fastled.util import banner_string
+    # TODO: propagate the library.
+    # from fastled.docker_manager import force_remove_previous
 
-        msg = banner_string(f"Setting tmpfs size to {args.ram_disk_size}")
-        print(msg)
-        set_ramdisk_size(args.ram_disk_size)
+    # if force_remove_previous():
+    #     print("Removing previous containers...")
+    # do itinfront he camer
+    # nonw invoke via the
+    #
+    # Work in progress.
+    # set_ramdisk_size("50mb")
+
+    # if args.ram_disk_size != "0":
+    #     from fastled.docker_manager import set_ramdisk_size
+    #     from fastled.util import banner_string
+
+    #     msg = banner_string(f"Setting tmpfs size to {args.ram_disk_size}")
+    #     print(msg)
+    #     set_ramdisk_size(args.ram_disk_size)
 
     if args.purge:
         from fastled.docker_manager import DockerManager
@@ -188,15 +205,23 @@ def parse_args() -> Args:
         print(f"Use 'fastled {args.directory}' to compile the project.")
         sys.exit(0)
 
+    cwd: Path = Path(os.getcwd())
+    fastled_dir: Path | None = _find_fastled_repo(cwd)
+    is_fastled_dir: bool = fastled_dir is not None
+
+    if is_fastled_dir:
+        # if --quick, --debug, --release are not specified then default to --debug
+        if not (args.debug or args.quick or args.release):
+            args.debug = True
+            print("Defaulting to --debug mode")
+
     if args.build or args.interactive:
-        cwd: Path = Path(os.getcwd())
-        fastled_dir: Path | None = _find_fastled_repo(cwd)
         if args.directory is not None:
             args.directory = str(Path(args.directory).absolute())
-        if fastled_dir is None:
+        if not is_fastled_dir:
             print("This command must be run from within the FastLED repo. Exiting...")
             sys.exit(1)
-        if cwd != fastled_dir:
+        if cwd != fastled_dir and fastled_dir is not None:
             print(f"Switching to FastLED repo at {fastled_dir}")
             os.chdir(fastled_dir)
         if args.directory is None:
