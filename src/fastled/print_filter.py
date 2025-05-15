@@ -94,8 +94,65 @@ class BuildArtifact:
     compile_or_link: CompileOrLink
     hash: int
 
+    def flags_pretty(self) -> str:
+        """
+        Returns the flags in a pretty format.
+        This is used for printing the flags to the console.
+        """
+        flags = self.build_flags
+        flags = flags.replace(" -I", "\n-I")
+        flags = flags.replace(" -D", "\n-D")
+        flags = flags.replace(" -l", "\n-l")
+        flags = flags.replace(" -L", "\n-L")
+        flags = flags.replace(" -o", "\n-o")
+        flags = flags.replace(" -W", "\n-W")
+        flags = flags.replace(" -f", "\n-f")
+        flags = flags.replace(" -g", "\n-g")
+
+        # break into lines and sort
+        lines = flags.splitlines()
+        first_line = lines[0]
+        lines.pop(0)  # remove first line
+        lines = sorted(lines)
+        # remove duplicates
+        lines = list(dict.fromkeys(lines))
+        # remove empty lines
+        lines = [line for line in lines if line.strip() != ""]
+        # remove leading and trailing whitespace
+        lines = [line.strip() for line in lines]
+        lines = sorted(lines)
+        lines = [first_line] + lines  # add first line back to the beginning
+        # stringify
+        flags = "\n".join(lines)
+        return flags
+
     def __str__(self) -> str:
-        return f"{self.timestamp} {self.output_artifact} {self.build_flags} {self.compile_or_link} {self.hash}"
+        return f"{self.brief()} {self.build_flags} {self.compile_or_link} {self.hash}"
+
+    def brief(self) -> str:
+        return f"{self.timestamp:.2f} {self.output_artifact}"
+
+    def begin_flags(self) -> str:
+        """
+        Returns the flags that are used to begin a build.
+        This is the flags that are used for the first compile or link.
+        """
+
+        out: str = (
+            "\n################ NEW COMPILE/LINK FLAG GROUP #####################\n\n"
+        )
+        out += f"{self.flags_pretty()}\n"
+        return out
+
+    def end_flags(self) -> str:
+        """
+        Returns the flags that are used to end a build.
+        This is the flags that are used for the last compile or link.
+        """
+        out: str = (
+            "\n################ END COMPILE/LINK FLAG GROUP #####################\n"
+        )
+        return out
 
     @staticmethod
     def parse(input_str: str) -> "BuildArtifact | None":

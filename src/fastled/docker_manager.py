@@ -366,7 +366,7 @@ class DockerManager:
         Returns:
             A tuple of (has_newer_version, message)
             has_newer_version: True if a newer version is available, False otherwise
-            message: A message describing the result
+            message: A message describing the result, including the date of the newer version if available
         """
         try:
             # Get the local image
@@ -388,6 +388,24 @@ class DockerManager:
             if remote_image_hash_from_local_image == remote_image_hash:
                 return False, f"Local image {image_name}:{tag} is up to date."
             else:
+                # Get the creation date of the remote image if possible
+                try:
+                    # Try to get detailed image info including creation date
+                    remote_image_details = self.client.api.inspect_image(
+                        f"{image_name}:{tag}"
+                    )
+                    if "Created" in remote_image_details:
+                        created_date = remote_image_details["Created"].split("T")[
+                            0
+                        ]  # Extract just the date part
+                        return (
+                            True,
+                            f"Newer version of {image_name}:{tag} is available (published on {created_date}).",
+                        )
+                except Exception:
+                    pass
+
+                # Fallback if we couldn't get the date
                 return True, f"Newer version of {image_name}:{tag} is available."
 
         except ImageNotFound:

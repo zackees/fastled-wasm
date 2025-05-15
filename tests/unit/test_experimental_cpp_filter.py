@@ -124,43 +124,89 @@ src/third_party/cq_kernel/kiss_fft.c
 """
 
 
+class Filter:
+    def __init__(self):
+        self._prev_broken_line: str | None = None
+        self._last_build_artifact: BuildArtifact | None = None
+
+    def filter(self, line: str) -> str | None:
+        if not line:
+            return None
+        maybe_prev_broken_line: str | None = self._prev_broken_line
+        self._prev_broken_line = None
+        # if the line starts with a digit, it's a build artifact
+        ba: BuildArtifact | None = BuildArtifact.parse(line)
+
+        if ba is not None:  # Successfully parsed a build artifact.
+            # if we have a build artifact, we need to check if it's the same as the last one
+            if (
+                self._last_build_artifact is not None
+                and ba.hash == self._last_build_artifact.hash
+            ):
+                # No change in build settings.
+                out = ba.brief()
+                self._last_build_artifact = ba
+                return out
+            if self._last_build_artifact is None:
+                self._last_build_artifact = ba
+                return ba.begin_flags() + "\n" + ba.brief()
+            # we have a new build artifact, so we need to print out the build settings
+            # and the line
+            out = self._last_build_artifact.end_flags() + "\n\n\n"
+            out += ba.begin_flags()
+            out += "\n" + ba.brief()
+            self._last_build_artifact = ba
+            return out
+
+        # We couldn't parse this line so store it in stead.
+        if maybe_prev_broken_line is None:
+            self._prev_broken_line = line
+            return None
+        # we have a previous line, so we can try to merge them because this typically happens
+        # for line breaks.
+        new_line = maybe_prev_broken_line + line
+        ba = BuildArtifact.parse(new_line)
+        if ba is None:
+            return None
+        # we have a build artifact, so we can use it.
+
+        if self._last_build_artifact and (ba.hash == self._last_build_artifact.hash):
+            # No change in build settings.
+            out = ba.brief()
+            return out
+        out = ""
+        # different build settings so we need to print out the new build settings and then the line
+        if self._last_build_artifact is not None:
+            out += "\n" + self._last_build_artifact.end_flags() + "\n\n"
+        out += ba.begin_flags()
+        out += ba.brief() + "\n"
+        self._last_build_artifact = ba
+        return out
+
+    def end(self) -> str:
+        """Returns the end of the build artifact."""
+        if self._last_build_artifact is None:
+            return ""
+        # we have a build artifact, so we can use it.
+        out = self._last_build_artifact.end_flags()
+        self._last_build_artifact = None
+        return out
+
+
 class ExperimentalPrintFitlerCppTester(unittest.TestCase):
     """Main tester class."""
-
-    # def test_print_filter_no_build(self) -> None:
-    #     """Tests that a project can be filtered"""
-    #     # Test the PrintFilter class
-    #     cbc = ChunkedBuildConfigGrouper()
-
-    #     print(f"\n###Filtering:\n\n{_BUILD_CONFIG_SAMPLE}")
-    #     out = cbc.filter(_BUILD_CONFIG_SAMPLE)
-    #     #print(out)
-    #     print(f"###Filtered: result was {out}")
-    #     print("Done")
 
     def test_build_artifact_parsing(self) -> None:
         """Tests that a project can be filtered"""
         # Test the PrintFilter class
         lines = _BUILD_CONFIG_SAMPLE.splitlines()
         lines = [line.strip() for line in lines if line.strip()]
-        last_hash: int | None = None
+        filter: Filter = Filter()
         for line in lines:
-            ba = BuildArtifact.parse(line)
-            if ba is None:
-                print("!!")
-                continue
-
-            if last_hash is None or ba.hash != last_hash:
-                # print out the build flags
-                print("Found new build flags:")
-                print(ba.build_flags)
-                # now set the hash to the new value
-                last_hash = ba.hash
-
-            # print the time and build output
-            print(f"{ba.timestamp} {ba.output_artifact}")
-
-        print("Done")
+            str_or_none = filter.filter(line)
+            if str_or_none is not None:
+                print(str_or_none)
+        print(filter.end())
 
 
 if __name__ == "__main__":
