@@ -162,13 +162,13 @@ def parse_args() -> Args:
 
     args = parser.parse_args()
 
-    if args.ram_disk_size:
-        from fastled.docker_manager import set_tmpfs_size
+    if args.ram_disk_size != "0":
+        from fastled.docker_manager import set_ramdisk_size
+        from fastled.util import banner_string
 
-        print("#####################################")
-        print("# Setting rampdisk to ", args.ram_disk_size)
-        print("#####################################")
-        set_tmpfs_size(args.ram_disk_size)
+        msg = banner_string(f"Setting tmpfs size to {args.ram_disk_size}")
+        print(msg)
+        set_ramdisk_size(args.ram_disk_size)
 
     if args.purge:
         from fastled.docker_manager import DockerManager

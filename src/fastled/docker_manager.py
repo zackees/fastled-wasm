@@ -33,6 +33,7 @@ CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 DB_FILE = CONFIG_DIR / "db.db"
 DISK_CACHE = DiskLRUCache(str(DB_FILE), 10)
 _IS_GITHUB = "GITHUB_ACTIONS" in os.environ
+_DEFAULT_BUILD_DIR = "/js/.pio/build"
 
 
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
@@ -42,7 +43,7 @@ def _utc_now_no_tz() -> datetime:
     return now.replace(tzinfo=None)
 
 
-def set_tmpfs_size(size: str) -> None:
+def set_ramdisk_size(size: str) -> None:
     """Set the tmpfs size for the container."""
     # This is a hack to set the tmpfs size from the environment variable.
     # It should be set in the docker-compose.yml file.
@@ -53,7 +54,7 @@ def set_tmpfs_size(size: str) -> None:
         os.environ["TMPFS_SIZE"] = "0"  # Defaults to off
 
 
-def _tmpfs_size() -> str | None:
+def get_ramdisk_size() -> str | None:
     """Get the tmpfs size for the container."""
     # This is a hack to get the tmpfs size from the environment variable.
     # It should be set in the docker-compose.yml file.
@@ -627,7 +628,7 @@ class DockerManager:
             ports: Dict mapping host ports to container ports
                     Example: {8080: 80} maps host port 8080 to container port 80
         """
-        tmpfs_size = tmpfs_size or _tmpfs_size()
+        tmpfs_size = tmpfs_size or get_ramdisk_size()
         sys_admin = tmpfs_size is not None and tmpfs_size != "0"
         volumes = _hack_to_fix_mac(volumes)
         # Convert volumes to the format expected by Docker API
@@ -698,7 +699,7 @@ class DockerManager:
 
             tmpfs: dict[str, str] | None = None
             if tmpfs_size:
-                tmpfs = {"/mnt/ramdisk": f"size={tmpfs_size}"}
+                tmpfs = {_DEFAULT_BUILD_DIR: f"size={tmpfs_size}"}
             container = self.client.containers.run(
                 image=image_name,
                 command=command,
