@@ -111,7 +111,9 @@ class FetchSourceFileTester(unittest.TestCase):
                 self.assertTrue(resp.status_code == 200, resp.status_code)
                 content_length = int(resp.headers["Content-Length"])
                 self.assertTrue(content_length > 0, "Content-Length is 0")
-                backend_url = backend_host + "/dwarfsource/" + url.split("/")[-1]
+                backend_url = (
+                    backend_host + "/dwarfsource/" + "/".join(url.split("/")[1:])
+                )
                 resp = httpx.get(
                     backend_url,
                     timeout=100,
