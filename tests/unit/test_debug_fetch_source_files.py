@@ -118,7 +118,7 @@ class FetchSourceFileTester(unittest.TestCase):
                 )
                 if resp.status_code != 200:
                     raise Exception(
-                        f"Failed to fetch source file from the backend server: {resp.status_code}"
+                        f"Failed to fetch source file '{backend_url}' from the backend server: {resp.status_code}"
                     )
 
             print("Done")
