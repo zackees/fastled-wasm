@@ -68,6 +68,7 @@ class FetchSourceFileTester(unittest.TestCase):
         )
         with client:
             wait_for_server(f"http://localhost:{http_port}", timeout=100)
+            # backend_url = client.url()
             url = (
                 f"http://localhost:{http_port}/fastledsource/git/fastled/src/FastLED.h"
             )

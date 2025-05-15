@@ -148,7 +148,7 @@ def _run_flask_server(
             start_time = time.time()
             logger.info(f"Processing request: {request.method} {request.url}")
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/{path}"
+            target_url = f"http://localhost:{compile_server_port}/dwarfsource/{path}"
             logger.info(f"Requesting: {target_url}")
             logger.info(f"Processing dwarfsource request for {path}")
 
@@ -316,6 +316,18 @@ def _run_flask_server(
                 if isinstance(e, FileNotFoundError):
                     return Response(f"File not found: {path}", status=404)
                 return Response(f"Error serving file: {str(e)}", status=500)
+
+        @app.route("/fastapi")
+        def server_backend_redirect():
+            """Redirect to the compile server"""
+            logger.info("Redirecting to compile server")
+            target_url = f"http://localhost:{compile_server_port}/docs"
+            logger.info(f"Redirecting to: {target_url}")
+            return Response(
+                f"Redirecting to compile server: <a href='{target_url}'>{target_url}</a>",
+                status=302,
+                headers={"Location": target_url},
+            )
 
         @app.route("/<path:path>")
         def serve_files(path: str):
