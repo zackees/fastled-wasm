@@ -25,6 +25,7 @@ class Args:
     debug: bool
     quick: bool
     release: bool
+    ram_disk_size: str  # suffixed liked "25mb" or "1gb"
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -88,6 +89,7 @@ class Args:
             debug=args.debug,
             quick=args.quick,
             release=args.release,
+            ram_disk_size=args.ram_disk_size,
         )
 
 

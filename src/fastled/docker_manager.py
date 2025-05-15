@@ -42,6 +42,28 @@ def _utc_now_no_tz() -> datetime:
     return now.replace(tzinfo=None)
 
 
+def set_tmpfs_size(size: str) -> None:
+    """Set the tmpfs size for the container."""
+    # This is a hack to set the tmpfs size from the environment variable.
+    # It should be set in the docker-compose.yml file.
+    # If not set, return 25MB.
+    try:
+        os.environ["TMPFS_SIZE"] = str(size)
+    except ValueError:
+        os.environ["TMPFS_SIZE"] = "0"  # Defaults to off
+
+
+def _tmpfs_size() -> str | None:
+    """Get the tmpfs size for the container."""
+    # This is a hack to get the tmpfs size from the environment variable.
+    # It should be set in the docker-compose.yml file.
+    # If not set, return 25MB.
+    try:
+        return os.environ.get("TMPFS_SIZE", None)
+    except ValueError:
+        return None  # Defaults to off
+
+
 def _win32_docker_location() -> str | None:
     home_dir = Path.home()
     out = [
@@ -594,6 +616,7 @@ class DockerManager:
         ports: dict[int, int] | None = None,
         remove_previous: bool = False,
         environment: dict[str, str] | None = None,
+        tmpfs_size: str | None = None,  # suffixed like 25mb.
     ) -> Container:
         """
         Run a container from an image. If it already exists with matching config, start it.
@@ -604,6 +627,8 @@ class DockerManager:
             ports: Dict mapping host ports to container ports
                     Example: {8080: 80} maps host port 8080 to container port 80
         """
+        tmpfs_size = tmpfs_size or _tmpfs_size()
+        sys_admin = tmpfs_size is not None and tmpfs_size != "0"
         volumes = _hack_to_fix_mac(volumes)
         # Convert volumes to the format expected by Docker API
         volumes_dict = None
@@ -670,10 +695,16 @@ class DockerManager:
             print("\n" + "#" * msg_len)
             print(out_msg)
             print("#" * msg_len + "\n")
+
+            tmpfs: dict[str, str] | None = None
+            if tmpfs_size:
+                tmpfs = {"/mnt/ramdisk": f"size={tmpfs_size}"}
             container = self.client.containers.run(
                 image=image_name,
                 command=command,
                 name=container_name,
+                tmpfs=tmpfs,
+                cap_add=["SYS_ADMIN"] if sys_admin else None,
                 detach=True,
                 tty=True,
                 volumes=volumes_dict,
