@@ -22,6 +22,7 @@ class Args:
     quick: bool
     release: bool
     ram_disk_size: str  # suffixed liked "25mb" or "1gb"
+    clear = False  # Force the last running container to be removed. Useful for benchmarking.
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
