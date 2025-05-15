@@ -129,7 +129,7 @@ def _run_web_compiler(
 
 
 def _try_start_server_or_get_url(
-    auto_update: bool, args_web: str | bool, localhost: bool
+    auto_update: bool, args_web: str | bool, localhost: bool, clear: bool
 ) -> tuple[str, CompileServer | None]:
     is_local_host = localhost or (
         isinstance(args_web, str)
@@ -159,7 +159,9 @@ def _try_start_server_or_get_url(
     else:
         try:
             print("No local server found, starting one...")
-            compile_server = CompileServer(auto_updates=auto_update)
+            compile_server = CompileServer(
+                auto_updates=auto_update, remove_previous=clear
+            )
             print("Waiting for the local compiler to start...")
             if not compile_server.ping():
                 print("Failed to start local compiler.")
@@ -172,7 +174,7 @@ def _try_start_server_or_get_url(
             return (DEFAULT_URL, None)
 
 
-def _try_make_compile_server() -> CompileServer | None:
+def _try_make_compile_server(clear: bool = False) -> CompileServer | None:
     if not DockerManager.is_docker_installed():
         return None
     try:
@@ -184,7 +186,7 @@ def _try_make_compile_server() -> CompileServer | None:
         free_port = find_free_port(start_port=9723, end_port=9743)
         if free_port is None:
             return None
-        compile_server = CompileServer(auto_updates=False)
+        compile_server = CompileServer(auto_updates=False, remove_previous=clear)
         print("Waiting for the local compiler to start...")
         if not compile_server.ping():
             print("Failed to start local compiler.")
@@ -222,13 +224,14 @@ def run_client(
     http_port: (
         int | None
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
+    clear: bool = False,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
 
     if host is None:
         # attempt to start a compile server if docker is installed.
-        compile_server = _try_make_compile_server()
+        compile_server = _try_make_compile_server(clear=clear)
         if compile_server is None:
             host = DEFAULT_URL
     elif isinstance(host, CompileServer):
@@ -485,7 +488,9 @@ def run_client_server(args: Args) -> int:
     url: str
     compile_server: CompileServer | None = None
     try:
-        url, compile_server = _try_start_server_or_get_url(auto_update, web, localhost)
+        url, compile_server = _try_start_server_or_get_url(
+            auto_update, web, localhost, args.clear
+        )
     except KeyboardInterrupt:
         print("\nExiting from first try...")
         if compile_server is not None:
@@ -505,6 +510,7 @@ def run_client_server(args: Args) -> int:
             keep_running=not just_compile,
             build_mode=build_mode,
             profile=profile,
+            clear=args.clear,
         )
     except KeyboardInterrupt:
         return 1
