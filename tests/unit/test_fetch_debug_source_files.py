@@ -68,7 +68,9 @@ class FetchSourceFileTester(unittest.TestCase):
         )
         with client:
             wait_for_server(f"http://localhost:{http_port}", timeout=100)
-            # backend_url = client.url()
+            backend_host = client.url()
+
+            # This url should proxy back to the server at /dwarfsource/fastledsource/git/fastled/src/FastLED.h
             url = (
                 f"http://localhost:{http_port}/fastledsource/git/fastled/src/FastLED.h"
             )
@@ -85,6 +87,20 @@ class FetchSourceFileTester(unittest.TestCase):
             if content_length == 0:
                 raise Exception("Content-Length is 0")
 
+            backend_url = (
+                backend_host
+                + "/dwarfsource"
+                + "/fastledsource/git/fastled/src/FastLED.h"
+            )
+            resp = httpx.get(
+                backend_url,
+                timeout=100,
+            )
+            if resp.status_code != 200:
+                raise Exception(
+                    f"Failed to fetch source file from the backend server: {resp.status_code}"
+                )
+
             for ds in _DWARF_SRC_EXAMPLES:
                 # now get something similar at static/js/fastled/src/platforms/wasm/js.cpp
                 url = ds.format(http_port=http_port)
@@ -93,6 +109,17 @@ class FetchSourceFileTester(unittest.TestCase):
                     timeout=100,
                 )
                 self.assertTrue(resp.status_code == 200, resp.status_code)
+                content_length = int(resp.headers["Content-Length"])
+                self.assertTrue(content_length > 0, "Content-Length is 0")
+                backend_url = backend_host + "/dwarfsource/" + url.split("/")[-1]
+                resp = httpx.get(
+                    backend_url,
+                    timeout=100,
+                )
+                if resp.status_code != 200:
+                    raise Exception(
+                        f"Failed to fetch source file from the backend server: {resp.status_code}"
+                    )
 
             print("Done")
 
