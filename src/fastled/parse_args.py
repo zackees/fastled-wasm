@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 
+from fastled.args import Args
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
 from fastled.settings import DEFAULT_URL, IMAGE_NAME
@@ -11,7 +12,6 @@ from fastled.sketch import (
     looks_like_fastled_repo,
     looks_like_sketch_directory,
 )
-from fastled.types import Args
 
 
 def _find_fastled_repo(start: Path) -> Path | None:
