@@ -36,6 +36,9 @@ _IS_GITHUB = "GITHUB_ACTIONS" in os.environ
 _DEFAULT_BUILD_DIR = "/js/.pio/build"
 
 
+os.environ.get("FASTLED_FORCE_CLEAR", "0") == "1"
+
+
 # Docker uses datetimes in UTC but without the timezone info. If we pass in a tz
 # then it will throw an exception.
 def _utc_now_no_tz() -> datetime:
@@ -63,6 +66,10 @@ def get_ramdisk_size() -> str | None:
         return os.environ.get("TMPFS_SIZE", None)
     except ValueError:
         return None  # Defaults to off
+
+
+def set_clear() -> None:
+    os.environ["FASTLED_FORCE_CLEAR"] = "1"
 
 
 def _win32_docker_location() -> str | None:
