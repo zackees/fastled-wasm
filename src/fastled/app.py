@@ -13,12 +13,6 @@ from fastled.filewatcher import file_watcher_set
 from fastled.parse_args import Args, parse_args
 from fastled.sketch import find_sketch_directories, looks_like_fastled_repo
 
-# from fastled.sketch import (
-#     find_sketch_directories,
-#     looks_like_fastled_repo,
-#     looks_like_sketch_directory,
-# )
-
 
 def run_server(args: Args) -> int:
     interactive = args.interactive

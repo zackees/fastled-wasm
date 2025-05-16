@@ -157,7 +157,6 @@ def parse_args() -> Args:
     build_mode.add_argument(
         "--quick",
         action="store_true",
-        default=True,
         help="Build in quick mode (default)",
     )
     build_mode.add_argument(
@@ -209,11 +208,14 @@ def parse_args() -> Args:
     fastled_dir: Path | None = _find_fastled_repo(cwd)
     is_fastled_dir: bool = fastled_dir is not None
 
-    if is_fastled_dir:
-        # if --quick, --debug, --release are not specified then default to --debug
-        if not (args.debug or args.quick or args.release):
+    if not (args.debug or args.quick or args.release):
+        if is_fastled_dir:
+            # if --quick, --debug, --release are not specified then default to --debug
             args.debug = True
             print("Defaulting to --debug mode")
+        else:
+            args.quick = True
+            print("Defaulting to --quick mode")
 
     if args.build or args.interactive:
         if args.directory is not None:
