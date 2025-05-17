@@ -227,7 +227,7 @@ def set_force_remove_image_previous(new_value: str | None = None) -> None:
     if new_value is not None:
         os.environ["FASTLED_FORCE_CLEAR"] = new_value
     else:
-        os.environ["FASTLED_FORCE_CLEAR"] == "1"
+        os.environ["FASTLED_FORCE_CLEAR"] = "1"
 
 
 def force_image_removal() -> bool:
