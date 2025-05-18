@@ -369,6 +369,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
   live-server --https --cert=src/fastled/assets/localhost.pem --key=src/fastled/assets/localhost-key.pem --port=5500
 
 
+
 ## Performance
 
 ```
