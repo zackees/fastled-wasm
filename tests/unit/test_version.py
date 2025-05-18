@@ -16,10 +16,11 @@ class MainTester(unittest.TestCase):
     def test_command(self) -> None:
         """Test command line interface (CLI)."""
         stdout = subprocess.check_output(COMMAND, shell=True)
+        version_stdout = stdout.decode("utf-8").strip()
         self.assertEqual(
-            stdout.decode("utf-8").strip(),
+            version_stdout,
             __version__,
-            f"Version mismatch: {stdout.decode('utf-8').strip()} != {__version__}",
+            f"FastLED Version mismatch: {version_stdout} (tool output) != {__version__} (package version)",
         )
 
 

@@ -4,10 +4,19 @@ FROM niteris/fastled-wasm-compiler:latest
 
 
 # Get the compiler requirements and install them.
-COPY compiler/pyproject.toml /install/pyproject.toml
-RUN uv pip install --system -r /install/pyproject.toml --refresh \
-   || uv pip install --system -r /install/pyproject.toml --refresh \
-   || uv pip install --system -r /install/pyproject.toml --refresh
+# COPY compiler/pyproject.toml /install/pyproject.toml
+# RUN uv pip install --system -r /install/pyproject.toml --refresh \
+#    || uv pip install --system -r /install/pyproject.toml --refresh \
+#    || uv pip install --system -r /install/pyproject.toml --refresh
+
+COPY requirements.testing.txt /install/requirements.txt
+# Extract fastled-wasm-server version from requirements.txt
+RUN \
+    grep -oP '(?<=fastled-wasm-server[<>=!]=?)[^ \n#]+' /install/requirements.txt > /install/version.txt && \
+    cat /install/version.txt > /install/requirements.txt && \
+    uv pip install --system -r /install/requirements.txt --refresh || \
+    uv pip install --system -r /install/requirements.txt --refresh || \
+    uv pip install --system -r /install/requirements.txt --refresh
 
 # FIRST PRE-WARM CYCLE and initial setup: Download the fastled repo from the github and pre-warm the cache with a compilation.
 # This is by far the most expensive part of the build, because platformio needs to download initial tools. This
