@@ -105,10 +105,12 @@ def main() -> int:
     _update_fastled()
 
     code_sync = CodeSync(
-        volume_mapped_src=VOLUME_MAPPED_SRC,
-        rsync_dest=Path("/invalid/path"),
+        # volume_mapped_src=VOLUME_MAPPED_SRC,
+        # rsync_dest=Path("/invalid/path"),
     )
-    code_sync.sync_source_directory_if_volume_is_mapped()
+    # code_sync.sync_source_directory_if_volume_is_mapped()
+    if VOLUME_MAPPED_SRC.exists():
+        code_sync.update_and_compile_core(VOLUME_MAPPED_SRC)
 
     try:
         if args.mode == "compile":
