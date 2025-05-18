@@ -362,6 +362,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 
 
+
   live-server --https --port=8416 --host=localhost .  --cert=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost-key.pem --key=C:/Users/niteris/dev/fastled-wasm/src/fastled/assets/localhost.pem --no-browser
 
 
