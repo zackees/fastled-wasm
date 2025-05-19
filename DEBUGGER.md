@@ -27,3 +27,8 @@ This includes:
     * Or right click on the page and select `Inspect`
   * Then click the `Sources` -> `Page`
   * You should now see source code for both fastled core and your sketch.
+
+
+## Notable features
+
+  * If you use FASTLED_ASSERT(...) and it triggers while devtools is open, the debugger will be invoked and the program will pause at the point the assert fired.
