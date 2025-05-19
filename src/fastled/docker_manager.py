@@ -653,7 +653,7 @@ class DockerManager:
                     Example: {8080: 80} maps host port 8080 to container port 80
         """
         remove_previous = remove_previous or get_force_remove_image_previous()
-        if remove_previous:
+        if get_force_remove_image_previous():
             # make a banner print
             print(
                 "Force removing previous image due to FASTLED_FORCE_CLEAR environment variable."

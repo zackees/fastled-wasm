@@ -19,7 +19,6 @@ if [[ "$*" == *"--full"* ]]; then
     uv run build_local_docker.py
 fi
 
-
 # If the test fails, then purge and try again
 pytest -x -v -s --durations=0 tests/unit "$@"
 
