@@ -20,7 +20,8 @@ if [[ "$*" == *"--full"* ]]; then
 fi
 
 
-
+# If the test fails, then purge and try again
 pytest -x -v -s --durations=0 tests/unit "$@"
+
 # uv run pytest -n auto tests -v
 
