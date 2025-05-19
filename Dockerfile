@@ -20,17 +20,19 @@ RUN \
 ARG FASTLED_BUILD_DAY=echo $(date +'%Y-%m-%d')
 ENV FASTLED_BUILD_DAY=${FASTLED_BUILD_DAY}
 
-# Create symlinks for wasm platform files.
-COPY compiler/init_runtime.py /js/init_runtime.py
-
 
 WORKDIR /js
 
 
-COPY compiler /js/compiler
+RUN mkdir -p /js/compiler
 
-COPY compiler/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && dos2unix /entrypoint.sh
+COPY compiler/*.sh /js/compiler
+COPY compiler/*.py /js/compiler
+
+# COPY compiler/entrypoint.sh /entrypoint.sh
+# RUN chmod +x /entrypoint.sh && dos2unix /entrypoint.sh
+
+RUN cd /js/compiler && chmod +x entrypoint.sh debug.sh && dos2unix /js/compiler/*.*
 
 # RSYNC DISABLED FOR NOW
 # now sync local to the source directory.

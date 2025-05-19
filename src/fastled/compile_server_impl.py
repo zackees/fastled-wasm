@@ -249,22 +249,6 @@ class CompileServerImpl:
                 # to allow for interactive compilation
                 # interactive_sources = list(INTERACTIVE_SOURCES)
                 interactive_sources: list[tuple[Path, str]] = []
-                init_runtime_py = (
-                    Path(self.fastled_src_dir)
-                    / ".."
-                    / ".."
-                    / "fastled-wasm"
-                    / "compiler"
-                    / "init_runtime.py"
-                )
-                if init_runtime_py.exists():
-                    # fastled-wasm is in a sister directory, mapping this in to the container.
-                    mapping = (
-                        init_runtime_py,
-                        "/js/init_runtime.py",
-                    )
-                    interactive_sources.append(mapping)
-
                 src_host: Path
                 dst_container: str
                 for src_host, dst_container in interactive_sources:

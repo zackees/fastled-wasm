@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
+set -x
+
 # load emsdk environment
 source /emsdk/emsdk_env.sh
 export PATH="$PATH:/emsdk/upstream/bin"
 
-# initialize runtime
-python init_runtime.py
-
 # only do the final prewarm if RUNTIME_PREWARM is set to "1"
 if [[ "${RUNTIME_PREWARM:-0}" == "1" ]]; then
-  ./final_prewarm.sh
+    uv run -m fastled_wasm_compiler.cli_update_from_master
 fi
 
 # hand off to the main command
