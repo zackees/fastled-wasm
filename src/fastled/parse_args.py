@@ -211,8 +211,8 @@ def parse_args() -> Args:
     if not (args.debug or args.quick or args.release):
         if is_fastled_dir:
             # if --quick, --debug, --release are not specified then default to --debug
-            args.debug = True
-            print("Defaulting to --debug mode")
+            args.quick = True
+            print("Defaulting to --quick mode in fastled repo")
         else:
             args.quick = True
             print("Defaulting to --quick mode")
