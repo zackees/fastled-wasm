@@ -9,6 +9,10 @@ This includes:
   * Inspecting variables
   * Stack
 
+
+![image](https://github.com/user-attachments/assets/774c61fd-4026-48b8-9f36-60295f5c311d)
+
+
 ## Enabling
 
   * Install the [C++ Devtools Plugin for Chrome/Brave/Chromium](https://chromewebstore.google.com/detail/cc++-devtools-support-dwa/pdcpmagijalfljmkmjngeonclgbbannb)
