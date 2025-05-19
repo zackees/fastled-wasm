@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -x
-
 # load emsdk environment
 source /emsdk/emsdk_env.sh
 export PATH="$PATH:/emsdk/upstream/bin"

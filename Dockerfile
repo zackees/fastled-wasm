@@ -26,13 +26,17 @@ WORKDIR /js
 
 RUN mkdir -p /js/compiler
 
-COPY compiler/*.sh /js/compiler
-COPY compiler/*.py /js/compiler
+
+# COPY compiler/*.py /js/compiler
+COPY entrypoint.sh /entrypoint.sh
+COPY compiler/run.py /js/run.py
+COPY compiler/debug.sh /js/debug.sh
 
 # COPY compiler/entrypoint.sh /entrypoint.sh
 # RUN chmod +x /entrypoint.sh && dos2unix /entrypoint.sh
 
-RUN cd /js/compiler && chmod +x entrypoint.sh debug.sh && dos2unix /js/compiler/*.*
+RUN cd /js && chmod +x debug.sh && dos2unix *.sh
+RUN chmod +x /entrypoint.sh && dos2unix /entrypoint.sh
 
 # RSYNC DISABLED FOR NOW
 # now sync local to the source directory.

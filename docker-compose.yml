@@ -7,4 +7,4 @@ services:
       - "8234:80"
     environment:
       - ENVIRONMENT=dev
-    #image: niteris/fastled-wasm:local
+    image: niteris/fastled-wasm:latest
