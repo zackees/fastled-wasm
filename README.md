@@ -64,7 +64,11 @@ https://github.com/user-attachments/assets/64ae0e6c-5f8b-4830-ab87-dcc25bc61218
 pip install fastled
 ```
 
-**Note that you may need to install x86 docker emulation on Mac-m1 and later, as this is an x86 only image at the prsent.**
+# Debugger
+
+This tool features full C++ debugging through the browser.
+
+For instructions on setup see [DEBUGGER.md](DEBUGGER.md)
 
 # Command Line Use
 
