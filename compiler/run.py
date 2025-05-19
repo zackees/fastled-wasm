@@ -6,41 +6,14 @@ import warnings
 from pathlib import Path
 from typing import Tuple
 
-from fastled_wasm_compiler.code_sync import CodeSync
-from fastled_wasm_server.paths import VOLUME_MAPPED_SRC
+from fastled_wasm_compiler.compiler import Compiler
+from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC
 
 _PORT = os.environ.get("PORT", 80)
 
 _CHOICES = ["compile", "server"]
 
 HERE = Path(__file__).parent
-
-
-def _update_fastled() -> None:
-    # NOT ENABLED YET
-    if True:
-        return
-    is_render = os.environ.get("RENDER", "false") == "true"
-    if not is_render:
-        print("Skipping finalprewarm...")
-        return
-    git_path = "/git/fastled"
-    fastled_path = "/js/fastled"
-    subprocess.run(["git", "fetch", "origin"], cwd=git_path)
-    subprocess.run(["git", "reset", "--hard", "origin/master"], cwd=git_path)
-    subprocess.run(
-        [
-            "rsync",
-            "-av",
-            "--info=NAME",
-            "--delete",
-            f"{git_path}/",
-            f"{fastled_path}/",
-            "--exclude",
-            ".git",
-        ],
-        cwd="/js",
-    )
 
 
 def _parse_args() -> Tuple[argparse.Namespace, list[str]]:
@@ -102,18 +75,16 @@ def _run_compile(unknown_args: list[str]) -> int:
 def main() -> int:
     print("Running...")
     args, unknown_args = _parse_args()
-    _update_fastled()
-
-    code_sync = CodeSync(
-        # volume_mapped_src=VOLUME_MAPPED_SRC,
-        # rsync_dest=Path("/invalid/path"),
+    compiler = Compiler(
+        volume_mapped_src=VOLUME_MAPPED_SRC,
     )
-    # code_sync.sync_source_directory_if_volume_is_mapped()
-    if VOLUME_MAPPED_SRC.exists():
-        code_sync.update_and_compile_core(VOLUME_MAPPED_SRC)
+    compiler.update_src()
 
     try:
         if args.mode == "compile":
+            warnings.warn(
+                "The compile mode is deprecated and may fail. Use server mode instead."
+            )
             rtn = _run_compile(unknown_args)
             return rtn
         elif args.mode == "server":
