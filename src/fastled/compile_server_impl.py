@@ -18,7 +18,7 @@ from fastled.docker_manager import (
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
-from fastled.util import port_is_free
+from fastled.util import port_is_free, print_banner
 
 SERVER_OPTIONS = [
     "--allow-shutdown",  # Allow the server to be shut down without a force kill.
@@ -221,9 +221,8 @@ class CompileServerImpl:
             ports = {INTERNAL_DOCKER_PORT: port}
         volumes = []
         if self.fastled_src_dir:
-            print(
-                f"Mounting FastLED source directory {self.fastled_src_dir} into container /host/fastled/src"
-            )
+            msg = f"FastLED REPO updates enabled!!\n\nMounting FastLED source directory\n{self.fastled_src_dir} into container\n/host/fastled/src"
+            print_banner(msg)
             volumes.append(
                 Volume(
                     host_path=str(self.fastled_src_dir),

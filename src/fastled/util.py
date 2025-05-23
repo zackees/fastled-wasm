@@ -11,12 +11,17 @@ def hash_file(file_path: Path) -> str:
 
 
 def banner_string(msg: str) -> str:
-    """
-    Return `msg` surrounded by a border of # characters, including
-    leading and trailing newlines.
-    """
-    border = "#" * (len(msg) + 4)
-    return f"\n{border}\n# {msg}\n{border}\n"
+    lines = msg.splitlines()
+    max_length = max(len(line) for line in lines)
+    border = "#" * (max_length + 4)
+    bordered_lines = [f"# {line} " + "#" * (max_length - len(line)) for line in lines]
+    bordered_msg = "\n".join(bordered_lines)
+    return f"\n{border}\n{bordered_msg}\n{border}\n"
+
+
+def print_banner(msg: str) -> None:
+    """Print a message in a banner format."""
+    print(banner_string(msg))
 
 
 def port_is_free(port: int) -> bool:
