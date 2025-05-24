@@ -61,8 +61,10 @@ This is a python app, so any python package manager will work. We also provide p
 ### Executables
 
   * Windows: https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-windows-x64.zip
-  * MacOS: https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-macos-x64.zip
-  * Linux: https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-linux-x64.zip
+  * MacOS (M1+): https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-macos-arm64.zip
+  * MacOS (x86): https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-macos-x64.zip
+  * Linux (x86): https://github.com/zackees/fastled-wasm/releases/latest/download/fastled-linux-x64.zip
+
 
 
 ### Ubuntu Install Script
