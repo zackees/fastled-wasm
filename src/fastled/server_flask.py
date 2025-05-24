@@ -28,6 +28,9 @@ else:
 
 def _is_dwarf_source(path: str) -> bool:
     """Check if the path is a dwarf source file."""
+    if "dwarfsource" in path:
+        logger.debug(f"Path '{path}' contains 'dwarfsource'")
+        return True
     # Check if the path starts with "fastledsource/" or "sketchsource/"
     return (
         path.startswith("fastledsource/")
@@ -336,6 +339,7 @@ def _run_flask_server(
 
             try:
                 is_debug_src_code_request = _is_dwarf_source(path)
+                logger.info(f"is debug_src_code_request: {is_debug_src_code_request}")
                 if is_debug_src_code_request:
                     logger.info(f"Handling as drawfsource: {path}")
                     return handle_fastledsource(path)
