@@ -23,6 +23,7 @@ dependencies = [
     "watchfiles>=1.0.5",
     "Flask>=3.0.0",
     "livereload",
+    "disklru>=2.0.4",
 ]
 
 dynamic = ["version"]
