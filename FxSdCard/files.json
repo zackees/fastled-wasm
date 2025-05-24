@@ -1,0 +1,26 @@
+[
+  {
+    "hash": "3386103d249acb01a0823af85de54091823f50245e422a695cdf00708cab9e7c",
+    "name": "readme.txt",
+    "path": "data/readme.txt",
+    "size": 183
+  },
+  {
+    "hash": "3e81fd252fb45fa1a8bf4efe0332e6e568902661427f0a1d7dfa7c2ef4595031",
+    "name": "video.rgb",
+    "path": "data/video.rgb",
+    "size": 3934222
+  },
+  {
+    "hash": "a6851e2a5eaf728b0018f1a32918969b2e90673ed2c18c1a3a5d7327cf5993d7",
+    "name": "screenmap.json",
+    "path": "data/screenmap.json",
+    "size": 13790
+  },
+  {
+    "hash": "cf5b02d74652eaaba4ed6122e11d8d69600b6db19906ff2a843b66608c7cb0b9",
+    "name": "color_line_bubbles.rgb",
+    "path": "data/color_line_bubbles.rgb",
+    "size": 10851908
+  }
+]
