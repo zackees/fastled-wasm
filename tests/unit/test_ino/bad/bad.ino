@@ -21,7 +21,7 @@
 #include "fl/ui.h"
 
 
-lsfjsdklfjdskfjkasdfjdsfds; /// the garbage heare should trigger a build failure.
+lsfjsdklfjdskfjkasdfjdsfds; /// the garbage hear should trigger a build failure.
 
 using namespace fl;
 
