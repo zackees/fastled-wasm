@@ -2,12 +2,15 @@
 Unit test file.
 """
 
+import os
 import random
 import time
 import unittest
 from pathlib import Path
 
 import httpx
+
+os.environ["FLASK_SERVER_LOGGING"] = "1"
 
 from fastled import Test
 

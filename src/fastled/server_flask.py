@@ -28,16 +28,19 @@ else:
 
 def _is_dwarf_source(path: str) -> bool:
     """Check if the path is a dwarf source file."""
+    logger.debug(f"_is_dwarf_source called with path: {path}")
     if "dwarfsource" in path:
         logger.debug(f"Path '{path}' contains 'dwarfsource'")
         return True
-    # Check if the path starts with "fastledsource/" or "sketchsource/"
-    return (
-        path.startswith("fastledsource/")
-        or path.startswith("sketchsource/")
-        or path.startswith("/dwarfsource/")
-        or path.startswith("dwarfsource/")
-    )
+    _is_dwarf_source = False
+    for p in ["fastledsource", "sketchsource", "dwarfsource", "drawfsource"]:
+        if p in path:
+            _is_dwarf_source = True
+            logger.debug(f"Path '{p}' contains '{path}'")
+            break
+    if not _is_dwarf_source:
+        logger.debug(f"Path '{path}' is not a dwarf source file")
+    return _is_dwarf_source
 
 
 def _run_flask_server(
@@ -139,69 +142,14 @@ def _run_flask_server(
                 logger.error(f"Error forwarding request: {e}", exc_info=True)
                 return Response(f"Error: {str(e)}", status=500)
 
-        def handle_fastledsource(path: str) -> Response:
-            """Handle requests to
-            /fastledsource/js/fastledsource/git/fastled/src/
-            or
-            /sketchsource/js/src/Blink.ino
-
-            The names are a bit mangled due to the way C++ prefixing works near the root directory.
-            """
-            from flask import request
-
-            start_time = time.time()
-            logger.info(f"Processing request: {request.method} {request.url}")
-            # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/dwarfsource/{path}"
-            logger.info(f"Requesting: {target_url}")
-            logger.info(f"Processing dwarfsource request for {path}")
-
-            # Log request headers
-            request_headers = {
-                key: value for key, value in request.headers if key != "Host"
-            }
-            logger.debug(f"Request headers: {request_headers}")
-
-            try:
-                # Forward the request with the same method, headers, and body
-                with httpx.Client() as client:
-                    resp = client.request(
-                        method=request.method,
-                        url=target_url,
-                        headers=request_headers,
-                        content=request.get_data(),
-                        cookies=request.cookies,
-                        follow_redirects=True,
-                    )
-
-                logger.info(f"Response status: {resp.status_code}")
-                logger.debug(f"Response headers: {dict(resp.headers)}")
-
-                # Create a Flask Response object from the httpx response
-                payload = resp.content
-                assert isinstance(payload, bytes)
-
-                # Check if the payload is empty
-                if len(payload) == 0:
-                    logger.error("Empty payload received from compile server")
-                    return Response("Empty payload", status=400)
-
-                response = Response(
-                    payload, status=resp.status_code, headers=dict(resp.headers)
-                )
-
-                elapsed_time = time.time() - start_time
-                logger.info(f"Request completed in {elapsed_time:.3f} seconds")
-
-                return response
-
-            except Exception as e:
-                logger.error(f"Error handling dwarfsource request: {e}", exc_info=True)
-                return Response(f"Error: {str(e)}", status=500)
-
-        def handle_sourcefile(path: str) -> Response:
+        def handle_dwarfsource(path: str) -> Response:
             """Handle requests to /sourcefiles/*"""
             from flask import Response, request
+
+            # Request body should be
+            # {
+            #     "path": "string"
+            # }
 
             start_time = time.time()
             logger.info("\n##################################")
@@ -211,7 +159,7 @@ def _run_flask_server(
             logger.info(f"Processing sourcefile request for {path}")
 
             # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/{path}"
+            target_url = f"http://localhost:{compile_server_port}/dwarfsource"
             logger.info(f"Forwarding to: {target_url}")
 
             # Log request headers
@@ -220,14 +168,18 @@ def _run_flask_server(
             }
             logger.debug(f"Request headers: {request_headers}")
 
+            body: dict[str, str] = {
+                "path": path,
+            }
+
             try:
                 # Forward the request with the same method, headers, and body
                 with httpx.Client() as client:
                     resp = client.request(
-                        method=request.method,
+                        method="POST",
                         url=target_url,
                         headers=request_headers,
-                        content=request.get_data(),
+                        json=body,
                         cookies=request.cookies,
                         follow_redirects=True,
                     )
@@ -341,11 +293,8 @@ def _run_flask_server(
                 is_debug_src_code_request = _is_dwarf_source(path)
                 logger.info(f"is debug_src_code_request: {is_debug_src_code_request}")
                 if is_debug_src_code_request:
-                    logger.info(f"Handling as drawfsource: {path}")
-                    return handle_fastledsource(path)
-                elif path.startswith("sourcefiles/"):
-                    logger.info(f"Handling as sourcefiles: {path}")
-                    return handle_sourcefile(path)
+                    logger.info(f"Handling as dwarf source file request: {path}")
+                    return handle_dwarfsource(path)
                 else:
                     logger.info(f"Handling as local file: {path}")
                     return handle_local_file_fetch(path)

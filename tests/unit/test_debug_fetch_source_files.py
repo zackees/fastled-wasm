@@ -1,13 +1,13 @@
 import os
-
-os.environ["FLASK_SERVER_LOGGING"] = "1"
-
 import time
 import unittest
 import warnings
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
+
+os.environ["FLASK_SERVER_LOGGING"] = "1"
 
 from fastled import Api, LiveClient
 
@@ -19,11 +19,12 @@ _ENABLED = True
 
 _DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/dwarfsource/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
 _DWARF_SRC_EXAMPLE2 = (
-    "http://localhost:{http_port}/drawfsource/js/drawfsource/git/fastled/src/chipsets.h"
+    "http://localhost:{http_port}/dwarfsource/js/dwarfsource/git/fastled/src/chipsets.h"
 )
 
 _DWARF_SRC_EXAMPLES = [
-    _DWARF_SRC_EXAMPLE1,
+    # _DWARF_SRC_EXAMPLE1,
+    _DWARF_SRC_EXAMPLE2
 ]
 
 
@@ -86,13 +87,15 @@ class FetchSourceFileTester(unittest.TestCase):
             if content_length == 0:
                 raise Exception("Content-Length is 0")
 
-            backend_url = (
-                backend_host
-                + "/dwarfsource"
-                + "/fastledsource/git/fastled/src/FastLED.h"
-            )
-            resp = httpx.get(
+            backend_url = backend_host + "/dwarfsource"
+
+            body: dict[str, str] = {
+                "path": "fastledsource/git/fastled/src/FastLED.h",
+            }
+
+            resp = httpx.post(
                 backend_url,
+                json=body,
                 timeout=100,
             )
             if resp.status_code != 200:
@@ -110,11 +113,19 @@ class FetchSourceFileTester(unittest.TestCase):
                 self.assertTrue(resp.status_code == 200, resp.status_code)
                 content_length = int(resp.headers["Content-Length"])
                 self.assertTrue(content_length > 0, "Content-Length is 0")
-                backend_url = (
-                    backend_host + "/dwarfsource/" + "/".join(url.split("/")[1:])
-                )
-                resp = httpx.get(
+
+                parsed_url = urlparse(url)
+                # Extract the path and reconstruct the backend URL
+                # print(parsed_url)
+
+                body: dict[str, str] = {
+                    "path": parsed_url.path.lstrip("/"),  # Remove leading slash
+                }
+
+                backend_url = backend_host + "/dwarfsource"
+                resp = httpx.post(
                     backend_url,
+                    json=body,
                     timeout=100,
                 )
                 if resp.status_code != 200:
@@ -127,8 +138,8 @@ class FetchSourceFileTester(unittest.TestCase):
             # Work in progress: get system include files.
             # if resp.status_code != 200:
             #     raise Exception(f"Failed to fetch source file: {resp.status_code}")
-            # # error drawfsource/js/drawfsour
-            # url = f"http://localhost:{http_port}/drawfsource/js/drawfsource/emsdk/upstream/emscripten/cache/sysroot/include/ctype.h"
+            # # error dwarfsource/js/drawfsour
+            # url = f"http://localhost:{http_port}/dwarfsource/js/dwarfsource/emsdk/upstream/emscripten/cache/sysroot/include/ctype.h"
             # resp = httpx.get(
             #     url,
             #     timeout=100,
