@@ -3,14 +3,12 @@
 FROM niteris/fastled-wasm-compiler:latest
 
 
-COPY requirements.testing.txt /install/requirements.txt
-# Extract fastled-wasm-server version from requirements.txt
-RUN \
-    grep -oP '(?<=fastled-wasm-server[<>=!]=?)[^ \n#]+' /install/requirements.txt > /install/version.txt && \
-    cat /install/version.txt > /install/requirements.txt && \
-    uv pip install --system -r /install/requirements.txt --refresh || \
-    uv pip install --system -r /install/requirements.txt --refresh || \
-    uv pip install --system -r /install/requirements.txt --refresh
+COPY requirements.docker.txt /install/requirements.docker.txt
+
+# Fresh packages need multiple hits to bust through stale cache... and this is fast.
+RUN uv pip install --system -r /install/requirements.docker.txt --refresh  || \
+    uv pip install --system -r /install/requirements.docker.txt --refresh || \
+    uv pip install --system -r /install/requirements.docker.txt --refresh
 
 # FIRST PRE-WARM CYCLE and initial setup: Download the fastled repo from the github and pre-warm the cache with a compilation.
 # This is by far the most expensive part of the build, because platformio needs to download initial tools. This

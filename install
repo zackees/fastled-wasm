@@ -19,10 +19,9 @@ fi
 uv venv --python 3.11 --seed
 uv run pip install -e .
 
-# If requirements.testing.txt exists, then install it
-if [[ -f requirements.testing.txt ]]; then
-  uv run pip install -r requirements.testing.txt
-fi
+uv run pip install -r requirements.testing.txt
+uv run pip install -r requirements.docker.txt
+
 
 # If activate exists, delete it
 if [[ -f activate ]]; then
