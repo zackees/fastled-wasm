@@ -4,7 +4,6 @@
 /// @example NoisePlusPalette.ino
 
 
-lsfjsdklfjdskfjkasdfjdsfds /// the garbage heare should trigger a build failure.
 
 // printf
 #include <stdio.h>
@@ -20,6 +19,9 @@ lsfjsdklfjdskfjkasdfjdsfds /// the garbage heare should trigger a build failure.
 #include "platforms/wasm/js.h"
 
 #include "fl/ui.h"
+
+
+lsfjsdklfjdskfjkasdfjdsfds; /// the garbage heare should trigger a build failure.
 
 using namespace fl;
 
