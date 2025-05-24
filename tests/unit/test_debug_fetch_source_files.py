@@ -17,14 +17,11 @@ TEST_INO_WASM = HERE / "test_ino" / "wasm"
 # New refactor has broken this test. Good news, we got the sketch to output debug symbols!!!!!!
 _ENABLED = True
 
-_DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
-_DWARF_SRC_EXAMPLE2 = (
-    "http://localhost:{http_port}/sketchsource/js/sketchsource/headers/FastLED.h"
-)
+_DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/dwarfsource/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
+
 
 _DWARF_SRC_EXAMPLES = [
     _DWARF_SRC_EXAMPLE1,
-    _DWARF_SRC_EXAMPLE2,
 ]
 
 
