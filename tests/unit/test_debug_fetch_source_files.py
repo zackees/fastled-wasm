@@ -18,7 +18,9 @@ TEST_INO_WASM = HERE / "test_ino" / "wasm"
 _ENABLED = True
 
 _DWARF_SRC_EXAMPLE1 = "http://localhost:{http_port}/dwarfsource/fastledsource/js/src/fastledsource/git/fastled/src/FastLED.h"
-
+_DWARF_SRC_EXAMPLE2 = (
+    "http://localhost:{http_port}/drawfsource/js/drawfsource/git/fastled/src/chipsets.h"
+)
 
 _DWARF_SRC_EXAMPLES = [
     _DWARF_SRC_EXAMPLE1,
