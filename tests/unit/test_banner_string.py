@@ -5,10 +5,10 @@ from fastled.util import banner_string
 _MSG = "Hello, World!\nsecond line"
 
 _EXPECTED: str = (
-    "#################\n"
+    "\n#################\n"
     "# Hello, World! #\n"
     "# second line   #\n"
-    "#################"
+    "#################\n"
 )
 
 

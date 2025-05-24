@@ -182,7 +182,7 @@ def _banner(msg: str) -> str:
 
     # Add the bottom border
     banner += "#" * width + "\n"
-    return banner
+    return f"\n{banner}\n"
 
 
 def _print_banner(msg: str) -> None:

@@ -19,7 +19,8 @@ def banner_string(msg: str) -> str:
     for line in lines:
         out.append(f"# {line} " + " " * (max_length - len(line)) + "#")
     out.append(border)
-    return "\n".join(out)
+    outstr = "\n".join(out)
+    return f"\n{outstr}\n"
 
 
 def print_banner(msg: str) -> None:
