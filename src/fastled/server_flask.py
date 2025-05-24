@@ -32,7 +32,8 @@ def _is_dwarf_source(path: str) -> bool:
     return (
         path.startswith("fastledsource/")
         or path.startswith("sketchsource/")
-        or path.startswith("dwarfsource")
+        or path.startswith("/dwarfsource/")
+        or path.startswith("dwarfsource/")
     )
 
 
