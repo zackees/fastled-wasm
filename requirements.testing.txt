@@ -6,4 +6,4 @@ ruff
 pytest-xdist
 pyinstaller
 pyright
-fastled-wasm-server>=1.0.65
+fastled-wasm-server>=1.0.66

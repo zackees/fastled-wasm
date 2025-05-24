@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 
 from fastled.args import Args
-from fastled.print_filter import PrintFilterFastled
+from fastled.print_filter import PrintFilterDefault
 
 
 @dataclass
@@ -21,7 +21,7 @@ class CompileResult:
 
     def __post_init__(self):
         # Filter the stdout.
-        pf = PrintFilterFastled(echo=False)
+        pf = PrintFilterDefault(echo=False)
         self.stdout = pf.print(self.stdout)
 
 

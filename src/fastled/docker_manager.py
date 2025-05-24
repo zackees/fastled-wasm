@@ -25,7 +25,7 @@ from docker.models.containers import Container
 from docker.models.images import Image
 from filelock import FileLock
 
-from fastled.print_filter import PrintFilter, PrintFilterFastled
+from fastled.print_filter import PrintFilter, PrintFilterDefault
 from fastled.spinner import Spinner
 
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
@@ -138,7 +138,7 @@ class Volume:
 # Override the default PrintFilter to use a custom one.
 def make_default_print_filter() -> PrintFilter:
     """Create a default PrintFilter instance."""
-    return PrintFilterFastled()
+    return PrintFilterDefault()
 
 
 class RunningContainer:
