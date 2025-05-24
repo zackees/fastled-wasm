@@ -14,9 +14,12 @@ def banner_string(msg: str) -> str:
     lines = msg.splitlines()
     max_length = max(len(line) for line in lines)
     border = "#" * (max_length + 4)
-    bordered_lines = [f"# {line} " + "#" * (max_length - len(line)) for line in lines]
-    bordered_msg = "\n".join(bordered_lines)
-    return f"\n{border}\n{bordered_msg}\n{border}\n"
+    out: list[str] = []
+    out.append(border)
+    for line in lines:
+        out.append(f"# {line} " + " " * (max_length - len(line)) + "#")
+    out.append(border)
+    return "\n".join(out)
 
 
 def print_banner(msg: str) -> None:
