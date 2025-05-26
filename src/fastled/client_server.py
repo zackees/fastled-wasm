@@ -372,7 +372,7 @@ def run_client(
                     if has_update:
                         print(f"\n🔄 {message}")
                         print(
-                            "Run with --auto-update to automatically update to the latest version."
+                            "Run with `fastled -u` to update the docker image to the latest version."
                         )
                 except Exception as e:
                     # Don't let Docker check failures interrupt the main flow
