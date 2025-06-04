@@ -1,6 +1,6 @@
 import unittest
 
-from fastled.string_diff import string_diff
+from fastled.string_diff import is_in_order_match, string_diff
 
 _HAYSTACK: list[str] = [
     "examples\\AnalogOutput",
@@ -74,6 +74,17 @@ class StringDiffTester(unittest.TestCase):
         self.assertGreater(len(result), 0)
         _, path = result[0]
         self.assertEqual("examples\\FxWave2d", path)
+
+    def test_is_in_order_match(self) -> None:
+        is_match = is_in_order_match("wave 2d", "wave2d")
+        self.assertTrue(is_match)
+
+    def test_wave_2d(self) -> None:
+        needle = "wave 2d"
+        result = string_diff(needle, _HAYSTACK)
+        self.assertGreater(len(result), 0)
+        _, path = result[0]
+        self.assertEqual("examples\\Wave2d", path)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,28 @@ def _filter_out_obvious_bad_choices(
     return filtered_list
 
 
+def is_in_order_match(input_str: str, other: str) -> bool:
+    """
+    Check if the input string is an in-order match for any string in the list.
+    An in-order match means that the characters of the input string appear
+    in the same order in the string from the list, ignoring spaces in the input.
+    """
+
+    # Remove spaces from input string for matching
+    input_chars = [c for c in input_str if c != " "]
+    other_chars = list(other)
+    input_index = 0
+    other_index = 0
+    while input_index < len(input_chars) and other_index < len(other_chars):
+        if input_chars[input_index] == other_chars[other_index]:
+            input_index += 1
+        other_index += 1
+    # If we reached the end of the input string, it means all characters were found in order
+    if input_index == len(input_chars):
+        return True
+    return False
+
+
 # Returns the min distance strings. If there is a tie, it returns
 # all the strings that have the same min distance.
 # Returns a tuple of index and string.
@@ -46,6 +68,7 @@ def string_diff(
     if len(input_string) >= 3:
         string_list = _filter_out_obvious_bad_choices(input_string, string_list)
 
+    # Second filter: exact substring filtering if applicable
     is_substring = False
     for s in string_list:
         if input_string in s:
@@ -54,6 +77,16 @@ def string_diff(
 
     if is_substring:
         string_list = [s for s in string_list if input_string in s]
+
+    # Third filter: in order exact match filtering if applicable.
+    is_in_order = False
+    for s in string_list:
+        if is_in_order_match(input_string, s):
+            is_in_order = True
+            break
+
+    if is_in_order:
+        string_list = [s for s in string_list if is_in_order_match(input_string, s)]
 
     distances: list[float] = []
     for s in string_list:
