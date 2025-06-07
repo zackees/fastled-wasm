@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 import time
 from multiprocessing import Process
 from pathlib import Path
@@ -9,7 +8,8 @@ import httpx
 from livereload import Server
 
 # Logging configuration
-_ENABLE_LOGGING = os.environ.get("FLASK_SERVER_LOGGING", "0") == "1"
+# _ENABLE_LOGGING = os.environ.get("FLASK_SERVER_LOGGING", "0") == "1"
+_ENABLE_LOGGING = True
 
 
 if _ENABLE_LOGGING:

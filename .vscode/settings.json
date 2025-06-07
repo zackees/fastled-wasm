@@ -25,5 +25,7 @@
     ],
     "python.analysis.extraPaths": [
         "."
-    ]
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
 }
