@@ -166,22 +166,26 @@ jobs:
     needs: [create-tag]
     if: needs.create-tag.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fastled
+    permissions:
+      id-token: write
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies for PyPI publishing
-      run: |
-        pip install build twine
+      - name: Install dependencies for PyPI publishing
+        run: |
+          pip install build twine
 
-    - name: Build and Publish to PyPI
-      env:
-        TWINE_USERNAME: "__token__"
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: |
-        python -m build
-        python -m twine upload dist/*
+      - name: Build distribution packages
+        run: python -m build
+
+      - name: Publish package distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
