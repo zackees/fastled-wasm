@@ -2,6 +2,7 @@ import shutil
 import tempfile
 import threading
 import time
+import traceback
 import warnings
 from multiprocessing import Process
 from pathlib import Path
@@ -169,8 +170,10 @@ def _try_start_server_or_get_url(
             return (compile_server.url(), compile_server)
         except KeyboardInterrupt:
             raise
-        except RuntimeError:
-            print("Failed to start local compile server, using web compiler instead.")
+        except Exception as e:
+            warnings.warn(
+                f"Failed to start local compile server because of {e}, using web compiler instead."
+            )
             return (DEFAULT_URL, None)
 
 
@@ -497,7 +500,17 @@ def run_client_server(args: Args) -> int:
             compile_server.stop()
         return 1
     except Exception as e:
-        print(f"Error: {e}")
+        stack_trace = e.__traceback__
+        stack_trace_list: list[str] | None = (
+            traceback.format_exception(type(e), e, stack_trace) if stack_trace else None
+        )
+        stack_trace_str = ""
+        if stack_trace_list is not None:
+            stack_trace_str = "".join(stack_trace_list) if stack_trace_list else ""
+        if stack_trace:
+            print(f"Error in starting compile server: {e}\n{stack_trace_str}")
+        else:
+            print(f"Error: {e}")
         if compile_server is not None:
             compile_server.stop()
         return 1

@@ -187,7 +187,10 @@ class CompileServerImpl:
         print("Compiling server starting")
 
         # Ensure Docker is running
-        if not self.docker.is_running():
+        running: bool
+        # err: Exception | None
+        running, _ = self.docker.is_running()
+        if not running:
             if not self.docker.start():
                 print("Docker could not be started. Exiting.")
                 raise RuntimeError("Docker could not be started. Exiting.")

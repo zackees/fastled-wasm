@@ -10,7 +10,7 @@ if __name__ == "__main__":
         os.chdir("../fastled")
         # sys.argv.append("--server")
         # sys.argv.append("--local")
-        sys.argv.append("--debug")
+        # sys.argv.append("--debug")
         sys.argv.append("examples/Corkscrew")
         sys.exit(app_main())
     except KeyboardInterrupt:

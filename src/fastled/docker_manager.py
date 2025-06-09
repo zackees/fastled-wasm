@@ -366,6 +366,7 @@ class DockerManager:
                 subprocess.run(["start", "", docker_path], shell=True)
             elif sys.platform == "darwin":
                 subprocess.run(["open", "-a", "Docker"])
+                time.sleep(2)  # Give Docker time to start
             elif sys.platform.startswith("linux"):
                 subprocess.run(["sudo", "systemctl", "start", "docker"])
             else:
