@@ -17,7 +17,7 @@ if ! command -v uv &> /dev/null; then
 fi
 
 uv venv --python 3.11 --seed
-uv run pip install -e .
+uv pip install -e .
 
 uv run pip install -r requirements.testing.txt
 uv run pip install -r requirements.docker.txt
