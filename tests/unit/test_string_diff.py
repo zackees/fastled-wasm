@@ -4,6 +4,7 @@ from fastled.string_diff import is_in_order_match, string_diff
 
 _HAYSTACK: list[str] = [
     "examples\\AnalogOutput",
+    "examples\\Animartrix",
     "examples\\Apa102",
     "examples\\Apa102HD",
     "examples\\Apa102HDOverride",
@@ -24,7 +25,6 @@ _HAYSTACK: list[str] = [
     "examples\\FireCylinder",
     "examples\\FireMatrix",
     "examples\\FirstLight",
-    "examples\\FxAnimartrix",
     "examples\\FxCylon",
     "examples\\FxDemoReel100",
     "examples\\FxEngine",
