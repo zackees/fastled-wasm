@@ -42,6 +42,7 @@ $ fastled
 ```
 
 
+
 # Install
 
 This is a python app, so any python package manager will work. We also provide python compiled binaries for Windows, MacOS, and Linux.
