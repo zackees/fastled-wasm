@@ -1,0 +1,233 @@
+Starting FastLED WASM compilation script...
+Keep files flag: False
+Using mapped directory: /tmp/tmp174crmqo
+Normal build, so removing /js/src
+Copying files from mapped directory to container...
+Copying file: /tmp/tmp174crmqo/wasm/net.h -> /js/src/net.h
+Copying file: /tmp/tmp174crmqo/wasm/Chromancer.ino -> /js/src/Chromancer.ino
+Copying file: /tmp/tmp174crmqo/wasm/screenmap.json.h -> /js/src/screenmap.json.h
+Copying file: /tmp/tmp174crmqo/wasm/output.json -> /js/src/output.json
+Copying file: /tmp/tmp174crmqo/wasm/ripple.h -> /js/src/ripple.h
+Copying file: /tmp/tmp174crmqo/wasm/build_mode.txt -> /js/src/build_mode.txt
+Copying file: /tmp/tmp174crmqo/wasm/gen.py -> /js/src/gen.py
+Copying file: /tmp/tmp174crmqo/wasm/mapping.h -> /js/src/mapping.h
+Copying file: /tmp/tmp174crmqo/wasm/detail.h -> /js/src/detail.h
+Copying directory: /tmp/tmp174crmqo/wasm/gary_woos_wled_port
+Transforming files to cpp...
+Found .ino file: /js/src/Chromancer.ino
+Renaming /js/src/Chromancer.ino to Chromancer.ino
+
+########################################
+# Inserting headers in source files... #
+########################################
+
+Inserting header in file: /js/src/net.h
+Processed: /js/src/net.h
+Inserting header in file: /js/src/screenmap.json.h
+Processed: /js/src/screenmap.json.h
+Inserting header in file: /js/src/ripple.h
+Processed: /js/src/ripple.h
+Inserting header in file: /js/src/mapping.h
+Processed: /js/src/mapping.h
+Inserting header in file: /js/src/Chromancer.ino
+Processed: /js/src/Chromancer.ino
+Inserting header in file: /js/src/detail.h
+Processed: /js/src/detail.h
+Inserting header in file: /js/src/gary_woos_wled_port/gary_woos_wled_ledmap.h
+Processed: /js/src/gary_woos_wled_port/gary_woos_wled_ledmap.h
+Current directory: /js/src structure has [PosixPath('/js/src/net.h'), PosixPath('/js/src/screenmap.json.h'), PosixPath('/js/src/output.json'), PosixPath('/js/src/ripple.h'), PosixPath('/js/src/build_mode.txt'), PosixPath('/js/src/gen.py'), PosixPath('/js/src/mapping.h'), PosixPath('/js/src/Chromancer.ino'), PosixPath('/js/src/detail.h'), PosixPath('/js/src/gary_woos_wled_port')]
+
+############################################################
+# Transform to cpp and insert header operations completed. #
+############################################################
+
+
+###########################################################
+# Starting compilation process with mode: BuildMode.QUICK #
+#   js_dir: /js                                           #
+#   profile_build: False                                  #
+###########################################################
+
+Starting compilation...
+Starting compilation process...
+
+###################################
+# WASM is building in mode: QUICK #
+###################################
+
+
+####################################################################
+# Build process profiling is disabled                              #
+# use --profile to get metrics on how long the build process took. #
+####################################################################
+
+No platformio.ini found, copying /platformio/platformio.ini to /js/platformio.ini
+No wasm_compiler_flags.py found, copying '/platformio/wasm_compiler_flags.py' to /js/wasm_compiler_flags.py
+Command: pio run -v -e wasm-quick
+Command cwd: /js
+
+###############################
+# Build started with command: #
+#   pio run -v -e wasm-quick  #
+###############################
+
+0.19 Warning! Ignore unknown configuration option `force_verbose` in section [env:wasm-base]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-base]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-debug]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-debug]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-quick]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-quick]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-release]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-release]
+0.19 Processing wasm-quick (extends: wasm-base; platform: native; lib_ldf_mode: off; extra_scripts: post:wasm_compiler_flags.py; build_dir: build/wasm; custom_wasm_export_name: fastled; build_flags: -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50, -DFASTLED_FORCE_NAMESPACE=1, -DFASTLED_USE_PROGMEM=0, -DUSE_OFFSET_CONVERTER=0, -DSKETCH_COMPILE=1, -std=gnu++17, -fpermissive, -Wno-constant-logical-operand, -Wnon-c-typedef-for-linkage, -Werror=bad-function-cast, -Werror=cast-function-type, -Wno-comment, -Isrc, -Isrc, -Isrc/platforms/wasm/compiler, -Wall, -Wextra, -Wunused, -Wreturn-type, -Werror=return-type, -O0, -sASSERTIONS=0, -g0, -fno-inline-functions, -fno-vectorize, -fno-unroll-loops, -fno-strict-aliasing, -L/build/quick -lfastled; link_flags:
+0.19 
+0.19 --bind
+0.19 -fuse-ld=lld
+0.19 -sWASM=1
+0.19 -sALLOW_MEMORY_GROWTH=1
+0.19 -sINITIAL_MEMORY=134217728
+0.19 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8']
+0.19 -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files']
+0.19 --no-entry
+0.19 --emit-symbol-map
+0.19 -sMODULARIZE=1
+0.19 -sEXPORT_NAME=fastled
+0.19 -sUSE_PTHREADS=0
+0.19 -sEXIT_RUNTIME=0
+0.19 -sFILESYSTEM=0
+0.19 -Wl,--whole-archive
+0.19 --source-map-base=http://localhost:8000/
+0.19 -sASSERTIONS=0)
+0.19 --------------------------------------------------------------------------------
+0.43 LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+0.43 LDF Modes: Finder ~ off, Compatibility ~ soft
+0.43 Found 0 compatible libraries
+0.43 Scanning dependencies...
+0.43 No dependencies
+0.43 Building in release mode
+0.43 
+0.43 #########################
+0.43 # C++/C Compiler Flags: #
+0.43 #########################
+0.43 
+0.43 CC/CXX flags:
+0.43   -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50
+0.43   -DFASTLED_FORCE_NAMESPACE=1
+0.43   -DFASTLED_USE_PROGMEM=0
+0.43   -DUSE_OFFSET_CONVERTER=0
+0.43   -std=gnu++17
+0.43   -fpermissive
+0.43   -Wno-constant-logical-operand
+0.43   -Wnon-c-typedef-for-linkage
+0.43   -Werror=bad-function-cast
+0.43   -Werror=cast-function-type
+0.43   -sERROR_ON_WASM_CHANGES_AFTER_LINK
+0.43   -I
+0.43   src
+0.43   -I/js/fastled/src/platforms/wasm/compiler
+0.43   -Wall
+0.43   -Werror
+0.43   -Werror=return-type
+0.43   -Oz
+0.43 FastLED Library CC flags:
+0.43   -Werror=bad-function-cast
+0.43   -Werror=cast-function-type
+0.43   -I/js/fastled/src/platforms/wasm/compiler
+0.43 Sketch CC flags:
+0.43 
+0.43 #################
+0.43 # Linker Flags: #
+0.43 #################
+0.43 
+0.43   --bind
+0.43   -fuse-ld=lld
+0.43   -sWASM=1
+0.43   -sALLOW_MEMORY_GROWTH=1
+0.43   -sINITIAL_MEMORY=134217728
+0.43   -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8']
+0.43   -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files']
+0.43   --no-entry
+0.43   -sMODULARIZE=1
+0.43   -sEXPORT_NAME=fastled
+0.43   -o
+0.43   /js/.pio/build/wasm-quick/fastled.js
+0.43 
+0.43 ##########################
+0.43 # FastLED Library Flags: #
+0.43 ##########################
+0.43 
+0.43   --bind
+0.43   -Wl,--whole-archive,-fuse-ld=lld
+0.43   -Werror=bad-function-cast
+0.43   -Werror=cast-function-type
+0.43 
+0.43 #######################################
+0.43 # End of Flags                        #
+0.43 # Begin compile/link using PlatformIO #
+0.43 #######################################
+0.43 
+0.49 ccache em++ -o .pio/build/wasm-quick/src/Chromancer.ino.o -c -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -Isrc -Isrc -Isrc/platforms/wasm/compiler src/Chromancer.ino
+2.19 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+2.19 In file included from src/Chromancer.ino:33:
+2.19 src/ripple.h:394:11: warning: unused variable 'strip' [-Wunused-variable]
+2.19   394 |       int strip = ledAssignments[position[0]][0];
+2.19       |           ^~~~~
+2.19 src/ripple.h:395:11: warning: unused variable 'led' [-Wunused-variable]
+2.19   395 |       int led = ledAssignments[position[0]][2] + position[1];
+2.19       |           ^~~
+2.19 src/Chromancer.ino:231:19: warning: unused variable 'benchmark' [-Wunused-variable]
+2.19   231 |     unsigned long benchmark = millis();
+2.19       |                   ^~~~~~~~~
+2.19 3 warnings generated.
+2.21 ccache em++ -o .pio/build/wasm-quick/program --bind -fuse-ld=lld -sWASM=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8'] -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files'] --no-entry -sMODULARIZE=1 -sEXPORT_NAME=fastled -o /js/.pio/build/wasm-quick/fastled.js .pio/build/wasm-quick/src/Chromancer.ino.o -L.pio/build/wasm-quick -L/build/quick -Wl,--start-group -lfastled -Wl,--end-group
+2.65 ========================= [SUCCESS] Took 2.46 seconds =========================
+2.65 
+2.65 Environment    Status    Duration
+2.65 -------------  --------  ------------
+2.65 wasm-base      IGNORED
+2.65 wasm-debug     IGNORED
+2.65 wasm-quick     SUCCESS   00:00:02.462
+2.65 wasm-release   IGNORED
+2.65 ========================= 1 succeeded in 00:00:02.462 =========================
+
+##################################
+# Compilation process Finsished. #
+##################################
+
+
+Compilation successful.
+
+Compilation return code: 0
+
+###########################
+# Compilation successful. #
+###########################
+
+
+###########################
+# Copying output files... #
+###########################
+
+Copying /js/.pio/build/wasm-quick/fastled.js to /tmp/tmp174crmqo/wasm/fastled_js/fastled.js
+Copying /js/.pio/build/wasm-quick/fastled.wasm to /tmp/tmp174crmqo/wasm/fastled_js/fastled.wasm
+Copying src/platforms/wasm/compiler/index.html to output directory
+Copying src/platforms/wasm/compiler/index.css to output directory
+Copying files from src/platforms/wasm/compiler/modules to /tmp/tmp174crmqo/wasm/fastled_js/modules
+Copying index.js to output directory
+
+###############################
+# Writing manifest files.json #
+###############################
+
+
+################################
+# Cleaning up directories:     #
+#   build (/js/.pio/build) and #
+#   sketch (/js/src)           #
+################################
+
+
+##############################################
+# Compilation process completed successfully #
+##############################################
+
