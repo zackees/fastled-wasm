@@ -30,6 +30,7 @@ If you have docker installed, the compiler will download the docker image and ru
 
 In every conceivable way, the local compiler will be much faster than the web version.
 
+
 # Run
 
 Once `fastled` is installed you'll just navigate to your sketch directory and run it.
