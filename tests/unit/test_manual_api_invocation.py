@@ -87,7 +87,7 @@ void loop() {
 
         return zip_buffer.getvalue()
 
-    @unittest.skipUnless(True, "Test manual API invocation")  # Enable this test
+    @unittest.skipUnless(True, "Test manual API invocation")
     def test_info_endpoint_manual(self) -> None:
         """Test the /info endpoint to get available examples using manual HTTP requests."""
         # Test /info endpoint manually
@@ -104,7 +104,7 @@ void loop() {
 
         print(f"✅ Found {len(data['examples'])} examples: {data['examples']}")
 
-    @unittest.skipUnless(True, "Test manual API invocation")  # Enable this test
+    @unittest.skipUnless(True, "Test manual API invocation")
     def test_healthz_endpoint_manual(self) -> None:
         """Test the /healthz endpoint for health check using manual HTTP requests."""
         # Test /healthz endpoint manually
@@ -116,7 +116,7 @@ void loop() {
         self.assertEqual(response.status_code, 200)
         print(f"✅ Health check successful: {response.text}")
 
-    @unittest.skipUnless(True, "Test manual API invocation")  # Enable this test
+    @unittest.skipUnless(True, "Test manual API invocation")
     def test_compile_wasm_endpoint_manual(self) -> None:
         """Test manual invocation of /compile/wasm endpoint using raw HTTP requests.
 
@@ -200,7 +200,89 @@ void loop() {
                 )
                 print(f"⚙️  {wasm_file.name}: {size:,} bytes")
 
-    @unittest.skipUnless(True, "Test manual API invocation")  # Enable this test
+    @unittest.skipUnless(True, "Test manual API invocation")
+    def test_compile_libfastled_endpoint_manual(self) -> None:
+        """Test manual invocation of /compile/libfastled endpoint using raw HTTP requests.
+
+        This test demonstrates how to manually call the FastLED library compilation API
+        which compiles just the FastLED library without a sketch.
+        """
+        # Test /compile/libfastled endpoint manually
+        compile_url = f"{self.base_url}/compile/libfastled"
+        print(f"\nTesting COMPILE/LIBFASTLED endpoint manually: {compile_url}")
+
+        # Prepare headers for libfastled compilation
+        headers = {
+            "accept": "application/json",
+            "authorization": "oBOT5jbsO4ztgrpNsQwlmFLIKB",  # Default auth token
+            "build": BuildMode.QUICK.value.lower(),
+        }
+
+        print(f"🔧 Build mode: {headers['build']}")
+
+        # Make the request manually (no file upload needed for library compilation)
+        start_time = time.time()
+
+        with httpx.Client(
+            timeout=60 * 3
+        ) as client:  # 3 minute timeout for library compilation
+            response = client.post(compile_url, headers=headers, follow_redirects=True)
+
+        compile_time = time.time() - start_time
+        print(f"⏱️  Library compilation took: {compile_time:.2f} seconds")
+
+        # Verify response
+        print(f"📋 Response status: {response.status_code}")
+        if response.status_code != 200:
+            print(f"❌ Response content: {response.text}")
+
+        self.assertEqual(response.status_code, 200)
+
+        # Verify we got some content back (streaming response)
+        self.assertGreater(len(response.content), 0)
+        print(f"📥 Response size: {len(response.content)} bytes")
+
+        # Check if it's a zip file or other binary content
+        if response.content.startswith(b"PK"):  # ZIP file magic bytes
+            print("📦 Response appears to be a ZIP file")
+            # Try to extract and verify the response contains expected library files
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir)
+                zip_path = temp_path / "libfastled.zip"
+                zip_path.write_bytes(response.content)
+
+                # Extract and check contents
+                import shutil
+
+                shutil.unpack_archive(zip_path, temp_path, "zip")
+
+                # Look for expected library files
+                lib_files = list(temp_path.glob("**/*.a")) + list(
+                    temp_path.glob("**/*.so")
+                )
+                header_files = list(temp_path.glob("**/*.h")) + list(
+                    temp_path.glob("**/*.hpp")
+                )
+
+                print(f"🔍 Found library files: {[f.name for f in lib_files]}")
+                print(f"🔍 Found header files: {[f.name for f in header_files]}")
+
+                # We expect at least some library or header files
+                self.assertGreater(
+                    len(lib_files) + len(header_files),
+                    0,
+                    "Expected to find library or header files",
+                )
+        else:
+            print("📄 Response appears to be text/binary data")
+            # Could be a streaming response with compilation logs
+            try:
+                text_content = response.content.decode("utf-8")
+                print(f"📝 Response preview: {text_content[:200]}...")
+            except UnicodeDecodeError:
+                print("🔧 Response contains binary data")
+
+    @unittest.skipUnless(True, "Test manual API invocation")
     def test_project_init_endpoint_manual(self) -> None:
         """Test the /project/init endpoint to initialize a project using manual HTTP requests."""
         # Test /project/init endpoint manually
@@ -240,7 +322,7 @@ void loop() {
 
             self.assertGreater(len(ino_files), 0, "Expected to find .ino files")
 
-    @unittest.skipUnless(True, "Test manual API invocation")  # Enable this test
+    @unittest.skipUnless(True, "Test manual API invocation")
     def test_docs_endpoint_manual(self) -> None:
         """Test that the /docs endpoint exists (FastAPI documentation) using manual HTTP requests."""
         if not self._enabled():
@@ -261,22 +343,22 @@ void loop() {
         """Test that demonstrates all available API endpoints and their usage.
 
         This is a comprehensive test showing what endpoints exist and how to use them manually.
-        NOTE: There is NO /compile_libs endpoint - libraries are handled within /compile/wasm.
         """
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print("📋 FASTLED WASM SERVER API ENDPOINTS SUMMARY")
-        print("=" * 60)
+        print("=" * 70)
         print("Available endpoints:")
-        print("  • /compile/wasm  - Main compilation endpoint (POST)")
-        print("  • /info          - Get available examples (GET)")
-        print("  • /project/init  - Initialize project from example (POST)")
-        print("  • /healthz       - Health check (GET)")
-        print("  • /docs          - FastAPI documentation (GET)")
-        print("  • /dwarfsource   - Debug source files (POST)")
-        print("  • /sourcefiles/* - Source file serving (GET)")
-        print("\n❌ IMPORTANT: There is NO /compile_libs endpoint!")
-        print("   Libraries are pre-compiled and linked during /compile/wasm")
-        print("=" * 60)
+        print("  • /compile/wasm      - Main compilation endpoint (POST)")
+        print("  • /compile/libfastled - FastLED library compilation (POST)")
+        print("  • /info              - Get available examples (GET)")
+        print("  • /project/init      - Initialize project from example (POST)")
+        print("  • /healthz           - Health check (GET)")
+        print("  • /docs              - FastAPI documentation (GET)")
+        print("  • /dwarfsource       - Debug source files (POST)")
+        print("  • /sourcefiles/*     - Source file serving (GET)")
+        print("\n✅ NEW: /compile/libfastled endpoint found!")
+        print("   Compiles the FastLED library without requiring a sketch")
+        print("=" * 70)
 
         # This test always passes - it's just for documentation
         self.assertTrue(True, "API endpoints summary displayed")
