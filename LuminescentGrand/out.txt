@@ -1,0 +1,327 @@
+Starting FastLED WASM compilation script...
+Keep files flag: False
+Using mapped directory: /tmp/tmpc44o54np
+Normal build, so removing /js/src
+Copying files from mapped directory to container...
+Copying file: /tmp/tmpc44o54np/wasm/LuminescentGrand.ino -> /js/src/LuminescentGrand.ino
+Copying directory: /tmp/tmpc44o54np/wasm/shared
+Copying file: /tmp/tmpc44o54np/wasm/build_mode.txt -> /js/src/build_mode.txt
+Copying directory: /tmp/tmpc44o54np/wasm/arduino
+Transforming files to cpp...
+Found .ino file: /js/src/LuminescentGrand.ino
+Renaming /js/src/LuminescentGrand.ino to LuminescentGrand.ino
+
+########################################
+# Inserting headers in source files... #
+########################################
+
+Inserting header in file: /js/src/LuminescentGrand.ino
+Processed: /js/src/LuminescentGrand.ino
+Inserting header in file: /js/src/shared/framebuffer.h
+Processed: /js/src/shared/framebuffer.h
+Inserting header in file: /js/src/shared/defs.h
+Processed: /js/src/shared/defs.h
+Inserting header in file: /js/src/shared/framebuffer.cpp
+Processed: /js/src/shared/framebuffer.cpp
+Inserting header in file: /js/src/shared/dprint.h
+Processed: /js/src/shared/dprint.h
+Inserting header in file: /js/src/shared/led_layout_array.cpp
+Processed: /js/src/shared/led_layout_array.cpp
+Inserting header in file: /js/src/shared/color.cpp
+Processed: /js/src/shared/color.cpp
+Inserting header in file: /js/src/shared/dprint.cpp
+Processed: /js/src/shared/dprint.cpp
+Inserting header in file: /js/src/shared/util.cpp
+Processed: /js/src/shared/util.cpp
+Inserting header in file: /js/src/shared/color.h
+Processed: /js/src/shared/color.h
+Inserting header in file: /js/src/shared/color_mapper.h
+Processed: /js/src/shared/color_mapper.h
+Inserting header in file: /js/src/shared/led_rope_interface.h
+Processed: /js/src/shared/led_rope_interface.h
+Inserting header in file: /js/src/shared/led_layout_array.h
+Processed: /js/src/shared/led_layout_array.h
+Inserting header in file: /js/src/shared/settings.h
+Processed: /js/src/shared/settings.h
+Inserting header in file: /js/src/shared/color_mapper.cpp
+Processed: /js/src/shared/color_mapper.cpp
+Inserting header in file: /js/src/shared/Keyboard.h
+Processed: /js/src/shared/Keyboard.h
+Inserting header in file: /js/src/shared/util.h
+Processed: /js/src/shared/util.h
+Inserting header in file: /js/src/shared/Keyboard.cpp
+Processed: /js/src/shared/Keyboard.cpp
+Inserting header in file: /js/src/shared/Painter.cpp
+Processed: /js/src/shared/Painter.cpp
+Inserting header in file: /js/src/shared/Painter.h
+Processed: /js/src/shared/Painter.h
+Inserting header in file: /js/src/shared/ApproximatingFunction.h
+Processed: /js/src/shared/ApproximatingFunction.h
+Inserting header in file: /js/src/arduino/ui_state.cpp
+Processed: /js/src/arduino/ui_state.cpp
+Inserting header in file: /js/src/arduino/MIDI.cpp
+Processed: /js/src/arduino/MIDI.cpp
+Inserting header in file: /js/src/arduino/midi_Settings.h
+Processed: /js/src/arduino/midi_Settings.h
+Inserting header in file: /js/src/arduino/midi_Message.h
+Processed: /js/src/arduino/midi_Message.h
+Inserting header in file: /js/src/arduino/LedRopeTCL.cpp
+Processed: /js/src/arduino/LedRopeTCL.cpp
+Inserting header in file: /js/src/arduino/midi_Platform.h
+Processed: /js/src/arduino/midi_Platform.h
+Inserting header in file: /js/src/arduino/buttons.h
+Processed: /js/src/arduino/buttons.h
+Inserting header in file: /js/src/arduino/serialMIDI.h
+Processed: /js/src/arduino/serialMIDI.h
+Inserting header in file: /js/src/arduino/midi_Defs.h
+Processed: /js/src/arduino/midi_Defs.h
+Inserting header in file: /js/src/arduino/ui_state.h
+Processed: /js/src/arduino/ui_state.h
+Inserting header in file: /js/src/arduino/midi_Namespace.h
+Processed: /js/src/arduino/midi_Namespace.h
+Inserting header in file: /js/src/arduino/LedRopeTCL.h
+Processed: /js/src/arduino/LedRopeTCL.h
+Inserting header in file: /js/src/arduino/MIDI.hpp
+Processed: /js/src/arduino/MIDI.hpp
+Inserting header in file: /js/src/arduino/MIDI.h
+Processed: /js/src/arduino/MIDI.h
+Current directory: /js/src structure has [PosixPath('/js/src/LuminescentGrand.ino'), PosixPath('/js/src/shared'), PosixPath('/js/src/build_mode.txt'), PosixPath('/js/src/arduino')]
+
+############################################################
+# Transform to cpp and insert header operations completed. #
+############################################################
+
+
+###########################################################
+# Starting compilation process with mode: BuildMode.QUICK #
+#   js_dir: /js                                           #
+#   profile_build: False                                  #
+###########################################################
+
+Starting compilation...
+Starting compilation process...
+
+###################################
+# WASM is building in mode: QUICK #
+###################################
+
+
+####################################################################
+# Build process profiling is disabled                              #
+# use --profile to get metrics on how long the build process took. #
+####################################################################
+
+No platformio.ini found, copying /platformio/platformio.ini to /js/platformio.ini
+No wasm_compiler_flags.py found, copying '/platformio/wasm_compiler_flags.py' to /js/wasm_compiler_flags.py
+Command: pio run -v -e wasm-quick
+Command cwd: /js
+
+###############################
+# Build started with command: #
+#   pio run -v -e wasm-quick  #
+###############################
+
+0.19 Warning! Ignore unknown configuration option `force_verbose` in section [env:wasm-base]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-base]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-debug]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-debug]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-quick]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-quick]
+0.19 Warning! Ignore unknown configuration option `build_dir` in section [env:wasm-release]
+0.19 Warning! Ignore unknown configuration option `link_flags` in section [env:wasm-release]
+0.19 Processing wasm-quick (extends: wasm-base; platform: native; lib_ldf_mode: off; extra_scripts: post:wasm_compiler_flags.py; build_dir: build/wasm; custom_wasm_export_name: fastled; build_flags: -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50, -DFASTLED_FORCE_NAMESPACE=1, -DFASTLED_USE_PROGMEM=0, -DUSE_OFFSET_CONVERTER=0, -DSKETCH_COMPILE=1, -DGL_ENABLE_GET_PROC_ADDRESS=0, -std=gnu++17, -fpermissive, -fno-rtti, -fno-exceptions, -Wno-constant-logical-operand, -Wnon-c-typedef-for-linkage, -Werror=bad-function-cast, -Werror=cast-function-type, -Wno-comment, -emit-llvm, -I., -Isrc, -Isrc, -Isrc/platforms/wasm/compiler, -Wall, -Wextra, -Wunused, -Wreturn-type, -Werror=return-type, -flto=thin, -O0, -sASSERTIONS=0, -g0, -fno-inline-functions, -fno-vectorize, -fno-unroll-loops, -fno-strict-aliasing, -L/build/quick -lfastled; link_flags:
+0.19 
+0.19 -fuse-ld=lld
+0.19 -sWASM=1
+0.19 -sALLOW_MEMORY_GROWTH=1
+0.19 -sINITIAL_MEMORY=134217728
+0.19 -sAUTO_NATIVE_LIBRARIES=0
+0.19 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8','HEAPU8','getValue']
+0.19 -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData']
+0.19 --no-entry
+0.19 --emit-symbol-map
+0.19 -sMODULARIZE=1
+0.19 -sEXPORT_NAME=fastled
+0.19 -sUSE_PTHREADS=0
+0.19 -sEXIT_RUNTIME=0
+0.19 -sFILESYSTEM=0
+0.19 -Wl,--whole-archive
+0.19 --source-map-base=http://localhost:8000/
+0.19 -sASSERTIONS=0)
+0.19 --------------------------------------------------------------------------------
+0.43 LDF: Library Dependency Finder -> https://bit.ly/configure-pio-ldf
+0.43 LDF Modes: Finder ~ off, Compatibility ~ soft
+0.43 Found 0 compatible libraries
+0.43 Scanning dependencies...
+0.43 No dependencies
+0.43 Building in release mode
+0.43 
+0.43 #########################
+0.43 # C++/C Compiler Flags: #
+0.43 #########################
+0.43 
+0.43 CC/CXX flags:
+0.43   -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50
+0.43   -DFASTLED_FORCE_NAMESPACE=1
+0.43   -DFASTLED_USE_PROGMEM=0
+0.43   -DUSE_OFFSET_CONVERTER=0
+0.43   -DGL_ENABLE_GET_PROC_ADDRESS=0
+0.43   -std=gnu++17
+0.43   -fpermissive
+0.43   -fno-rtti
+0.43   -fno-exceptions
+0.43   -Wno-constant-logical-operand
+0.43   -Wnon-c-typedef-for-linkage
+0.43   -Werror=bad-function-cast
+0.43   -Werror=cast-function-type
+0.43   -sERROR_ON_WASM_CHANGES_AFTER_LINK
+0.43   -emit-llvm
+0.43   -I.
+0.43   -Isrc
+0.43   -I/js/fastled/src
+0.43   -I/js/fastled/src/platforms/wasm/compiler
+0.43   -Wall
+0.43   -flto=thin
+0.43   -Oz
+0.43 STRICT mode: DISABLED
+0.43 
+0.43 #################
+0.43 # Linker Flags: #
+0.43 #################
+0.43 
+0.43   -fuse-ld=lld
+0.43   -sWASM=1
+0.43   -sALLOW_MEMORY_GROWTH=1
+0.43   -sINITIAL_MEMORY=134217728
+0.43   -sAUTO_NATIVE_LIBRARIES=0
+0.43   -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8','HEAPU8','getValue']
+0.43   -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData']
+0.43   --no-entry
+0.43   -flto=thin
+0.43   -sMODULARIZE=1
+0.43   -sEXPORT_NAME=fastled
+0.43   -o
+0.43   /js/.pio/build/wasm-quick/fastled.js
+0.43 
+0.43 #######################################
+0.43 # End of Flags                        #
+0.43 # Begin compile/link using PlatformIO #
+0.43 #######################################
+0.43 
+0.50 ccache em++ -o .pio/build/wasm-quick/src/LuminescentGrand.ino.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/LuminescentGrand.ino
+0.51 ccache em++ -o .pio/build/wasm-quick/src/arduino/LedRopeTCL.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/arduino/LedRopeTCL.cpp
+0.51 ccache em++ -o .pio/build/wasm-quick/src/arduino/MIDI.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/arduino/MIDI.cpp
+0.52 ccache em++ -o .pio/build/wasm-quick/src/arduino/ui_state.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/arduino/ui_state.cpp
+2.58 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+2.60 ccache em++ -o .pio/build/wasm-quick/src/shared/Keyboard.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/Keyboard.cpp
+3.18 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+3.18 src/arduino/ui_state.cpp:61:46: warning: unused parameter 'delta_ms' [-Wunused-parameter]
+3.18    61 | ui_state ui_update(uint32_t now_ms, uint32_t delta_ms) {
+3.18       |                                              ^
+3.18 1 warning generated.
+3.20 ccache em++ -o .pio/build/wasm-quick/src/shared/Painter.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/Painter.cpp
+3.22 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+3.23 ccache em++ -o .pio/build/wasm-quick/src/shared/color.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/color.cpp
+3.28 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+3.28 src/LuminescentGrand.ino:77:24: warning: unused parameter 'channel' [-Wunused-parameter]
+3.28    77 | void HandleNoteOn(byte channel, byte midi_note, byte velocity) {
+3.28       |                        ^
+3.28 src/LuminescentGrand.ino:88:25: warning: unused parameter 'channel' [-Wunused-parameter]
+3.28    88 | void HandleNoteOff(byte channel, byte midi_note, byte velocity) {
+3.28       |                         ^
+3.28 src/LuminescentGrand.ino:97:32: warning: unused parameter 'channel' [-Wunused-parameter]
+3.28    97 | void HandleAfterTouchPoly(byte channel, byte note, byte pressure) {
+3.28       |                                ^
+3.28 src/LuminescentGrand.ino:104:31: warning: unused parameter 'channel' [-Wunused-parameter]
+3.28   104 | void HandleControlChange(byte channel, byte d1, byte d2) {
+3.28       |                               ^
+3.28 src/LuminescentGrand.ino:108:35: warning: unused parameter 'channel' [-Wunused-parameter]
+3.28   108 | void HandleAfterTouchChannel(byte channel, byte pressure) {
+3.28       |                                   ^
+3.28 src/LuminescentGrand.ino:108:49: warning: unused parameter 'pressure' [-Wunused-parameter]
+3.28   108 | void HandleAfterTouchChannel(byte channel, byte pressure) {
+3.28       |                                                 ^
+3.28 6 warnings generated.
+3.31 ccache em++ -o .pio/build/wasm-quick/src/shared/color_mapper.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/color_mapper.cpp
+4.71 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+4.73 ccache em++ -o .pio/build/wasm-quick/src/shared/dprint.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/dprint.cpp
+5.25 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+5.29 ccache em++ -o .pio/build/wasm-quick/src/shared/framebuffer.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/framebuffer.cpp
+5.30 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+5.30 In file included from src/shared/Painter.cpp:5:
+5.30 In file included from src/shared/./Painter.h:5:
+5.30 In file included from src/shared/././Keyboard.h:6:
+5.30 src/shared/././color.h:18:3: warning: definition of implicit copy assignment operator for 'Color3i' is deprecated because it has a user-provided copy constructor [-Wdeprecated-copy-with-user-provided-copy]
+5.30    18 |   Color3i(const Color3i& other) { Set(other); }
+5.30       |   ^
+5.30 src/shared/Painter.cpp:321:16: note: in implicit copy assignment operator for 'Color3i' first required here
+5.30   321 |       fade_col = c.ToRGB();
+5.30       |                ^
+5.30 1 warning generated.
+5.31 ccache em++ -o .pio/build/wasm-quick/src/shared/led_layout_array.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/led_layout_array.cpp
+5.34 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+5.35 ccache em++ -o .pio/build/wasm-quick/src/shared/util.o -c -std=gnu++17 -fpermissive -fno-rtti -fno-exceptions -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -Wno-comment -emit-llvm -Wall -Wextra -Wunused -Wreturn-type -Werror=return-type -flto=thin -O0 -sASSERTIONS=0 -g0 -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -DPLATFORMIO=60118 -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DSKETCH_COMPILE=1 -DGL_ENABLE_GET_PROC_ADDRESS=0 -I. -Isrc -Isrc -Isrc/platforms/wasm/compiler src/shared/util.cpp
+6.74 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+7.15 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+7.15 In file included from src/shared/framebuffer.cpp:8:
+7.15 src/shared/./color.h:18:3: warning: definition of implicit copy assignment operator for 'Color3i' is deprecated because it has a user-provided copy constructor [-Wdeprecated-copy-with-user-provided-copy]
+7.15    18 |   Color3i(const Color3i& other) { Set(other); }
+7.15       |   ^
+7.15 src/shared/framebuffer.cpp:16:19: note: in implicit copy assignment operator for 'Color3i' first required here
+7.15    16 |   color_array_[i] = c;
+7.15       |                   ^
+7.15 1 warning generated.
+7.27 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+7.31 em++: warning: linker setting ignored during compilation: 'ASSERTIONS' [-Wunused-command-line-argument]
+7.33 ccache em++ -o .pio/build/wasm-quick/program -fuse-ld=lld -sWASM=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sAUTO_NATIVE_LIBRARIES=0 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','lengthBytesUTF8','HEAPU8','getValue'] -sEXPORTED_FUNCTIONS=['_malloc','_free','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData'] --no-entry -flto=thin -sMODULARIZE=1 -sEXPORT_NAME=fastled -o /js/.pio/build/wasm-quick/fastled.js .pio/build/wasm-quick/src/LuminescentGrand.ino.o .pio/build/wasm-quick/src/arduino/LedRopeTCL.o .pio/build/wasm-quick/src/arduino/MIDI.o .pio/build/wasm-quick/src/arduino/ui_state.o .pio/build/wasm-quick/src/shared/Keyboard.o .pio/build/wasm-quick/src/shared/Painter.o .pio/build/wasm-quick/src/shared/color.o .pio/build/wasm-quick/src/shared/color_mapper.o .pio/build/wasm-quick/src/shared/dprint.o .pio/build/wasm-quick/src/shared/framebuffer.o .pio/build/wasm-quick/src/shared/led_layout_array.o .pio/build/wasm-quick/src/shared/util.o -L.pio/build/wasm-quick -L/build/quick -Wl,--start-group -lfastled -Wl,--end-group
+8.83 ========================= [SUCCESS] Took 8.64 seconds =========================
+8.83 
+8.83 Environment    Status    Duration
+8.83 -------------  --------  ------------
+8.83 wasm-base      IGNORED
+8.83 wasm-debug     IGNORED
+8.83 wasm-quick     SUCCESS   00:00:08.639
+8.83 wasm-release   IGNORED
+8.83 ========================= 1 succeeded in 00:00:08.639 =========================
+
+##################################
+# Compilation process Finsished. #
+##################################
+
+
+Compilation successful.
+
+Compilation return code: 0
+
+###########################
+# Compilation successful. #
+###########################
+
+
+###########################
+# Copying output files... #
+###########################
+
+Copying /js/.pio/build/wasm-quick/fastled.js to /tmp/tmpc44o54np/wasm/fastled_js/fastled.js
+Copying /js/.pio/build/wasm-quick/fastled.wasm to /tmp/tmpc44o54np/wasm/fastled_js/fastled.wasm
+Copying src/platforms/wasm/compiler/index.html to output directory
+Copying src/platforms/wasm/compiler/index.css to output directory
+Copying files from src/platforms/wasm/compiler/modules to /tmp/tmpc44o54np/wasm/fastled_js/modules
+Copying index.js to output directory
+
+###############################
+# Writing manifest files.json #
+###############################
+
+
+################################
+# Cleaning up directories:     #
+#   build (/js/.pio/build) and #
+#   sketch (/js/src)           #
+################################
+
+
+##############################################
+# Compilation process completed successfully #
+##############################################
+
