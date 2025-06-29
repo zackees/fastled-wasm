@@ -22,6 +22,7 @@ dependencies = [
     ########## End Docker Manager Dependencies
     "watchfiles>=1.0.5",
     "Flask>=3.0.0",
+    "flask-cors>=4.0.0",
     "livereload",
     "disklru>=2.0.4",
 ]

@@ -60,8 +60,25 @@ def _run_flask_server(
     """
     try:
         from flask import Flask, Response, request, send_from_directory
+        from flask_cors import CORS
 
         app = Flask(__name__)
+
+        # Enable CORS for all domains on all routes
+        CORS(
+            app,
+            resources={
+                r"/*": {
+                    "origins": "*",
+                    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+                    "allow_headers": [
+                        "Content-Type",
+                        "Authorization",
+                        "X-Requested-With",
+                    ],
+                }
+            },
+        )
 
         # Must be a full path or flask will fail to find the file.
         fastled_js = fastled_js.resolve()
