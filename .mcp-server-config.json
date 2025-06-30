@@ -1,0 +1,54 @@
+{
+  "name": "fastled-wasm-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server configuration for FastLED WASM project",
+  "rules": {
+    "python_execution": {
+      "priority": "critical",
+      "rule": "ALWAYS use 'uv run' instead of 'python' or 'python3'",
+      "examples": {
+        "correct": [
+          "uv run src/fastled/cli.py",
+          "uv run -m pytest",
+          "uv run build_exe.py",
+          "uv run python script.py"
+        ],
+        "incorrect": [
+          "python src/fastled/cli.py",
+          "python3 build_exe.py",
+          "python -m pytest"
+        ]
+      },
+      "rationale": "This project uses uv for Python package and environment management. Direct python/python3 usage may use wrong version or miss dependencies."
+    },
+    "testing": {
+      "rule": "Run unit tests with 'bash test' as per user rules",
+      "note": "Manual testing should still use 'uv run' prefix for Python commands"
+    },
+    "development": {
+      "commands": {
+        "install_dependencies": "uv add <package>",
+        "run_script": "uv run <script.py>",
+        "run_module": "uv run -m <module>",
+        "activate_env": "uv manages virtual environment automatically"
+      }
+    }
+  },
+  "enforcement": {
+    "level": "strict",
+    "actions": [
+      "Warn when 'python' or 'python3' is used directly",
+      "Suggest 'uv run' alternative for all Python execution",
+      "Update existing scripts to use 'uv run' prefix",
+      "Emphasize 'uv run' in documentation and examples"
+    ]
+  },
+  "exceptions": {
+    "allowed_python_usage": [
+      "Inside Python source code (imports, etc.)",
+      "In configuration files specifying Python version",
+      "In Dockerfiles where uv is not available",
+      "In CI/CD where setup-python action is used"
+    ]
+  }
+}

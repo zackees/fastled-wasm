@@ -1,4 +1,8 @@
 {
+    // CRITICAL: Always use 'uv run' for Python execution, NOT 'python' or 'python3'
+    "python.defaultInterpreterPath": "uv",
+    "python.terminal.executeInFileDir": false,
+    "python.terminal.launchArgs": ["run"],
     "python.autoComplete.extraPaths": [
         "."
     ],
