@@ -22,8 +22,8 @@ _WATCHER_TIMEOUT = 0.1
 
 
 def file_watcher_enabled() -> bool:
-    """Check if watchdog is disabled"""
-    return os.getenv("NO_FILE_WATCHING", "0") == "1"
+    """Check if watchdog is enabled"""
+    return os.getenv("NO_FILE_WATCHING", "0") != "1"
 
 
 def file_watcher_set(enabled: bool) -> None:
@@ -134,7 +134,7 @@ class FileChangedNotifier(threading.Thread):
         Returns:
             Changed filepath or None if no change within timeout
         """
-        if file_watcher_enabled():
+        if not file_watcher_enabled():
             time.sleep(timeout)
             return None
         try:
