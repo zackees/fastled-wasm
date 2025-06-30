@@ -6,3 +6,5 @@ ruff
 pytest-xdist
 pyinstaller
 pyright
+httpx
+fastapi
