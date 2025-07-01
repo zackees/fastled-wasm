@@ -85,6 +85,14 @@ def _run_flask_server(
 
         # logger.error(f"Server error: {e}")
 
+        @app.after_request
+        def add_security_headers(response):
+            """Add security headers required for cross-origin isolation and audio worklets"""
+            # Required for SharedArrayBuffer and audio worklets
+            response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
+            response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+            return response
+
         @app.before_request
         def log_request_info():
             """Log details of each request before processing"""
