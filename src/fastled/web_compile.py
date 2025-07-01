@@ -204,8 +204,18 @@ def web_compile(
     build_mode = build_mode or BuildMode.QUICK
     _print_banner(f"Compiling on {host}")
     auth_token = auth_token or _AUTH_TOKEN
+    
+    # Add verbosity for --no-platformio mode
+    if no_platformio:
+        print(f"[{time.time() - start_time:.2f}s] --no-platformio mode enabled")
+        print(f"[{time.time() - start_time:.2f}s] Build started at {start_time}")
+    
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
+    
+    if no_platformio:
+        print(f"[{time.time() - start_time:.2f}s] Preparing sketch files for compilation")
+    
     zip_result = zip_files(directory, build_mode=build_mode)
     if isinstance(zip_result, Exception):
         return CompileResult(
@@ -213,6 +223,11 @@ def web_compile(
         )
     zip_bytes = zip_result.zip_bytes
     archive_size = len(zip_bytes)
+    
+    if no_platformio:
+        print(f"[{time.time() - start_time:.2f}s] Sketch files prepared (archive size: {archive_size} bytes)")
+        print(f"[{time.time() - start_time:.2f}s] Establishing connection to compiler server")
+    
     print(f"Web compiling on {host}...")
     try:
         host = _sanitize_host(host)
@@ -230,6 +245,9 @@ def web_compile(
                 hash_value=None,
                 zip_bytes=b"",
             )
+
+        if no_platformio:
+            print(f"[{time.time() - start_time:.2f}s] Connected to compiler server: {connection_result.host}")
 
         ipv4_stmt = "IPv4" if connection_result.ipv4 else "IPv6"
         transport = (
@@ -253,9 +271,19 @@ def web_compile(
                 "no-platformio": "true" if no_platformio else "false",
             }
 
+            if no_platformio:
+                print(f"[{time.time() - start_time:.2f}s] Sending compilation request with headers:")
+                for key, value in headers.items():
+                    print(f"[{time.time() - start_time:.2f}s]   {key}: {value}")
+                print(f"[{time.time() - start_time:.2f}s] Request URL: {connection_result.host}/{ENDPOINT_COMPILED_WASM}")
+                print(f"[{time.time() - start_time:.2f}s] Starting compile phase...")
+
             url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"
             print(f"Compiling on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes")
             files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
+            
+            # Track compilation request timing
+            compile_request_start = time.time()
             response = client.post(
                 url,
                 follow_redirects=True,
@@ -263,6 +291,10 @@ def web_compile(
                 headers=headers,
                 timeout=_TIMEOUT,
             )
+            compile_request_end = time.time()
+
+            if no_platformio:
+                print(f"[{time.time() - start_time:.2f}s] Compilation request completed in {compile_request_end - compile_request_start:.2f}s")
 
             if response.status_code != 200:
                 json_response = response.json()
@@ -272,6 +304,10 @@ def web_compile(
                 )
 
             print(f"Response status code: {response}")
+            
+            if no_platformio:
+                print(f"[{time.time() - start_time:.2f}s] Starting link phase (processing response)...")
+            
             # Create a temporary directory to extract the zip
             with tempfile.TemporaryDirectory() as extract_dir:
                 extract_path = Path(extract_dir)
@@ -297,6 +333,15 @@ def web_compile(
                 stdout = stdout_file.read_text() if stdout_file.exists() else ""
                 hash_value = hash_file.read_text() if hash_file.exists() else None
 
+                if no_platformio:
+                    print(f"[{time.time() - start_time:.2f}s] Link phase completed")
+                    if stdout:
+                        print(f"[{time.time() - start_time:.2f}s] Compilation output:")
+                        # Parse and display compilation output with timing if available
+                        for line in stdout.split('\n'):
+                            if line.strip():
+                                print(f"[{time.time() - start_time:.2f}s]   {line}")
+
                 # now rezip the extracted files since we added the embedded json files
                 out_buffer = io.BytesIO()
                 with zipfile.ZipFile(
@@ -310,6 +355,8 @@ def web_compile(
 
                 diff_time = time.time() - start_time
                 msg = f"Compilation success, took {diff_time:.2f} seconds"
+                if no_platformio:
+                    print(f"[{diff_time:.2f}s] Total compilation time: {diff_time:.2f} seconds")
                 _print_banner(msg)
                 return CompileResult(
                     success=True,

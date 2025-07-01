@@ -106,6 +106,13 @@ class CompileServerImpl:
             raise RuntimeError("Server has not been started yet")
         if not self.ping():
             raise RuntimeError("Server is not running")
+            
+        if self.no_platformio:
+            compile_start_time = time.time()
+            print(f"[{compile_start_time:.2f}s] Starting compilation with local Docker server")
+            print(f"[{compile_start_time:.2f}s] Server URL: {self.url()}")
+            print(f"[{compile_start_time:.2f}s] Build mode: {build_mode.value}")
+            
         out: CompileResult = web_compile(
             directory,
             host=self.url(),
@@ -113,6 +120,11 @@ class CompileServerImpl:
             profile=profile,
             no_platformio=self.no_platformio,
         )
+        
+        if self.no_platformio:
+            end_time = time.time()
+            print(f"[{end_time - compile_start_time:.2f}s] Local Docker compilation completed")
+            
         return out
 
     def project_init(
@@ -190,7 +202,11 @@ class CompileServerImpl:
         return False
 
     def _start(self) -> int:
+        start_time = time.time()
         print("Compiling server starting")
+        
+        if self.no_platformio:
+            print(f"[{time.time() - start_time:.2f}s] --no-platformio mode: Local Docker compilation enabled")
 
         # Ensure Docker is running
         running: bool
@@ -225,6 +241,10 @@ class CompileServerImpl:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
             if self.no_platformio:
                 server_command.append("--no-platformio")
+                
+        if self.no_platformio and not self.interactive:
+            print(f"[{time.time() - start_time:.2f}s] Docker server command: {' '.join(server_command)}")
+            
         if self.interactive:
             print("Disabling port forwarding in interactive mode")
             ports = {}
@@ -276,6 +296,9 @@ class CompileServerImpl:
                         print(f"Could not find {src_path}")
 
         cmd_str = subprocess.list2cmdline(server_command)
+        if self.no_platformio and not self.interactive:
+            print(f"[{time.time() - start_time:.2f}s] Starting Docker container with command: {cmd_str}")
+            
         if not self.interactive:
             container: Container = self.docker.run_container_detached(
                 image_name=IMAGE_NAME,
@@ -289,6 +312,8 @@ class CompileServerImpl:
             )
             self.running_container = self.docker.attach_and_run(container)
             assert self.running_container is not None, "Container should be running"
+            if self.no_platformio:
+                print(f"[{time.time() - start_time:.2f}s] Docker container started successfully")
             print("Compile server starting")
             return port
         else:
