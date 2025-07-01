@@ -30,6 +30,7 @@ FastLED WASM Compiler - Useful options:
   --init [example]      Initialize one of the top tier WASM examples
   --web [url]           Use web compiler
   --server              Run the compiler server
+  --no-platformio       Bypass PlatformIO constraints using local Docker compilation
   --quick               Build in quick mode (default)
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
@@ -113,6 +114,11 @@ def parse_args() -> Args:
         "--no-auto-updates",
         action="store_true",
         help="Disable automatic updates of the wasm compiler image when using docker.",
+    )
+    parser.add_argument(
+        "--no-platformio",
+        action="store_true",
+        help="Bypass PlatformIO constraints by using local Docker compilation with custom build environment",
     )
     parser.add_argument(
         "-u",
@@ -268,6 +274,10 @@ def parse_args() -> Args:
         if cwd_is_fastled and not args.web and not args.server:
             print("Forcing --local mode because we are in the FastLED repo")
             args.localhost = True
+        if args.no_platformio:
+            print("--no-platformio mode enabled: forcing local Docker compilation to bypass PlatformIO constraints")
+            args.localhost = True
+            args.web = None  # Clear web flag to ensure local compilation
         if args.localhost:
             args.web = "localhost"
         if args.interactive and not args.server:
