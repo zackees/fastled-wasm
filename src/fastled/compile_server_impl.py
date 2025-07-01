@@ -107,7 +107,11 @@ class CompileServerImpl:
         if not self.ping():
             raise RuntimeError("Server is not running")
         out: CompileResult = web_compile(
-            directory, host=self.url(), build_mode=build_mode, profile=profile
+            directory,
+            host=self.url(),
+            build_mode=build_mode,
+            profile=profile,
+            no_platformio=self.no_platformio,
         )
         return out
 
