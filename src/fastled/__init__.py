@@ -64,6 +64,7 @@ class Api:
         http_port: (
             int | None
         ) = None,  # None means auto select a free port. -1 means no server.
+        no_platformio: bool = False,
     ) -> LiveClient:
         return LiveClient(
             sketch_directory=sketch_directory,
@@ -75,6 +76,7 @@ class Api:
             build_mode=build_mode,
             profile=profile,
             http_port=http_port,
+            no_platformio=no_platformio,
         )
 
     @staticmethod
