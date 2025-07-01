@@ -22,6 +22,7 @@ class LiveClient:
         keep_running: bool = True,
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
+        no_platformio: bool = False,
     ) -> None:
         self.sketch_directory = sketch_directory
         self.host = host
@@ -34,6 +35,7 @@ class LiveClient:
         self.shutdown = threading.Event()
         self.thread: threading.Thread | None = None
         self.auto_updates = auto_updates
+        self.no_platformio = no_platformio
         if auto_start:
             self.start()
         if self.auto_updates is False:
@@ -52,6 +54,7 @@ class LiveClient:
             profile=self.profile,
             shutdown=self.shutdown,
             http_port=self.http_port,
+            no_platformio=self.no_platformio,
         )
         return rtn
 

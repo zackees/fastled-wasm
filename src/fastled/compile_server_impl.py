@@ -50,6 +50,7 @@ class CompileServerImpl:
         auto_start: bool = True,
         container_name: str | None = None,
         remove_previous: bool = False,
+        no_platformio: bool = False,
     ) -> None:
         container_name = container_name or DEFAULT_CONTAINER_NAME
         if interactive and not mapped_dir:
@@ -68,6 +69,7 @@ class CompileServerImpl:
         self.running_container: RunningContainer | None = None
         self.auto_updates = auto_updates
         self.remove_previous = remove_previous
+        self.no_platformio = no_platformio
         self._port = 0  # 0 until compile server is started
         if auto_start:
             self.start()
@@ -217,6 +219,8 @@ class CompileServerImpl:
             server_command = ["/bin/bash"]
         else:
             server_command = ["python", "/js/run.py", "server"] + SERVER_OPTIONS
+            if self.no_platformio:
+                server_command.append("--no-platformio")
         if self.interactive:
             print("Disabling port forwarding in interactive mode")
             ports = {}

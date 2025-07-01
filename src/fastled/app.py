@@ -27,6 +27,7 @@ def run_server(args: Args) -> int:
         mapped_dir=mapped_dir,
         auto_start=True,
         remove_previous=args.clear,
+        no_platformio=args.no_platformio,
     )
 
     if not interactive:
@@ -87,7 +88,9 @@ def main() -> int:
 
     if update:
         # Force auto_update to ensure update check happens
-        compile_server = CompileServer(interactive=False, auto_updates=True)
+        compile_server = CompileServer(
+            interactive=False, auto_updates=True, no_platformio=args.no_platformio
+        )
         compile_server.stop()
         print("Finished updating.")
         return 0
@@ -109,6 +112,7 @@ def main() -> int:
             mapped_dir=directory,
             auto_start=False,
             remove_previous=args.clear,
+            no_platformio=args.no_platformio,
         )
 
         server.start(wait_for_startup=False)
