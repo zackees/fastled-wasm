@@ -40,22 +40,14 @@ def _run_server(unknown_args: list[str]) -> int:
     if "--no-sketch-cache" in unknown_args:
         env["NO_SKETCH_CACHE"] = "1"
         unknown_args.remove("--no-sketch-cache")
-    if "--no-platformio" in unknown_args:
-        env["NO_PLATFORMIO"] = "1"
-        unknown_args.remove("--no-platformio")
-    if unknown_args:
-        warnings.warn(f"Unknown arguments: {unknown_args}")
-        unknown_args = []
+
     cmd_list = [
-        "uvicorn",
-        "fastled_wasm_server.server:app",
-        "--host",
-        "0.0.0.0",
-        "--workers",
-        "1",
+        "fastled-wasm-server",
         "--port",
         f"{_PORT}",
-    ]
+        "--host",
+        "0.0.0.0",
+    ] + unknown_args
     cp: subprocess.CompletedProcess = subprocess.run(cmd_list, cwd=str(HERE), env=env)
     return cp.returncode
 
