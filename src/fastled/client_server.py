@@ -76,12 +76,13 @@ def _run_web_compiler(
     build_mode: BuildMode,
     profile: bool,
     last_hash_value: str | None,
+    no_platformio: bool = False,
 ) -> CompileResult:
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
     start = time.time()
     web_result = web_compile(
-        directory=input_dir, host=host, build_mode=build_mode, profile=profile
+        directory=input_dir, host=host, build_mode=build_mode, profile=profile, no_platformio=no_platformio
     )
     diff = time.time() - start
     if not web_result.success:
@@ -287,6 +288,7 @@ def run_client(
             build_mode: BuildMode = build_mode,
             profile: bool = profile,
             last_hash_value: str | None = None,
+            no_platformio: bool = no_platformio,
         ) -> CompileResult:
             TEST_BEFORE_COMPILE(url)
             return _run_web_compiler(
@@ -295,6 +297,7 @@ def run_client(
                 build_mode=build_mode,
                 profile=profile,
                 last_hash_value=last_hash_value,
+                no_platformio=no_platformio,
             )
 
         result: CompileResult = compile_function(last_hash_value=None)
