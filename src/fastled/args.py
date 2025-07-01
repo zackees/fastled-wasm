@@ -12,6 +12,7 @@ class Args:
     interactive: bool
     profile: bool
     force_compile: bool
+    no_platformio: bool
     auto_update: bool | None
     update: bool
     localhost: bool
@@ -48,6 +49,9 @@ class Args:
             args.force_compile, bool
         ), f"expected bool, got {type(args.force_compile)}"
         assert isinstance(
+            args.no_platformio, bool
+        ), f"expected bool, got {type(args.no_platformio)}"
+        assert isinstance(
             args.no_auto_updates, bool | None
         ), f"expected bool | None, got {type(args.no_auto_updates)}"
         assert isinstance(args.update, bool), f"expected bool, got {type(args.update)}"
@@ -78,6 +82,7 @@ class Args:
             interactive=args.interactive,
             profile=args.profile,
             force_compile=args.force_compile,
+            no_platformio=args.no_platformio,
             auto_update=not args.no_auto_updates,
             update=args.update,
             localhost=args.localhost,
