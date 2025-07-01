@@ -15,6 +15,7 @@ class CompileServer:
         container_name: str | None = None,
         platform: Platform = Platform.WASM,
         remove_previous: bool = False,
+        no_platformio: bool = False,
     ) -> None:
         from fastled.compile_server_impl import (  # avoid circular import
             CompileServerImpl,
@@ -29,6 +30,7 @@ class CompileServer:
             mapped_dir=mapped_dir,
             auto_start=auto_start,
             remove_previous=remove_previous,
+            no_platformio=no_platformio,
         )
 
     # May throw CompileServerError if server could not be started.

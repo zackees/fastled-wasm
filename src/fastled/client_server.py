@@ -130,7 +130,7 @@ def _run_web_compiler(
 
 
 def _try_start_server_or_get_url(
-    auto_update: bool, args_web: str | bool, localhost: bool, clear: bool
+    auto_update: bool, args_web: str | bool, localhost: bool, clear: bool, no_platformio: bool = False
 ) -> tuple[str, CompileServer | None]:
     is_local_host = localhost or (
         isinstance(args_web, str)
@@ -161,7 +161,7 @@ def _try_start_server_or_get_url(
         try:
             print("No local server found, starting one...")
             compile_server = CompileServer(
-                auto_updates=auto_update, remove_previous=clear
+                auto_updates=auto_update, remove_previous=clear, no_platformio=no_platformio
             )
             print("Waiting for the local compiler to start...")
             if not compile_server.ping():
@@ -177,7 +177,7 @@ def _try_start_server_or_get_url(
             return (DEFAULT_URL, None)
 
 
-def _try_make_compile_server(clear: bool = False) -> CompileServer | None:
+def _try_make_compile_server(clear: bool = False, no_platformio: bool = False) -> CompileServer | None:
     if not DockerManager.is_docker_installed():
         return None
     try:
@@ -189,7 +189,7 @@ def _try_make_compile_server(clear: bool = False) -> CompileServer | None:
         free_port = find_free_port(start_port=9723, end_port=9743)
         if free_port is None:
             return None
-        compile_server = CompileServer(auto_updates=False, remove_previous=clear)
+        compile_server = CompileServer(auto_updates=False, remove_previous=clear, no_platformio=no_platformio)
         print("Waiting for the local compiler to start...")
         if not compile_server.ping():
             print("Failed to start local compiler.")
@@ -228,13 +228,14 @@ def run_client(
         int | None
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
     clear: bool = False,
+    no_platformio: bool = False,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
 
     if host is None:
         # attempt to start a compile server if docker is installed.
-        compile_server = _try_make_compile_server(clear=clear)
+        compile_server = _try_make_compile_server(clear=clear, no_platformio=no_platformio)
         if compile_server is None:
             host = DEFAULT_URL
     elif isinstance(host, CompileServer):
@@ -463,6 +464,7 @@ def run_client_server(args: Args) -> int:
     force_compile = bool(args.force_compile)
     open_web_browser = not just_compile and not interactive
     build_mode: BuildMode = BuildMode.from_args(args)
+    no_platformio = bool(args.no_platformio)
 
     if not force_compile and not looks_like_sketch_directory(directory):
         # if there is only one directory in the sketch directory, use that
@@ -492,7 +494,7 @@ def run_client_server(args: Args) -> int:
     compile_server: CompileServer | None = None
     try:
         url, compile_server = _try_start_server_or_get_url(
-            auto_update, web, localhost, args.clear
+            auto_update, web, localhost, args.clear, no_platformio
         )
     except KeyboardInterrupt:
         print("\nExiting from first try...")
@@ -524,6 +526,7 @@ def run_client_server(args: Args) -> int:
             build_mode=build_mode,
             profile=profile,
             clear=args.clear,
+            no_platformio=no_platformio,
         )
     except KeyboardInterrupt:
         return 1

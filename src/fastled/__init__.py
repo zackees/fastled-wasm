@@ -85,6 +85,7 @@ class Api:
         mapped_dir: Path | None = None,  # Sketch directory.
         container_name: str | None = None,  # Specific docker container name.
         remove_previous: bool = False,
+        no_platformio: bool = False,
     ) -> CompileServer:
         """Uses docker to spawn a compile server from the given name."""
         from fastled.compile_server import CompileServer
@@ -96,6 +97,7 @@ class Api:
             mapped_dir=mapped_dir,
             auto_start=auto_start,
             remove_previous=remove_previous,
+            no_platformio=no_platformio,
         )
         return out
 
@@ -108,6 +110,7 @@ class Api:
         mapped_dir: Path | None = None,  # Sketch directory.
         container_name: str | None = None,  # Specific docker container name.
         remove_previous=False,
+        no_platformio: bool = False,
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
             interactive=interactive,
@@ -116,6 +119,7 @@ class Api:
             mapped_dir=mapped_dir,
             container_name=container_name,
             remove_previous=remove_previous,
+            no_platformio=no_platformio,
         )
         try:
             yield server
