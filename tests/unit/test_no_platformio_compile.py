@@ -124,7 +124,6 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         """
         # Test with regular mode first
         server_regular = CompileServerImpl(no_platformio=False, auto_start=True)
-        server_no_platformio = CompileServerImpl(no_platformio=True, auto_start=True)
         
         try:
             # Test regular compilation
@@ -143,9 +142,17 @@ class NoPlatformIOCompileTester(unittest.TestCase):
             )
             self.assertTrue(len(result_regular.zip_bytes) > 0)
             
-            # Stop regular server before starting no-platformio server
-            server_regular.stop()
-
+        finally:
+            # Stop regular server completely before starting no-platformio server
+            try:
+                server_regular.stop()
+            except Exception as e:
+                print(f"Cleanup warning for regular server: {e}")
+        
+        # Now test no-platformio compilation after regular server is stopped
+        server_no_platformio = CompileServerImpl(no_platformio=True, auto_start=True)
+        
+        try:
             # Test no-platformio compilation
             running, error = server_no_platformio.running
             self.assertTrue(running, f"No-platformio server should be running: {error}")
@@ -167,12 +174,11 @@ class NoPlatformIOCompileTester(unittest.TestCase):
             print(f"No-platformio output size: {len(result_no_platformio.zip_bytes)} bytes")
             
         finally:
-            # Cleanup both servers
-            for server in [server_regular, server_no_platformio]:
-                try:
-                    server.stop()
-                except Exception as e:
-                    print(f"Cleanup warning: {e}")
+            # Cleanup no-platformio server
+            try:
+                server_no_platformio.stop()
+            except Exception as e:
+                print(f"Cleanup warning for no-platformio server: {e}")
 
     @unittest.skipUnless(
         _enabled() and _docker_available(),
