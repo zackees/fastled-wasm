@@ -195,6 +195,7 @@ def web_compile(
     auth_token: str | None = None,
     build_mode: BuildMode | None = None,
     profile: bool = False,
+    no_platformio: bool = False,
 ) -> CompileResult:
     start_time = time.time()
     if isinstance(directory, str):
@@ -249,6 +250,7 @@ def web_compile(
                     else BuildMode.QUICK.value.lower()
                 ),
                 "profile": "true" if profile else "false",
+                "no-platformio": "true" if no_platformio else "false",
             }
 
             url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"

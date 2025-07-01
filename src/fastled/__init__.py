@@ -39,6 +39,7 @@ class Api:
         host: str | CompileServer | None = None,
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,  # When true then profile information will be enabled and included in the zip.
+        no_platformio: bool = False,  # When true, bypasses PlatformIO constraints using local Docker compilation
     ) -> CompileResult:
         from fastled.web_compile import web_compile
 
@@ -47,7 +48,7 @@ class Api:
         if isinstance(directory, str):
             directory = Path(directory)
         out: CompileResult = web_compile(
-            directory, host, build_mode=build_mode, profile=profile
+            directory, host, build_mode=build_mode, profile=profile, no_platformio=no_platformio
         )
         return out
 
