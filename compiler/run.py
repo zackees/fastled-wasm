@@ -6,7 +6,66 @@ import warnings
 from pathlib import Path
 from typing import Tuple
 
-from fastled_wasm_compiler.compiler import Compiler
+# ----------------------------------------------------------------------------
+# The fastled-wasm Docker image sometimes ships with an older version of the
+# fastled-wasm-compiler PyPI package that predates the introduction of the
+# `Compiler` class. In that case importing `Compiler` raises an ImportError
+# which causes the whole server to crash very early during start-up:
+#
+#   ImportError: cannot import name 'Compiler' from 'fastled_wasm_compiler.compiler'
+#
+# To make the container self-healing we try the import, and if it fails we
+# perform an in-place upgrade of the fastled-wasm-compiler package then retry
+# the import once more.  If it still fails we re-raise the original error.
+# ----------------------------------------------------------------------------
+
+# NOTE: This code intentionally uses the standard `python -m pip` invocation
+# instead of `uv` because `uv` is not guaranteed to be present in the Docker
+# image at runtime. The rule to always use `uv run` applies to development on
+# the host; inside the container we fall back to the ubiquitous `pip` tool.
+
+import importlib
+import subprocess
+import sys
+
+
+def _import_compiler():
+    """Attempt to import the Compiler class, returning it on success."""
+    from fastled_wasm_compiler.compiler import Compiler  # type: ignore
+
+    return Compiler
+
+
+try:
+    # First attempt: the vast majority of cases should work here.
+    Compiler = _import_compiler()
+except ImportError as _original_exc:  # pragma: no cover – only runs in broken images
+    # Perform a best-effort, in-place upgrade of the package and retry.
+    try:
+        print("fastled_wasm_compiler missing `Compiler` symbol – attempting self-upgrade …")
+        subprocess.check_call([
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "fastled-wasm-compiler",
+        ])
+
+        # Invalidate import caches so that Python sees the freshly installed version.
+        importlib.invalidate_caches()
+
+        # Retry the import now that we've potentially upgraded the package.
+        Compiler = _import_compiler()
+        print("Successfully upgraded fastled_wasm_compiler – proceeding with startup.")
+    except Exception as _upgrade_exc:  # pragma: no cover
+        # If anything goes wrong we fall back to re-raising the original
+        # ImportError so that the stack trace clearly shows the root cause.
+        print(
+            "Failed to upgrade fastled_wasm_compiler automatically. "
+            "Original error follows:")
+        raise _original_exc from _upgrade_exc
+
 from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC
 
 _PORT = os.environ.get("PORT", 80)
