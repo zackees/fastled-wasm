@@ -31,7 +31,7 @@ import sys
 
 def _import_compiler():
     """Attempt to import the Compiler class, returning it on success."""
-    from fastled_wasm_compiler.compiler import Compiler  # type: ignore
+    from fastled_wasm_compiler import Compiler  # type: ignore
 
     return Compiler
 
@@ -43,14 +43,16 @@ except ImportError as _original_exc:  # pragma: no cover – only runs in broken
     # Perform a best-effort, in-place upgrade of the package and retry.
     try:
         print("fastled_wasm_compiler missing `Compiler` symbol – attempting self-upgrade …")
-        subprocess.check_call([
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "fastled-wasm-compiler",
-        ])
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "fastled-wasm-compiler",
+            ]
+        )
 
         # Invalidate import caches so that Python sees the freshly installed version.
         importlib.invalidate_caches()
