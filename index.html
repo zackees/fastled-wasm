@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastLED Examples</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <div class="splash-screen">
+        <div class="splash-text">FastLED</div>
+    </div>
+    <div class="content-wrapper">
+        <div class="nav-trigger">Examples <i class="fas fa-chevron-down"></i></div>
+        <nav class="nav-pane">
+                <a class="example-link" href="Chromancer/index.html">Chromancer</a>
+    <a class="example-link" href="FireCylinder/index.html">FireCylinder</a>
+    <a class="example-link" href="FxNoiseRing/index.html">FxNoiseRing</a>
+    <a class="example-link" href="FxSdCard/index.html">FxSdCard</a>
+    <a class="example-link" href="FxWater/index.html">FxWater</a>
+    <a class="example-link" href="FxWave2d/index.html">FxWave2d</a>
+    <a class="example-link" href="LuminescentGrand/index.html">LuminescentGrand</a>
+    <a class="example-link" href="wasm/index.html">wasm</a>
+        </nav>
+        <main class="main-content">
+            <iframe id="example-frame" title="Example Content"></iframe>
+        </main>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const splashScreen = document.querySelector('.splash-screen');
+            const splashText = document.querySelector('.splash-text');
+            
+            // Ensure splash screen always gets removed
+            const removeSplashScreen = () => {
+                splashScreen.style.opacity = '0';
+                setTimeout(() => {
+                    splashScreen.style.display = 'none';
+                }, 500);
+            };
+
+            // Set a maximum time the splash screen can stay
+            const maxSplashTime = setTimeout(removeSplashScreen, 2000); // Reduced from 5000ms to 2000ms
+
+            // Try to do nice fade-in/fade-out when possible
+            try {
+                // Add a fallback timer in case font loading fails silently
+                const fontTimeout = setTimeout(() => {
+                    splashText.style.opacity = '1';
+                    setTimeout(removeSplashScreen, 1000);
+                }, 1000);
+
+                Promise.all([
+                    // Wrap font loading in a timeout promise
+                    Promise.race([
+                        document.fonts.ready,
+                        new Promise((_, reject) => setTimeout(reject, 1500))
+                    ]),
+                    new Promise(resolve => {
+                        if (document.readyState === 'complete') {
+                            resolve();
+                        } else {
+                            window.addEventListener('load', resolve);
+                        }
+                    })
+                ]).then(() => {
+                    clearTimeout(maxSplashTime);
+                    clearTimeout(fontTimeout);
+                    splashText.style.opacity = '1';
+                    setTimeout(removeSplashScreen, 1500);
+                }).catch(() => {
+                    // If either promise fails, ensure splash screen is removed
+                    clearTimeout(maxSplashTime);
+                    removeSplashScreen();
+                });
+            } catch (e) {
+                // Final fallback if anything goes wrong
+                console.warn('Splash screen error:', e);
+                removeSplashScreen();
+            }
+            const links = document.querySelectorAll('.example-link');
+            const iframe = document.getElementById('example-frame');
+            const navPane = document.querySelector('.nav-pane');
+            const navTrigger = document.querySelector('.nav-trigger');
+            
+            // First add checkmarks to all links
+            links.forEach(link => {
+                // Add the checkmark span to each link
+                const checkmark = document.createElement('i');
+                checkmark.className = 'fas fa-check';
+                checkmark.style.display = 'none';
+                checkmark.style.position = 'absolute';
+                checkmark.style.right = '10px';
+                checkmark.style.top = '50%';
+                checkmark.style.transform = 'translateY(-50%)';
+                checkmark.style.color = '#E0E0E0';
+                link.appendChild(checkmark);
+            });
+            
+            // Now load first example and show its checkmark
+            if (links.length > 0) {
+                // Try to find SdCard example first
+                let startLink = Array.from(links).find(link => link.textContent === 'SdCard') || links[0];
+                iframe.src = startLink.getAttribute('href');
+                startLink.classList.add('active');
+                startLink.querySelector('.fa-check').style.display = 'inline-block';
+            }
+            
+            // Add click handlers
+            links.forEach(link => {
+                link.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    // Hide all checkmarks
+                    links.forEach(l => {
+                        l.querySelector('.fa-check').style.display = 'none';
+                        l.classList.remove('active');
+                    });
+                    // Show this checkmark
+                    this.querySelector('.fa-check').style.display = 'inline-block';
+                    this.classList.add('active');
+                    iframe.src = this.getAttribute('href');
+                    hideNav();  // Hide nav after selection
+                });
+            });
+
+            function showNav() {
+                navPane.classList.add('visible');
+                navPane.style.opacity = '1';
+            }
+
+            function hideNav() {
+                navPane.style.opacity = '0';  // Start fade out
+                setTimeout(() => {
+                    navPane.classList.remove('visible');
+                }, 300);
+            }
+
+            // Click handlers for nav
+            navTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (navPane.classList.contains('visible')) {
+                    hideNav();
+                } else {
+                    showNav();
+                }
+            });
+            
+            // Close menu when clicking anywhere in the document
+            document.addEventListener('click', (e) => {
+                if (navPane.classList.contains('visible') && 
+                    !navPane.contains(e.target) && 
+                    !navTrigger.contains(e.target)) {
+                    hideNav();
+                }
+            });
+
+            // Close when clicking iframe
+            iframe.addEventListener('load', () => {
+                iframe.contentDocument?.addEventListener('click', () => {
+                    if (navPane.classList.contains('visible')) {
+                        hideNav();
+                    }
+                });
+            });
+
+            // Initial state
+            hideNav();
+        });
+    </script>
+</body>
+</html>
