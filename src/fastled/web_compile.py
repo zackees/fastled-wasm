@@ -294,8 +294,16 @@ def web_compile(
                 # Read stdout from out.txt if it exists
                 stdout_file = extract_path / "out.txt"
                 hash_file = extract_path / "hash.txt"
-                stdout = stdout_file.read_text(encoding='utf-8', errors='replace') if stdout_file.exists() else ""
-                hash_value = hash_file.read_text(encoding='utf-8', errors='replace') if hash_file.exists() else None
+                stdout = (
+                    stdout_file.read_text(encoding="utf-8", errors="replace")
+                    if stdout_file.exists()
+                    else ""
+                )
+                hash_value = (
+                    hash_file.read_text(encoding="utf-8", errors="replace")
+                    if hash_file.exists()
+                    else None
+                )
 
                 # now rezip the extracted files since we added the embedded json files
                 out_buffer = io.BytesIO()
