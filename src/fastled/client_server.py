@@ -1,4 +1,5 @@
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -67,7 +68,20 @@ def TEST_BEFORE_COMPILE(url) -> None:
 def _chunked_print(stdout: str) -> None:
     lines = stdout.splitlines()
     for line in lines:
-        print(line)
+        try:
+            print(line)
+        except UnicodeEncodeError:
+            # On Windows, the console may not support Unicode characters
+            # Try to encode the line with the console's encoding and replace problematic characters
+            try:
+                console_encoding = sys.stdout.encoding or "utf-8"
+                encoded_line = line.encode(console_encoding, errors="replace").decode(
+                    console_encoding
+                )
+                print(encoded_line)
+            except Exception:
+                # If all else fails, just print the line without problematic characters
+                print(line.encode("ascii", errors="replace").decode("ascii"))
 
 
 def _run_web_compiler(
