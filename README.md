@@ -51,10 +51,10 @@ For enhanced browser control and automation capabilities, you can install the fu
 $ pip install fastled[full]
 ```
 
-This enables the `--playwright` flag which opens your compiled sketch in a Playwright-controlled browser instead of your system's default browser:
+When installed, FastLED will automatically use Playwright to open your compiled sketch in a controlled browser environment instead of your system's default browser:
 
 ```bash
-$ fastled my_sketch --playwright
+$ fastled my_sketch
 ```
 
 The Playwright browser provides better automation capabilities and is especially useful for:
@@ -64,12 +64,13 @@ The Playwright browser provides better automation capabilities and is especially
 - Persistent browser sessions that stay open until the FastLED process exits
 
 **Key Benefits:**
+- Automatically enabled when `fastled[full]` is installed - no additional flags needed
 - The Playwright browser remains open throughout your development session
 - Automatic cleanup when the FastLED process exits
 - Better control over browser behavior and automation capabilities
 - Consistent behavior across different platforms
 
-If Playwright is not installed and you use the `--playwright` flag, the system will gracefully fall back to your default browser.
+If Playwright is not installed, the system will gracefully fall back to your default browser.
 
 # Install
 

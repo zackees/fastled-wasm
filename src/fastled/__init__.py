@@ -95,7 +95,6 @@ class Api:
         no_platformio: bool = False,
     ) -> CompileServer:
         """Uses docker to spawn a compile server from the given name."""
-        from fastled.compile_server import CompileServer
 
         out = CompileServer(
             container_name=container_name,

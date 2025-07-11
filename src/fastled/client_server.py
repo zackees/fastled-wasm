@@ -25,6 +25,16 @@ from fastled.web_compile import (
 )
 
 
+def _always_false() -> bool:
+    return False
+
+
+try:
+    from fastled.playwright_browser import is_playwright_available
+except ImportError:
+    is_playwright_available = _always_false
+
+
 def _create_error_html(error_message: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
@@ -258,8 +268,6 @@ def run_client(
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
     clear: bool = False,
     no_platformio: bool = False,
-    use_playwright: bool = False,
-    playwright_auto_resize: bool = True,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -340,8 +348,6 @@ def run_client(
                 port=http_port,
                 compile_server_port=port,
                 open_browser=open_web_browser,
-                use_playwright=use_playwright,
-                playwright_auto_resize=playwright_auto_resize,
             )
         else:
             print("\nCompilation successful.")
@@ -564,8 +570,6 @@ def run_client_server(args: Args) -> int:
             profile=profile,
             clear=args.clear,
             no_platformio=no_platformio,
-            use_playwright=args.playwright,
-            playwright_auto_resize=not args.no_playwright_auto_resize,
         )
     except KeyboardInterrupt:
         return 1

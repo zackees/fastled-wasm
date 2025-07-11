@@ -35,15 +35,12 @@ FastLED WASM Compiler - Useful options:
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
   --purge               Remove all FastLED containers and images
-  --playwright          Use Playwright browser (requires 'pip install fastled[full]')
-  --no-playwright-auto-resize  Disable automatic window resizing in Playwright
   --version             Show version information
   --help                Show detailed help
 Examples:
   fastled (will auto detect the sketch directory and prompt you)
   fastled my_sketch
   fastled my_sketch --web (compiles using the web compiler only)
-  fastled my_sketch --playwright (opens in Playwright browser)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
   fastled --server (runs the compiler server in the current directory)
 
@@ -85,8 +82,8 @@ def parse_args() -> Args:
     parser.add_argument(
         "--ram-disk-size",
         type=str,
-        default="0",
-        help="Set the size of the ramdisk for the docker container. Use suffixes like '25mb' or '1gb'.",
+        default="1gb",
+        help="Size of the RAM disk for compilation (e.g., '1gb', '512mb')",
     )
     parser.add_argument(
         "--web",
@@ -116,7 +113,7 @@ def parse_args() -> Args:
     parser.add_argument(
         "--no-auto-updates",
         action="store_true",
-        help="Disable automatic updates of the wasm compiler image when using docker.",
+        help="Disable automatic updates of the wasm compiler image when using docker. (Default: False)",
     )
     parser.add_argument(
         "--no-platformio",
@@ -159,18 +156,6 @@ def parse_args() -> Args:
         "--clear",
         action="store_true",
         help="Remove all FastLED containers and images",
-    )
-
-    parser.add_argument(
-        "--playwright",
-        action="store_true",
-        help="Use Playwright browser instead of system default (requires 'pip install fastled[full]')",
-    )
-
-    parser.add_argument(
-        "--no-playwright-auto-resize",
-        action="store_true",
-        help="Disable automatic window resizing in Playwright browser",
     )
 
     build_mode = parser.add_mutually_exclusive_group()

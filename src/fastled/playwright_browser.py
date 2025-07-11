@@ -33,23 +33,19 @@ def is_playwright_available() -> bool:
 class PlaywrightBrowser:
     """Playwright browser manager for FastLED sketches."""
 
-    def __init__(self, headless: bool = False, auto_resize: bool = True):
+    def __init__(self, headless: bool = False):
         """Initialize the Playwright browser manager.
 
         Args:
             headless: Whether to run the browser in headless mode
-            auto_resize: Whether to automatically resize the browser window to fit content
         """
         if not PLAYWRIGHT_AVAILABLE:
             raise ImportError(
                 "Playwright is not installed. Install with: pip install fastled[full]"
             )
 
-        # debug
-        auto_resize = True
-
         self.headless = headless
-        self.auto_resize = auto_resize
+        self.auto_resize = True  # Always enable auto-resize
         self.browser: Any = None
         self.page: Any = None
         self.playwright: Any = None
@@ -260,15 +256,12 @@ class PlaywrightBrowser:
             self.playwright = None
 
 
-def run_playwright_browser(
-    url: str, headless: bool = False, auto_resize: bool = True
-) -> None:
+def run_playwright_browser(url: str, headless: bool = False) -> None:
     """Run Playwright browser in a separate process.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
-        auto_resize: Whether to automatically resize the browser window to fit content
     """
     if not PLAYWRIGHT_AVAILABLE:
         warnings.warn(
@@ -278,7 +271,7 @@ def run_playwright_browser(
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless, auto_resize=auto_resize)
+        browser = PlaywrightBrowser(headless=headless)
         try:
             await browser.start()
             await browser.open_url(url)
@@ -314,13 +307,12 @@ class PlaywrightBrowserProxy:
         self.monitor_thread = None
         self._closing_intentionally = False
 
-    def open(self, url: str, headless: bool = False, auto_resize: bool = True) -> None:
+    def open(self, url: str, headless: bool = False) -> None:
         """Open URL with Playwright browser and keep it alive.
 
         Args:
             url: The URL to open
             headless: Whether to run in headless mode
-            auto_resize: Whether to automatically resize the browser window to fit content
         """
         if not PLAYWRIGHT_AVAILABLE:
             warnings.warn(
@@ -339,7 +331,7 @@ class PlaywrightBrowserProxy:
 
             self.process = multiprocessing.Process(
                 target=run_playwright_browser_persistent,
-                args=(url, headless, auto_resize),
+                args=(url, headless),
             )
             self.process.start()
 
@@ -404,21 +396,18 @@ class PlaywrightBrowserProxy:
             self.process = None
 
 
-def run_playwright_browser_persistent(
-    url: str, headless: bool = False, auto_resize: bool = True
-) -> None:
+def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
     """Run Playwright browser in a persistent mode that stays alive until terminated.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
-        auto_resize: Whether to automatically resize the browser window to fit content
     """
     if not PLAYWRIGHT_AVAILABLE:
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless, auto_resize=auto_resize)
+        browser = PlaywrightBrowser(headless=headless)
         try:
             await browser.start()
             await browser.open_url(url)
@@ -446,9 +435,7 @@ def run_playwright_browser_persistent(
         print(f"Playwright browser failed: {e}")
 
 
-def open_with_playwright(
-    url: str, headless: bool = False, auto_resize: bool = True
-) -> PlaywrightBrowserProxy:
+def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserProxy:
     """Open URL with Playwright browser and return a proxy object for lifecycle management.
 
     This function can be used as a drop-in replacement for webbrowser.open().
@@ -456,13 +443,12 @@ def open_with_playwright(
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
-        auto_resize: Whether to automatically resize the browser window to fit content
 
     Returns:
         PlaywrightBrowserProxy object for managing the browser lifecycle
     """
     proxy = PlaywrightBrowserProxy()
-    proxy.open(url, headless, auto_resize)
+    proxy.open(url, headless)
     return proxy
 
 

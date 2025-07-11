@@ -56,64 +56,6 @@ class PlaywrightIntegrationTester(unittest.TestCase):
                 # Test cleanup
                 proxy.close()  # Should not raise an exception
 
-    def test_args_integration(self):
-        """Test that the playwright argument is properly integrated into the Args class."""
-        import argparse
-
-        from fastled.args import Args
-
-        # Create a mock namespace with the playwright argument
-        namespace = argparse.Namespace()
-        namespace.directory = None
-        namespace.init = None
-        namespace.just_compile = False
-        namespace.web = None
-        namespace.interactive = False
-        namespace.profile = False
-        namespace.force_compile = False
-        namespace.no_platformio = False
-        namespace.no_auto_updates = False
-        namespace.update = False
-        namespace.localhost = False
-        namespace.build = False
-        namespace.server = False
-        namespace.purge = False
-        namespace.debug = False
-        namespace.quick = False
-        namespace.release = False
-        namespace.ram_disk_size = "0"
-        namespace.playwright = True
-
-        # Create Args from namespace
-        args = Args.from_namespace(namespace)
-
-        # Verify the playwright flag is set
-        self.assertTrue(args.playwright)
-
-    def test_parse_args_playwright_flag(self):
-        """Test that the --playwright flag is properly parsed."""
-        import sys
-
-        from fastled.parse_args import parse_args
-
-        # Save original argv
-        original_argv = sys.argv
-
-        try:
-            # Test with --playwright flag
-            sys.argv = ["fastled", "test_dir", "--playwright"]
-            args = parse_args()
-            self.assertTrue(args.playwright)
-
-            # Test without --playwright flag
-            sys.argv = ["fastled", "test_dir"]
-            args = parse_args()
-            self.assertFalse(args.playwright)
-
-        finally:
-            # Restore original argv
-            sys.argv = original_argv
-
 
 if __name__ == "__main__":
     unittest.main()
