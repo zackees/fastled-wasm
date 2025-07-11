@@ -177,26 +177,28 @@ class PlaywrightBrowser:
 
                         last_outer_size = current_outer
 
-                        # Adjust ONLY the viewport to match the current content area
+                        # Set viewport to match the outer window size
                         if not self.headless:
                             try:
-                                content_width = int(window_info["outerWidth"])
-                                content_height = int(window_info["outerHeight"])
+                                outer_width = int(window_info["outerWidth"])
+                                outer_height = int(window_info["outerHeight"])
 
                                 print(
-                                    f"[PYTHON] Adjusting viewport to match content area: {content_width}x{content_height}"
+                                    f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
                                 )
 
                                 # Set flag to ignore changes during adjustment
                                 adjusting_viewport = True
 
-                                # await self.page.set_viewport_size({"width": content_width, "height": content_height})
-                                print("[PYTHON] Viewport adjusted successfully")
+                                await self.page.set_viewport_size(
+                                    {"width": outer_width, "height": outer_height}
+                                )
+                                print("[PYTHON] Viewport set successfully")
 
-                                # Wait for browser to settle after viewport change
-                                await asyncio.sleep(1)
+                                # Wait briefly for browser to settle after viewport change
+                                await asyncio.sleep(0.5)
 
-                                # Query the browser window dimensions again after adjustment
+                                # Query the actual window dimensions after the viewport change
                                 updated_window_info = await self.page.evaluate(
                                     """
                                     () => {
@@ -212,18 +214,13 @@ class PlaywrightBrowser:
                                 """
                                 )
 
-                                # print the update_window_info
-                                print(
-                                    f"[PYTHON] Updated window info: {updated_window_info}"
-                                )
-
-                                # Update our tracking with the new actual size
+                                # Update our tracking with the actual final outer size
                                 last_outer_size = (
                                     updated_window_info["outerWidth"],
                                     updated_window_info["outerHeight"],
                                 )
                                 print(
-                                    f"[PYTHON] Updated last_outer_size to {last_outer_size}"
+                                    f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
                                 )
 
                                 # Clear the adjustment flag
@@ -231,7 +228,7 @@ class PlaywrightBrowser:
 
                             except Exception as e:
                                 adjusting_viewport = False
-                                print(f"[PYTHON] Failed to adjust viewport: {e}")
+                                print(f"[PYTHON] Failed to set viewport: {e}")
                     elif adjusting_viewport:
                         print(
                             "[PYTHON] Ignoring size change during viewport adjustment"
