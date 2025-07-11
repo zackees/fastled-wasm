@@ -53,6 +53,7 @@ class PlaywrightBrowser:
         self.browser: Any = None
         self.page: Any = None
         self.playwright: Any = None
+        self._should_exit = asyncio.Event()
 
     async def start(self) -> None:
         """Start the Playwright browser."""
@@ -158,8 +159,9 @@ class PlaywrightBrowser:
 
                 # Check if page is still alive
                 if self.page is None or self.page.is_closed():
-                    print("[PYTHON] Page closed, stopping browser tracking")
-                    break
+                    print("[PYTHON] Page closed, signaling exit")
+                    self._should_exit.set()
+                    return
 
                 # Get browser window dimensions
                 window_info = await self._get_window_info()
@@ -309,6 +311,8 @@ class PlaywrightBrowserProxy:
     def __init__(self):
         self.process = None
         self.browser_manager = None
+        self.monitor_thread = None
+        self._closing_intentionally = False
 
     def open(self, url: str, headless: bool = False, auto_resize: bool = True) -> None:
         """Open URL with Playwright browser and keep it alive.
@@ -339,6 +343,9 @@ class PlaywrightBrowserProxy:
             )
             self.process.start()
 
+            # Start monitoring thread to exit main process when browser subprocess exits
+            self._start_monitor_thread()
+
             # Register cleanup
             import atexit
 
@@ -352,10 +359,44 @@ class PlaywrightBrowserProxy:
 
             webbrowser.open(url)
 
+    def _start_monitor_thread(self) -> None:
+        """Start a thread to monitor the browser process and exit main process when it terminates."""
+        if self.monitor_thread is not None:
+            return
+
+        import os
+        import threading
+
+        def monitor_process():
+            """Monitor the browser process and exit when it terminates."""
+            if self.process is None:
+                return
+
+            try:
+                # Wait for the process to terminate
+                self.process.join()
+
+                # Check if the process terminated (and we didn't kill it ourselves)
+                if (
+                    self.process.exitcode is not None
+                    and not self._closing_intentionally
+                ):
+                    print("[MAIN] Browser closed, exiting main program")
+                    # Force exit the entire program
+                    os._exit(0)
+
+            except Exception as e:
+                print(f"[MAIN] Error monitoring browser process: {e}")
+
+        self.monitor_thread = threading.Thread(target=monitor_process, daemon=True)
+        self.monitor_thread.start()
+
     def close(self) -> None:
         """Close the Playwright browser."""
         if self.process and self.process.is_alive():
             print("Closing Playwright browser...")
+            # Mark that we're intentionally closing to prevent monitor from triggering exit
+            self._closing_intentionally = True
             self.process.terminate()
             self.process.join(timeout=5)
             if self.process.is_alive():
@@ -386,9 +427,9 @@ def run_playwright_browser_persistent(
                 "Playwright browser opened. Browser will remain open until the FastLED process exits."
             )
 
-            # Keep the browser alive indefinitely
-            while True:
-                await asyncio.sleep(1)
+            # Keep the browser alive until exit is signaled
+            while not browser._should_exit.is_set():
+                await asyncio.sleep(0.1)
 
         except KeyboardInterrupt:
             print("\nClosing Playwright browser...")
