@@ -1,18 +1,23 @@
 """
 Playwright browser integration for FastLED WASM compiler.
 
-This module provides functionality to open the compiled FastLED sketch
+This module provides a Playwright-based browser implementation that can be used
 in a Playwright browser instead of the default system browser when
-the 'full' optional dependency is installed.
+Playwright is available.
 """
 
 import asyncio
+import os
 import sys
+import threading
 import warnings
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
-if TYPE_CHECKING:
-    from playwright.async_api import Browser, Page
+# Set custom Playwright browser installation path
+PLAYWRIGHT_DIR = Path.home() / ".fastled" / "playwright"
+PLAYWRIGHT_DIR.mkdir(parents=True, exist_ok=True)
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_DIR)
 
 try:
     from playwright.async_api import Browser, Page, async_playwright
@@ -21,8 +26,8 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     async_playwright = None
-    Browser = Any  # type: ignore
-    Page = Any  # type: ignore
+    Browser = None
+    Page = None
 
 
 def is_playwright_available() -> bool:
@@ -268,34 +273,57 @@ def run_playwright_browser(url: str, headless: bool = False) -> None:
             "Playwright is not installed. Install with: pip install fastled[full]. "
             "Falling back to default browser."
         )
+        import webbrowser
+
+        webbrowser.open(url)
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless)
+        browser = None
         try:
+            browser = PlaywrightBrowser(headless=headless)
             await browser.start()
             await browser.open_url(url)
 
-            if not headless:
-                print("Playwright browser opened. Press Ctrl+C to close.")
-                await browser.wait_for_close()
-            else:
-                # In headless mode, just wait a bit for the page to load
-                await asyncio.sleep(2)
+            print("Playwright browser opened. Press Ctrl+C to close.")
+            await browser.wait_for_close()
 
+        except Exception as e:
+            # If we get an error that suggests browsers aren't installed, try to install them
+            if "executable doesn't exist" in str(e) or "Browser not found" in str(e):
+                print("🎭 Playwright browsers not found. Installing...")
+                if install_playwright_browsers():
+                    print("🎭 Retrying browser startup...")
+                    # Try again with fresh browser instance
+                    browser = PlaywrightBrowser(headless=headless)
+                    await browser.start()
+                    await browser.open_url(url)
+
+                    print("Playwright browser opened. Press Ctrl+C to close.")
+                    await browser.wait_for_close()
+                else:
+                    print("❌ Failed to install Playwright browsers")
+                    raise e
+            else:
+                raise e
         except KeyboardInterrupt:
             print("\nClosing Playwright browser...")
         finally:
-            await browser.close()
+            if browser is not None:
+                try:
+                    await browser.close()
+                except Exception as e:
+                    print(f"Warning: Failed to close Playwright browser: {e}")
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\nPlaywright browser closed.")
     except Exception as e:
-        warnings.warn(
-            f"Playwright browser failed: {e}. Falling back to default browser."
-        )
+        print(f"Playwright browser failed: {e}. Falling back to default browser.")
+        import webbrowser
+
+        webbrowser.open(url)
 
 
 class PlaywrightBrowserProxy:
@@ -357,7 +385,6 @@ class PlaywrightBrowserProxy:
             return
 
         import os
-        import threading
 
         def monitor_process():
             """Monitor the browser process and exit when it terminates."""
@@ -407,8 +434,9 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless)
+        browser = None
         try:
+            browser = PlaywrightBrowser(headless=headless)
             await browser.start()
             await browser.open_url(url)
 
@@ -420,12 +448,37 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
             while not browser._should_exit.is_set():
                 await asyncio.sleep(0.1)
 
+        except Exception as e:
+            # If we get an error that suggests browsers aren't installed, try to install them
+            if "executable doesn't exist" in str(e) or "Browser not found" in str(e):
+                print("🎭 Playwright browsers not found. Installing...")
+                if install_playwright_browsers():
+                    print("🎭 Retrying browser startup...")
+                    # Try again with fresh browser instance
+                    browser = PlaywrightBrowser(headless=headless)
+                    await browser.start()
+                    await browser.open_url(url)
+
+                    print(
+                        "Playwright browser opened. Browser will remain open until the FastLED process exits."
+                    )
+
+                    # Keep the browser alive until exit is signaled
+                    while not browser._should_exit.is_set():
+                        await asyncio.sleep(0.1)
+                else:
+                    print("❌ Failed to install Playwright browsers")
+                    raise e
+            else:
+                raise e
         except KeyboardInterrupt:
             print("\nClosing Playwright browser...")
-        except Exception as e:
-            print(f"Playwright browser error: {e}")
         finally:
-            await browser.close()
+            if browser is not None:
+                try:
+                    await browser.close()
+                except Exception as e:
+                    print(f"Warning: Failed to close Playwright browser: {e}")
 
     try:
         asyncio.run(main())
@@ -455,6 +508,8 @@ def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserP
 def install_playwright_browsers() -> bool:
     """Install Playwright browsers if not already installed.
 
+    Installs browsers to ~/.fastled/playwright directory.
+
     Returns:
         True if installation was successful or browsers were already installed
     """
@@ -462,6 +517,16 @@ def install_playwright_browsers() -> bool:
         return False
 
     try:
+        import os
+        from pathlib import Path
+
+        # Set custom browser installation path
+        playwright_dir = Path.home() / ".fastled" / "playwright"
+        playwright_dir.mkdir(parents=True, exist_ok=True)
+
+        # Set environment variable for Playwright browser path
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_dir)
+
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as p:
@@ -475,21 +540,24 @@ def install_playwright_browsers() -> bool:
 
         # If we get here, browsers need to be installed
         print("Installing Playwright browsers...")
+        print(f"Installing to: {playwright_dir}")
         import subprocess
 
         result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
+            env=dict(os.environ, PLAYWRIGHT_BROWSERS_PATH=str(playwright_dir)),
         )
 
         if result.returncode == 0:
-            print("Playwright browsers installed successfully.")
+            print("✅ Playwright browsers installed successfully!")
+            print(f"   Location: {playwright_dir}")
             return True
         else:
-            print(f"Failed to install Playwright browsers: {result.stderr}")
+            print(f"❌ Failed to install Playwright browsers: {result.stderr}")
             return False
 
     except Exception as e:
-        print(f"Error installing Playwright browsers: {e}")
+        print(f"❌ Error installing Playwright browsers: {e}")
         return False

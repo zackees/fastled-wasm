@@ -63,6 +63,11 @@ def main() -> int:
     # now it is safe to print out the version
     print(f"FastLED version: {__version__}")
 
+    # Check if Playwright browsers are installed
+    playwright_dir = Path.home() / ".fastled" / "playwright"
+    if playwright_dir.exists() and any(playwright_dir.iterdir()):
+        print(f"🎭 Playwright browsers available at: {playwright_dir}")
+
     # Resolve some of the last interactive arguments
     # 1. If interactive is set and the sketch directory is not given,
     # then prompt the user for a sketch directory.
