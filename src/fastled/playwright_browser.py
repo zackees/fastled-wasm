@@ -190,8 +190,8 @@ class PlaywrightBrowser:
                         # Set viewport to match the outer window size
                         if not self.headless:
                             try:
-                                outer_width = int(window_info["outerWidth"]) - 5
-                                outer_height = int(window_info["outerHeight"]) - 5
+                                outer_width = int(window_info["outerWidth"])
+                                outer_height = int(window_info["outerHeight"])
 
                                 print(
                                     f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
