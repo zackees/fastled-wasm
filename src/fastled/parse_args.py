@@ -121,6 +121,11 @@ def parse_args() -> Args:
         help="Bypass PlatformIO constraints by using local Docker compilation with custom build environment",
     )
     parser.add_argument(
+        "--no-playwright",
+        action="store_true",
+        help="Disable Playwright browser and use default system browser instead",
+    )
+    parser.add_argument(
         "-u",
         "--update",
         "--upgrade",

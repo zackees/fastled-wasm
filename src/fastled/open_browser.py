@@ -101,6 +101,7 @@ def spawn_http_server(
     compile_server_port: int,
     port: int | None = None,
     open_browser: bool = True,
+    no_playwright: bool = False,
 ) -> Process:
 
     if port is not None and not is_port_free(port):
@@ -129,7 +130,11 @@ def spawn_http_server(
     wait_for_server(port)
     if open_browser:
         url = f"http://localhost:{port}"
-        if PLAYWRIGHT_AVAILABLE and open_with_playwright is not None:
+        if (
+            PLAYWRIGHT_AVAILABLE
+            and open_with_playwright is not None
+            and not no_playwright
+        ):
             print(f"Opening FastLED sketch in Playwright browser: {url}")
             print(
                 "Auto-resize enabled: Browser window will automatically adjust to content size"
