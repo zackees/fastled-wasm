@@ -123,7 +123,6 @@ class PlaywrightBrowser:
             "[PYTHON] Starting browser window tracking (outer size → viewport adjustment)"
         )
         last_outer_size = None
-        adjusting_viewport = False  # Flag to ignore changes during adjustment
 
         while True:
             try:
@@ -164,10 +163,7 @@ class PlaywrightBrowser:
                         )
 
                     # Track changes in OUTER window size (user resizes browser)
-                    # But ignore changes if we're currently adjusting the viewport
-                    if (
-                        last_outer_size is None or current_outer != last_outer_size
-                    ) and not adjusting_viewport:
+                    if last_outer_size is None or current_outer != last_outer_size:
 
                         if last_outer_size is not None:
                             print("[PYTHON] *** BROWSER WINDOW RESIZED ***")
@@ -187,16 +183,13 @@ class PlaywrightBrowser:
                                     f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
                                 )
 
-                                # Set flag to ignore changes during adjustment
-                                adjusting_viewport = True
-
                                 await self.page.set_viewport_size(
                                     {"width": outer_width, "height": outer_height}
                                 )
                                 print("[PYTHON] Viewport set successfully")
 
                                 # Wait briefly for browser to settle after viewport change
-                                await asyncio.sleep(0.5)
+                                # await asyncio.sleep(0.5)
 
                                 # Query the actual window dimensions after the viewport change
                                 updated_window_info = await self.page.evaluate(
@@ -223,19 +216,8 @@ class PlaywrightBrowser:
                                     f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
                                 )
 
-                                # Clear the adjustment flag
-                                adjusting_viewport = False
-
                             except Exception as e:
-                                adjusting_viewport = False
                                 print(f"[PYTHON] Failed to set viewport: {e}")
-                    elif adjusting_viewport:
-                        print(
-                            "[PYTHON] Ignoring size change during viewport adjustment"
-                        )
-                    else:
-                        # Size hasn't changed, just update our tracking
-                        last_outer_size = current_outer
 
                 else:
                     print("[PYTHON] Could not get browser window info")
