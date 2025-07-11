@@ -114,6 +114,33 @@ class PlaywrightBrowser:
         # Start polling loop that tracks browser window changes and adjusts viewport only
         asyncio.create_task(self._track_browser_adjust_viewport())
 
+    async def _get_window_info(self) -> dict[str, int] | None:
+        """Get browser window dimensions information.
+
+        Returns:
+            Dictionary containing window dimensions or None if unable to retrieve
+        """
+        if self.page is None:
+            return None
+
+        try:
+            return await self.page.evaluate(
+                """
+                () => {
+                    return {
+                        outerWidth: window.outerWidth,
+                        outerHeight: window.outerHeight,
+                        innerWidth: window.innerWidth,
+                        innerHeight: window.innerHeight,
+                        contentWidth: document.documentElement.clientWidth,
+                        contentHeight: document.documentElement.clientHeight
+                    };
+                }
+                """
+            )
+        except Exception:
+            return None
+
     async def _track_browser_adjust_viewport(self) -> None:
         """Track browser window outer size changes and adjust viewport accordingly."""
         if self.page is None:
@@ -135,20 +162,7 @@ class PlaywrightBrowser:
                     break
 
                 # Get browser window dimensions
-                window_info = await self.page.evaluate(
-                    """
-                    () => {
-                        return {
-                            outerWidth: window.outerWidth,
-                            outerHeight: window.outerHeight,
-                            innerWidth: window.innerWidth,
-                            innerHeight: window.innerHeight,
-                            contentWidth: document.documentElement.clientWidth,
-                            contentHeight: document.documentElement.clientHeight
-                        };
-                    }
-                """
-                )
+                window_info = await self._get_window_info()
 
                 if window_info:
                     current_outer = (
@@ -192,29 +206,20 @@ class PlaywrightBrowser:
                                 # await asyncio.sleep(0.5)
 
                                 # Query the actual window dimensions after the viewport change
-                                updated_window_info = await self.page.evaluate(
-                                    """
-                                    () => {
-                                        return {
-                                            outerWidth: window.outerWidth,
-                                            outerHeight: window.outerHeight,
-                                            innerWidth: window.innerWidth,
-                                            innerHeight: window.innerHeight,
-                                            contentWidth: document.documentElement.clientWidth,
-                                            contentHeight: document.documentElement.clientHeight
-                                        };
-                                    }
-                                """
-                                )
+                                updated_window_info = await self._get_window_info()
 
-                                # Update our tracking with the actual final outer size
-                                last_outer_size = (
-                                    updated_window_info["outerWidth"],
-                                    updated_window_info["outerHeight"],
-                                )
-                                print(
-                                    f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
-                                )
+                                if updated_window_info:
+
+                                    # Update our tracking with the actual final outer size
+                                    last_outer_size = (
+                                        updated_window_info["outerWidth"],
+                                        updated_window_info["outerHeight"],
+                                    )
+                                    print(
+                                        f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
+                                    )
+                                else:
+                                    print("[PYTHON] Could not get updated window info")
 
                             except Exception as e:
                                 print(f"[PYTHON] Failed to set viewport: {e}")
