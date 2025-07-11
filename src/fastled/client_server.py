@@ -258,6 +258,7 @@ def run_client(
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
     clear: bool = False,
     no_platformio: bool = False,
+    use_playwright: bool = False,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -338,6 +339,7 @@ def run_client(
                 port=http_port,
                 compile_server_port=port,
                 open_browser=open_web_browser,
+                use_playwright=use_playwright,
             )
         else:
             print("\nCompilation successful.")
@@ -560,6 +562,7 @@ def run_client_server(args: Args) -> int:
             profile=profile,
             clear=args.clear,
             no_platformio=no_platformio,
+            use_playwright=args.playwright,
         )
     except KeyboardInterrupt:
         return 1

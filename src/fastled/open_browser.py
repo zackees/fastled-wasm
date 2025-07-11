@@ -8,6 +8,29 @@ from pathlib import Path
 
 from fastled.server_flask import run_flask_in_thread
 
+try:
+    from fastled.playwright_browser import is_playwright_available, open_with_playwright
+
+    PLAYWRIGHT_AVAILABLE = is_playwright_available()
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    open_with_playwright = None
+
+# Global reference to keep Playwright browser alive
+_playwright_browser_proxy = None
+
+
+def cleanup_playwright_browser() -> None:
+    """Clean up the Playwright browser on exit."""
+    global _playwright_browser_proxy
+    if _playwright_browser_proxy:
+        _playwright_browser_proxy.close()
+        _playwright_browser_proxy = None
+
+
+# Register cleanup function
+atexit.register(cleanup_playwright_browser)
+
 DEFAULT_PORT = 8089  # different than live version.
 PYTHON_EXE = sys.executable
 
@@ -78,6 +101,7 @@ def spawn_http_server(
     compile_server_port: int,
     port: int | None = None,
     open_browser: bool = True,
+    use_playwright: bool = False,
 ) -> Process:
 
     if port is not None and not is_port_free(port):
@@ -105,14 +129,32 @@ def spawn_http_server(
 
     wait_for_server(port)
     if open_browser:
-        print(f"Opening browser to http://localhost:{port}")
-        import webbrowser
+        url = f"http://localhost:{port}"
+        if use_playwright and PLAYWRIGHT_AVAILABLE and open_with_playwright is not None:
+            print(f"Opening FastLED sketch in Playwright browser: {url}")
+            global _playwright_browser_proxy
+            _playwright_browser_proxy = open_with_playwright(url)
+        elif use_playwright and not PLAYWRIGHT_AVAILABLE:
+            print(
+                "Playwright requested but not available. Install with: pip install fastled[full]"
+            )
+            print(f"Falling back to system browser: {url}")
+            import webbrowser
 
-        webbrowser.open(
-            url=f"http://localhost:{port}",
-            new=1,
-            autoraise=True,
-        )
+            webbrowser.open(
+                url=url,
+                new=1,
+                autoraise=True,
+            )
+        else:
+            print(f"Opening browser to {url}")
+            import webbrowser
+
+            webbrowser.open(
+                url=url,
+                new=1,
+                autoraise=True,
+            )
     return proc
 
 

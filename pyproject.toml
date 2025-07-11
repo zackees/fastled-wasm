@@ -29,6 +29,11 @@ dependencies = [
 
 dynamic = ["version"]
 
+[project.optional-dependencies]
+full = [
+    "playwright>=1.40.0",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

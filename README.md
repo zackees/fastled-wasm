@@ -43,7 +43,33 @@ $ cd mysketchdirectory
 $ fastled
 ```
 
+## Playwright Browser Support
 
+For enhanced browser control and automation capabilities, you can install the full version with Playwright support:
+
+```bash
+$ pip install fastled[full]
+```
+
+This enables the `--playwright` flag which opens your compiled sketch in a Playwright-controlled browser instead of your system's default browser:
+
+```bash
+$ fastled my_sketch --playwright
+```
+
+The Playwright browser provides better automation capabilities and is especially useful for:
+- Automated testing of your LED sketches
+- Consistent cross-platform browser behavior
+- Advanced debugging and development workflows
+- Persistent browser sessions that stay open until the FastLED process exits
+
+**Key Benefits:**
+- The Playwright browser remains open throughout your development session
+- Automatic cleanup when the FastLED process exits
+- Better control over browser behavior and automation capabilities
+- Consistent behavior across different platforms
+
+If Playwright is not installed and you use the `--playwright` flag, the system will gracefully fall back to your default browser.
 
 # Install
 
@@ -53,13 +79,25 @@ This is a python app, so any python package manager will work. We also provide p
 
 `pip install fastled`
 
+### Pip with Playwright Support
+
+`pip install fastled[full]`
+
 ### UV
 
 `uv pip install fastled --system`
 
+### UV with Playwright Support
+
+`uv pip install "fastled[full]" --system`
+
 ### Pipx
 
 `pipx install fastled`
+
+### Pipx with Playwright Support
+
+`pipx install "fastled[full]"`
 
 ### Executables
 

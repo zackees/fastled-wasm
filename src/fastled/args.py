@@ -23,6 +23,7 @@ class Args:
     quick: bool
     release: bool
     ram_disk_size: str  # suffixed liked "25mb" or "1gb"
+    playwright: bool = False  # Use Playwright browser instead of system default
     clear = False  # Force the last running container to be removed. Useful for benchmarking.
 
     @staticmethod
@@ -66,6 +67,9 @@ class Args:
         assert isinstance(
             args.release, bool
         ), f"expected bool, got {type(args.release)}"
+        assert isinstance(
+            args.playwright, bool
+        ), f"expected bool, got {type(args.playwright)}"
 
         init: bool | str = False
         if args.init is None:
@@ -93,4 +97,5 @@ class Args:
             quick=args.quick,
             release=args.release,
             ram_disk_size=args.ram_disk_size,
+            playwright=args.playwright,
         )

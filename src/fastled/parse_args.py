@@ -35,12 +35,14 @@ FastLED WASM Compiler - Useful options:
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
   --purge               Remove all FastLED containers and images
+  --playwright          Use Playwright browser (requires 'pip install fastled[full]')
   --version             Show version information
   --help                Show detailed help
 Examples:
   fastled (will auto detect the sketch directory and prompt you)
   fastled my_sketch
   fastled my_sketch --web (compiles using the web compiler only)
+  fastled my_sketch --playwright (opens in Playwright browser)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
   fastled --server (runs the compiler server in the current directory)
 
@@ -156,6 +158,12 @@ def parse_args() -> Args:
         "--clear",
         action="store_true",
         help="Remove all FastLED containers and images",
+    )
+
+    parser.add_argument(
+        "--playwright",
+        action="store_true",
+        help="Use Playwright browser instead of system default (requires 'pip install fastled[full]')",
     )
 
     build_mode = parser.add_mutually_exclusive_group()
