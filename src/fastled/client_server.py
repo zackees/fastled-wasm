@@ -259,6 +259,7 @@ def run_client(
     clear: bool = False,
     no_platformio: bool = False,
     use_playwright: bool = False,
+    playwright_auto_resize: bool = True,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -340,6 +341,7 @@ def run_client(
                 compile_server_port=port,
                 open_browser=open_web_browser,
                 use_playwright=use_playwright,
+                playwright_auto_resize=playwright_auto_resize,
             )
         else:
             print("\nCompilation successful.")
@@ -563,6 +565,7 @@ def run_client_server(args: Args) -> int:
             clear=args.clear,
             no_platformio=no_platformio,
             use_playwright=args.playwright,
+            playwright_auto_resize=not args.no_playwright_auto_resize,
         )
     except KeyboardInterrupt:
         return 1

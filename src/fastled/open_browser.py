@@ -102,6 +102,7 @@ def spawn_http_server(
     port: int | None = None,
     open_browser: bool = True,
     use_playwright: bool = False,
+    playwright_auto_resize: bool = True,
 ) -> Process:
 
     if port is not None and not is_port_free(port):
@@ -132,8 +133,14 @@ def spawn_http_server(
         url = f"http://localhost:{port}"
         if use_playwright and PLAYWRIGHT_AVAILABLE and open_with_playwright is not None:
             print(f"Opening FastLED sketch in Playwright browser: {url}")
+            if playwright_auto_resize:
+                print(
+                    "Auto-resize enabled: Browser window will automatically adjust to content size"
+                )
             global _playwright_browser_proxy
-            _playwright_browser_proxy = open_with_playwright(url)
+            _playwright_browser_proxy = open_with_playwright(
+                url, auto_resize=playwright_auto_resize
+            )
         elif use_playwright and not PLAYWRIGHT_AVAILABLE:
             print(
                 "Playwright requested but not available. Install with: pip install fastled[full]"

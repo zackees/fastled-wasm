@@ -36,6 +36,7 @@ FastLED WASM Compiler - Useful options:
   --update              Update the docker image for the wasm compiler
   --purge               Remove all FastLED containers and images
   --playwright          Use Playwright browser (requires 'pip install fastled[full]')
+  --no-playwright-auto-resize  Disable automatic window resizing in Playwright
   --version             Show version information
   --help                Show detailed help
 Examples:
@@ -164,6 +165,12 @@ def parse_args() -> Args:
         "--playwright",
         action="store_true",
         help="Use Playwright browser instead of system default (requires 'pip install fastled[full]')",
+    )
+
+    parser.add_argument(
+        "--no-playwright-auto-resize",
+        action="store_true",
+        help="Disable automatic window resizing in Playwright browser",
     )
 
     build_mode = parser.add_mutually_exclusive_group()

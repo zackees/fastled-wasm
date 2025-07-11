@@ -33,18 +33,23 @@ def is_playwright_available() -> bool:
 class PlaywrightBrowser:
     """Playwright browser manager for FastLED sketches."""
 
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = False, auto_resize: bool = True):
         """Initialize the Playwright browser manager.
 
         Args:
             headless: Whether to run the browser in headless mode
+            auto_resize: Whether to automatically resize the browser window to fit content
         """
         if not PLAYWRIGHT_AVAILABLE:
             raise ImportError(
                 "Playwright is not installed. Install with: pip install fastled[full]"
             )
 
+        # debug
+        auto_resize = True
+
         self.headless = headless
+        self.auto_resize = auto_resize
         self.browser: Any = None
         self.page: Any = None
         self.playwright: Any = None
@@ -72,7 +77,9 @@ class PlaywrightBrowser:
                     )
 
         if self.page is None and self.browser is not None:
-            self.page = await self.browser.new_page()
+            # Create a new browser context and page
+            context = await self.browser.new_context()
+            self.page = await context.new_page()
 
     async def open_url(self, url: str) -> None:
         """Open a URL in the Playwright browser.
@@ -86,6 +93,159 @@ class PlaywrightBrowser:
         print(f"Opening FastLED sketch in Playwright browser: {url}")
         if self.page is not None:
             await self.page.goto(url)
+
+            # Wait for the page to load
+            await self.page.wait_for_load_state("networkidle")
+
+            # Set up auto-resizing functionality if enabled
+            if self.auto_resize:
+                await self._setup_auto_resize()
+
+    async def _setup_auto_resize(self) -> None:
+        """Set up automatic window resizing based on content size."""
+        if self.page is None:
+            print("[PYTHON] Cannot setup auto-resize: page is None")
+            return
+
+        print(
+            "[PYTHON] Setting up browser window tracking with viewport-only adjustment"
+        )
+
+        # Start polling loop that tracks browser window changes and adjusts viewport only
+        asyncio.create_task(self._track_browser_adjust_viewport())
+
+    async def _track_browser_adjust_viewport(self) -> None:
+        """Track browser window outer size changes and adjust viewport accordingly."""
+        if self.page is None:
+            return
+
+        print(
+            "[PYTHON] Starting browser window tracking (outer size → viewport adjustment)"
+        )
+        last_outer_size = None
+        adjusting_viewport = False  # Flag to ignore changes during adjustment
+
+        while True:
+            try:
+                # Wait 1 second between polls
+                await asyncio.sleep(1)
+
+                # Check if page is still alive
+                if self.page is None or self.page.is_closed():
+                    print("[PYTHON] Page closed, stopping browser tracking")
+                    break
+
+                # Get browser window dimensions
+                window_info = await self.page.evaluate(
+                    """
+                    () => {
+                        return {
+                            outerWidth: window.outerWidth,
+                            outerHeight: window.outerHeight,
+                            innerWidth: window.innerWidth,
+                            innerHeight: window.innerHeight,
+                            contentWidth: document.documentElement.clientWidth,
+                            contentHeight: document.documentElement.clientHeight
+                        };
+                    }
+                """
+                )
+
+                if window_info:
+                    current_outer = (
+                        window_info["outerWidth"],
+                        window_info["outerHeight"],
+                    )
+
+                    # Print current state occasionally
+                    if last_outer_size is None or current_outer != last_outer_size:
+                        print(
+                            f"[PYTHON] Browser: outer={window_info['outerWidth']}x{window_info['outerHeight']}, content={window_info['contentWidth']}x{window_info['contentHeight']}"
+                        )
+
+                    # Track changes in OUTER window size (user resizes browser)
+                    # But ignore changes if we're currently adjusting the viewport
+                    if (
+                        last_outer_size is None or current_outer != last_outer_size
+                    ) and not adjusting_viewport:
+
+                        if last_outer_size is not None:
+                            print("[PYTHON] *** BROWSER WINDOW RESIZED ***")
+                            print(
+                                f"[PYTHON] Outer window changed from {last_outer_size[0]}x{last_outer_size[1]} to {current_outer[0]}x{current_outer[1]}"
+                            )
+
+                        last_outer_size = current_outer
+
+                        # Adjust ONLY the viewport to match the current content area
+                        if not self.headless:
+                            try:
+                                content_width = int(window_info["outerWidth"])
+                                content_height = int(window_info["outerHeight"])
+
+                                print(
+                                    f"[PYTHON] Adjusting viewport to match content area: {content_width}x{content_height}"
+                                )
+
+                                # Set flag to ignore changes during adjustment
+                                adjusting_viewport = True
+
+                                # await self.page.set_viewport_size({"width": content_width, "height": content_height})
+                                print("[PYTHON] Viewport adjusted successfully")
+
+                                # Wait for browser to settle after viewport change
+                                await asyncio.sleep(1)
+
+                                # Query the browser window dimensions again after adjustment
+                                updated_window_info = await self.page.evaluate(
+                                    """
+                                    () => {
+                                        return {
+                                            outerWidth: window.outerWidth,
+                                            outerHeight: window.outerHeight,
+                                            innerWidth: window.innerWidth,
+                                            innerHeight: window.innerHeight,
+                                            contentWidth: document.documentElement.clientWidth,
+                                            contentHeight: document.documentElement.clientHeight
+                                        };
+                                    }
+                                """
+                                )
+
+                                # print the update_window_info
+                                print(
+                                    f"[PYTHON] Updated window info: {updated_window_info}"
+                                )
+
+                                # Update our tracking with the new actual size
+                                last_outer_size = (
+                                    updated_window_info["outerWidth"],
+                                    updated_window_info["outerHeight"],
+                                )
+                                print(
+                                    f"[PYTHON] Updated last_outer_size to {last_outer_size}"
+                                )
+
+                                # Clear the adjustment flag
+                                adjusting_viewport = False
+
+                            except Exception as e:
+                                adjusting_viewport = False
+                                print(f"[PYTHON] Failed to adjust viewport: {e}")
+                    elif adjusting_viewport:
+                        print(
+                            "[PYTHON] Ignoring size change during viewport adjustment"
+                        )
+                    else:
+                        # Size hasn't changed, just update our tracking
+                        last_outer_size = current_outer
+
+                else:
+                    print("[PYTHON] Could not get browser window info")
+
+            except Exception as e:
+                print(f"[PYTHON] Error in browser tracking: {e}")
+                continue
 
     async def wait_for_close(self) -> None:
         """Wait for the browser to be closed."""
@@ -114,12 +274,15 @@ class PlaywrightBrowser:
             self.playwright = None
 
 
-def run_playwright_browser(url: str, headless: bool = False) -> None:
+def run_playwright_browser(
+    url: str, headless: bool = False, auto_resize: bool = True
+) -> None:
     """Run Playwright browser in a separate process.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        auto_resize: Whether to automatically resize the browser window to fit content
     """
     if not PLAYWRIGHT_AVAILABLE:
         warnings.warn(
@@ -129,7 +292,7 @@ def run_playwright_browser(url: str, headless: bool = False) -> None:
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless)
+        browser = PlaywrightBrowser(headless=headless, auto_resize=auto_resize)
         try:
             await browser.start()
             await browser.open_url(url)
@@ -163,8 +326,14 @@ class PlaywrightBrowserProxy:
         self.process = None
         self.browser_manager = None
 
-    def open(self, url: str, headless: bool = False) -> None:
-        """Open URL with Playwright browser and keep it alive."""
+    def open(self, url: str, headless: bool = False, auto_resize: bool = True) -> None:
+        """Open URL with Playwright browser and keep it alive.
+
+        Args:
+            url: The URL to open
+            headless: Whether to run in headless mode
+            auto_resize: Whether to automatically resize the browser window to fit content
+        """
         if not PLAYWRIGHT_AVAILABLE:
             warnings.warn(
                 "Playwright is not installed. Install with: pip install fastled[full]. "
@@ -181,7 +350,8 @@ class PlaywrightBrowserProxy:
             import multiprocessing
 
             self.process = multiprocessing.Process(
-                target=run_playwright_browser_persistent, args=(url, headless)
+                target=run_playwright_browser_persistent,
+                args=(url, headless, auto_resize),
             )
             self.process.start()
 
@@ -209,18 +379,21 @@ class PlaywrightBrowserProxy:
             self.process = None
 
 
-def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
+def run_playwright_browser_persistent(
+    url: str, headless: bool = False, auto_resize: bool = True
+) -> None:
     """Run Playwright browser in a persistent mode that stays alive until terminated.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        auto_resize: Whether to automatically resize the browser window to fit content
     """
     if not PLAYWRIGHT_AVAILABLE:
         return
 
     async def main():
-        browser = PlaywrightBrowser(headless=headless)
+        browser = PlaywrightBrowser(headless=headless, auto_resize=auto_resize)
         try:
             await browser.start()
             await browser.open_url(url)
@@ -248,7 +421,9 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
         print(f"Playwright browser failed: {e}")
 
 
-def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserProxy:
+def open_with_playwright(
+    url: str, headless: bool = False, auto_resize: bool = True
+) -> PlaywrightBrowserProxy:
     """Open URL with Playwright browser and return a proxy object for lifecycle management.
 
     This function can be used as a drop-in replacement for webbrowser.open().
@@ -256,12 +431,13 @@ def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserP
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        auto_resize: Whether to automatically resize the browser window to fit content
 
     Returns:
         PlaywrightBrowserProxy object for managing the browser lifecycle
     """
     proxy = PlaywrightBrowserProxy()
-    proxy.open(url, headless)
+    proxy.open(url, headless, auto_resize)
     return proxy
 
 
