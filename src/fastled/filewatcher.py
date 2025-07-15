@@ -10,7 +10,6 @@ from contextlib import redirect_stdout
 from multiprocessing import Process, Queue
 from pathlib import Path
 from queue import Empty
-from typing import Dict, Set
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
@@ -35,8 +34,8 @@ class MyEventHandler(FileSystemEventHandler):
     def __init__(
         self,
         change_queue: queue.Queue,
-        excluded_patterns: Set[str],
-        file_hashes: Dict[str, str],
+        excluded_patterns: set[str],
+        file_hashes: dict[str, str],
     ) -> None:
         super().__init__()
         self.change_queue = change_queue
@@ -94,8 +93,8 @@ class FileChangedNotifier(threading.Thread):
         )
         self.stopped = False
         self.change_queue: queue.Queue = queue.Queue()
-        self.last_notification: Dict[str, float] = {}
-        self.file_hashes: Dict[str, str] = {}
+        self.last_notification: dict[str, float] = {}
+        self.file_hashes: dict[str, str] = {}
         self.debounce_seconds = debounce_seconds
 
     def stop(self) -> None:

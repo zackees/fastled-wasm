@@ -265,7 +265,6 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                 checkmark.style.color = '#E0E0E0';
                 link.appendChild(checkmark);
             }});
-            
             // Now load first example and show its checkmark
             if (links.length > 0) {{
                 // Try to find SdCard example first
@@ -274,7 +273,6 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                 startLink.classList.add('active');
                 startLink.querySelector('.fa-check').style.display = 'inline-block';
             }}
-            
             // Add click handlers
             links.forEach(link => {{
                 link.addEventListener('click', function(e) {{
@@ -313,11 +311,10 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
                     showNav();
                 }}
             }});
-            
             // Close menu when clicking anywhere in the document
             document.addEventListener('click', (e) => {{
-                if (navPane.classList.contains('visible') && 
-                    !navPane.contains(e.target) && 
+                if (navPane.classList.contains('visible') &&
+                    !navPane.contains(e.target) &&
                     !navTrigger.contains(e.target)) {{
                     hideNav();
                 }}

@@ -4,7 +4,6 @@ import subprocess
 import sys
 import warnings
 from pathlib import Path
-from typing import Tuple
 
 from fastled_wasm_compiler import Compiler
 from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC
@@ -16,7 +15,7 @@ _CHOICES = ["compile", "server"]
 HERE = Path(__file__).parent
 
 
-def _parse_args() -> Tuple[argparse.Namespace, list[str]]:
+def _parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
         description="Run compile.py with additional arguments"
     )

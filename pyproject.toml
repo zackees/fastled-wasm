@@ -43,6 +43,13 @@ version = { attr = "fastled.__version__" }
 [tool.ruff]
 line-length = 200
 
+[tool.ruff.lint]
+select = ["F", "E", "W", "UP", "PYI"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"src/fastled/site/build.py" = ["W291", "W293"]  # Ignore whitespace in multi-line strings
+
 [tool.pylint."MESSAGES CONTROL"]
 good-names = [
     "c",

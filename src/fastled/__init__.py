@@ -1,9 +1,9 @@
 """FastLED Wasm Compiler package."""
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from multiprocessing import Process
 from pathlib import Path
-from typing import Generator
 
 from .__version__ import __version__
 from .compile_server import CompileServer
