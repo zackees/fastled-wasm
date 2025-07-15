@@ -1,1 +1,1 @@
-fastled-wasm-server>=1.0.97
+fastled-wasm-server>=1.0.98
