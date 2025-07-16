@@ -379,7 +379,7 @@ class PlaywrightBrowser:
                         "target closed",
                         "connection closed",
                         "target page, probably because the page has been closed",
-                        "execution context was destroyed",
+                        # "execution context was destroyed",
                         "page has been closed",
                         "browser context has been closed",
                     ]
@@ -397,9 +397,14 @@ class PlaywrightBrowser:
                     browser_state_indicates_closed = False
 
                 if browser_definitely_closed or browser_state_indicates_closed:
-                    print(
-                        f"[PYTHON] Browser has been closed because {error_message} matched one of the error phrases or browser state indicates closed, shutting down gracefully..."
-                    )
+                    if browser_definitely_closed:
+                        print(
+                            f'[PYTHON] Browser has been closed because "{error_message}" matched one of the error phrases or browser state indicates closed, shutting down gracefully...'
+                        )
+                    elif browser_state_indicates_closed:
+                        print(
+                            "[PYTHON] Browser state indicates closed, shutting down gracefully..."
+                        )
                     self._should_exit.set()
                     break
                 else:
