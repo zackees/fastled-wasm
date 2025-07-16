@@ -79,8 +79,83 @@ class PlaywrightBrowser:
                     )
 
         if self.page is None and self.browser is not None:
-            # Create a new browser context and page
-            context = await self.browser.new_context()
+            # Detect system device scale factor to match normal browser behavior
+            import platform
+
+            device_scale_factor = 1.0
+
+            # Try to detect system display scaling
+            try:
+                if platform.system() == "Windows":
+                    # On Windows, try to get the DPI scaling factor
+                    import ctypes
+
+                    try:
+                        # Get DPI awareness and scale factor
+                        user32 = ctypes.windll.user32
+                        user32.SetProcessDPIAware()
+                        dc = user32.GetDC(0)
+                        dpi = ctypes.windll.gdi32.GetDeviceCaps(dc, 88)  # LOGPIXELSX
+                        user32.ReleaseDC(0, dc)
+                        device_scale_factor = dpi / 96.0  # 96 DPI is 100% scaling
+                    except Exception:
+                        # Fallback: try alternative method
+                        try:
+                            import tkinter as tk
+
+                            root = tk.Tk()
+                            device_scale_factor = root.winfo_fpixels("1i") / 96.0
+                            root.destroy()
+                        except Exception:
+                            pass
+                elif platform.system() == "Darwin":  # macOS
+                    # On macOS, try to get the display scaling
+                    try:
+                        import subprocess
+
+                        result = subprocess.run(
+                            ["system_profiler", "SPDisplaysDataType"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if "Retina" in result.stdout or "2x" in result.stdout:
+                            device_scale_factor = 2.0
+                        elif "3x" in result.stdout:
+                            device_scale_factor = 3.0
+                    except Exception:
+                        pass
+                elif platform.system() == "Linux":
+                    # On Linux, try to get display scaling from environment or system
+                    try:
+                        import os
+
+                        # Try GDK scaling first
+                        gdk_scale = os.environ.get("GDK_SCALE")
+                        if gdk_scale:
+                            device_scale_factor = float(gdk_scale)
+                        else:
+                            # Try QT scaling
+                            qt_scale = os.environ.get("QT_SCALE_FACTOR")
+                            if qt_scale:
+                                device_scale_factor = float(qt_scale)
+                    except Exception:
+                        pass
+            except Exception:
+                # If all detection methods fail, default to 1.0
+                device_scale_factor = 1.0
+
+            # Ensure device scale factor is reasonable (between 0.5 and 4.0)
+            device_scale_factor = max(0.5, min(4.0, device_scale_factor))
+
+            print(f"[PYTHON] Detected device scale factor: {device_scale_factor}")
+
+            # Create a new browser context with proper device scale factor
+            context = await self.browser.new_context(
+                device_scale_factor=device_scale_factor,
+                # Also ensure viewport scaling is handled properly
+                viewport={"width": 1280, "height": 720} if not self.headless else None,
+            )
             self.page = await context.new_page()
 
     async def open_url(self, url: str) -> None:
