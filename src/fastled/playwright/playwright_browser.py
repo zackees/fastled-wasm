@@ -398,7 +398,7 @@ class PlaywrightBrowser:
 
                 if browser_definitely_closed or browser_state_indicates_closed:
                     print(
-                        f"[PYTHON] Browser has been closed because {error_message} matched one of the error phrases, shutting down gracefully..."
+                        f"[PYTHON] Browser has been closed because {error_message} matched one of the error phrases or browser state indicates closed, shutting down gracefully..."
                     )
                     self._should_exit.set()
                     break
