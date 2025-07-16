@@ -413,21 +413,30 @@ class PlaywrightBrowser:
         # Signal all tracking loops to exit
         self._should_exit.set()
 
-        if self.page:
-            await self.page.close()
-            self.page = None
+        try:
 
-        if self.context:
-            await self.context.close()
-            self.context = None
+            if self.page:
+                await self.page.close()
+                self.page = None
 
-        if self.browser:
-            await self.browser.close()
-            self.browser = None
+            if self.context:
+                await self.context.close()
+                self.context = None
 
-        if self.playwright:
-            await self.playwright.stop()
-            self.playwright = None
+            if self.browser:
+                await self.browser.close()
+                self.browser = None
+
+            if self.playwright:
+                await self.playwright.stop()
+                self.playwright = None
+        except KeyboardInterrupt:
+            print("[PYTHON] Keyboard interrupt detected, closing Playwright browser")
+            self._should_exit.set()
+            import _thread
+            _thread.interrupt_main()
+        except Exception as e:
+            print(f"[PYTHON] Error closing Playwright browser: {e}")
 
 
 def run_playwright_browser(
