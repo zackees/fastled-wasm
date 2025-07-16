@@ -196,6 +196,7 @@ def web_compile(
     build_mode: BuildMode | None = None,
     profile: bool = False,
     no_platformio: bool = False,
+    allow_libcompile: bool = True,
 ) -> CompileResult:
     start_time = time.time()
     if isinstance(directory, str):
@@ -251,6 +252,7 @@ def web_compile(
                 ),
                 "profile": "true" if profile else "false",
                 "no-platformio": "true" if no_platformio else "false",
+                "allow-libcompile": "true" if allow_libcompile else "false",
             }
 
             url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"

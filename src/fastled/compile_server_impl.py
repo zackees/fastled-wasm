@@ -51,6 +51,7 @@ class CompileServerImpl:
         container_name: str | None = None,
         remove_previous: bool = False,
         no_platformio: bool = False,
+        allow_libcompile: bool = True,
     ) -> None:
         container_name = container_name or DEFAULT_CONTAINER_NAME
         if interactive and not mapped_dir:
@@ -70,6 +71,7 @@ class CompileServerImpl:
         self.auto_updates = auto_updates
         self.remove_previous = remove_previous
         self.no_platformio = no_platformio
+        self.allow_libcompile = allow_libcompile
         self._port = 0  # 0 until compile server is started
         if auto_start:
             self.start()
@@ -112,6 +114,7 @@ class CompileServerImpl:
             build_mode=build_mode,
             profile=profile,
             no_platformio=self.no_platformio,
+            allow_libcompile=self.allow_libcompile,
         )
         return out
 
