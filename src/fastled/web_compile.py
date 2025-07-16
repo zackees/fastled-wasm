@@ -297,7 +297,7 @@ def web_compile(
                 # Check HTTP response status first
                 if libfastled_response.status_code != 200:
                     msg = f"Error: libfastled compilation failed with HTTP status {libfastled_response.status_code}"
-                    
+
                     # Error out here, this is a critical error
                     stdout = libfastled_response.content
                     if stdout is not None:
