@@ -14,6 +14,8 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+from fastled.playwright.resize_tracking import ResizeTracker
+
 # Set custom Playwright browser installation path
 PLAYWRIGHT_DIR = Path.home() / ".fastled" / "playwright"
 PLAYWRIGHT_DIR.mkdir(parents=True, exist_ok=True)
@@ -69,6 +71,7 @@ class PlaywrightBrowser:
         self.playwright: Any = None
         self._should_exit = asyncio.Event()
         self._extensions_dir: Path | None = None
+        self.resize_tracker: ResizeTracker | None = None
 
         # Initialize extensions if enabled
         if self.enable_extensions:
@@ -278,50 +281,26 @@ class PlaywrightBrowser:
             "[PYTHON] Setting up browser window tracking with viewport-only adjustment"
         )
 
+        # Create resize tracker instance
+        self.resize_tracker = ResizeTracker(self.page)
+
         # Start polling loop that tracks browser window changes and adjusts viewport only
         asyncio.create_task(self._track_browser_adjust_viewport())
-
-    async def _get_window_info(self) -> dict[str, int] | None:
-        """Get browser window dimensions information.
-
-        Returns:
-            Dictionary containing window dimensions or None if unable to retrieve
-        """
-        if self.page is None:
-            return None
-
-        try:
-            return await self.page.evaluate(
-                """
-                () => {
-                    return {
-                        outerWidth: window.outerWidth,
-                        outerHeight: window.outerHeight,
-                        innerWidth: window.innerWidth,
-                        innerHeight: window.innerHeight,
-                        contentWidth: document.documentElement.clientWidth,
-                        contentHeight: document.documentElement.clientHeight
-                    };
-                }
-                """
-            )
-        except Exception:
-            return None
 
     async def _track_browser_adjust_viewport(self) -> None:
         """Track browser window changes and adjust viewport accordingly.
 
-        This method polls for changes in the browser window size and adjusts
-        the viewport size to match, maintaining the browser window dimensions
-        while ensuring the content area matches the sketch requirements.
+        This method polls for changes in the browser window size using the
+        ResizeTracker and handles any errors that occur.
         """
-
-        last_outer_size = None
+        if self.resize_tracker is None:
+            print("[PYTHON] Cannot start tracking: resize_tracker is None")
+            return
 
         while not self._should_exit.is_set():
             try:
-                # Wait 1 second between polls
-                await asyncio.sleep(0.25)  # Poll every 500ms
+                # Wait between polls
+                await asyncio.sleep(0.25)  # Poll every 250ms
 
                 # Check if page is still alive
                 if self.page is None or self.page.is_closed():
@@ -329,121 +308,69 @@ class PlaywrightBrowser:
                     self._should_exit.set()
                     return
 
-                # Try to get window outer dimensions for context
-                try:
-                    window_info = await self._get_window_info()
+                # Update resize tracking
+                result = await self.resize_tracker.update()
 
-                    if window_info:
+                if result is not None:
+                    # An exception occurred in resize tracking
+                    error_message = str(result)
+                    warnings.warn(f"[PYTHON] Error in resize tracking: {error_message}")
 
-                        current_outer = (
-                            window_info["outerWidth"],
-                            window_info["outerHeight"],
-                        )
-
-                        # Print current state occasionally
-                        if last_outer_size is None or current_outer != last_outer_size:
-
-                            if last_outer_size is not None:
-                                print("[PYTHON] *** BROWSER WINDOW RESIZED ***")
-                                print(
-                                    f"[PYTHON] Outer window changed from {last_outer_size[0]}x{last_outer_size[1]} to {current_outer[0]}x{current_outer[1]}"
-                                )
-
-                            last_outer_size = current_outer
-
-                            # Set viewport to match the outer window size
-                            outer_width = int(window_info["outerWidth"])
-                            outer_height = int(window_info["outerHeight"])
-
-                            print(
-                                f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
-                            )
-
-                            await self.page.set_viewport_size(
-                                {"width": outer_width, "height": outer_height}
-                            )
-                            print("[PYTHON] Viewport set successfully")
-
-                            # Wait briefly for browser to settle after viewport change
-                            # await asyncio.sleep(2)
-
-                            # Query the actual window dimensions after the viewport change
-                            updated_window_info = await self._get_window_info()
-
-                            if updated_window_info:
-                                print(
-                                    f"[PYTHON] Updated window info: {updated_window_info}"
-                                )
-
-                                # Update our tracking with the actual final outer size
-                                last_outer_size = (
-                                    updated_window_info["outerWidth"],
-                                    updated_window_info["outerHeight"],
-                                )
-                                print(
-                                    f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
-                                )
-                            else:
-                                print("[PYTHON] Could not get updated window info")
-
-                except Exception as e:
-                    warnings.warn(
-                        f"[PYTHON] Could not get browser window info: {e}. Assuming browser is not closed."
+                    # Be EXTREMELY conservative about browser close detection
+                    # Only trigger shutdown on very specific errors that definitively indicate browser closure
+                    browser_definitely_closed = any(
+                        phrase in error_message.lower()
+                        for phrase in [
+                            "browser has been closed",
+                            "target closed",
+                            "connection closed",
+                            "target page, probably because the page has been closed",
+                            "page has been closed",
+                            "browser context has been closed",
+                        ]
                     )
-                    import traceback
 
-                    traceback.print_exc()
-                    pass
+                    # Also check actual browser state before deciding to shut down
+                    browser_state_indicates_closed = False
+                    try:
+                        if self.browser and hasattr(self.browser, "is_closed"):
+                            browser_state_indicates_closed = self.browser.is_closed()
+                        elif self.context and hasattr(self.context, "closed"):
+                            browser_state_indicates_closed = self.context.closed
+                    except Exception:
+                        # If we can't check the state, don't assume it's closed
+                        warnings.warn(
+                            f"[PYTHON] Could not check browser state: {result}. Assuming browser is not closed."
+                        )
+                        browser_state_indicates_closed = False
+
+                    if browser_definitely_closed or browser_state_indicates_closed:
+                        if browser_definitely_closed:
+                            print(
+                                f'[PYTHON] Browser has been closed because "{error_message}" matched one of the error phrases or browser state indicates closed, shutting down gracefully...'
+                            )
+                        elif browser_state_indicates_closed:
+                            print(
+                                "[PYTHON] Browser state indicates closed, shutting down gracefully..."
+                            )
+                        self._should_exit.set()
+                        return
+                    else:
+                        # For other errors, just log and continue - don't shut down
+                        print(
+                            f"[PYTHON] Recoverable error in resize tracking: {result}"
+                        )
+                        # Add a small delay to prevent tight error loops
+                        await asyncio.sleep(1.0)
 
             except Exception as e:
                 error_message = str(e)
-                warnings.warn(f"[PYTHON] Error in browser tracking: {error_message}")
-                # Be EXTREMELY conservative about browser close detection
-                # Only trigger shutdown on very specific errors that definitively indicate browser closure
-                browser_definitely_closed = any(
-                    phrase in error_message.lower()
-                    for phrase in [
-                        "browser has been closed",
-                        "target closed",
-                        "connection closed",
-                        "target page, probably because the page has been closed",
-                        # "execution context was destroyed",
-                        "page has been closed",
-                        "browser context has been closed",
-                    ]
+                warnings.warn(
+                    f"[PYTHON] Unexpected error in browser tracking loop: {error_message}"
                 )
+                # Add a small delay to prevent tight error loops
+                await asyncio.sleep(1.0)
 
-                # Also check actual browser state before deciding to shut down
-                browser_state_indicates_closed = False
-                try:
-                    if self.browser and hasattr(self.browser, "is_closed"):
-                        browser_state_indicates_closed = self.browser.is_closed()
-                    elif self.context and hasattr(self.context, "closed"):
-                        browser_state_indicates_closed = self.context.closed
-                except Exception:
-                    # If we can't check the state, don't assume it's closed
-                    warnings.warn(
-                        f"[PYTHON] Could not check browser state: {e}. Assuming browser is not closed."
-                    )
-                    browser_state_indicates_closed = False
-
-                if browser_definitely_closed or browser_state_indicates_closed:
-                    if browser_definitely_closed:
-                        print(
-                            f'[PYTHON] Browser has been closed because "{error_message}" matched one of the error phrases or browser state indicates closed, shutting down gracefully...'
-                        )
-                    elif browser_state_indicates_closed:
-                        print(
-                            "[PYTHON] Browser state indicates closed, shutting down gracefully..."
-                        )
-                    self._should_exit.set()
-                    return
-                else:
-                    # For other errors, just log and continue - don't shut down
-                    print(f"[PYTHON] Recoverable error in browser tracking: {e}")
-                    # Add a small delay to prevent tight error loops
-                    await asyncio.sleep(1.0)
-                    continue
         warnings.warn("[PYTHON] Browser tracking loop exited.")
 
     async def wait_for_close(self) -> None:
@@ -469,6 +396,8 @@ class PlaywrightBrowser:
         self._should_exit.set()
 
         try:
+            # Clean up resize tracker
+            self.resize_tracker = None
 
             if self.page:
                 await self.page.close()
