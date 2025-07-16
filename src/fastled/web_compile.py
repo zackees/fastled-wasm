@@ -30,6 +30,38 @@ def _sanitize_host(host: str) -> str:
     return host if host.startswith("http://") else f"http://{host}"
 
 
+def _check_embedded_http_status(response_content: bytes) -> tuple[bool, int | None]:
+    """
+    Check if the response content has an embedded HTTP status at the end.
+
+    Returns:
+        tuple: (has_embedded_status, status_code)
+               has_embedded_status is True if an embedded status was found
+               status_code is the embedded status code or None if not found
+    """
+    try:
+        # Convert bytes to string for parsing
+        content_str = response_content.decode("utf-8", errors="ignore")
+
+        # Look for HTTP_STATUS: at the end of the content
+        lines = content_str.strip().split("\n")
+        if lines:
+            last_line = lines[-1].strip()
+            if last_line.startswith("HTTP_STATUS:"):
+                # Extract the status code
+                try:
+                    status_code = int(last_line.split(":", 1)[1].strip())
+                    return True, status_code
+                except (ValueError, IndexError):
+                    # Malformed status line
+                    return True, None
+
+        return False, None
+    except Exception:
+        # If we can't parse the content, assume no embedded status
+        return False, None
+
+
 def _banner(msg: str) -> str:
     """
     Create a banner for the given message.
@@ -261,13 +293,33 @@ def web_compile(
             print("Step 1: Compiling libfastled...")
             try:
                 libfastled_response = _compile_libfastled(host, auth_token, build_mode)
+
+                # Check HTTP response status first
                 if libfastled_response.status_code != 200:
                     print(
-                        f"Warning: libfastled compilation failed with status {libfastled_response.status_code}"
+                        f"Warning: libfastled compilation failed with HTTP status {libfastled_response.status_code}"
                     )
                     # Continue with sketch compilation even if libfastled fails
                 else:
-                    print("✅ libfastled compilation successful")
+                    # Check for embedded HTTP status in response content
+                    has_embedded_status, embedded_status = _check_embedded_http_status(
+                        libfastled_response.content
+                    )
+                    if has_embedded_status:
+                        if embedded_status is not None and embedded_status != 200:
+                            print(
+                                f"Warning: libfastled compilation failed with embedded status {embedded_status}"
+                            )
+                            # Continue with sketch compilation even if libfastled fails
+                        elif embedded_status is None:
+                            print(
+                                "Warning: libfastled compilation returned malformed embedded status"
+                            )
+                            # Continue with sketch compilation even if libfastled fails
+                        else:
+                            print("✅ libfastled compilation successful")
+                    else:
+                        print("✅ libfastled compilation successful")
             except Exception as e:
                 print(f"Warning: libfastled compilation failed: {e}")
                 # Continue with sketch compilation even if libfastled fails
