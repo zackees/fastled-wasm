@@ -494,9 +494,6 @@ def run_client(
                     print(f"\nChanges detected in FastLED source code: {changed_files}")
                     print("Press space bar to trigger compile.")
 
-                    # Re-evaluate libcompile capability when source code changes
-                    allow_libcompile = True
-
                     while True:
                         space_bar_pressed = SpaceBarWatcher.watch_space_bar_pressed(
                             timeout=1.0
@@ -510,6 +507,8 @@ def run_client(
                             print(
                                 f"Changes detected in {file_changes}\nHit the space bar to trigger compile."
                             )
+                            # Re-evaluate libcompile capability when source code changes
+                            allow_libcompile = True
 
                         if space_bar_pressed or sketch_files_changed:
                             if space_bar_pressed:
