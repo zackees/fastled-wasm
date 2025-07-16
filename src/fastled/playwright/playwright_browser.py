@@ -335,7 +335,10 @@ class PlaywrightBrowser:
                             f"[PYTHON] Window: {window_info['outerWidth']}x{window_info['outerHeight']} at ({window_info['screenX']}, {window_info['screenY']})"
                         )
 
-                    except Exception:
+                    except Exception as e:
+                        warnings.warn(
+                            f"[PYTHON] Could not get browser window info: {e}. Assuming browser is not closed."
+                        )
                         pass
 
                 else:
@@ -370,6 +373,7 @@ class PlaywrightBrowser:
 
             except Exception as e:
                 error_message = str(e)
+                warnings.warn(f"[PYTHON] Error in browser tracking: {error_message}")
                 # Be EXTREMELY conservative about browser close detection
                 # Only trigger shutdown on very specific errors that definitively indicate browser closure
                 browser_definitely_closed = any(
@@ -394,6 +398,9 @@ class PlaywrightBrowser:
                         browser_state_indicates_closed = self.context.closed
                 except Exception:
                     # If we can't check the state, don't assume it's closed
+                    warnings.warn(
+                        f"[PYTHON] Could not check browser state: {e}. Assuming browser is not closed."
+                    )
                     browser_state_indicates_closed = False
 
                 if browser_definitely_closed or browser_state_indicates_closed:
@@ -413,6 +420,7 @@ class PlaywrightBrowser:
                     # Add a small delay to prevent tight error loops
                     await asyncio.sleep(1.0)
                     continue
+        warnings.warn("[PYTHON] Browser tracking loop exited.")
 
     async def wait_for_close(self) -> None:
         """Wait for the browser to be closed."""
