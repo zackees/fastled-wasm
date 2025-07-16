@@ -43,34 +43,28 @@ $ cd mysketchdirectory
 $ fastled
 ```
 
-## Playwright Browser Support
+## App-like Browser Support
 
-For enhanced browser control and automation capabilities, you can install the full version with Playwright support:
-
-```bash
-$ pip install fastled[full]
-```
-
-When installed, FastLED will automatically use Playwright to open your compiled sketch in a controlled browser environment instead of your system's default browser:
+FastLED includes Playwright for enhanced browser control and automation capabilities. To use the app-like browser experience, use the `--app` flag:
 
 ```bash
-$ fastled my_sketch
+$ fastled --app my_sketch
 ```
 
-The Playwright browser provides better automation capabilities and is especially useful for:
+The `--app` flag provides better automation capabilities and is especially useful for:
 - Automated testing of your LED sketches
 - Consistent cross-platform browser behavior
 - Advanced debugging and development workflows
 - Persistent browser sessions that stay open until the FastLED process exits
 
 **Key Benefits:**
-- Automatically enabled when `fastled[full]` is installed - no additional flags needed
+- Triggered by the `--app` flag - automatically downloads browsers if needed
 - The Playwright browser remains open throughout your development session
 - Automatic cleanup when the FastLED process exits
 - Better control over browser behavior and automation capabilities
 - Consistent behavior across different platforms
 
-If Playwright is not installed, the system will gracefully fall back to your default browser.
+If you don't use the `--app` flag, the system will use your default browser.
 
 # Install
 
@@ -80,25 +74,13 @@ This is a python app, so any python package manager will work. We also provide p
 
 `pip install fastled`
 
-### Pip with Playwright Support
-
-`pip install fastled[full]`
-
 ### UV
 
 `uv pip install fastled --system`
 
-### UV with Playwright Support
-
-`uv pip install "fastled[full]" --system`
-
 ### Pipx
 
 `pipx install fastled`
-
-### Pipx with Playwright Support
-
-`pipx install "fastled[full]"`
 
 ### Executables
 
@@ -341,7 +323,7 @@ A: A big chunk of space is being used by unnecessary javascript `emscripten` bun
 
 
 # Revisions
-  * 1.4.00 - Browser now uses playwright when `pip install fastled[full]` is used. Much better app like experience.
+  * 1.4.00 - Browser now uses playwright when `--app` flag is used. Much better app like experience.
   * 1.2.31 - Bunch of fixes and ease of use while compiling code in the repo.
   * 1.2.22 - Prefer to use `live-server` from npm. If npm exists on the system then do a background install of `live-server` for next run.
   * 1.2.20 - Fixed up path issue for web browser launch for hot reload.

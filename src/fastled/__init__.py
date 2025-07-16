@@ -81,7 +81,6 @@ class Api:
             int | None
         ) = None,  # None means auto select a free port. -1 means no server.
         no_platformio: bool = False,
-        no_playwright: bool = False,
     ) -> LiveClient:
         return LiveClient(
             sketch_directory=sketch_directory,
@@ -94,7 +93,6 @@ class Api:
             profile=profile,
             http_port=http_port,
             no_platformio=no_platformio,
-            no_playwright=no_playwright,
         )
 
     @staticmethod
@@ -219,7 +217,7 @@ class Test:
         port: int | None = None,
         compile_server_port: int | None = None,
         open_browser: bool = True,
-        no_playwright: bool = False,
+        app: bool = False,
     ) -> Process:
         from fastled.open_browser import spawn_http_server
 
@@ -231,7 +229,7 @@ class Test:
             port=port,
             compile_server_port=compile_server_port,
             open_browser=open_browser,
-            no_playwright=no_playwright,
+            app=app,
         )
         return proc
 

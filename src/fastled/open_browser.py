@@ -6,15 +6,8 @@ import weakref
 from multiprocessing import Process
 from pathlib import Path
 
+from fastled.playwright_browser import open_with_playwright
 from fastled.server_flask import run_flask_in_thread
-
-try:
-    from fastled.playwright_browser import is_playwright_available, open_with_playwright
-
-    PLAYWRIGHT_AVAILABLE = is_playwright_available()
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-    open_with_playwright = None
 
 # Global reference to keep Playwright browser alive
 _playwright_browser_proxy = None
@@ -101,7 +94,7 @@ def spawn_http_server(
     compile_server_port: int,
     port: int | None = None,
     open_browser: bool = True,
-    no_playwright: bool = False,
+    app: bool = False,
 ) -> Process:
 
     if port is not None and not is_port_free(port):
@@ -130,11 +123,15 @@ def spawn_http_server(
     wait_for_server(port)
     if open_browser:
         url = f"http://localhost:{port}"
-        if (
-            PLAYWRIGHT_AVAILABLE
-            and open_with_playwright is not None
-            and not no_playwright
-        ):
+        should_use_playwright = app
+
+        if should_use_playwright:
+            if app:
+                # For --app mode, try to install browsers if needed
+                from fastled.playwright_browser import install_playwright_browsers
+
+                install_playwright_browsers()
+
             print(f"Opening FastLED sketch in Playwright browser: {url}")
             print(
                 "Auto-resize enabled: Browser window will automatically adjust to content size"

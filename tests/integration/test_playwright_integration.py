@@ -5,17 +5,11 @@ Unit tests for Playwright integration.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from fastled.playwright_browser import is_playwright_available, open_with_playwright
+from fastled.playwright_browser import open_with_playwright
 
 
 class PlaywrightIntegrationTester(unittest.TestCase):
     """Test Playwright integration functionality."""
-
-    def test_playwright_availability_check(self):
-        """Test that the Playwright availability check works correctly."""
-        # The availability check should return a boolean
-        result = is_playwright_available()
-        self.assertIsInstance(result, bool)
 
     def test_open_with_playwright_fallback(self):
         """Test that open_with_playwright falls back to webbrowser when Playwright is not available."""

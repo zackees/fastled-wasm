@@ -18,21 +18,6 @@ from typing import Any
 PLAYWRIGHT_DIR = Path.home() / ".fastled" / "playwright"
 PLAYWRIGHT_DIR.mkdir(parents=True, exist_ok=True)
 
-try:
-    from playwright.async_api import Browser, Page, async_playwright
-
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-    async_playwright = None
-    Browser = None
-    Page = None
-
-
-def is_playwright_available() -> bool:
-    """Check if Playwright is available."""
-    return PLAYWRIGHT_AVAILABLE
-
 
 def get_chromium_executable_path() -> str | None:
     """Get the path to the custom Chromium executable if it exists."""
@@ -73,10 +58,6 @@ class PlaywrightBrowser:
         Args:
             headless: Whether to run the browser in headless mode
         """
-        if not is_playwright_available():
-            raise ImportError(
-                "Playwright is not installed. Install with: pip install fastled[full]"
-            )
 
         self.headless = headless
         self.auto_resize = True  # Always enable auto-resize
@@ -137,32 +118,28 @@ class PlaywrightBrowser:
     async def start(self) -> None:
         """Start the Playwright browser."""
         if self.browser is None:
-            if is_playwright_available():
-                from playwright.async_api import async_playwright
 
-                self.playwright = async_playwright()
-                playwright = await self.playwright.start()
+            from playwright.async_api import async_playwright
 
-                # Get custom Chromium executable path if available
-                executable_path = get_chromium_executable_path()
-                launch_kwargs = {
-                    "headless": self.headless,
-                    "args": [
-                        "--disable-dev-shm-usage",
-                        "--disable-web-security",
-                        "--allow-running-insecure-content",
-                    ],
-                }
+            self.playwright = async_playwright()
+            playwright = await self.playwright.start()
 
-                if executable_path:
-                    launch_kwargs["executable_path"] = executable_path
-                    print(
-                        f"[PYTHON] Using custom Chromium executable: {executable_path}"
-                    )
+            # Get custom Chromium executable path if available
+            executable_path = get_chromium_executable_path()
+            launch_kwargs = {
+                "headless": self.headless,
+                "args": [
+                    "--disable-dev-shm-usage",
+                    "--disable-web-security",
+                    "--allow-running-insecure-content",
+                ],
+            }
 
-                self.browser = await playwright.chromium.launch(**launch_kwargs)
-            else:
-                raise RuntimeError("Playwright is not available")
+            if executable_path:
+                launch_kwargs["executable_path"] = executable_path
+                print(f"[PYTHON] Using custom Chromium executable: {executable_path}")
+
+            self.browser = await playwright.chromium.launch(**launch_kwargs)
 
         if self.page is None and self.browser is not None:
             # Detect system device scale factor for natural browser behavior
@@ -378,15 +355,6 @@ def run_playwright_browser(url: str, headless: bool = False) -> None:
         url: The URL to open
         headless: Whether to run in headless mode
     """
-    if not is_playwright_available():
-        warnings.warn(
-            "Playwright is not installed. Install with: pip install fastled[full]. "
-            "Falling back to default browser."
-        )
-        import webbrowser
-
-        webbrowser.open(url)
-        return
 
     async def main():
         browser = None
@@ -452,16 +420,6 @@ class PlaywrightBrowserProxy:
             url: The URL to open
             headless: Whether to run in headless mode
         """
-        if not is_playwright_available():
-            warnings.warn(
-                "Playwright is not installed. Install with: pip install fastled[full]. "
-                "Falling back to default browser."
-            )
-            # Fall back to default browser
-            import webbrowser
-
-            webbrowser.open(url)
-            return
 
         try:
             # Run Playwright in a separate process to avoid blocking
@@ -538,8 +496,6 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
         url: The URL to open
         headless: Whether to run in headless mode
     """
-    if not is_playwright_available():
-        return
 
     async def main():
         browser = None
@@ -621,8 +577,6 @@ def install_playwright_browsers() -> bool:
     Returns:
         True if installation was successful or browsers were already installed
     """
-    if not PLAYWRIGHT_AVAILABLE:
-        return False
 
     try:
         import os

@@ -25,14 +25,10 @@ dependencies = [
     "flask-cors>=4.0.0",
     "livereload",
     "disklru>=2.0.4",
+    "playwright>=1.40.0",
 ]
 
 dynamic = ["version"]
-
-[project.optional-dependencies]
-full = [
-    "playwright>=1.40.0",
-]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

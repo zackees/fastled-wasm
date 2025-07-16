@@ -25,16 +25,6 @@ from fastled.web_compile import (
 )
 
 
-def _always_false() -> bool:
-    return False
-
-
-try:
-    from fastled.playwright_browser import is_playwright_available
-except ImportError:
-    is_playwright_available = _always_false
-
-
 def _create_error_html(error_message: str) -> str:
     return f"""<!DOCTYPE html>
 <html>
@@ -277,7 +267,7 @@ def run_client(
     ) = None,  # None means auto select a free port, http_port < 0 means no server.
     clear: bool = False,
     no_platformio: bool = False,
-    no_playwright: bool = False,
+    app: bool = False,  # Use app-like browser experience
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -365,7 +355,7 @@ def run_client(
                 port=http_port,
                 compile_server_port=port,
                 open_browser=open_web_browser,
-                no_playwright=no_playwright,
+                app=app,
             )
         else:
             print("\nCompilation successful.")
@@ -531,7 +521,7 @@ def run_client_server(args: Args) -> int:
     open_web_browser = not just_compile and not interactive
     build_mode: BuildMode = BuildMode.from_args(args)
     no_platformio = bool(args.no_platformio)
-    no_playwright = bool(args.no_playwright)
+    app = bool(args.app)
 
     if not force_compile and not looks_like_sketch_directory(directory):
         # if there is only one directory in the sketch directory, use that
@@ -594,7 +584,7 @@ def run_client_server(args: Args) -> int:
             profile=profile,
             clear=args.clear,
             no_platformio=no_platformio,
-            no_playwright=no_playwright,
+            app=app,
         )
     except KeyboardInterrupt:
         return 1
