@@ -34,6 +34,7 @@ FastLED WASM Compiler - Useful options:
   --quick               Build in quick mode (default)
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
+  --background-update   Update the docker image in the background after compilation
   --purge               Remove all FastLED containers and images
   --version             Show version information
   --help                Show detailed help
@@ -41,6 +42,7 @@ Examples:
   fastled (will auto detect the sketch directory and prompt you)
   fastled my_sketch
   fastled my_sketch --web (compiles using the web compiler only)
+  fastled my_sketch --background-update (compiles and updates docker image in background)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
   fastled --server (runs the compiler server in the current directory)
 
@@ -131,6 +133,11 @@ def parse_args() -> Args:
         "--upgrade",
         action="store_true",
         help="Update the wasm compiler (if necessary) before running",
+    )
+    parser.add_argument(
+        "--background-update",
+        action="store_true",
+        help="Update the docker image in the background after compilation (user doesn't have to wait)",
     )
     parser.add_argument(
         "--localhost",

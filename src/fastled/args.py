@@ -16,6 +16,7 @@ class Args:
     app: bool  # New flag to trigger Playwright browser with browser download if needed
     auto_update: bool | None
     update: bool
+    background_update: bool
     localhost: bool
     build: bool
     server: bool
@@ -58,6 +59,9 @@ class Args:
         ), f"expected bool | None, got {type(args.no_auto_updates)}"
         assert isinstance(args.update, bool), f"expected bool, got {type(args.update)}"
         assert isinstance(
+            args.background_update, bool
+        ), f"expected bool, got {type(args.background_update)}"
+        assert isinstance(
             args.localhost, bool
         ), f"expected bool, got {type(args.localhost)}"
         assert isinstance(args.build, bool), f"expected bool, got {type(args.build)}"
@@ -88,6 +92,7 @@ class Args:
             app=args.app,
             auto_update=not args.no_auto_updates,
             update=args.update,
+            background_update=args.background_update,
             localhost=args.localhost,
             build=args.build,
             server=args.server,

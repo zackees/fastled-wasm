@@ -243,14 +243,30 @@ def _try_make_compile_server(
         return None
 
 
-def _is_local_host(host: str) -> bool:
+def _background_update_docker_image() -> None:
+    """Perform docker image update in the background."""
+    try:
+        print("\n🔄 Starting background update of docker image...")
+        docker_manager = DockerManager()
+        updated = docker_manager.validate_or_download_image(
+            image_name=IMAGE_NAME, tag="latest", upgrade=True
+        )
+        if updated:
+            print("✅ Background docker image update completed successfully.")
+        else:
+            print("ℹ️  Docker image was already up to date.")
+    except Exception as e:
+        print(f"⚠️  Background docker image update failed: {e}")
+
+
+def _is_local_host(url: str) -> bool:
     return (
-        host.startswith("http://localhost")
-        or host.startswith("http://127.0.0.1")
-        or host.startswith("http://0.0.0.0")
-        or host.startswith("http://[::]")
-        or host.startswith("http://[::1]")
-        or host.startswith("http://[::ffff:127.0.0.1]")
+        url.startswith("http://localhost")
+        or url.startswith("http://127.0.0.1")
+        or url.startswith("http://0.0.0.0")
+        or url.startswith("http://[::]")
+        or url.startswith("http://[::1]")
+        or url.startswith("http://[::ffff:127.0.0.1]")
     )
 
 
@@ -268,6 +284,7 @@ def run_client(
     clear: bool = False,
     no_platformio: bool = False,
     app: bool = False,  # Use app-like browser experience
+    background_update: bool = False,
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -426,9 +443,20 @@ def run_client(
                     )
                     if has_update:
                         print(f"\n🔄 {message}")
-                        print(
-                            "Run with `fastled -u` to update the docker image to the latest version."
-                        )
+                        if background_update:
+                            # Start background update in a separate thread
+                            update_thread = threading.Thread(
+                                target=_background_update_docker_image, daemon=True
+                            )
+                            update_thread.start()
+                            background_update = False
+                        else:
+                            print(
+                                "Run with `fastled -u` to update the docker image to the latest version."
+                            )
+                            print(
+                                "Or use `--background-update` to update automatically in the background after compilation."
+                            )
                 except Exception as e:
                     # Don't let Docker check failures interrupt the main flow
                     warnings.warn(f"Failed to check for Docker image updates: {e}")
@@ -513,6 +541,7 @@ def run_client_server(args: Args) -> int:
     profile = bool(args.profile)
     web: str | bool = args.web if isinstance(args.web, str) else bool(args.web)
     auto_update = bool(args.auto_update)
+    background_update = bool(args.background_update)
     localhost = bool(args.localhost)
     directory = args.directory if args.directory else Path(".")
     just_compile = bool(args.just_compile)
@@ -585,6 +614,7 @@ def run_client_server(args: Args) -> int:
             clear=args.clear,
             no_platformio=no_platformio,
             app=app,
+            background_update=background_update,
         )
     except KeyboardInterrupt:
         return 1
