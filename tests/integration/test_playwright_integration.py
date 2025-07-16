@@ -5,7 +5,7 @@ Unit tests for Playwright integration.
 import unittest
 from unittest.mock import MagicMock, patch
 
-from fastled.playwright_browser import open_with_playwright
+from fastled.playwright.playwright_browser import open_with_playwright
 
 
 class PlaywrightIntegrationTester(unittest.TestCase):

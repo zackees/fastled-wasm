@@ -6,7 +6,7 @@ import weakref
 from multiprocessing import Process
 from pathlib import Path
 
-from fastled.playwright_browser import open_with_playwright
+from fastled.playwright.playwright_browser import open_with_playwright
 from fastled.server_flask import run_flask_in_thread
 
 # Global reference to keep Playwright browser alive
@@ -128,7 +128,9 @@ def spawn_http_server(
         if should_use_playwright:
             if app:
                 # For --app mode, try to install browsers if needed
-                from fastled.playwright_browser import install_playwright_browsers
+                from fastled.playwright.playwright_browser import (
+                    install_playwright_browsers,
+                )
 
                 install_playwright_browsers()
 

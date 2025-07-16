@@ -77,7 +77,7 @@ class PlaywrightBrowser:
     def _setup_extensions(self) -> None:
         """Setup Chrome extensions for enhanced debugging."""
         try:
-            from fastled.chrome_extension_downloader import (
+            from fastled.playwright.chrome_extension_downloader import (
                 download_cpp_devtools_extension,
             )
 
@@ -706,7 +706,7 @@ def install_playwright_browsers() -> bool:
 
             # Also download the C++ DevTools Support extension
             try:
-                from fastled.chrome_extension_downloader import (
+                from fastled.playwright.chrome_extension_downloader import (
                     download_cpp_devtools_extension,
                 )
 
