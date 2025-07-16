@@ -26,6 +26,7 @@ dependencies = [
     "livereload",
     "disklru>=2.0.4",
     "playwright>=1.40.0",
+
 ]
 
 dynamic = ["version"]

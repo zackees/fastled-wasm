@@ -296,10 +296,20 @@ def web_compile(
 
                 # Check HTTP response status first
                 if libfastled_response.status_code != 200:
-                    print(
-                        f"Warning: libfastled compilation failed with HTTP status {libfastled_response.status_code}"
+                    msg = f"Error: libfastled compilation failed with HTTP status {libfastled_response.status_code}"
+                    
+                    # Error out here, this is a critical error
+                    stdout = libfastled_response.content
+                    if stdout is not None:
+                        stdout = stdout.decode("utf-8", errors="replace") + "\n" + msg
+                    else:
+                        stdout = msg
+                    return CompileResult(
+                        success=False,
+                        stdout=stdout,
+                        hash_value=None,
+                        zip_bytes=b"",
                     )
-                    # Continue with sketch compilation even if libfastled fails
                 else:
                     # Check for embedded HTTP status in response content
                     has_embedded_status, embedded_status = _check_embedded_http_status(

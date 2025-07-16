@@ -980,6 +980,7 @@ class DockerManager:
     def purge(self, image_name: str) -> None:
         """
         Remove all containers and images associated with the given image name.
+        Also removes FastLED containers by name pattern (including test containers).
 
         Args:
             image_name: The name of the image to purge (without tag)
@@ -990,8 +991,27 @@ class DockerManager:
         try:
             containers = self.client.containers.list(all=True)
             for container in containers:
+                should_remove = False
+
+                # Check if container uses the specified image
                 if any(image_name in tag for tag in container.image.tags):
-                    print(f"Removing container {container.name}")
+                    should_remove = True
+                    print(
+                        f"Removing container {container.name} (uses image {image_name})"
+                    )
+
+                # Also check for FastLED container name patterns (including test containers)
+                elif any(
+                    pattern in container.name
+                    for pattern in [
+                        "fastled-wasm-container",
+                        "fastled-wasm-container-test",
+                    ]
+                ):
+                    should_remove = True
+                    print(f"Removing FastLED container {container.name}")
+
+                if should_remove:
                     container.remove(force=True)
 
         except Exception as e:
