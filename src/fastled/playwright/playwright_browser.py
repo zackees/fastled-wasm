@@ -281,6 +281,33 @@ class PlaywrightBrowser:
         # Start polling loop that tracks browser window changes and adjusts viewport only
         asyncio.create_task(self._track_browser_adjust_viewport())
 
+    async def _get_window_info(self) -> dict[str, int] | None:
+        """Get browser window dimensions information.
+
+        Returns:
+            Dictionary containing window dimensions or None if unable to retrieve
+        """
+        if self.page is None:
+            return None
+
+        try:
+            return await self.page.evaluate(
+                """
+                () => {
+                    return {
+                        outerWidth: window.outerWidth,
+                        outerHeight: window.outerHeight,
+                        innerWidth: window.innerWidth,
+                        innerHeight: window.innerHeight,
+                        contentWidth: document.documentElement.clientWidth,
+                        contentHeight: document.documentElement.clientHeight
+                    };
+                }
+                """
+            )
+        except Exception:
+            return None
+
     async def _track_browser_adjust_viewport(self) -> None:
         """Track browser window changes and adjust viewport accordingly.
 
@@ -300,16 +327,7 @@ class PlaywrightBrowser:
                     continue
 
                 # Get current viewport size
-                current_viewport = await self.page.evaluate(
-                    """
-                    () => ({
-                        width: window.innerWidth,
-                        height: window.innerHeight
-                        screenX: window.screenX,
-                        screenY: window.screenY
-                    })
-                """
-                )
+                current_viewport = await self._get_window_info()
 
                 print(f"[PYTHON] Current viewport: {current_viewport}")
                 print(f"[PYTHON] Last viewport: {last_viewport}")
@@ -318,27 +336,19 @@ class PlaywrightBrowser:
                 if current_viewport != last_viewport:
                     last_viewport = current_viewport
                     consecutive_same_count = 0
-
-                    print(
-                        f"[PYTHON] Viewport: {current_viewport['width']}x{current_viewport['height']}"
-                    )
+                    if current_viewport:
+                        print(
+                            f"[PYTHON] Viewport: {current_viewport['contentWidth']}x{current_viewport['contentHeight']}"
+                        )
 
                     # Try to get window outer dimensions for context
                     try:
-                        window_info = await self.page.evaluate(
-                            """
-                        () => ({
-                            outerWidth: window.outerWidth,
-                            outerHeight: window.outerHeight,
-                            screenX: window.screenX,
-                            screenY: window.screenY
-                        })
-                    """
-                        )
+                        window_info = await self._get_window_info()
 
-                        print(
-                            f"[PYTHON] Window: {window_info['outerWidth']}x{window_info['outerHeight']} at ({window_info['screenX']}, {window_info['screenY']})"
-                        )
+                        if window_info:
+                            print(
+                                f"[PYTHON] Window: {window_info['outerWidth']}x{window_info['outerHeight']} at ({window_info['screenX']}, {window_info['screenY']})"
+                            )
 
                     except Exception as e:
                         warnings.warn(
