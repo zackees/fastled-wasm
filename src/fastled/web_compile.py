@@ -9,13 +9,14 @@ from pathlib import Path
 import httpx
 
 from fastled.find_good_connection import find_good_connection
+from fastled.interruptible_http import make_interruptible_post_request
 from fastled.settings import SERVER_PORT
 from fastled.types import BuildMode, CompileResult
 from fastled.zip_files import ZipResult, zip_files
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
-_TIMEOUT = 60 * 4  # 2 mins timeout
+_TIMEOUT = 60 * 4  # 4 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 
 
@@ -83,25 +84,26 @@ def _compile_libfastled(
         httpx.HTTPTransport(local_address="0.0.0.0") if connection_result.ipv4 else None
     )
 
-    with httpx.Client(
+    headers = {
+        "accept": "application/json",
+        "authorization": auth_token,
+        "build": build_mode.value.lower(),
+    }
+
+    url = f"{connection_result.host}/compile/libfastled"
+    print(f"Compiling libfastled on {url} via {ipv4_stmt}")
+
+    # Use interruptible HTTP request
+    response = make_interruptible_post_request(
+        url=url,
+        files={},  # No files for libfastled compilation
+        headers=headers,
         transport=transport,
         timeout=_TIMEOUT * 2,  # Give more time for library compilation
-    ) as client:
-        headers = {
-            "accept": "application/json",
-            "authorization": auth_token,
-            "build": build_mode.value.lower(),
-        }
+        follow_redirects=False,
+    )
 
-        url = f"{connection_result.host}/compile/libfastled"
-        print(f"Compiling libfastled on {url} via {ipv4_stmt}")
-        response = client.post(
-            url,
-            headers=headers,
-            timeout=_TIMEOUT * 2,
-        )
-
-        return response
+    return response
 
 
 def _send_compile_request(
@@ -131,37 +133,32 @@ def _send_compile_request(
 
     archive_size = len(zip_bytes)
 
-    with httpx.Client(
+    headers = {
+        "accept": "application/json",
+        "authorization": auth_token,
+        "build": (
+            build_mode.value.lower() if build_mode else BuildMode.QUICK.value.lower()
+        ),
+        "profile": "true" if profile else "false",
+        "no-platformio": "true" if no_platformio else "false",
+        "allow-libcompile": "false",  # Always false since we handle it manually
+    }
+
+    url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"
+    print(f"Compiling sketch on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes")
+    files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
+
+    # Use interruptible HTTP request
+    response = make_interruptible_post_request(
+        url=url,
+        files=files,
+        headers=headers,
         transport=transport,
         timeout=_TIMEOUT,
-    ) as client:
-        headers = {
-            "accept": "application/json",
-            "authorization": auth_token,
-            "build": (
-                build_mode.value.lower()
-                if build_mode
-                else BuildMode.QUICK.value.lower()
-            ),
-            "profile": "true" if profile else "false",
-            "no-platformio": "true" if no_platformio else "false",
-            "allow-libcompile": "false",  # Always false since we handle it manually
-        }
+        follow_redirects=True,
+    )
 
-        url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"
-        print(
-            f"Compiling sketch on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes"
-        )
-        files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
-        response = client.post(
-            url,
-            follow_redirects=True,
-            files=files,
-            headers=headers,
-            timeout=_TIMEOUT,
-        )
-
-        return response
+    return response
 
 
 def _process_compile_response(
