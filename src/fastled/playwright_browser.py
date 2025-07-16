@@ -17,8 +17,6 @@ from typing import Any
 # Set custom Playwright browser installation path
 PLAYWRIGHT_DIR = Path.home() / ".fastled" / "playwright"
 PLAYWRIGHT_DIR.mkdir(parents=True, exist_ok=True)
-# Use absolute path and normalize for Windows compatibility
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_DIR.resolve())
 
 try:
     from playwright.async_api import Browser, Page, async_playwright
@@ -34,6 +32,36 @@ except ImportError:
 def is_playwright_available() -> bool:
     """Check if Playwright is available."""
     return PLAYWRIGHT_AVAILABLE
+
+
+def get_chromium_executable_path() -> str | None:
+    """Get the path to the custom Chromium executable if it exists."""
+    import glob
+    import platform
+
+    playwright_dir = PLAYWRIGHT_DIR
+
+    if platform.system() == "Windows":
+        chromium_pattern = str(
+            playwright_dir / "chromium-*" / "chrome-win" / "chrome.exe"
+        )
+    elif platform.system() == "Darwin":  # macOS
+        chromium_pattern = str(
+            playwright_dir
+            / "chromium-*"
+            / "chrome-mac"
+            / "Chromium.app"
+            / "Contents"
+            / "MacOS"
+            / "Chromium"
+        )
+    else:  # Linux
+        chromium_pattern = str(
+            playwright_dir / "chromium-*" / "chrome-linux" / "chrome"
+        )
+
+    matches = glob.glob(chromium_pattern)
+    return matches[0] if matches else None
 
 
 class PlaywrightBrowser:
@@ -114,14 +142,25 @@ class PlaywrightBrowser:
 
                 self.playwright = async_playwright()
                 playwright = await self.playwright.start()
-                self.browser = await playwright.chromium.launch(
-                    headless=self.headless,
-                    args=[
+
+                # Get custom Chromium executable path if available
+                executable_path = get_chromium_executable_path()
+                launch_kwargs = {
+                    "headless": self.headless,
+                    "args": [
                         "--disable-dev-shm-usage",
                         "--disable-web-security",
                         "--allow-running-insecure-content",
                     ],
-                )
+                }
+
+                if executable_path:
+                    launch_kwargs["executable_path"] = executable_path
+                    print(
+                        f"[PYTHON] Using custom Chromium executable: {executable_path}"
+                    )
+
+                self.browser = await playwright.chromium.launch(**launch_kwargs)
             else:
                 raise RuntimeError("Playwright is not available")
 
@@ -455,8 +494,6 @@ class PlaywrightBrowserProxy:
         if self.monitor_thread is not None:
             return
 
-        import os
-
         def monitor_process():
             """Monitor the browser process and exit when it terminates."""
             if self.process is None:
@@ -595,32 +632,38 @@ def install_playwright_browsers() -> bool:
         playwright_dir = Path.home() / ".fastled" / "playwright"
         playwright_dir.mkdir(parents=True, exist_ok=True)
 
-        # Set environment variable for Playwright browser path
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_dir.resolve())
+        # Check if browsers are installed in the custom directory
+        import glob
+        import platform
 
-        from playwright.sync_api import sync_playwright
+        if platform.system() == "Windows":
+            chromium_pattern = str(
+                playwright_dir / "chromium-*" / "chrome-win" / "chrome.exe"
+            )
+        elif platform.system() == "Darwin":  # macOS
+            chromium_pattern = str(
+                playwright_dir / "chromium-*" / "chrome-mac" / "Chromium.app"
+            )
+        else:  # Linux
+            chromium_pattern = str(
+                playwright_dir / "chromium-*" / "chrome-linux" / "chrome"
+            )
 
-        with sync_playwright() as p:
-            # Try to launch a browser to see if it's installed
-            try:
-                browser = p.chromium.launch(headless=True)
-                browser.close()
-                return True
-            except Exception:
-                pass
+        if glob.glob(chromium_pattern):
+            print(f"✅ Playwright browsers already installed at: {playwright_dir}")
+            return True
 
         # If we get here, browsers need to be installed
         print("Installing Playwright browsers...")
         print(f"Installing to: {playwright_dir}")
         import subprocess
 
+        env = dict(os.environ)
+        env["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_dir.resolve())
+
         result = subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
-            capture_output=True,
-            text=True,
-            env=dict(
-                os.environ, PLAYWRIGHT_BROWSERS_PATH=str(playwright_dir.resolve())
-            ),
+            env=env,
         )
 
         if result.returncode == 0:
@@ -628,7 +671,9 @@ def install_playwright_browsers() -> bool:
             print(f"   Location: {playwright_dir}")
             return True
         else:
-            print(f"❌ Failed to install Playwright browsers: {result.stderr}")
+            print(
+                f"❌ Failed to install Playwright browsers (exit code: {result.returncode})"
+            )
             return False
 
     except Exception as e:
