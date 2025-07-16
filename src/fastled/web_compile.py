@@ -1,4 +1,3 @@
-import _thread
 import io
 import json
 import os
@@ -6,12 +5,12 @@ import shutil
 import tempfile
 import time
 import zipfile
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
 
+from fastled.find_good_connection import find_good_connection
 from fastled.settings import SERVER_PORT
 from fastled.sketch import get_sketch_files
 from fastled.types import BuildMode, CompileResult
@@ -22,14 +21,6 @@ ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 2 mins timeout
 _AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 ENABLE_EMBEDDED_DATA = True
-_EXECUTOR = ThreadPoolExecutor(max_workers=8)
-
-
-@dataclass
-class ConnectionResult:
-    host: str
-    success: bool
-    ipv4: bool
 
 
 def _sanitize_host(host: str) -> str:
@@ -40,30 +31,6 @@ def _sanitize_host(host: str) -> str:
     if use_https:
         return host if host.startswith("https://") else f"https://{host}"
     return host if host.startswith("http://") else f"http://{host}"
-
-
-def _test_connection(host: str, use_ipv4: bool) -> ConnectionResult:
-    # Function static cache
-    host = _sanitize_host(host)
-    transport = httpx.HTTPTransport(local_address="0.0.0.0") if use_ipv4 else None
-    result: ConnectionResult | None = None
-    try:
-        with httpx.Client(
-            timeout=_TIMEOUT,
-            transport=transport,
-        ) as test_client:
-            test_response = test_client.get(
-                f"{host}/healthz", timeout=3, follow_redirects=True
-            )
-            result = ConnectionResult(host, test_response.status_code == 200, use_ipv4)
-    except KeyboardInterrupt:
-        _thread.interrupt_main()
-        result = ConnectionResult(host, False, use_ipv4)
-    except TimeoutError:
-        result = ConnectionResult(host, False, use_ipv4)
-    except Exception:
-        result = ConnectionResult(host, False, use_ipv4)
-    return result
 
 
 def _file_info(file_path: Path) -> str:
@@ -131,31 +98,6 @@ def zip_files(directory: Path, build_mode: BuildMode) -> ZipResult | Exception:
         return result
     except Exception as e:
         return e
-
-
-def find_good_connection(
-    urls: list[str], filter_out_bad=True, use_ipv6: bool = True
-) -> ConnectionResult | None:
-    futures: list[Future] = []
-    for url in urls:
-
-        f = _EXECUTOR.submit(_test_connection, url, use_ipv4=True)
-        futures.append(f)
-        if use_ipv6 and "localhost" not in url:
-            f_v6 = _EXECUTOR.submit(_test_connection, url, use_ipv4=False)
-            futures.append(f_v6)
-
-    try:
-        # Return first successful result
-        for future in as_completed(futures):
-            result: ConnectionResult = future.result()
-            if result.success or not filter_out_bad:
-                return result
-    finally:
-        # Cancel any remaining futures
-        for future in futures:
-            future.cancel()
-    return None
 
 
 def _banner(msg: str) -> str:

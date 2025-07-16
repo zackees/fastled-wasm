@@ -11,6 +11,7 @@ from pathlib import Path
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
 from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
+from fastled.find_good_connection import ConnectionResult
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import spawn_http_server
 from fastled.parse_args import Args
@@ -19,7 +20,6 @@ from fastled.sketch import looks_like_sketch_directory
 from fastled.types import BuildMode, CompileResult, CompileServerError
 from fastled.web_compile import (
     SERVER_PORT,
-    ConnectionResult,
     find_good_connection,
     web_compile,
 )
