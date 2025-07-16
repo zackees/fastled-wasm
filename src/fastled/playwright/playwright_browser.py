@@ -434,6 +434,7 @@ class PlaywrightBrowser:
             print("[PYTHON] Keyboard interrupt detected, closing Playwright browser")
             self._should_exit.set()
             import _thread
+
             _thread.interrupt_main()
         except Exception as e:
             print(f"[PYTHON] Error closing Playwright browser: {e}")
