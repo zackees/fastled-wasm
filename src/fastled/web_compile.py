@@ -317,8 +317,22 @@ def web_compile(
                     )
                     if has_embedded_status:
                         if embedded_status is not None and embedded_status != 200:
-                            print(
-                                f"Warning: libfastled compilation failed with embedded status {embedded_status}"
+                            msg = f"Warning: libfastled compilation failed with embedded status {embedded_status}"
+                            # this is a critical error
+                            stdout = libfastled_response.content
+                            if stdout is not None:
+                                stdout = (
+                                    stdout.decode("utf-8", errors="replace")
+                                    + "\n"
+                                    + msg
+                                )
+                            else:
+                                stdout = msg
+                            return CompileResult(
+                                success=False,
+                                stdout=msg,
+                                hash_value=None,
+                                zip_bytes=b"",
                             )
                             # Continue with sketch compilation even if libfastled fails
                         elif embedded_status is None:
