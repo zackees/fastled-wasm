@@ -102,8 +102,19 @@ def _run_web_compiler(
     last_hash_value: str | None,
     no_platformio: bool = False,
 ) -> CompileResult:
+    from fastled.sketch import (  # Import here to avoid circular imports
+        looks_like_fastled_repo,
+    )
+
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
+
+    # Guard: libfastled compilation requires volume source mapping
+    # Only allow libcompile if we're in a FastLED repository
+    allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
+    if not allow_libcompile:
+        print("⚠️  libfastled compilation disabled: not running in FastLED repository")
+
     start = time.time()
     web_result = web_compile(
         directory=input_dir,
@@ -111,6 +122,7 @@ def _run_web_compiler(
         build_mode=build_mode,
         profile=profile,
         no_platformio=no_platformio,
+        allow_libcompile=allow_libcompile,
     )
     diff = time.time() - start
     if not web_result.success:

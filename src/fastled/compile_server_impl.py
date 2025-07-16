@@ -71,6 +71,16 @@ class CompileServerImpl:
         self.auto_updates = auto_updates
         self.remove_previous = remove_previous
         self.no_platformio = no_platformio
+
+        # Guard: libfastled compilation requires volume source mapping
+        # If we don't have fastled_src_dir (not in FastLED repo), disable libcompile
+        if allow_libcompile and self.fastled_src_dir is None:
+            print(
+                "⚠️  libfastled compilation disabled: volume source mapping not available"
+            )
+            print("   (not running in FastLED repository)")
+            allow_libcompile = False
+
         self.allow_libcompile = allow_libcompile
         self._port = 0  # 0 until compile server is started
         if auto_start:

@@ -60,6 +60,50 @@ def _print_banner(msg: str) -> None:
     print(_banner(msg))
 
 
+def _compile_libfastled(
+    host: str,
+    auth_token: str,
+    build_mode: BuildMode,
+) -> httpx.Response:
+    """Compile the FastLED library separately."""
+    host = _sanitize_host(host)
+    urls = [host]
+    domain = host.split("://")[-1]
+    if ":" not in domain:
+        urls.append(f"{host}:{SERVER_PORT}")
+
+    connection_result = find_good_connection(urls)
+    if connection_result is None:
+        raise ConnectionError(
+            "Connection failed to all endpoints for libfastled compilation"
+        )
+
+    ipv4_stmt = "IPv4" if connection_result.ipv4 else "IPv6"
+    transport = (
+        httpx.HTTPTransport(local_address="0.0.0.0") if connection_result.ipv4 else None
+    )
+
+    with httpx.Client(
+        transport=transport,
+        timeout=_TIMEOUT * 2,  # Give more time for library compilation
+    ) as client:
+        headers = {
+            "accept": "application/json",
+            "authorization": auth_token,
+            "build": build_mode.value.lower(),
+        }
+
+        url = f"{connection_result.host}/compile/libfastled"
+        print(f"Compiling libfastled on {url} via {ipv4_stmt}")
+        response = client.post(
+            url,
+            headers=headers,
+            timeout=_TIMEOUT * 2,
+        )
+
+        return response
+
+
 def _send_compile_request(
     host: str,
     zip_bytes: bytes,
@@ -101,11 +145,13 @@ def _send_compile_request(
             ),
             "profile": "true" if profile else "false",
             "no-platformio": "true" if no_platformio else "false",
-            "allow-libcompile": "true" if allow_libcompile else "false",
+            "allow-libcompile": "false",  # Always false since we handle it manually
         }
 
         url = f"{connection_result.host}/{ENDPOINT_COMPILED_WASM}"
-        print(f"Compiling on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes")
+        print(
+            f"Compiling sketch on {url} via {ipv4_stmt}. Zip size: {archive_size} bytes"
+        )
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         response = client.post(
             url,
@@ -213,6 +259,24 @@ def web_compile(
     zip_bytes = zip_result.zip_bytes
     print(f"Web compiling on {host}...")
     try:
+        # Step 1: Compile libfastled if requested
+        if allow_libcompile:
+            print("Step 1: Compiling libfastled...")
+            try:
+                libfastled_response = _compile_libfastled(host, auth_token, build_mode)
+                if libfastled_response.status_code != 200:
+                    print(
+                        f"Warning: libfastled compilation failed with status {libfastled_response.status_code}"
+                    )
+                    # Continue with sketch compilation even if libfastled fails
+                else:
+                    print("✅ libfastled compilation successful")
+            except Exception as e:
+                print(f"Warning: libfastled compilation failed: {e}")
+                # Continue with sketch compilation even if libfastled fails
+
+        # Step 2: Compile the sketch
+        print("Step 2: Compiling sketch...")
         response = _send_compile_request(
             host,
             zip_bytes,
@@ -220,7 +284,7 @@ def web_compile(
             build_mode,
             profile,
             no_platformio,
-            allow_libcompile,
+            False,  # allow_libcompile is always False since we handle it manually
         )
 
         return _process_compile_response(response, zip_result, start_time)

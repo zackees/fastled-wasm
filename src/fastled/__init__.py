@@ -41,18 +41,29 @@ class Api:
         profile: bool = False,  # When true then profile information will be enabled and included in the zip.
         no_platformio: bool = False,
     ) -> CompileResult:
+        from fastled.sketch import looks_like_fastled_repo
         from fastled.web_compile import web_compile
 
         if isinstance(host, CompileServer):
             host = host.url()
         if isinstance(directory, str):
             directory = Path(directory)
+
+        # Guard: libfastled compilation requires volume source mapping
+        # Only allow libcompile if we're in a FastLED repository
+        allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
+        if not allow_libcompile:
+            print(
+                "⚠️  libfastled compilation disabled: not running in FastLED repository"
+            )
+
         out: CompileResult = web_compile(
             directory,
             host,
             build_mode=build_mode,
             profile=profile,
             no_platformio=no_platformio,
+            allow_libcompile=allow_libcompile,
         )
         return out
 
