@@ -231,6 +231,59 @@ void loop() {
                     print(f"   Output size: {len(result.zip_bytes)} bytes")
                     print(f"   Hash: {result.hash_value}")
 
+                    # Step 8: Test that libcompile fails when FastLED source is corrupted
+                    print("\n🔨 Testing libfastled compilation failure...")
+
+                    # Corrupt the FastLED source by adding an error directive
+                    fastled_cpp_path = fastled_dir / "src" / "FastLED.cpp"
+                    if not fastled_cpp_path.exists():
+                        print(f"⚠️  FastLED source file not found: {fastled_cpp_path}")
+                        print("Available files in src:")
+                        for f in (fastled_dir / "src").iterdir():
+                            print(f"  {f.name}")
+                    else:
+                        # Read the original content and append the error directive
+                        original_content = fastled_cpp_path.read_text(encoding="utf-8")
+                        corrupted_content = (
+                            original_content + '\n#error "Should fail"\n'
+                        )
+                        fastled_cpp_path.write_text(corrupted_content, encoding="utf-8")
+                        print(f"✅ Added error directive to {fastled_cpp_path}")
+
+                        # Try to compile libfastled directly via HTTP endpoint - this should fail with 400
+                        print(
+                            "🔨 Attempting libfastled compilation with corrupted source..."
+                        )
+
+                        # Make direct HTTP call to /compile/libfastled endpoint
+                        compile_url = f"{server_impl.url()}/compile/libfastled"
+                        headers = {
+                            "accept": "application/json",
+                            "authorization": "oBOT5jbsO4ztgrpNsQwlmFLIKB",  # Default auth token
+                            "build": BuildMode.QUICK.value.lower(),
+                        }
+
+                        with httpx.Client(timeout=60 * 3) as client:
+                            response = client.post(
+                                compile_url, headers=headers, follow_redirects=True
+                            )
+
+                        self.assertIn(
+                            "HTTP_STATUS: 400",
+                            response.text,
+                            "Should have HTTP_STATUS: 400 in response",
+                        )
+
+                        print(
+                            "✅ libfastled compilation correctly failed with 400 HTTP status!"
+                        )
+                        print("📊 Failed compilation stats:")
+                        print(f"   Response length: {len(response.text)} chars")
+
+                        # Restore the original content for cleanup
+                        fastled_cpp_path.write_text(original_content, encoding="utf-8")
+                        print("✅ Restored original FastLED source content")
+
                 finally:
                     # Clean up server
                     try:

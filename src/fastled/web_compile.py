@@ -47,10 +47,10 @@ def _check_embedded_http_status(response_content: bytes) -> tuple[bool, int | No
         lines = content_str.strip().split("\n")
         if lines:
             last_line = lines[-1].strip()
-            if last_line.startswith("HTTP_STATUS:"):
-                # Extract the status code
+            if "HTTP_STATUS:" in last_line:
                 try:
-                    status_code = int(last_line.split(":", 1)[1].strip())
+                    right = last_line.split("HTTP_STATUS:")[-1].strip()
+                    status_code = int(right)
                     return True, status_code
                 except (ValueError, IndexError):
                     # Malformed status line
