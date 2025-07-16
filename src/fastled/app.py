@@ -63,6 +63,9 @@ def main() -> int:
     # now it is safe to print out the version
     print(f"FastLED version: {__version__}")
 
+    # Print current working directory
+    print(f"Current working directory: {os.getcwd()}")
+
     # Check if Playwright browsers are installed
     playwright_dir = Path.home() / ".fastled" / "playwright"
     if playwright_dir.exists() and any(playwright_dir.iterdir()):
