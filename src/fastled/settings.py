@@ -40,7 +40,7 @@ def _get_container_name() -> str:
 
 def _get_server_port() -> int:
     """Get the appropriate server port based on runtime context."""
-    if _is_running_under_pytest():
+    if not _is_running_under_github_actions() and _is_running_under_pytest():
         # Use test port when running under pytest to avoid conflicts
         return 9022
     else:
