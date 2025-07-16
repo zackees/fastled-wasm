@@ -395,29 +395,6 @@ class PlaywrightBrowser:
                     traceback.print_exc()
                     pass
 
-                # Get the browser window information periodically
-                try:
-                    browser_info = await self.page.evaluate(
-                        """
-                        () => {
-                            return {
-                                userAgent: navigator.userAgent,
-                                platform: navigator.platform,
-                                cookieEnabled: navigator.cookieEnabled,
-                                language: navigator.language
-                            };
-                        }
-                    """
-                    )
-
-                    if browser_info:
-                        pass  # We have browser info, but don't need to print it constantly
-                    else:
-                        print("[PYTHON] Could not get browser window info")
-
-                except Exception as e:
-                    print(f"[PYTHON] Could not get browser info: {e}")
-
             except Exception as e:
                 error_message = str(e)
                 warnings.warn(f"[PYTHON] Error in browser tracking: {error_message}")
@@ -460,7 +437,7 @@ class PlaywrightBrowser:
                             "[PYTHON] Browser state indicates closed, shutting down gracefully..."
                         )
                     self._should_exit.set()
-                    break
+                    return
                 else:
                     # For other errors, just log and continue - don't shut down
                     print(f"[PYTHON] Recoverable error in browser tracking: {e}")
