@@ -10,14 +10,13 @@ import httpx
 
 from fastled.find_good_connection import find_good_connection
 from fastled.interruptible_http import make_interruptible_post_request
-from fastled.settings import SERVER_PORT
+from fastled.settings import AUTH_TOKEN, SERVER_PORT
 from fastled.types import BuildMode, CompileResult
 from fastled.zip_files import ZipResult, zip_files
 
 DEFAULT_HOST = "https://fastled.onrender.com"
 ENDPOINT_COMPILED_WASM = "compile/wasm"
 _TIMEOUT = 60 * 4  # 4 mins timeout
-_AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 
 
 def _sanitize_host(host: str) -> str:
@@ -277,7 +276,7 @@ def web_compile(
     host = _sanitize_host(host or DEFAULT_HOST)
     build_mode = build_mode or BuildMode.QUICK
     _print_banner(f"Compiling on {host}")
-    auth_token = auth_token or _AUTH_TOKEN
+    auth_token = auth_token or AUTH_TOKEN
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
     zip_result: ZipResult | Exception = zip_files(directory, build_mode=build_mode)

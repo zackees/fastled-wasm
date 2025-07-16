@@ -12,8 +12,8 @@ from pathlib import Path
 import httpx
 
 from fastled import Api
+from fastled.settings import AUTH_TOKEN
 from fastled.types import BuildMode
-from fastled.web_compile import _AUTH_TOKEN
 
 
 class TestSessionCompile(unittest.TestCase):
@@ -83,7 +83,7 @@ class TestSessionCompile(unittest.TestCase):
         # First request with session_id=123
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         headers = {
-            "authorization": _AUTH_TOKEN,
+            "authorization": AUTH_TOKEN,
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
             "strict": "false",
@@ -122,7 +122,7 @@ class TestSessionCompile(unittest.TestCase):
         # First request with session_id=123
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         headers1 = {
-            "authorization": _AUTH_TOKEN,
+            "authorization": AUTH_TOKEN,
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
             "strict": "false",
@@ -162,7 +162,7 @@ class TestSessionCompile(unittest.TestCase):
 
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         headers = {
-            "authorization": _AUTH_TOKEN,
+            "authorization": AUTH_TOKEN,
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
             "strict": "false",
@@ -185,7 +185,7 @@ class TestSessionCompile(unittest.TestCase):
 
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         headers = {
-            "authorization": _AUTH_TOKEN,
+            "authorization": AUTH_TOKEN,
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
             "strict": "false",
@@ -214,7 +214,7 @@ class TestSessionCompile(unittest.TestCase):
 
         files = {"file": ("wasm.zip", zip_bytes, "application/x-zip-compressed")}
         headers = {
-            "authorization": _AUTH_TOKEN,
+            "authorization": AUTH_TOKEN,
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
             "strict": "false",

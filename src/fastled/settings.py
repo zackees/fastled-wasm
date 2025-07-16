@@ -51,6 +51,7 @@ def _get_server_port() -> int:
 CONTAINER_NAME = _get_container_name()
 DEFAULT_URL = str(os.environ.get("FASTLED_URL", "https://fastled.onrender.com"))
 SERVER_PORT = _get_server_port()
+AUTH_TOKEN = "oBOT5jbsO4ztgrpNsQwlmFLIKB"
 
 IMAGE_NAME = "niteris/fastled-wasm"
 DEFAULT_CONTAINER_NAME = _get_container_name()

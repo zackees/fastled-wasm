@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from fastled.compile_server_impl import CompileServerImpl
+from fastled.settings import AUTH_TOKEN
 from fastled.types import BuildMode, CompileResult
 
 
@@ -197,6 +198,8 @@ void loop() {
                         profile=False,
                     )
 
+                    print(f"🔨 Compilation result: {result.stdout}")
+
                     # Step 6: Verify compilation was successful
                     self.assertTrue(
                         result.success,
@@ -235,12 +238,15 @@ void loop() {
                     print("\n🔨 Testing libfastled compilation failure...")
 
                     # Corrupt the FastLED source by adding an error directive
-                    fastled_cpp_path = fastled_dir / "src" / "FastLED.cpp"
+                    fastled_cpp_path = (
+                        fastled_dir / "src" / "sensors" / "digital_pin.cpp.hpp"
+                    )
                     if not fastled_cpp_path.exists():
                         print(f"⚠️  FastLED source file not found: {fastled_cpp_path}")
                         print("Available files in src:")
                         for f in (fastled_dir / "src").iterdir():
                             print(f"  {f.name}")
+                        self.fail(f"FastLED source file not found: {fastled_cpp_path}")
                     else:
                         # Read the original content and append the error directive
                         original_content = fastled_cpp_path.read_text(encoding="utf-8")
@@ -259,7 +265,7 @@ void loop() {
                         compile_url = f"{server_impl.url()}/compile/libfastled"
                         headers = {
                             "accept": "application/json",
-                            "authorization": "oBOT5jbsO4ztgrpNsQwlmFLIKB",  # Default auth token
+                            "authorization": AUTH_TOKEN,  # Default auth token
                             "build": BuildMode.QUICK.value.lower(),
                         }
 

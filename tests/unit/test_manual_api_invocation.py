@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 
 from fastled import Api
-from fastled.settings import DEFAULT_URL
+from fastled.settings import AUTH_TOKEN, DEFAULT_URL
 from fastled.types import BuildMode
 
 
@@ -134,7 +134,7 @@ void loop() {
         # Prepare headers (exactly as the internal API does)
         headers = {
             "accept": "application/json",
-            "authorization": "oBOT5jbsO4ztgrpNsQwlmFLIKB",  # Default auth token
+            "authorization": AUTH_TOKEN,  # Default auth token
             "build": BuildMode.QUICK.value.lower(),
             "profile": "false",
         }
@@ -214,7 +214,7 @@ void loop() {
         # Prepare headers for libfastled compilation
         headers = {
             "accept": "application/json",
-            "authorization": "oBOT5jbsO4ztgrpNsQwlmFLIKB",  # Default auth token
+            "authorization": AUTH_TOKEN,  # Default auth token
             "build": BuildMode.QUICK.value.lower(),
         }
 
