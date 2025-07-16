@@ -15,10 +15,13 @@ _playwright_browser_proxy = None
 
 def cleanup_playwright_browser() -> None:
     """Clean up the Playwright browser on exit."""
-    global _playwright_browser_proxy
-    if _playwright_browser_proxy:
-        _playwright_browser_proxy.close()
-        _playwright_browser_proxy = None
+    try:
+        global _playwright_browser_proxy
+        if _playwright_browser_proxy:
+            _playwright_browser_proxy.close()
+            _playwright_browser_proxy = None
+    except Exception:
+        pass
 
 
 # Register cleanup function
