@@ -520,7 +520,9 @@ def run_client(
                             last_compiled_result = compile_function(
                                 last_hash_value=None, allow_libcompile=allow_libcompile
                             )
-                            allow_libcompile = False
+                            allow_libcompile = (
+                                allow_libcompile and not last_compiled_result.success
+                            )
                             print("Finished recompile.")
                             # Drain the space bar queue
                             SpaceBarWatcher.watch_space_bar_pressed()
