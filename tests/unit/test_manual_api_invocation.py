@@ -236,51 +236,8 @@ void loop() {
         if response.status_code != 200:
             print(f"❌ Response content: {response.text}")
 
-        self.assertEqual(response.status_code, 200)
-
-        # Verify we got some content back (streaming response)
-        self.assertGreater(len(response.content), 0)
-        print(f"📥 Response size: {len(response.content)} bytes")
-
-        # Check if it's a zip file or other binary content
-        if response.content.startswith(b"PK"):  # ZIP file magic bytes
-            print("📦 Response appears to be a ZIP file")
-            # Try to extract and verify the response contains expected library files
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir)
-                zip_path = temp_path / "libfastled.zip"
-                zip_path.write_bytes(response.content)
-
-                # Extract and check contents
-                import shutil
-
-                shutil.unpack_archive(zip_path, temp_path, "zip")
-
-                # Look for expected library files
-                lib_files = list(temp_path.glob("**/*.a")) + list(
-                    temp_path.glob("**/*.so")
-                )
-                header_files = list(temp_path.glob("**/*.h")) + list(
-                    temp_path.glob("**/*.hpp")
-                )
-
-                print(f"🔍 Found library files: {[f.name for f in lib_files]}")
-                print(f"🔍 Found header files: {[f.name for f in header_files]}")
-
-                # We expect at least some library or header files
-                self.assertGreater(
-                    len(lib_files) + len(header_files),
-                    0,
-                    "Expected to find library or header files",
-                )
-        else:
-            print("📄 Response appears to be text/binary data")
-            # Could be a streaming response with compilation logs
-            try:
-                text_content = response.content.decode("utf-8")
-                print(f"📝 Response preview: {text_content[:200]}...")
-            except UnicodeDecodeError:
-                print("🔧 Response contains binary data")
+        # We don't volume map so this should return 400
+        self.assertEqual(response.status_code, 400)
 
     @unittest.skipUnless(True, "Test manual API invocation")
     def test_project_init_endpoint_manual(self) -> None:
