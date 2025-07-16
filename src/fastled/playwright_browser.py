@@ -44,7 +44,7 @@ class PlaywrightBrowser:
         Args:
             headless: Whether to run the browser in headless mode
         """
-        if not PLAYWRIGHT_AVAILABLE:
+        if not is_playwright_available():
             raise ImportError(
                 "Playwright is not installed. Install with: pip install fastled[full]"
             )
@@ -56,106 +56,92 @@ class PlaywrightBrowser:
         self.playwright: Any = None
         self._should_exit = asyncio.Event()
 
-    async def start(self) -> None:
-        """Start the Playwright browser."""
-        if self.playwright is None and async_playwright is not None:
-            self.playwright = await async_playwright().start()
+    def _detect_device_scale_factor(self) -> float | None:
+        """Detect the system's device scale factor for natural browser behavior.
 
-        if self.browser is None and self.playwright is not None:
-            # Try Chrome first, then Firefox, then WebKit
-            try:
-                self.browser = await self.playwright.chromium.launch(
-                    headless=self.headless,
-                    args=["--disable-web-security", "--allow-running-insecure-content"],
-                )
-            except Exception:
-                try:
-                    self.browser = await self.playwright.firefox.launch(
-                        headless=self.headless
-                    )
-                except Exception:
-                    self.browser = await self.playwright.webkit.launch(
-                        headless=self.headless
-                    )
-
-        if self.page is None and self.browser is not None:
-            # Detect system device scale factor to match normal browser behavior
+        Returns:
+            The detected device scale factor, or None if detection fails or
+            the value is outside reasonable bounds (0.5-4.0).
+        """
+        try:
             import platform
 
-            device_scale_factor = 1.0
+            if platform.system() == "Windows":
+                import winreg
 
-            # Try to detect system display scaling
-            try:
-                if platform.system() == "Windows":
-                    # On Windows, try to get the DPI scaling factor
-                    import ctypes
+                try:
+                    key = winreg.OpenKey(
+                        winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop\WindowMetrics"
+                    )
+                    dpi, _ = winreg.QueryValueEx(key, "AppliedDPI")
+                    winreg.CloseKey(key)
+                    device_scale_factor = dpi / 96.0
 
-                    try:
-                        # Get DPI awareness and scale factor
-                        user32 = ctypes.windll.user32
-                        user32.SetProcessDPIAware()
-                        dc = user32.GetDC(0)
-                        dpi = ctypes.windll.gdi32.GetDeviceCaps(dc, 88)  # LOGPIXELSX
-                        user32.ReleaseDC(0, dc)
-                        device_scale_factor = dpi / 96.0  # 96 DPI is 100% scaling
-                    except Exception:
-                        # Fallback: try alternative method
-                        try:
-                            import tkinter as tk
-
-                            root = tk.Tk()
-                            device_scale_factor = root.winfo_fpixels("1i") / 96.0
-                            root.destroy()
-                        except Exception:
-                            pass
-                elif platform.system() == "Darwin":  # macOS
-                    # On macOS, try to get the display scaling
-                    try:
-                        import subprocess
-
-                        result = subprocess.run(
-                            ["system_profiler", "SPDisplaysDataType"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
+                    # Validate the scale factor is within reasonable bounds
+                    if 0.5 <= device_scale_factor <= 4.0:
+                        print(
+                            f"[PYTHON] Detected Windows DPI scaling: {device_scale_factor:.2f}"
                         )
-                        if "Retina" in result.stdout or "2x" in result.stdout:
-                            device_scale_factor = 2.0
-                        elif "3x" in result.stdout:
-                            device_scale_factor = 3.0
-                    except Exception:
-                        pass
-                elif platform.system() == "Linux":
-                    # On Linux, try to get display scaling from environment or system
-                    try:
-                        import os
+                        return device_scale_factor
+                    else:
+                        print(
+                            f"[PYTHON] Detected scale factor {device_scale_factor:.2f} outside reasonable bounds"
+                        )
+                        return None
 
-                        # Try GDK scaling first
-                        gdk_scale = os.environ.get("GDK_SCALE")
-                        if gdk_scale:
-                            device_scale_factor = float(gdk_scale)
-                        else:
-                            # Try QT scaling
-                            qt_scale = os.environ.get("QT_SCALE_FACTOR")
-                            if qt_scale:
-                                device_scale_factor = float(qt_scale)
-                    except Exception:
-                        pass
-            except Exception:
-                # If all detection methods fail, default to 1.0
-                device_scale_factor = 1.0
+                except (OSError, FileNotFoundError):
+                    print(
+                        "[PYTHON] Could not detect Windows DPI, using browser default"
+                    )
+                    return None
+            else:
+                # Future: Add support for other platforms (macOS, Linux) here
+                print(
+                    f"[PYTHON] Device scale detection not implemented for {platform.system()}"
+                )
+                return None
 
-            # Ensure device scale factor is reasonable (between 0.5 and 4.0)
-            device_scale_factor = max(0.5, min(4.0, device_scale_factor))
+        except Exception as e:
+            print(f"[PYTHON] DPI detection failed: {e}")
+            return None
 
-            print(f"[PYTHON] Detected device scale factor: {device_scale_factor}")
+    async def start(self) -> None:
+        """Start the Playwright browser."""
+        if self.browser is None:
+            if is_playwright_available():
+                from playwright.async_api import async_playwright
 
-            # Create a new browser context with proper device scale factor
-            context = await self.browser.new_context(
-                device_scale_factor=device_scale_factor,
-                # Also ensure viewport scaling is handled properly
-                viewport={"width": 1280, "height": 720} if not self.headless else None,
-            )
+                self.playwright = async_playwright()
+                playwright = await self.playwright.start()
+                self.browser = await playwright.chromium.launch(
+                    headless=self.headless,
+                    args=[
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--allow-running-insecure-content",
+                    ],
+                )
+            else:
+                raise RuntimeError("Playwright is not available")
+
+        if self.page is None and self.browser is not None:
+            # Detect system device scale factor for natural browser behavior
+            device_scale_factor = self._detect_device_scale_factor()
+
+            # Create browser context with detected or default device scale factor
+            if device_scale_factor:
+                context = await self.browser.new_context(
+                    device_scale_factor=device_scale_factor
+                )
+                print(
+                    f"[PYTHON] Created browser context with device scale factor: {device_scale_factor:.2f}"
+                )
+            else:
+                context = await self.browser.new_context()
+                print(
+                    "[PYTHON] Created browser context with default device scale factor"
+                )
+
             self.page = await context.new_page()
 
     async def open_url(self, url: str) -> None:
@@ -173,6 +159,15 @@ class PlaywrightBrowser:
 
             # Wait for the page to load
             await self.page.wait_for_load_state("networkidle")
+
+            # Verify device scale factor is working correctly
+            try:
+                device_pixel_ratio = await self.page.evaluate("window.devicePixelRatio")
+                print(
+                    f"[PYTHON] Verified browser device pixel ratio: {device_pixel_ratio}"
+                )
+            except Exception as e:
+                print(f"[PYTHON] Could not verify device pixel ratio: {e}")
 
             # Set up auto-resizing functionality if enabled
             if self.auto_resize:
@@ -343,7 +338,7 @@ def run_playwright_browser(url: str, headless: bool = False) -> None:
         url: The URL to open
         headless: Whether to run in headless mode
     """
-    if not PLAYWRIGHT_AVAILABLE:
+    if not is_playwright_available():
         warnings.warn(
             "Playwright is not installed. Install with: pip install fastled[full]. "
             "Falling back to default browser."
@@ -417,7 +412,7 @@ class PlaywrightBrowserProxy:
             url: The URL to open
             headless: Whether to run in headless mode
         """
-        if not PLAYWRIGHT_AVAILABLE:
+        if not is_playwright_available():
             warnings.warn(
                 "Playwright is not installed. Install with: pip install fastled[full]. "
                 "Falling back to default browser."
@@ -505,7 +500,7 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
         url: The URL to open
         headless: Whether to run in headless mode
     """
-    if not PLAYWRIGHT_AVAILABLE:
+    if not is_playwright_available():
         return
 
     async def main():
