@@ -101,17 +101,14 @@ def _run_web_compiler(
     profile: bool,
     last_hash_value: str | None,
     no_platformio: bool = False,
+    allow_libcompile: bool = False,
 ) -> CompileResult:
-    from fastled.sketch import (  # Import here to avoid circular imports
-        looks_like_fastled_repo,
-    )
-
+    # Remove the import and libcompile detection logic from here
+    # since it will now be passed as a parameter
     input_dir = Path(directory)
     output_dir = input_dir / "fastled_js"
 
     # Guard: libfastled compilation requires volume source mapping
-    # Only allow libcompile if we're in a FastLED repository
-    allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
     if not allow_libcompile:
         print("⚠️  libfastled compilation disabled: not running in FastLED repository")
 
@@ -322,6 +319,11 @@ def run_client(
         # Assume default port for www
         port = 80
 
+    # Auto-detect libcompile capability on first call
+    from fastled.sketch import looks_like_fastled_repo
+
+    allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
+
     try:
 
         def compile_function(
@@ -330,6 +332,7 @@ def run_client(
             profile: bool = profile,
             last_hash_value: str | None = None,
             no_platformio: bool = no_platformio,
+            allow_libcompile: bool = allow_libcompile,
         ) -> CompileResult:
             TEST_BEFORE_COMPILE(url)
             return _run_web_compiler(
@@ -339,6 +342,7 @@ def run_client(
                 profile=profile,
                 last_hash_value=last_hash_value,
                 no_platformio=no_platformio,
+                allow_libcompile=allow_libcompile,
             )
 
         result: CompileResult = compile_function(last_hash_value=None)
@@ -466,6 +470,10 @@ def run_client(
                 if changed_files:
                     print(f"\nChanges detected in FastLED source code: {changed_files}")
                     print("Press space bar to trigger compile.")
+
+                    # Re-evaluate libcompile capability when source code changes
+                    allow_libcompile = True
+
                     while True:
                         space_bar_pressed = SpaceBarWatcher.watch_space_bar_pressed(
                             timeout=1.0
@@ -488,8 +496,9 @@ def run_client(
                                     f"Changes detected in {','.join(sketch_files_changed)}, triggering recompile..."
                                 )
                             last_compiled_result = compile_function(
-                                last_hash_value=None
+                                last_hash_value=None, allow_libcompile=allow_libcompile
                             )
+                            allow_libcompile = False
                             print("Finished recompile.")
                             # Drain the space bar queue
                             SpaceBarWatcher.watch_space_bar_pressed()

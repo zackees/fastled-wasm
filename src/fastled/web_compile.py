@@ -274,6 +274,8 @@ def web_compile(
             except Exception as e:
                 print(f"Warning: libfastled compilation failed: {e}")
                 # Continue with sketch compilation even if libfastled fails
+        else:
+            print("Step 1 (skipped): Compiling libfastled")
 
         # Step 2: Compile the sketch
         print("Step 2: Compiling sketch...")
