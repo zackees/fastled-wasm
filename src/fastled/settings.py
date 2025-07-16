@@ -8,6 +8,11 @@ IS_ARM: bool = "arm" in MACHINE or "aarch64" in MACHINE
 PLATFORM_TAG: str = "-arm64" if IS_ARM else ""
 
 
+def _is_running_under_github_actions() -> bool:
+    """Detect if we're running under github actions."""
+    return "GITHUB_ACTIONS" in os.environ
+
+
 def _is_running_under_pytest() -> bool:
     """Detect if we're running under pytest."""
     # Check if pytest is in the loaded modules
@@ -25,7 +30,7 @@ def _get_container_name() -> str:
     """Get the appropriate container name based on runtime context."""
     base_name = "fastled-wasm-container"
 
-    if _is_running_under_pytest():
+    if not _is_running_under_github_actions() and _is_running_under_pytest():
         # Use test container name when running under pytest
         return f"{base_name}-test{PLATFORM_TAG}"
     else:
