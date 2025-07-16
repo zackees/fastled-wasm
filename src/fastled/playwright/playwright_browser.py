@@ -312,6 +312,7 @@ class PlaywrightBrowser:
                 result = await self.resize_tracker.update()
 
                 if result is not None:
+                    assert isinstance(result, Exception)
                     # An exception occurred in resize tracking
                     error_message = str(result)
                     warnings.warn(f"[PYTHON] Error in resize tracking: {error_message}")
