@@ -24,12 +24,13 @@ class MainTester(unittest.TestCase):
             COMMAND,
             shell=True,
             capture_output=True,
-            text=True,
             check=False,
         )
         ok = cp.returncode == 0
         if not ok:
-            error_msg = "stdout:\n" + cp.stdout + "\nstderr:\n" + cp.stderr
+            stdout = cp.stdout.decode("utf-8", errors="replace")
+            stderr = cp.stderr.decode("utf-8", errors="replace")
+            error_msg = "stdout:\n" + stdout + "\nstderr:\n" + stderr
             # self.assertEqual(0, cp.returncode, "Command failed: " + error_msg)
             self.fail(f"Command failed with return code {cp.returncode}:\n{error_msg}")
 

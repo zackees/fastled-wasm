@@ -369,8 +369,27 @@ class PlaywrightBrowser:
                     print(f"[PYTHON] Could not get browser info: {e}")
 
             except Exception as e:
-                print(f"[PYTHON] Error in browser tracking: {e}")
-                continue
+                error_message = str(e)
+                # Check if the error indicates the browser/page has been closed
+                if any(
+                    keyword in error_message.lower()
+                    for keyword in [
+                        "target page",
+                        "context",
+                        "browser has been closed",
+                        "page.evaluate",
+                        "browser closed",
+                        "target closed",
+                    ]
+                ):
+                    print(
+                        "[PYTHON] Browser has been closed, shutting down gracefully..."
+                    )
+                    self._should_exit.set()
+                    break
+                else:
+                    print(f"[PYTHON] Error in browser tracking: {e}")
+                    continue
 
     async def wait_for_close(self) -> None:
         """Wait for the browser to be closed."""
@@ -391,6 +410,9 @@ class PlaywrightBrowser:
 
     async def close(self) -> None:
         """Close the Playwright browser."""
+        # Signal all tracking loops to exit
+        self._should_exit.set()
+
         if self.page:
             await self.page.close()
             self.page = None
