@@ -60,13 +60,15 @@ class LiveClient:
 
     def url(self) -> str:
         """Get the URL of the server."""
+        from fastled.settings import SERVER_PORT
+
         if isinstance(self.host, CompileServer):
             return self.host.url()
         if self.host is None:
             import warnings
 
             warnings.warn("TODO: use the actual host.")
-            return "http://localhost:9021"
+            return f"http://localhost:{SERVER_PORT}"
         return self.host
 
     @property
