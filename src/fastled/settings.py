@@ -53,11 +53,7 @@ DEFAULT_URL = str(os.environ.get("FASTLED_URL", "https://fastled.onrender.com"))
 SERVER_PORT = _get_server_port()
 
 IMAGE_NAME = "niteris/fastled-wasm"
-DEFAULT_CONTAINER_NAME = (
-    "fastled-wasm-container-test"
-    if _is_running_under_pytest()
-    else "fastled-wasm-container"
-)
+DEFAULT_CONTAINER_NAME = _get_container_name()
 # IMAGE_TAG = "latest"
 
 DOCKER_FILE = (
