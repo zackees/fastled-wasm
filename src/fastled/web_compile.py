@@ -330,7 +330,7 @@ def web_compile(
                                 stdout = msg
                             return CompileResult(
                                 success=False,
-                                stdout=msg,
+                                stdout=stdout,
                                 hash_value=None,
                                 zip_bytes=b"",
                             )
