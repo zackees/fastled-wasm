@@ -305,9 +305,14 @@ class PlaywrightBrowser:
                     () => ({
                         width: window.innerWidth,
                         height: window.innerHeight
+                        screenX: window.screenX,
+                        screenY: window.screenY
                     })
                 """
                 )
+
+                print(f"[PYTHON] Current viewport: {current_viewport}")
+                print(f"[PYTHON] Last viewport: {last_viewport}")
 
                 # Check if viewport changed
                 if current_viewport != last_viewport:
@@ -487,6 +492,7 @@ class PlaywrightBrowser:
             _thread.interrupt_main()
         except Exception as e:
             print(f"[PYTHON] Error closing Playwright browser: {e}")
+            self._should_exit.set()
 
 
 def run_playwright_browser(
