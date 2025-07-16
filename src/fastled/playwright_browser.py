@@ -52,19 +52,47 @@ def get_chromium_executable_path() -> str | None:
 class PlaywrightBrowser:
     """Playwright browser manager for FastLED sketches."""
 
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = False, enable_extensions: bool = True):
         """Initialize the Playwright browser manager.
 
         Args:
             headless: Whether to run the browser in headless mode
+            enable_extensions: Whether to enable Chrome extensions (C++ DevTools Support)
         """
 
         self.headless = headless
+        self.enable_extensions = enable_extensions
         self.auto_resize = True  # Always enable auto-resize
         self.browser: Any = None
+        self.context: Any = None
         self.page: Any = None
         self.playwright: Any = None
         self._should_exit = asyncio.Event()
+        self._extensions_dir: Path | None = None
+
+        # Initialize extensions if enabled
+        if self.enable_extensions:
+            self._setup_extensions()
+
+    def _setup_extensions(self) -> None:
+        """Setup Chrome extensions for enhanced debugging."""
+        try:
+            from fastled.chrome_extension_downloader import (
+                download_cpp_devtools_extension,
+            )
+
+            extension_path = download_cpp_devtools_extension()
+            if extension_path and extension_path.exists():
+                self._extensions_dir = extension_path
+                print(
+                    f"[PYTHON] C++ DevTools Support extension ready: {extension_path}"
+                )
+            else:
+                print("[PYTHON] Warning: C++ DevTools Support extension not available")
+                self.enable_extensions = False
+        except Exception as e:
+            print(f"[PYTHON] Warning: Failed to setup Chrome extensions: {e}")
+            self.enable_extensions = False
 
     def _detect_device_scale_factor(self) -> float | None:
         """Detect the system's device scale factor for natural browser behavior.
@@ -74,92 +102,115 @@ class PlaywrightBrowser:
             the value is outside reasonable bounds (0.5-4.0).
         """
         try:
-            import platform
+            import tkinter
 
-            if platform.system() == "Windows":
-                import winreg
+            root = tkinter.Tk()
+            root.withdraw()  # Hide the window
+            scale_factor = root.winfo_fpixels("1i") / 72.0
+            root.destroy()
 
-                try:
-                    key = winreg.OpenKey(
-                        winreg.HKEY_CURRENT_USER, r"Control Panel\Desktop\WindowMetrics"
-                    )
-                    dpi, _ = winreg.QueryValueEx(key, "AppliedDPI")
-                    winreg.CloseKey(key)
-                    device_scale_factor = dpi / 96.0
-
-                    # Validate the scale factor is within reasonable bounds
-                    if 0.5 <= device_scale_factor <= 4.0:
-                        print(
-                            f"[PYTHON] Detected Windows DPI scaling: {device_scale_factor:.2f}"
-                        )
-                        return device_scale_factor
-                    else:
-                        print(
-                            f"[PYTHON] Detected scale factor {device_scale_factor:.2f} outside reasonable bounds"
-                        )
-                        return None
-
-                except (OSError, FileNotFoundError):
-                    print(
-                        "[PYTHON] Could not detect Windows DPI, using browser default"
-                    )
-                    return None
+            # Validate the scale factor is in a reasonable range
+            if 0.5 <= scale_factor <= 4.0:
+                return scale_factor
             else:
-                # Future: Add support for other platforms (macOS, Linux) here
                 print(
-                    f"[PYTHON] Device scale detection not implemented for {platform.system()}"
+                    f"[PYTHON] Detected scale factor {scale_factor:.2f} is outside reasonable bounds (0.5-4.0)"
                 )
                 return None
 
         except Exception as e:
-            print(f"[PYTHON] DPI detection failed: {e}")
+            print(f"[PYTHON] Could not detect device scale factor: {e}")
             return None
 
     async def start(self) -> None:
         """Start the Playwright browser."""
-        if self.browser is None:
+        if self.browser is None and self.context is None:
 
             from playwright.async_api import async_playwright
 
             self.playwright = async_playwright()
             playwright = await self.playwright.start()
 
-            # Get custom Chromium executable path if available
-            executable_path = get_chromium_executable_path()
-            launch_kwargs = {
-                "headless": self.headless,
-                "args": [
-                    "--disable-dev-shm-usage",
-                    "--disable-web-security",
-                    "--allow-running-insecure-content",
-                ],
-            }
+            if self.enable_extensions and self._extensions_dir:
+                # Use persistent context for extensions
+                user_data_dir = PLAYWRIGHT_DIR / "user-data"
+                user_data_dir.mkdir(parents=True, exist_ok=True)
 
-            if executable_path:
-                launch_kwargs["executable_path"] = executable_path
-                print(f"[PYTHON] Using custom Chromium executable: {executable_path}")
+                launch_kwargs = {
+                    "headless": False,  # Extensions require headed mode
+                    "channel": "chromium",  # Required for extensions
+                    "args": [
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--allow-running-insecure-content",
+                        f"--disable-extensions-except={self._extensions_dir}",
+                        f"--load-extension={self._extensions_dir}",
+                    ],
+                }
 
-            self.browser = await playwright.chromium.launch(**launch_kwargs)
+                # Get custom Chromium executable path if available
+                executable_path = get_chromium_executable_path()
+                if executable_path:
+                    launch_kwargs["executable_path"] = executable_path
+                    print(
+                        f"[PYTHON] Using custom Chromium executable: {executable_path}"
+                    )
 
-        if self.page is None and self.browser is not None:
-            # Detect system device scale factor for natural browser behavior
-            device_scale_factor = self._detect_device_scale_factor()
-
-            # Create browser context with detected or default device scale factor
-            if device_scale_factor:
-                context = await self.browser.new_context(
-                    device_scale_factor=device_scale_factor
+                self.context = await playwright.chromium.launch_persistent_context(
+                    str(user_data_dir), **launch_kwargs
                 )
+
                 print(
-                    f"[PYTHON] Created browser context with device scale factor: {device_scale_factor:.2f}"
+                    "[PYTHON] Started Playwright browser with C++ DevTools Support extension"
                 )
+
             else:
-                context = await self.browser.new_context()
-                print(
-                    "[PYTHON] Created browser context with default device scale factor"
-                )
+                # Regular browser launch without extensions
+                executable_path = get_chromium_executable_path()
+                launch_kwargs = {
+                    "headless": self.headless,
+                    "args": [
+                        "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--allow-running-insecure-content",
+                    ],
+                }
 
-            self.page = await context.new_page()
+                if executable_path:
+                    launch_kwargs["executable_path"] = executable_path
+                    print(
+                        f"[PYTHON] Using custom Chromium executable: {executable_path}"
+                    )
+
+                self.browser = await playwright.chromium.launch(**launch_kwargs)
+
+        if self.page is None:
+            if self.context:
+                # Using persistent context (with extensions)
+                if len(self.context.pages) > 0:
+                    self.page = self.context.pages[0]
+                else:
+                    self.page = await self.context.new_page()
+            elif self.browser:
+                # Using regular browser
+                # Detect system device scale factor for natural browser behavior
+                device_scale_factor = self._detect_device_scale_factor()
+
+                # Create browser context with detected or default device scale factor
+                if device_scale_factor:
+                    context = await self.browser.new_context(
+                        device_scale_factor=device_scale_factor
+                    )
+                    print(
+                        f"[PYTHON] Created browser context with device scale factor: {device_scale_factor:.2f}"
+                    )
+                else:
+                    context = await self.browser.new_context()
+                    print(
+                        "[PYTHON] Created browser context with default device scale factor"
+                    )
+
+                self.page = await context.new_page()
 
     async def open_url(self, url: str) -> None:
         """Open a URL in the Playwright browser.
@@ -190,6 +241,33 @@ class PlaywrightBrowser:
             if self.auto_resize:
                 await self._setup_auto_resize()
 
+            # Check if C++ DevTools extension is loaded
+            if self.enable_extensions and self._extensions_dir:
+                try:
+                    # Check if the extension is available in the DevTools
+                    extensions_available = await self.page.evaluate(
+                        """
+                        () => {
+                            // Check if chrome.devtools is available (extension context)
+                            return typeof chrome !== 'undefined' && 
+                                   typeof chrome.runtime !== 'undefined' &&
+                                   chrome.runtime.id !== undefined;
+                        }
+                    """
+                    )
+
+                    if extensions_available:
+                        print(
+                            "[PYTHON] ✅ C++ DevTools Support extension is active and ready for DWARF debugging"
+                        )
+                    else:
+                        print(
+                            "[PYTHON] ⚠️  C++ DevTools Support extension may not be fully loaded"
+                        )
+
+                except Exception as e:
+                    print(f"[PYTHON] Could not verify extension status: {e}")
+
     async def _setup_auto_resize(self) -> None:
         """Set up automatic window resizing based on content size."""
         if self.page is None:
@@ -203,119 +281,92 @@ class PlaywrightBrowser:
         # Start polling loop that tracks browser window changes and adjusts viewport only
         asyncio.create_task(self._track_browser_adjust_viewport())
 
-    async def _get_window_info(self) -> dict[str, int] | None:
-        """Get browser window dimensions information.
-
-        Returns:
-            Dictionary containing window dimensions or None if unable to retrieve
-        """
-        if self.page is None:
-            return None
-
-        try:
-            return await self.page.evaluate(
-                """
-                () => {
-                    return {
-                        outerWidth: window.outerWidth,
-                        outerHeight: window.outerHeight,
-                        innerWidth: window.innerWidth,
-                        innerHeight: window.innerHeight,
-                        contentWidth: document.documentElement.clientWidth,
-                        contentHeight: document.documentElement.clientHeight
-                    };
-                }
-                """
-            )
-        except Exception:
-            return None
-
     async def _track_browser_adjust_viewport(self) -> None:
-        """Track browser window outer size changes and adjust viewport accordingly."""
-        if self.page is None:
-            return
+        """Track browser window changes and adjust viewport accordingly.
 
-        print(
-            "[PYTHON] Starting browser window tracking (outer size → viewport adjustment)"
-        )
-        last_outer_size = None
+        This method polls for changes in the browser window size and adjusts
+        the viewport size to match, maintaining the browser window dimensions
+        while ensuring the content area matches the sketch requirements.
+        """
+        last_viewport = None
+        consecutive_same_count = 0
+        max_consecutive_same = 5
 
-        while True:
+        while not self._should_exit.is_set():
             try:
-                # Wait 1 second between polls
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)  # Poll every 500ms
 
-                # Check if page is still alive
-                if self.page is None or self.page.is_closed():
-                    print("[PYTHON] Page closed, signaling exit")
-                    self._should_exit.set()
-                    return
+                if self.page is None:
+                    continue
 
-                # Get browser window dimensions
-                window_info = await self._get_window_info()
+                # Get current viewport size
+                current_viewport = await self.page.evaluate(
+                    """
+                    () => ({
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                    })
+                """
+                )
 
-                if window_info:
-                    current_outer = (
-                        window_info["outerWidth"],
-                        window_info["outerHeight"],
+                # Check if viewport changed
+                if current_viewport != last_viewport:
+                    last_viewport = current_viewport
+                    consecutive_same_count = 0
+
+                    print(
+                        f"[PYTHON] Viewport: {current_viewport['width']}x{current_viewport['height']}"
                     )
 
-                    # Print current state occasionally
-                    if last_outer_size is None or current_outer != last_outer_size:
-                        print(
-                            f"[PYTHON] Browser: outer={window_info['outerWidth']}x{window_info['outerHeight']}, content={window_info['contentWidth']}x{window_info['contentHeight']}"
+                    # Try to get window outer dimensions for context
+                    try:
+                        window_info = await self.page.evaluate(
+                            """
+                        () => ({
+                            outerWidth: window.outerWidth,
+                            outerHeight: window.outerHeight,
+                            screenX: window.screenX,
+                            screenY: window.screenY
+                        })
+                    """
                         )
 
-                    # Track changes in OUTER window size (user resizes browser)
-                    if last_outer_size is None or current_outer != last_outer_size:
+                        print(
+                            f"[PYTHON] Window: {window_info['outerWidth']}x{window_info['outerHeight']} at ({window_info['screenX']}, {window_info['screenY']})"
+                        )
 
-                        if last_outer_size is not None:
-                            print("[PYTHON] *** BROWSER WINDOW RESIZED ***")
-                            print(
-                                f"[PYTHON] Outer window changed from {last_outer_size[0]}x{last_outer_size[1]} to {current_outer[0]}x{current_outer[1]}"
-                            )
-
-                        last_outer_size = current_outer
-
-                        # Set viewport to match the outer window size
-                        if not self.headless:
-                            try:
-                                outer_width = int(window_info["outerWidth"])
-                                outer_height = int(window_info["outerHeight"])
-
-                                print(
-                                    f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
-                                )
-
-                                await self.page.set_viewport_size(
-                                    {"width": outer_width, "height": outer_height}
-                                )
-                                print("[PYTHON] Viewport set successfully")
-
-                                # Wait briefly for browser to settle after viewport change
-                                # await asyncio.sleep(0.5)
-
-                                # Query the actual window dimensions after the viewport change
-                                updated_window_info = await self._get_window_info()
-
-                                if updated_window_info:
-
-                                    # Update our tracking with the actual final outer size
-                                    last_outer_size = (
-                                        updated_window_info["outerWidth"],
-                                        updated_window_info["outerHeight"],
-                                    )
-                                    print(
-                                        f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
-                                    )
-                                else:
-                                    print("[PYTHON] Could not get updated window info")
-
-                            except Exception as e:
-                                print(f"[PYTHON] Failed to set viewport: {e}")
+                    except Exception:
+                        pass
 
                 else:
-                    print("[PYTHON] Could not get browser window info")
+                    consecutive_same_count += 1
+                    if consecutive_same_count >= max_consecutive_same:
+                        # Viewport hasn't changed for a while, reduce polling frequency
+                        await asyncio.sleep(2.0)
+                        consecutive_same_count = 0
+
+                # Get the browser window information periodically
+                try:
+                    browser_info = await self.page.evaluate(
+                        """
+                        () => {
+                            return {
+                                userAgent: navigator.userAgent,
+                                platform: navigator.platform,
+                                cookieEnabled: navigator.cookieEnabled,
+                                language: navigator.language
+                            };
+                        }
+                    """
+                    )
+
+                    if browser_info:
+                        pass  # We have browser info, but don't need to print it constantly
+                    else:
+                        print("[PYTHON] Could not get browser window info")
+
+                except Exception as e:
+                    print(f"[PYTHON] Could not get browser info: {e}")
 
             except Exception as e:
                 print(f"[PYTHON] Error in browser tracking: {e}")
@@ -323,21 +374,30 @@ class PlaywrightBrowser:
 
     async def wait_for_close(self) -> None:
         """Wait for the browser to be closed."""
-        if self.browser is None:
-            return
-
-        try:
-            # Wait for the browser to be closed
-            while not self.browser.is_closed():
-                await asyncio.sleep(1)
-        except Exception:
-            pass
+        if self.context:
+            # Wait for persistent context to be closed
+            try:
+                while not self.context.closed:
+                    await asyncio.sleep(1)
+            except Exception:
+                pass
+        elif self.browser:
+            try:
+                # Wait for the browser to be closed
+                while not self.browser.is_closed():
+                    await asyncio.sleep(1)
+            except Exception:
+                pass
 
     async def close(self) -> None:
         """Close the Playwright browser."""
         if self.page:
             await self.page.close()
             self.page = None
+
+        if self.context:
+            await self.context.close()
+            self.context = None
 
         if self.browser:
             await self.browser.close()
@@ -348,18 +408,23 @@ class PlaywrightBrowser:
             self.playwright = None
 
 
-def run_playwright_browser(url: str, headless: bool = False) -> None:
+def run_playwright_browser(
+    url: str, headless: bool = False, enable_extensions: bool = True
+) -> None:
     """Run Playwright browser in a separate process.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        enable_extensions: Whether to enable Chrome extensions (C++ DevTools Support)
     """
 
     async def main():
         browser = None
         try:
-            browser = PlaywrightBrowser(headless=headless)
+            browser = PlaywrightBrowser(
+                headless=headless, enable_extensions=enable_extensions
+            )
             await browser.start()
             await browser.open_url(url)
 
@@ -373,7 +438,9 @@ def run_playwright_browser(url: str, headless: bool = False) -> None:
                 if install_playwright_browsers():
                     print("🎭 Retrying browser startup...")
                     # Try again with fresh browser instance
-                    browser = PlaywrightBrowser(headless=headless)
+                    browser = PlaywrightBrowser(
+                        headless=headless, enable_extensions=enable_extensions
+                    )
                     await browser.start()
                     await browser.open_url(url)
 
@@ -413,12 +480,15 @@ class PlaywrightBrowserProxy:
         self.monitor_thread = None
         self._closing_intentionally = False
 
-    def open(self, url: str, headless: bool = False) -> None:
+    def open(
+        self, url: str, headless: bool = False, enable_extensions: bool = True
+    ) -> None:
         """Open URL with Playwright browser and keep it alive.
 
         Args:
             url: The URL to open
             headless: Whether to run in headless mode
+            enable_extensions: Whether to enable Chrome extensions (C++ DevTools Support)
         """
 
         try:
@@ -427,7 +497,7 @@ class PlaywrightBrowserProxy:
 
             self.process = multiprocessing.Process(
                 target=run_playwright_browser_persistent,
-                args=(url, headless),
+                args=(url, headless, enable_extensions),
             )
             self.process.start()
 
@@ -489,18 +559,23 @@ class PlaywrightBrowserProxy:
             self.process = None
 
 
-def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
+def run_playwright_browser_persistent(
+    url: str, headless: bool = False, enable_extensions: bool = True
+) -> None:
     """Run Playwright browser in a persistent mode that stays alive until terminated.
 
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        enable_extensions: Whether to enable Chrome extensions (C++ DevTools Support)
     """
 
     async def main():
         browser = None
         try:
-            browser = PlaywrightBrowser(headless=headless)
+            browser = PlaywrightBrowser(
+                headless=headless, enable_extensions=enable_extensions
+            )
             await browser.start()
             await browser.open_url(url)
 
@@ -519,7 +594,9 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
                 if install_playwright_browsers():
                     print("🎭 Retrying browser startup...")
                     # Try again with fresh browser instance
-                    browser = PlaywrightBrowser(headless=headless)
+                    browser = PlaywrightBrowser(
+                        headless=headless, enable_extensions=enable_extensions
+                    )
                     await browser.start()
                     await browser.open_url(url)
 
@@ -552,7 +629,9 @@ def run_playwright_browser_persistent(url: str, headless: bool = False) -> None:
         print(f"Playwright browser failed: {e}")
 
 
-def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserProxy:
+def open_with_playwright(
+    url: str, headless: bool = False, enable_extensions: bool = True
+) -> PlaywrightBrowserProxy:
     """Open URL with Playwright browser and return a proxy object for lifecycle management.
 
     This function can be used as a drop-in replacement for webbrowser.open().
@@ -560,12 +639,13 @@ def open_with_playwright(url: str, headless: bool = False) -> PlaywrightBrowserP
     Args:
         url: The URL to open
         headless: Whether to run in headless mode
+        enable_extensions: Whether to enable Chrome extensions (C++ DevTools Support)
 
     Returns:
         PlaywrightBrowserProxy object for managing the browser lifecycle
     """
     proxy = PlaywrightBrowserProxy()
-    proxy.open(url, headless)
+    proxy.open(url, headless, enable_extensions)
     return proxy
 
 
@@ -623,6 +703,23 @@ def install_playwright_browsers() -> bool:
         if result.returncode == 0:
             print("✅ Playwright browsers installed successfully!")
             print(f"   Location: {playwright_dir}")
+
+            # Also download the C++ DevTools Support extension
+            try:
+                from fastled.chrome_extension_downloader import (
+                    download_cpp_devtools_extension,
+                )
+
+                extension_path = download_cpp_devtools_extension()
+                if extension_path:
+                    print(
+                        "✅ C++ DevTools Support extension ready for DWARF debugging!"
+                    )
+                else:
+                    print("⚠️  C++ DevTools Support extension download failed")
+            except Exception as e:
+                print(f"⚠️  Failed to setup C++ DevTools Support extension: {e}")
+
             return True
         else:
             print(

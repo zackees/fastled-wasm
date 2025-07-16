@@ -136,8 +136,13 @@ def spawn_http_server(
             print(
                 "Auto-resize enabled: Browser window will automatically adjust to content size"
             )
+            print(
+                "🔧 C++ DevTools Support extension will be loaded for DWARF debugging"
+            )
             global _playwright_browser_proxy
-            _playwright_browser_proxy = open_with_playwright(url)
+            _playwright_browser_proxy = open_with_playwright(
+                url, enable_extensions=True
+            )
         else:
             print(f"Opening browser to {url}")
             import webbrowser
