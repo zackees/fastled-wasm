@@ -370,25 +370,43 @@ class PlaywrightBrowser:
 
             except Exception as e:
                 error_message = str(e)
-                # Check if the error indicates the browser/page has been closed
-                if any(
-                    keyword in error_message.lower()
-                    for keyword in [
-                        "target page",
-                        "context",
+                # Be EXTREMELY conservative about browser close detection
+                # Only trigger shutdown on very specific errors that definitively indicate browser closure
+                browser_definitely_closed = any(
+                    phrase in error_message.lower()
+                    for phrase in [
                         "browser has been closed",
-                        "page.evaluate",
-                        "browser closed",
                         "target closed",
+                        "connection closed",
+                        "target page, probably because the page has been closed",
+                        "execution context was destroyed",
+                        "page has been closed",
+                        "browser context has been closed",
                     ]
-                ):
+                )
+
+                # Also check actual browser state before deciding to shut down
+                browser_state_indicates_closed = False
+                try:
+                    if self.browser and hasattr(self.browser, "is_closed"):
+                        browser_state_indicates_closed = self.browser.is_closed()
+                    elif self.context and hasattr(self.context, "closed"):
+                        browser_state_indicates_closed = self.context.closed
+                except Exception:
+                    # If we can't check the state, don't assume it's closed
+                    browser_state_indicates_closed = False
+
+                if browser_definitely_closed or browser_state_indicates_closed:
                     print(
-                        "[PYTHON] Browser has been closed, shutting down gracefully..."
+                        f"[PYTHON] Browser has been closed because {error_message} matched one of the error phrases, shutting down gracefully..."
                     )
                     self._should_exit.set()
                     break
                 else:
-                    print(f"[PYTHON] Error in browser tracking: {e}")
+                    # For other errors, just log and continue - don't shut down
+                    print(f"[PYTHON] Recoverable error in browser tracking: {e}")
+                    # Add a small delay to prevent tight error loops
+                    await asyncio.sleep(1.0)
                     continue
 
     async def wait_for_close(self) -> None:
@@ -428,8 +446,26 @@ class PlaywrightBrowser:
                 self.browser = None
 
             if self.playwright:
-                await self.playwright.stop()
-                self.playwright = None
+                # The playwright context manager may not have a stop() method in all versions
+                # Try stop() first, fall back to __aexit__ if needed
+                try:
+                    if hasattr(self.playwright, "stop"):
+                        await self.playwright.stop()
+                    else:
+                        # For async context managers, use __aexit__
+                        await self.playwright.__aexit__(None, None, None)
+                except Exception as stop_error:
+                    print(
+                        f"[PYTHON] Warning: Could not properly stop playwright: {stop_error}"
+                    )
+                    # Try alternative cleanup methods
+                    try:
+                        if hasattr(self.playwright, "__aexit__"):
+                            await self.playwright.__aexit__(None, None, None)
+                    except Exception:
+                        pass  # Ignore secondary cleanup failures
+                finally:
+                    self.playwright = None
         except KeyboardInterrupt:
             print("[PYTHON] Keyboard interrupt detected, closing Playwright browser")
             self._should_exit.set()

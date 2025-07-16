@@ -100,7 +100,7 @@ def _run_web_compiler(
 
     # Guard: libfastled compilation requires volume source mapping
     if not allow_libcompile:
-        print("⚠️  libfastled compilation disabled: not running in FastLED repository")
+        print("⚠️  libfastled compilation disabled.")
 
     start = time.time()
     web_result = web_compile(
