@@ -315,53 +315,85 @@ class PlaywrightBrowser:
         the viewport size to match, maintaining the browser window dimensions
         while ensuring the content area matches the sketch requirements.
         """
-        last_viewport = None
-        consecutive_same_count = 0
-        max_consecutive_same = 5
+
+        last_outer_size = None
 
         while not self._should_exit.is_set():
             try:
-                await asyncio.sleep(0.5)  # Poll every 500ms
+                # Wait 1 second between polls
+                await asyncio.sleep(0.25)  # Poll every 500ms
 
-                if self.page is None:
-                    continue
+                # Check if page is still alive
+                if self.page is None or self.page.is_closed():
+                    print("[PYTHON] Page closed, signaling exit")
+                    self._should_exit.set()
+                    return
 
-                # Get current viewport size
-                current_viewport = await self._get_window_info()
+                # Try to get window outer dimensions for context
+                try:
+                    window_info = await self._get_window_info()
 
-                print(f"[PYTHON] Current viewport: {current_viewport}")
-                print(f"[PYTHON] Last viewport: {last_viewport}")
+                    if window_info:
 
-                # Check if viewport changed
-                if current_viewport != last_viewport:
-                    last_viewport = current_viewport
-                    consecutive_same_count = 0
-                    if current_viewport:
-                        print(
-                            f"[PYTHON] Viewport: {current_viewport['contentWidth']}x{current_viewport['contentHeight']}"
+                        current_outer = (
+                            window_info["outerWidth"],
+                            window_info["outerHeight"],
                         )
 
-                    # Try to get window outer dimensions for context
-                    try:
-                        window_info = await self._get_window_info()
+                        # Print current state occasionally
+                        if last_outer_size is None or current_outer != last_outer_size:
 
-                        if window_info:
+                            if last_outer_size is not None:
+                                print("[PYTHON] *** BROWSER WINDOW RESIZED ***")
+                                print(
+                                    f"[PYTHON] Outer window changed from {last_outer_size[0]}x{last_outer_size[1]} to {current_outer[0]}x{current_outer[1]}"
+                                )
+
+                            last_outer_size = current_outer
+
+                            # Set viewport to match the outer window size
+                            outer_width = int(window_info["outerWidth"])
+                            outer_height = int(window_info["outerHeight"])
+
                             print(
-                                f"[PYTHON] Window: {window_info['outerWidth']}x{window_info['outerHeight']} at ({window_info['screenX']}, {window_info['screenY']})"
+                                f"[PYTHON] Setting viewport to match outer window size: {outer_width}x{outer_height}"
                             )
 
-                    except Exception as e:
-                        warnings.warn(
-                            f"[PYTHON] Could not get browser window info: {e}. Assuming browser is not closed."
-                        )
-                        pass
+                            await self.page.set_viewport_size(
+                                {"width": outer_width, "height": outer_height}
+                            )
+                            print("[PYTHON] Viewport set successfully")
 
-                else:
-                    consecutive_same_count += 1
-                    if consecutive_same_count >= max_consecutive_same:
-                        # Viewport hasn't changed for a while, reduce polling frequency
-                        await asyncio.sleep(2.0)
-                        consecutive_same_count = 0
+                            # Wait briefly for browser to settle after viewport change
+                            # await asyncio.sleep(2)
+
+                            # Query the actual window dimensions after the viewport change
+                            updated_window_info = await self._get_window_info()
+
+                            if updated_window_info:
+                                print(
+                                    f"[PYTHON] Updated window info: {updated_window_info}"
+                                )
+
+                                # Update our tracking with the actual final outer size
+                                last_outer_size = (
+                                    updated_window_info["outerWidth"],
+                                    updated_window_info["outerHeight"],
+                                )
+                                print(
+                                    f"[PYTHON] Updated last_outer_size to actual final size: {last_outer_size}"
+                                )
+                            else:
+                                print("[PYTHON] Could not get updated window info")
+
+                except Exception as e:
+                    warnings.warn(
+                        f"[PYTHON] Could not get browser window info: {e}. Assuming browser is not closed."
+                    )
+                    import traceback
+
+                    traceback.print_exc()
+                    pass
 
                 # Get the browser window information periodically
                 try:
