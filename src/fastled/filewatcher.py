@@ -122,6 +122,9 @@ class FileChangedNotifier(threading.Thread):
                 time.sleep(0.1)
         except KeyboardInterrupt:
             print("File watcher stopped by user.")
+            import _thread
+
+            _thread.interrupt_main()
         finally:
             self.stop()
 

@@ -255,6 +255,11 @@ def _background_update_docker_image() -> None:
             print("✅ Background docker image update completed successfully.")
         else:
             print("ℹ️  Docker image was already up to date.")
+    except KeyboardInterrupt:
+        print("⚠️  Background docker image update interrupted by user.")
+        import _thread
+
+        _thread.interrupt_main()
     except Exception as e:
         print(f"⚠️  Background docker image update failed: {e}")
 

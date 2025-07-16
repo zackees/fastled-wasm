@@ -562,6 +562,11 @@ class PlaywrightBrowserProxy:
                     # Force exit the entire program
                     os._exit(0)
 
+            except KeyboardInterrupt:
+                print("[MAIN] Browser monitor interrupted by user")
+                import _thread
+
+                _thread.interrupt_main()
             except Exception as e:
                 print(f"[MAIN] Error monitoring browser process: {e}")
 
