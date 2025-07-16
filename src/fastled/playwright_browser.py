@@ -17,7 +17,8 @@ from typing import Any
 # Set custom Playwright browser installation path
 PLAYWRIGHT_DIR = Path.home() / ".fastled" / "playwright"
 PLAYWRIGHT_DIR.mkdir(parents=True, exist_ok=True)
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_DIR)
+# Use absolute path and normalize for Windows compatibility
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(PLAYWRIGHT_DIR.resolve())
 
 try:
     from playwright.async_api import Browser, Page, async_playwright
@@ -595,7 +596,7 @@ def install_playwright_browsers() -> bool:
         playwright_dir.mkdir(parents=True, exist_ok=True)
 
         # Set environment variable for Playwright browser path
-        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_dir)
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_dir.resolve())
 
         from playwright.sync_api import sync_playwright
 
@@ -617,7 +618,9 @@ def install_playwright_browsers() -> bool:
             [sys.executable, "-m", "playwright", "install", "chromium"],
             capture_output=True,
             text=True,
-            env=dict(os.environ, PLAYWRIGHT_BROWSERS_PATH=str(playwright_dir)),
+            env=dict(
+                os.environ, PLAYWRIGHT_BROWSERS_PATH=str(playwright_dir.resolve())
+            ),
         )
 
         if result.returncode == 0:
