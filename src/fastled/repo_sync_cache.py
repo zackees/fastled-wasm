@@ -11,6 +11,19 @@ import os
 from pathlib import Path
 from typing import Dict, List, Set
 
+_PATTERNS = [
+
+    "src/*.{c,cpp,h,hpp}",
+    "src/platforms/wasm/**/*.{c,cpp,h,hpp}",
+    "src/platforms/shared/**/*.{c,cpp,h,hpp}",
+    "src/platforms/stub/**/*.{c,cpp,h,hpp}", 
+    "src/sensors/**/*.{c,cpp,h,hpp}",
+    "src/fx/**/*.{c,cpp,h,hpp}",    
+    "src/sensor/**/*.{c,cpp,h,hpp}",
+    "src/thirdparty/**/*.{c,cpp,h,hpp}"
+
+]
+
 
 class RepoSyncFileCache:
     """
@@ -27,15 +40,7 @@ class RepoSyncFileCache:
         """
         self.fastled_src_dir = fastled_src_dir
         self.file_cache: Dict[str, str] = {}
-        self.patterns = [
-            "src/*.*",
-            "src/platforms/wasm/**",
-            "src/platforms/stub/**", 
-            "src/sensors/**",
-            "src/fx/**",
-            "src/sensor/**",
-            "src/thirdparty/**"
-        ]
+        self.patterns = _PATTERNS
         
     def _normalize_line_endings(self, content: str) -> str:
         """Convert content to unix line endings."""

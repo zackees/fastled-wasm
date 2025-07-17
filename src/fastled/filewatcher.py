@@ -10,7 +10,7 @@ from contextlib import redirect_stdout
 from multiprocessing import Process, Queue
 from pathlib import Path
 from queue import Empty
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, Set
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
