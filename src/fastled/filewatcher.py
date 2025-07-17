@@ -10,13 +10,16 @@ from contextlib import redirect_stdout
 from multiprocessing import Process, Queue
 from pathlib import Path
 from queue import Empty
-from typing import Dict, Set
+from typing import Dict, Set, TYPE_CHECKING
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
 from fastled.settings import FILE_CHANGED_DEBOUNCE_SECONDS
+
+if TYPE_CHECKING:
+    from fastled.repo_sync_cache import RepoSyncFileCache
 
 _WATCHER_TIMEOUT = 0.1
 
@@ -37,11 +40,13 @@ class MyEventHandler(FileSystemEventHandler):
         change_queue: queue.Queue,
         excluded_patterns: Set[str],
         file_hashes: Dict[str, str],
+        repo_sync_cache: "RepoSyncFileCache | None" = None,
     ) -> None:
         super().__init__()
         self.change_queue = change_queue
         self.excluded_patterns = excluded_patterns
         self.file_hashes = file_hashes
+        self.repo_sync_cache = repo_sync_cache
 
     def _get_file_hash(self, filepath: str) -> str:
         try:
@@ -61,10 +66,17 @@ class MyEventHandler(FileSystemEventHandler):
             path = Path(src_path)
             # Check if any part of the path matches excluded patterns
             if not any(part in self.excluded_patterns for part in path.parts):
-                new_hash = self._get_file_hash(src_path)
-                if new_hash and new_hash != self.file_hashes.get(src_path):
-                    self.file_hashes[src_path] = new_hash
-                    self.change_queue.put(src_path)
+                # If we have a repo sync cache and the file is tracked by it,
+                # use content comparison instead of hash comparison
+                if self.repo_sync_cache and self.repo_sync_cache.is_file_tracked(src_path):
+                    if self.repo_sync_cache.has_file_actually_changed(src_path):
+                        self.change_queue.put(src_path)
+                else:
+                    # Fall back to original hash-based comparison
+                    new_hash = self._get_file_hash(src_path)
+                    if new_hash and new_hash != self.file_hashes.get(src_path):
+                        self.file_hashes[src_path] = new_hash
+                        self.change_queue.put(src_path)
 
 
 class FileChangedNotifier(threading.Thread):
@@ -75,6 +87,7 @@ class FileChangedNotifier(threading.Thread):
         path: str,
         debounce_seconds: float = FILE_CHANGED_DEBOUNCE_SECONDS,
         excluded_patterns: list[str] | None = None,
+        repo_sync_cache: "RepoSyncFileCache | None" = None,
     ) -> None:
         """Initialize the notifier with a path to watch
 
@@ -82,11 +95,13 @@ class FileChangedNotifier(threading.Thread):
             path: Directory path to watch for changes
             debounce_seconds: Minimum time between notifications for the same file
             excluded_patterns: List of directory/file patterns to exclude from watching
+            repo_sync_cache: Optional repo sync cache for content-based change detection
         """
         super().__init__(daemon=True)
         self.path = path
         self.observer: BaseObserver | None = None
         self.event_handler: MyEventHandler | None = None
+        self.repo_sync_cache = repo_sync_cache
 
         # Combine default and user-provided patterns
         self.excluded_patterns = (
@@ -111,7 +126,7 @@ class FileChangedNotifier(threading.Thread):
     def run(self) -> None:
         """Thread main loop - starts watching for changes"""
         self.event_handler = MyEventHandler(
-            self.change_queue, self.excluded_patterns, self.file_hashes
+            self.change_queue, self.excluded_patterns, self.file_hashes, self.repo_sync_cache
         )
         self.observer = Observer()
         self.observer.schedule(self.event_handler, self.path, recursive=True)
@@ -237,7 +252,7 @@ class DebouncedFileWatcherProcess(threading.Thread):
     """
     Wraps a FileWatcherProcess to batch rapid-fire change events
     and only emit them once the debounce interval has passed.
-    Runs in its own thread, polling every 0.1 s.
+    Runs in its own thread, polling every 0.1 s.
     """
 
     def __init__(
@@ -304,3 +319,37 @@ class DebouncedFileWatcherProcess(threading.Thread):
         self._stop_event.set()
         self.join()
         self.watcher.stop()
+
+
+class RepoSyncFileWatcherProcess:
+    """
+    Wraps a FileWatcherProcess and filters file changes through a repo sync cache
+    to prevent spurious notifications due to line ending differences.
+    """
+    
+    def __init__(self, root: Path, excluded_patterns: list[str], repo_sync_cache: "RepoSyncFileCache"):
+        self.watcher = FileWatcherProcess(root, excluded_patterns)
+        self.repo_sync_cache = repo_sync_cache
+        
+    def stop(self):
+        """Stop the underlying file watcher."""
+        self.watcher.stop()
+        
+    def get_all_changes(self, timeout: float | None = None) -> list[str]:
+        """
+        Get file changes, filtered through the repo sync cache to eliminate
+        spurious notifications.
+        """
+        raw_changes = self.watcher.get_all_changes(timeout)
+        
+        # Filter changes through the repo sync cache
+        actual_changes = []
+        for file_path in raw_changes:
+            if self.repo_sync_cache.is_file_tracked(file_path):
+                if self.repo_sync_cache.has_file_actually_changed(file_path):
+                    actual_changes.append(file_path)
+            else:
+                # If not tracked by repo sync, include the change
+                actual_changes.append(file_path)
+                
+        return actual_changes
