@@ -18,8 +18,7 @@ from watchdog.observers.api import BaseObserver
 
 from fastled.settings import FILE_CHANGED_DEBOUNCE_SECONDS
 
-if TYPE_CHECKING:
-    from fastled.repo_sync_cache import RepoSyncFileCache
+from fastled.repo_sync_cache import RepoSyncFileCache
 
 _WATCHER_TIMEOUT = 0.1
 
