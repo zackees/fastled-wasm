@@ -10,12 +10,11 @@ from pathlib import Path
 
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
-from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess, RepoSyncFileWatcherProcess
+from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
 from fastled.find_good_connection import ConnectionResult
 from fastled.keyboard import SpaceBarWatcher
 from fastled.open_browser import spawn_http_server
 from fastled.parse_args import Args
-from fastled.repo_sync_cache import RepoSyncFileCache
 from fastled.settings import DEFAULT_URL, IMAGE_NAME
 from fastled.sketch import looks_like_sketch_directory
 from fastled.types import BuildMode, CompileResult, CompileServerError
@@ -400,19 +399,14 @@ def run_client(
         FileWatcherProcess(directory, excluded_patterns=excluded_patterns),
     )
 
-    source_code_watcher: FileWatcherProcess | RepoSyncFileWatcherProcess | None = None
-    repo_sync_cache: RepoSyncFileCache | None = None
+    source_code_watcher: FileWatcherProcess | None = None
     
     if compile_server and compile_server.using_fastled_src_dir_volume():
         assert compile_server.fastled_src_dir is not None
         
-        # Create and populate repo sync cache
-        repo_sync_cache = RepoSyncFileCache(compile_server.fastled_src_dir)
-        repo_sync_cache.load_all_files()
-        
-        # Use RepoSyncFileWatcherProcess for content-based change detection
-        source_code_watcher = RepoSyncFileWatcherProcess(
-            compile_server.fastled_src_dir, excluded_patterns, repo_sync_cache
+        # FileWatcherProcess will automatically handle repo sync when appropriate
+        source_code_watcher = FileWatcherProcess(
+            compile_server.fastled_src_dir, excluded_patterns
         )
 
     def trigger_rebuild_if_sketch_changed(

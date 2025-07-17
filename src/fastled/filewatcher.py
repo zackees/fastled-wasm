@@ -18,8 +18,6 @@ from watchdog.observers.api import BaseObserver
 
 from fastled.settings import FILE_CHANGED_DEBOUNCE_SECONDS
 
-from fastled.repo_sync_cache import RepoSyncFileCache
-
 _WATCHER_TIMEOUT = 0.1
 
 
@@ -218,9 +216,21 @@ class ProcessWraperTask:
 
 
 class FileWatcherProcess:
-    def __init__(self, root: Path, excluded_patterns: list[str], repo_sync_cache: "RepoSyncFileCache | None" = None) -> None:
+    def __init__(self, root: Path, excluded_patterns: list[str]) -> None:
         self.queue: Queue = Queue()
-        self.repo_sync_cache = repo_sync_cache
+        
+        # Auto-detect if we should use repo sync cache
+        self.repo_sync_cache = None
+        if self._should_use_repo_sync(root):
+            try:
+                from fastled.repo_sync_cache import RepoSyncFileCache
+                self.repo_sync_cache = RepoSyncFileCache(root)
+                self.repo_sync_cache.load_all_files()
+                print(f"Repo sync cache activated for {self.repo_sync_cache.get_cached_file_count()} files")
+            except Exception as e:
+                print(f"Warning: Could not initialize repo sync cache: {e}")
+                self.repo_sync_cache = None
+        
         task = ProcessWraperTask(root, excluded_patterns, self.queue)
         self.process = Process(
             target=task.run,
@@ -228,6 +238,18 @@ class FileWatcherProcess:
         )
         self.process.start()
         self.global_debounce = FILE_CHANGED_DEBOUNCE_SECONDS
+        
+    def _should_use_repo_sync(self, root: Path) -> bool:
+        """Check if this directory looks like a FastLED source directory."""
+        # Check if we're watching a directory that looks like FastLED src
+        from fastled.sketch import looks_like_fastled_repo
+        
+        # If the root is a src directory, check the parent for FastLED repo
+        if root.name == "src":
+            return looks_like_fastled_repo(root.parent)
+        
+        # Otherwise check if root itself is a FastLED repo
+        return looks_like_fastled_repo(root)
 
     def stop(self):
         self.process.terminate()

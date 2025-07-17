@@ -37,21 +37,19 @@ The system monitors files matching these patterns when repo syncing is active:
   - `is_file_tracked(file_path)`: Checks if a file is managed by the repo sync cache
   - `_normalize_line_endings(content)`: Converts all line endings to Unix format (`\n`)
 
-#### `RepoSyncFileWatcherProcess` (`src/fastled/filewatcher.py`)
-- **Purpose**: Wraps the standard `FileWatcherProcess` and filters results through repo sync cache
-- **Behavior**: Only reports file changes that represent actual content differences
-
-#### Enhanced `MyEventHandler` (`src/fastled/filewatcher.py`)
-- **Purpose**: Updated to support repo sync cache for content-based change detection
-- **Logic**: Uses repo sync cache when available, falls back to hash-based detection otherwise
+#### Enhanced `FileWatcherProcess` (`src/fastled/filewatcher.py`)
+- **Purpose**: Automatically detects FastLED repositories and enables repo sync filtering
+- **Auto-Detection**: Checks if watching a FastLED source directory and creates repo sync cache internally
+- **Transparent Operation**: Client code doesn't need to know about repo sync - it's handled automatically
 
 ### Integration Points
 
 #### Client Server Integration (`src/fastled/client_server.py`)
 When FastLED source directory is detected:
-1. Creates and populates `RepoSyncFileCache` with all matching source files
-2. Uses `RepoSyncFileWatcherProcess` instead of standard `FileWatcherProcess`
-3. Filters file change notifications to only include actual content changes
+1. Creates standard `FileWatcherProcess` with the FastLED source directory
+2. `FileWatcherProcess` automatically detects it's watching a FastLED repo
+3. Internally creates and populates `RepoSyncFileCache` with all matching source files
+4. Filters file change notifications to only include actual content changes
 
 ## Usage
 
@@ -95,9 +93,10 @@ The system respects existing file watching controls:
 ## Architecture Benefits
 
 ### Modular Design
-- **Separation of concerns**: Repo sync logic is isolated in dedicated classes
+- **Encapsulated logic**: Repo sync logic is hidden inside the FileWatcher
+- **Clean interfaces**: Client code uses the same FileWatcher API regardless of repo sync
+- **Automatic activation**: No client configuration required - activates when beneficial
 - **Backward compatibility**: Existing file watching continues to work unchanged
-- **Optional enhancement**: Only activates when beneficial
 
 ### Extensible Framework
 - **Pattern-based**: Easy to add new file patterns or directories
