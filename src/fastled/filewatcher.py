@@ -218,8 +218,9 @@ class ProcessWraperTask:
 
 
 class FileWatcherProcess:
-    def __init__(self, root: Path, excluded_patterns: list[str]) -> None:
+    def __init__(self, root: Path, excluded_patterns: list[str], repo_sync_cache: "RepoSyncFileCache | None" = None) -> None:
         self.queue: Queue = Queue()
+        self.repo_sync_cache = repo_sync_cache
         task = ProcessWraperTask(root, excluded_patterns, self.queue)
         self.process = Process(
             target=task.run,
@@ -244,7 +245,20 @@ class FileWatcherProcess:
                 changed_files.append(changed_file)
             except Empty:
                 break
-        return changed_files
+                
+        # Filter changes through repo sync cache if available
+        if self.repo_sync_cache:
+            actual_changes = []
+            for file_path in changed_files:
+                if self.repo_sync_cache.is_file_tracked(file_path):
+                    if self.repo_sync_cache.has_file_actually_changed(file_path):
+                        actual_changes.append(file_path)
+                else:
+                    # If not tracked by repo sync, include the change
+                    actual_changes.append(file_path)
+            return actual_changes
+        else:
+            return changed_files
 
 
 class DebouncedFileWatcherProcess(threading.Thread):
@@ -318,37 +332,3 @@ class DebouncedFileWatcherProcess(threading.Thread):
         self._stop_event.set()
         self.join()
         self.watcher.stop()
-
-
-class RepoSyncFileWatcherProcess:
-    """
-    Wraps a FileWatcherProcess and filters file changes through a repo sync cache
-    to prevent spurious notifications due to line ending differences.
-    """
-    
-    def __init__(self, root: Path, excluded_patterns: list[str], repo_sync_cache: "RepoSyncFileCache"):
-        self.watcher = FileWatcherProcess(root, excluded_patterns)
-        self.repo_sync_cache = repo_sync_cache
-        
-    def stop(self):
-        """Stop the underlying file watcher."""
-        self.watcher.stop()
-        
-    def get_all_changes(self, timeout: float | None = None) -> list[str]:
-        """
-        Get file changes, filtered through the repo sync cache to eliminate
-        spurious notifications.
-        """
-        raw_changes = self.watcher.get_all_changes(timeout)
-        
-        # Filter changes through the repo sync cache
-        actual_changes = []
-        for file_path in raw_changes:
-            if self.repo_sync_cache.is_file_tracked(file_path):
-                if self.repo_sync_cache.has_file_actually_changed(file_path):
-                    actual_changes.append(file_path)
-            else:
-                # If not tracked by repo sync, include the change
-                actual_changes.append(file_path)
-                
-        return actual_changes
