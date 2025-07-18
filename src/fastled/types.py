@@ -12,6 +12,10 @@ class CompileResult:
     stdout: str
     hash_value: str | None
     zip_bytes: bytes
+    zip_time: float
+    libfastled_time: float
+    sketch_time: float
+    response_processing_time: float
 
     def __bool__(self) -> bool:
         return self.success

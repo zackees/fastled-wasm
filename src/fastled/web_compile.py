@@ -196,16 +196,30 @@ def _process_compile_response(
     response: httpx.Response,
     zip_result: ZipResult,
     start_time: float,
+    zip_time: float,
+    libfastled_time: float,
+    sketch_time: float,
 ) -> CompileResult:
     """Process the compile response and return the final result."""
     if response.status_code != 200:
         json_response = response.json()
         detail = json_response.get("detail", "Could not compile")
         return CompileResult(
-            success=False, stdout=detail, hash_value=None, zip_bytes=b""
+            success=False,
+            stdout=detail,
+            hash_value=None,
+            zip_bytes=b"",
+            zip_time=zip_time,
+            libfastled_time=libfastled_time,
+            sketch_time=sketch_time,
+            response_processing_time=0.0,  # No response processing in error case
         )
 
     print(f"Response status code: {response}")
+
+    # Time the response processing
+    response_processing_start = time.time()
+
     # Create a temporary directory to extract the zip
     with tempfile.TemporaryDirectory() as extract_dir:
         extract_path = Path(extract_dir)
@@ -250,14 +264,32 @@ def _process_compile_response(
                     relative_path = file_path.relative_to(extract_path)
                     out_zip.write(file_path, relative_path)
 
+        response_processing_time = time.time() - response_processing_start
         diff_time = time.time() - start_time
-        msg = f"Compilation success, took {diff_time:.2f} seconds"
+
+        # Create detailed timing breakdown
+        unaccounted_time = diff_time - (
+            zip_time + libfastled_time + sketch_time + response_processing_time
+        )
+        msg = f"Compilation success, took {diff_time:.2f} seconds\n"
+        msg += f"     zip creation: {zip_time:.2f}\n"
+        if libfastled_time > 0:
+            msg += f"     libfastled: {libfastled_time:.2f}\n"
+        msg += f"     sketch compile + link: {sketch_time:.2f}\n"
+        msg += f"     response processing: {response_processing_time:.2f}\n"
+        if unaccounted_time > 0.01:  # Only show if significant
+            msg += f"     other overhead: {unaccounted_time:.2f}"
+
         _print_banner(msg)
         return CompileResult(
             success=True,
             stdout=stdout,
             hash_value=hash_value,
             zip_bytes=out_buffer.getvalue(),
+            zip_time=zip_time,
+            libfastled_time=libfastled_time,
+            sketch_time=sketch_time,
+            response_processing_time=response_processing_time,
         )
 
 
@@ -279,17 +311,35 @@ def web_compile(
     auth_token = auth_token or AUTH_TOKEN
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
+
+    # Time the zip creation
+    zip_start_time = time.time()
     zip_result: ZipResult | Exception = zip_files(directory, build_mode=build_mode)
+    zip_time = time.time() - zip_start_time
+
     if isinstance(zip_result, Exception):
         return CompileResult(
-            success=False, stdout=str(zip_result), hash_value=None, zip_bytes=b""
+            success=False,
+            stdout=str(zip_result),
+            hash_value=None,
+            zip_bytes=b"",
+            zip_time=zip_time,
+            libfastled_time=0.0,  # No libfastled compilation in zip error case
+            sketch_time=0.0,  # No sketch compilation in zip error case
+            response_processing_time=0.0,  # No response processing in zip error case
         )
     zip_bytes = zip_result.zip_bytes
     print(f"Web compiling on {host}...")
+
+    # Track timing for each step
+    libfastled_time = 0.0
+    sketch_time = 0.0
+
     try:
         # Step 1: Compile libfastled if requested
         if allow_libcompile:
             print("Step 1: Compiling libfastled...")
+            libfastled_start_time = time.time()
             try:
                 libfastled_response = _compile_libfastled(host, auth_token, build_mode)
 
@@ -308,6 +358,10 @@ def web_compile(
                         stdout=stdout,
                         hash_value=None,
                         zip_bytes=b"",
+                        zip_time=zip_time,
+                        libfastled_time=libfastled_time,
+                        sketch_time=0.0,  # No sketch compilation when libfastled fails
+                        response_processing_time=0.0,  # No response processing when libfastled fails
                     )
                 else:
                     # Check for embedded HTTP status in response content
@@ -332,6 +386,10 @@ def web_compile(
                                 stdout=stdout,
                                 hash_value=None,
                                 zip_bytes=b"",
+                                zip_time=zip_time,
+                                libfastled_time=libfastled_time,
+                                sketch_time=0.0,  # No sketch compilation when libfastled fails
+                                response_processing_time=0.0,  # No response processing when libfastled fails
                             )
                             # Continue with sketch compilation even if libfastled fails
                         elif embedded_status is None:
@@ -343,7 +401,9 @@ def web_compile(
                             print("✅ libfastled compilation successful")
                     else:
                         print("✅ libfastled compilation successful")
+                libfastled_time = time.time() - libfastled_start_time
             except Exception as e:
+                libfastled_time = time.time() - libfastled_start_time
                 print(f"Warning: libfastled compilation failed: {e}")
                 # Continue with sketch compilation even if libfastled fails
         else:
@@ -351,6 +411,7 @@ def web_compile(
 
         # Step 2: Compile the sketch
         print("Step 2: Compiling sketch...")
+        sketch_start_time = time.time()
         response = _send_compile_request(
             host,
             zip_bytes,
@@ -360,8 +421,11 @@ def web_compile(
             no_platformio,
             False,  # allow_libcompile is always False since we handle it manually
         )
+        sketch_time = time.time() - sketch_start_time
 
-        return _process_compile_response(response, zip_result, start_time)
+        return _process_compile_response(
+            response, zip_result, start_time, zip_time, libfastled_time, sketch_time
+        )
 
     except ConnectionError as e:
         _print_banner(str(e))
@@ -370,6 +434,10 @@ def web_compile(
             stdout=str(e),
             hash_value=None,
             zip_bytes=b"",
+            zip_time=zip_time,
+            libfastled_time=libfastled_time,
+            sketch_time=sketch_time,
+            response_processing_time=0.0,  # No response processing in connection error case
         )
     except KeyboardInterrupt:
         print("Keyboard interrupt")
@@ -377,5 +445,12 @@ def web_compile(
     except httpx.HTTPError as e:
         print(f"Error: {e}")
         return CompileResult(
-            success=False, stdout=str(e), hash_value=None, zip_bytes=b""
+            success=False,
+            stdout=str(e),
+            hash_value=None,
+            zip_bytes=b"",
+            zip_time=zip_time,
+            libfastled_time=libfastled_time,
+            sketch_time=sketch_time,
+            response_processing_time=0.0,  # No response processing in HTTP error case
         )

@@ -122,23 +122,8 @@ def _run_web_compiler(
         (output_dir / "index.html").write_text(error_html, encoding="utf-8")
         return web_result
 
-    def print_results() -> None:
-        hash_value = (
-            web_result.hash_value
-            if web_result.hash_value is not None
-            else "NO HASH VALUE"
-        )
-        print(
-            f"\nWeb compilation successful\n  Time: {diff:.2f}\n  output: {output_dir}\n  hash: {hash_value}\n  zip size: {len(web_result.zip_bytes)} bytes"
-        )
-
-    # now check to see if the hash value is the same as the last hash value
-    if last_hash_value is not None and last_hash_value == web_result.hash_value:
-        print("\nSkipping redeploy: No significant changes found.")
-        print_results()
-        return web_result
-
     # Extract zip contents to fastled_js directory
+    extraction_start_time = time.time()
     output_dir.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -151,6 +136,52 @@ def _run_web_compiler(
 
         # Extract zip contents
         shutil.unpack_archive(temp_zip, output_dir, "zip")
+    extraction_time = time.time() - extraction_start_time
+
+    def print_results() -> None:
+        hash_value = (
+            web_result.hash_value
+            if web_result.hash_value is not None
+            else "NO HASH VALUE"
+        )
+
+        # Build timing breakdown
+        timing_breakdown = f"  Time: {diff:.2f} (seconds)"
+        if hasattr(web_result, "zip_time"):
+            timing_breakdown += f"\n     zip creation: {web_result.zip_time:.2f}"
+            if web_result.libfastled_time > 0:
+                timing_breakdown += (
+                    f"\n     libfastled: {web_result.libfastled_time:.2f}"
+                )
+            timing_breakdown += (
+                f"\n     sketch compile + link: {web_result.sketch_time:.2f}"
+            )
+            if hasattr(web_result, "response_processing_time"):
+                timing_breakdown += f"\n     response processing: {web_result.response_processing_time:.2f}"
+
+            # Calculate any unaccounted time
+            accounted_time = (
+                web_result.zip_time
+                + web_result.libfastled_time
+                + web_result.sketch_time
+                + web_result.response_processing_time
+                + extraction_time
+            )
+            unaccounted_time = diff - accounted_time
+            if extraction_time > 0.01:
+                timing_breakdown += f"\n     extraction: {extraction_time:.2f}"
+            if unaccounted_time > 0.01:
+                timing_breakdown += f"\n     other overhead: {unaccounted_time:.2f}"
+
+        print(
+            f"\nWeb compilation successful\n{timing_breakdown}\n  output: {output_dir}\n  hash: {hash_value}\n  zip size: {len(web_result.zip_bytes)} bytes"
+        )
+
+    # now check to see if the hash value is the same as the last hash value
+    if last_hash_value is not None and last_hash_value == web_result.hash_value:
+        print("\nSkipping redeploy: No significant changes found.")
+        print_results()
+        return web_result
 
     _chunked_print(web_result.stdout)
     print_results()
