@@ -1,41 +1,55 @@
 {
-    // See https://go.microsoft.com/fwlink/?LinkId=733558
-    // for the documentation about the tasks.json format
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Lint",
             "type": "shell",
-            "command": ". ./activate.sh && ./lint.sh",
-            "group": "build",
+            "label": "Run FastLED (Debug)",
+            "command": "fastled",
+            "args": [
+                "${file}",
+                "--debug",
+                "--app"
+            ],
             "options": {
-                "cwd": "${workspaceRoot}"
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
             },
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": true,
-                "panel": "shared",
+                "panel": "new",
+                "showReuseMessage": false,
                 "clear": true
             },
+            "detail": "Run FastLED with debug mode and app visualization",
             "problemMatcher": []
         },
         {
-            "label": "Tox",
             "type": "shell",
-            "command": "tox",
-            "group": "build",
+            "label": "Run FastLED (Quick)",
+            "command": "fastled",
+            "args": [
+                "${file}",
+                "--background-update"
+            ],
             "options": {
-                "cwd": "${workspaceRoot}"
+                "cwd": "${workspaceFolder}"
             },
+            "group": "build",
             "presentation": {
                 "echo": true,
                 "reveal": "always",
                 "focus": true,
-                "panel": "shared",
+                "panel": "new",
+                "showReuseMessage": false,
                 "clear": true
             },
+            "detail": "Run FastLED with quick background update mode",
             "problemMatcher": []
-        },
+        }
     ]
 }

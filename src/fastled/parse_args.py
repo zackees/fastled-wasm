@@ -170,6 +170,24 @@ def parse_args() -> Args:
         help="Remove all FastLED containers and images",
     )
 
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help="Install FastLED development environment with VSCode configuration and Auto Debug extension",
+    )
+
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run in dry-run mode (simulate actions without making changes)",
+    )
+
+    parser.add_argument(
+        "--no-interactive",
+        action="store_true",
+        help="Run in non-interactive mode (fail instead of prompting for input)",
+    )
+
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
     build_mode.add_argument(
@@ -184,6 +202,28 @@ def parse_args() -> Args:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+
+    # Auto-enable app mode if debug is used and Playwright cache exists
+    if args.debug and not args.app:
+        playwright_dir = Path.home() / ".fastled" / "playwright"
+        if playwright_dir.exists() and any(playwright_dir.iterdir()):
+            print(
+                "🎭 Detected Playwright cache - automatically enabling app mode for debug"
+            )
+            args.app = True
+        elif not args.no_interactive:
+            # Prompt user to install Playwright only if not in no-interactive mode
+            answer = (
+                input("Would you like to install the FastLED debugger? [y/n] ")
+                .strip()
+                .lower()
+            )
+            if answer in ["y", "yes"]:
+                print(
+                    "📦 To install Playwright, run: pip install playwright && python -m playwright install"
+                )
+                print("Then run your command again with --app flag")
+                sys.exit(0)
 
     # TODO: propagate the library.
     # from fastled.docker_manager import force_remove_previous
@@ -203,6 +243,11 @@ def parse_args() -> Args:
     #     msg = banner_string(f"Setting tmpfs size to {args.ram_disk_size}")
     #     print(msg)
     #     set_ramdisk_size(args.ram_disk_size)
+
+    # Handle --install early before other processing
+    if args.install:
+        # Don't process other arguments when --install is used
+        return Args.from_namespace(args)
 
     if args.purge:
         from fastled.docker_manager import DockerManager

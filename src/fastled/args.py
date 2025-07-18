@@ -26,6 +26,9 @@ class Args:
     release: bool
     ram_disk_size: str  # suffixed liked "25mb" or "1gb"
     clear = False  # Force the last running container to be removed. Useful for benchmarking.
+    install: bool = False  # Install FastLED development environment
+    dry_run: bool = False  # Dry run mode for testing
+    no_interactive: bool = False  # Non-interactive mode
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -72,6 +75,15 @@ class Args:
         assert isinstance(
             args.release, bool
         ), f"expected bool, got {type(args.release)}"
+        assert isinstance(
+            args.install, bool
+        ), f"expected bool, got {type(args.install)}"
+        assert isinstance(
+            args.dry_run, bool
+        ), f"expected bool, got {type(args.dry_run)}"
+        assert isinstance(
+            args.no_interactive, bool
+        ), f"expected bool, got {type(args.no_interactive)}"
 
         init: bool | str = False
         if args.init is None:
@@ -101,4 +113,7 @@ class Args:
             quick=args.quick,
             release=args.release,
             ram_disk_size=args.ram_disk_size,
+            install=args.install,
+            dry_run=args.dry_run,
+            no_interactive=args.no_interactive,
         )

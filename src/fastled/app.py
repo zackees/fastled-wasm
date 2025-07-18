@@ -51,6 +51,16 @@ def main() -> int:
     from fastled.select_sketch_directory import select_sketch_directory
 
     args = parse_args()
+
+    # Handle --install command early
+    if args.install:
+        from fastled.install.main import fastled_install
+
+        result = fastled_install(
+            dry_run=args.dry_run, no_interactive=args.no_interactive
+        )
+        return 0 if result else 1
+
     interactive: bool = args.interactive
     has_server = args.server
     update: bool = args.update
