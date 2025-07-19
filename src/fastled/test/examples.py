@@ -2,6 +2,8 @@ from tempfile import TemporaryDirectory
 from time import time
 from warnings import warn
 
+from fastled.emoji_util import safe_print
+
 _FILTER = True
 
 
@@ -18,21 +20,21 @@ def test_examples(
         examples.remove("LuminescentGrand")
     with TemporaryDirectory() as tmpdir:
         for example in examples:
-            print(f"Initializing example: {example}")
+            safe_print(f"Initializing example: {example}")
             try:
                 sketch_dir = Api.project_init(example, outputdir=tmpdir, host=host)
             except Exception as e:
                 warn(f"Failed to initialize example: {example}, error: {e}")
                 out[example] = e
                 continue
-            print(f"Project initialized at: {sketch_dir}")
+            safe_print(f"Project initialized at: {sketch_dir}")
             start = time()
-            print(f"Compiling example: {example}")
+            safe_print(f"Compiling example: {example}")
             diff = time() - start
-            print(f"Compilation took: {diff:.2f} seconds")
+            safe_print(f"Compilation took: {diff:.2f} seconds")
             result = Api.web_compile(sketch_dir, host=host)
             if not result.success:
-                print(f"Compilation failed for {example}: {result.stdout}")
+                safe_print(f"Compilation failed for {example}: {result.stdout}")
                 out[example] = Exception(result.stdout)
     return out
 

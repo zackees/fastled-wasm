@@ -370,7 +370,7 @@ def run_client(
     # Auto-detect libcompile capability on first call
     from fastled.sketch import looks_like_fastled_repo
 
-    allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
+    allow_libcompile = is_local_host and looks_like_fastled_repo(Path(".").resolve())
 
     try:
 

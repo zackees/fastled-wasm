@@ -8,6 +8,7 @@ from pathlib import Path
 
 import httpx
 
+from fastled.emoji_util import EMO, safe_print
 from fastled.find_good_connection import find_good_connection
 from fastled.interruptible_http import make_interruptible_post_request
 from fastled.settings import AUTH_TOKEN, SERVER_PORT
@@ -89,7 +90,7 @@ def _banner(msg: str) -> str:
 
 
 def _print_banner(msg: str) -> None:
-    print(_banner(msg))
+    safe_print(_banner(msg))
 
 
 def _compile_libfastled(
@@ -144,7 +145,6 @@ def _send_compile_request(
     build_mode: BuildMode,
     profile: bool,
     no_platformio: bool,
-    allow_libcompile: bool,
 ) -> httpx.Response:
     """Send the compile request to the server and return the response."""
     host = _sanitize_host(host)
@@ -293,6 +293,11 @@ def _process_compile_response(
         )
 
 
+def _libcompiled_is_allowed(host: str) -> bool:
+    """Check if libcompiled is allowed for the given host."""
+    return "localhost" in host or "127.0.0.1" in host or "0.0.0.0" in host
+
+
 def web_compile(
     directory: Path | str,
     host: str | None = None,
@@ -311,6 +316,12 @@ def web_compile(
     auth_token = auth_token or AUTH_TOKEN
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
+
+    if allow_libcompile and not _libcompiled_is_allowed(host):
+        print(
+            f"{EMO('🚫', '[ERROR]')} libcompile is not allowed for host {host}, disabling."
+        )
+        allow_libcompile = False
 
     # Time the zip creation
     zip_start_time = time.time()
@@ -419,7 +430,6 @@ def web_compile(
             build_mode,
             profile,
             no_platformio,
-            False,  # allow_libcompile is always False since we handle it manually
         )
         sketch_time = time.time() - sketch_start_time
 

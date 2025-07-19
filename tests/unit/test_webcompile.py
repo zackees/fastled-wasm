@@ -2,6 +2,7 @@ import time
 import unittest
 from pathlib import Path
 
+from fastled.emoji_util import safe_print
 from fastled.web_compile import _check_embedded_http_status, web_compile
 
 HERE = Path(__file__).parent
@@ -29,9 +30,9 @@ class WebCompileTester(unittest.TestCase):
         self.assertTrue(len(result.zip_bytes) > 0)
 
         # Print compilation output for debugging
-        print(f"Compilation stdout:\n{result.stdout}")
+        safe_print(f"Compilation stdout:\n{result.stdout}")
 
-        print(f"Zip size: {len(result.zip_bytes)} bytes")
+        safe_print(f"Zip size: {len(result.zip_bytes)} bytes")
 
     def test_invalid_directory(self) -> None:
         """Test handling of invalid directory."""

@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 from fastled.compile_server_impl import CompileServerImpl
+from fastled.emoji_util import EMO, safe_print
 from fastled.settings import AUTH_TOKEN
 from fastled.types import BuildMode, CompileResult
 
@@ -55,7 +56,9 @@ void loop() {
 
     def download_fastled_source(self, temp_dir: Path) -> Path:
         """Download FastLED source from GitHub master branch."""
-        print("📥 Downloading FastLED source from GitHub...")
+        safe_print(
+            f"{EMO('📥', 'DOWNLOAD:')} Downloading FastLED source from GitHub..."
+        )
 
         # GitHub URL for downloading the master branch as a zip
         github_zip_url = (
@@ -67,7 +70,7 @@ void loop() {
             response = client.get(github_zip_url, follow_redirects=True)
             response.raise_for_status()
 
-        print(f"✅ Downloaded {len(response.content)} bytes")
+        safe_print(f"✅ Downloaded {len(response.content)} bytes")
 
         # Save and extract the zip
         zip_path = temp_dir / "fastled-master.zip"
@@ -86,7 +89,7 @@ void loop() {
             raise RuntimeError("Could not find extracted FastLED directory")
 
         fastled_dir = fastled_dirs[0]
-        print(f"✅ Extracted FastLED source to: {fastled_dir}")
+        safe_print(f"✅ Extracted FastLED source to: {fastled_dir}")
 
         # Verify it has the expected structure
         src_dir = fastled_dir / "src"
@@ -97,7 +100,7 @@ void loop() {
         if not library_props.exists():
             raise RuntimeError(f"FastLED library.properties not found: {library_props}")
 
-        print(f"✅ Verified FastLED structure - src: {src_dir}")
+        safe_print(f"✅ Verified FastLED structure - src: {src_dir}")
         return fastled_dir
 
     def create_test_sketch(self, temp_dir: Path) -> Path:
@@ -109,14 +112,14 @@ void loop() {
         sketch_file = sketch_dir / "test_sketch.ino"
         sketch_file.write_text(self.test_sketch_content, encoding="utf-8")
 
-        print(f"✅ Created test sketch: {sketch_file}")
+        safe_print(f"✅ Created test sketch: {sketch_file}")
         return sketch_dir
 
     def create_server_with_volume_mapping(
         self, fastled_src_dir: Path
     ) -> CompileServerImpl:
         """Create a CompileServerImpl with manual volume mapping to FastLED source."""
-        print(f"🔧 Setting up server with volume mapping to: {fastled_src_dir}")
+        safe_print(f"🔧 Setting up server with volume mapping to: {fastled_src_dir}")
 
         # Mock the _try_get_fastled_src function to return our downloaded FastLED source
         from unittest import mock
@@ -151,9 +154,9 @@ void loop() {
         if not server_impl.allow_libcompile:
             raise RuntimeError("libcompile should be allowed with volume mapping")
 
-        print("✅ Server configured with volume mapping")
-        print(f"   FastLED src: {server_impl.fastled_src_dir}")
-        print(f"   Allow libcompile: {server_impl.allow_libcompile}")
+        safe_print("✅ Server configured with volume mapping")
+        safe_print(f"   FastLED src: {server_impl.fastled_src_dir}")
+        safe_print(f"   Allow libcompile: {server_impl.allow_libcompile}")
 
         # Now start the server
         server_impl.start()
@@ -166,7 +169,7 @@ void loop() {
 
         with tempfile.TemporaryDirectory() as temp_dir_str:
             temp_dir = Path(temp_dir_str)
-            print(f"🗂️  Using temporary directory: {temp_dir}")
+            safe_print(f"🗂️  Using temporary directory: {temp_dir}")
 
             try:
                 # Step 1: Download FastLED source from GitHub
@@ -190,7 +193,7 @@ void loop() {
                     )
 
                     # Step 5: Test libfastled compilation by compiling our test sketch
-                    print("🔨 Testing libfastled compilation...")
+                    safe_print("🔨 Testing libfastled compilation...")
 
                     result: CompileResult = server_impl.web_compile(
                         directory=sketch_dir,
@@ -198,7 +201,9 @@ void loop() {
                         profile=False,
                     )
 
-                    print(f"🔨 Compilation result: {result.stdout}")
+                    safe_print(
+                        f"{EMO('🔨', 'BUILD:')} Compilation result: {result.stdout}"
+                    )
 
                     # Step 6: Verify compilation was successful
                     self.assertTrue(
@@ -224,28 +229,32 @@ void loop() {
                     )
 
                     if not has_libfastled_indicators:
-                        print("⚠️  No clear libfastled indicators found in output")
-                        print("📋 Compilation output:")
-                        print(result.stdout)
+                        safe_print(
+                            f"{EMO('⚠️', 'WARNING:')}  No clear libfastled indicators found in output"
+                        )
+                        safe_print(f"{EMO('📋', 'OUTPUT:')} Compilation output:")
+                        safe_print(result.stdout)
 
-                    print("✅ libfastled compilation test completed successfully!")
-                    print("📊 Compilation stats:")
-                    print(f"   Success: {result.success}")
-                    print(f"   Output size: {len(result.zip_bytes)} bytes")
-                    print(f"   Hash: {result.hash_value}")
+                    safe_print("✅ libfastled compilation test completed successfully!")
+                    safe_print("📊 Compilation stats:")
+                    safe_print(f"   Success: {result.success}")
+                    safe_print(f"   Output size: {len(result.zip_bytes)} bytes")
+                    safe_print(f"   Hash: {result.hash_value}")
 
                     # Step 8: Test that libcompile fails when FastLED source is corrupted
-                    print("\n🔨 Testing libfastled compilation failure...")
+                    safe_print("\n🔨 Testing libfastled compilation failure...")
 
                     # Corrupt the FastLED source by adding an error directive
                     fastled_cpp_path = (
                         fastled_dir / "src" / "sensors" / "digital_pin.cpp.hpp"
                     )
                     if not fastled_cpp_path.exists():
-                        print(f"⚠️  FastLED source file not found: {fastled_cpp_path}")
-                        print("Available files in src:")
+                        safe_print(
+                            f"{EMO('⚠️', 'WARNING:')}  FastLED source file not found: {fastled_cpp_path}"
+                        )
+                        safe_print(f"{EMO('📋', 'AVAILABLE:')} Available files in src:")
                         for f in (fastled_dir / "src").iterdir():
-                            print(f"  {f.name}")
+                            safe_print(f"  {f.name}")
                         self.fail(f"FastLED source file not found: {fastled_cpp_path}")
                     else:
                         # Read the original content and append the error directive
@@ -254,10 +263,10 @@ void loop() {
                             original_content + '\n#error "Should fail"\n'
                         )
                         fastled_cpp_path.write_text(corrupted_content, encoding="utf-8")
-                        print(f"✅ Added error directive to {fastled_cpp_path}")
+                        safe_print(f"✅ Added error directive to {fastled_cpp_path}")
 
                         # Try to compile libfastled directly via HTTP endpoint - this should fail with 400
-                        print(
+                        safe_print(
                             "🔨 Attempting libfastled compilation with corrupted source..."
                         )
 
@@ -280,25 +289,25 @@ void loop() {
                             "Should have HTTP_STATUS: 400 in response",
                         )
 
-                        print(
+                        safe_print(
                             "✅ libfastled compilation correctly failed with 400 HTTP status!"
                         )
-                        print("📊 Failed compilation stats:")
-                        print(f"   Response length: {len(response.text)} chars")
+                        safe_print("📊 Failed compilation stats:")
+                        safe_print(f"   Response length: {len(response.text)} chars")
 
                         # Restore the original content for cleanup
                         fastled_cpp_path.write_text(original_content, encoding="utf-8")
-                        print("✅ Restored original FastLED source content")
+                        safe_print("✅ Restored original FastLED source content")
 
                 finally:
                     # Clean up server
                     try:
                         server_impl.stop()
                     except Exception as e:
-                        print(f"Warning during server cleanup: {e}")
+                        safe_print(f"Warning during server cleanup: {e}")
 
             except Exception as e:
-                print(f"❌ Test failed: {e}")
+                safe_print(f"❌ Test failed: {e}")
                 raise
 
     @unittest.skipUnless(_enabled(), "Requires Docker for libcompile testing")
@@ -338,7 +347,7 @@ void loop() {
                     f"Compilation should still succeed without libfastled. Output: {result.stdout}",
                 )
 
-                print(
+                safe_print(
                     "✅ Verified libcompile is properly disabled without volume mapping"
                 )
 
@@ -346,7 +355,7 @@ void loop() {
                 try:
                     server_impl.stop()
                 except Exception as e:
-                    print(f"Warning during server cleanup: {e}")
+                    safe_print(f"Warning during server cleanup: {e}")
 
 
 if __name__ == "__main__":
