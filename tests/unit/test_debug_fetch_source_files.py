@@ -1,4 +1,5 @@
 import os
+import random
 import time
 import unittest
 import warnings
@@ -59,7 +60,8 @@ class FetchSourceFileTester(unittest.TestCase):
     )
     def test_http_server_for_fetch_redirect(self) -> None:
         """Tests that we can convert the file paths from emscripten debugging (dwarf) to the actual file paths."""
-        http_port = 8932
+        # Use random port to avoid conflicts when tests run in parallel
+        http_port = random.randint(8900, 8999)
         client: LiveClient = Api.live_client(
             sketch_directory=TEST_INO_WASM,
             auto_updates=False,
