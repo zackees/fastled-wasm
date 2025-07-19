@@ -10,6 +10,7 @@ from pathlib import Path
 
 from fastled.compile_server import CompileServer
 from fastled.docker_manager import DockerManager
+from fastled.emoji_util import EMO
 from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
 from fastled.find_good_connection import ConnectionResult
 from fastled.keyboard import SpaceBarWatcher
@@ -100,7 +101,7 @@ def _run_web_compiler(
 
     # Guard: libfastled compilation requires volume source mapping
     if not allow_libcompile:
-        print("⚠️  libfastled compilation disabled.")
+        print(f"{EMO('⚠️', 'WARNING:')}  libfastled compilation disabled.")
 
     start = time.time()
     web_result = web_compile(
@@ -283,16 +284,20 @@ def _background_update_docker_image() -> None:
             image_name=IMAGE_NAME, tag="latest", upgrade=True
         )
         if updated:
-            print("✅ Background docker image update completed successfully.")
+            print(
+                f"{EMO('✅', 'SUCCESS:')} Background docker image update completed successfully."
+            )
         else:
-            print("ℹ️  Docker image was already up to date.")
+            print(f"{EMO('ℹ️', 'INFO:')}  Docker image was already up to date.")
     except KeyboardInterrupt:
-        print("⚠️  Background docker image update interrupted by user.")
+        print(
+            f"{EMO('⚠️', 'WARNING:')}  Background docker image update interrupted by user."
+        )
         import _thread
 
         _thread.interrupt_main()
     except Exception as e:
-        print(f"⚠️  Background docker image update failed: {e}")
+        print(f"{EMO('⚠️', 'WARNING:')}  Background docker image update failed: {e}")
 
 
 def _is_local_host(url: str) -> bool:

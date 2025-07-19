@@ -15,6 +15,7 @@ from fastled.docker_manager import (
     RunningContainer,
     Volume,
 )
+from fastled.emoji_util import EMO
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
@@ -76,7 +77,7 @@ class CompileServerImpl:
         # If we don't have fastled_src_dir (not in FastLED repo), disable libcompile
         if allow_libcompile and self.fastled_src_dir is None:
             print(
-                "⚠️  libfastled compilation disabled: volume source mapping not available"
+                f"{EMO('⚠️', 'WARNING:')}  libfastled compilation disabled: volume source mapping not available"
             )
             print("   (not running in FastLED repository)")
             allow_libcompile = False

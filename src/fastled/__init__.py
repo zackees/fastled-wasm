@@ -7,6 +7,7 @@ from typing import Generator
 
 from .__version__ import __version__
 from .compile_server import CompileServer
+from .emoji_util import EMO
 from .live_client import LiveClient
 from .settings import DOCKER_FILE, IMAGE_NAME
 from .site.build import build
@@ -54,7 +55,7 @@ class Api:
         allow_libcompile = looks_like_fastled_repo(Path(".").resolve())
         if not allow_libcompile:
             print(
-                "⚠️  libfastled compilation disabled: not running in FastLED repository"
+                f"{EMO('⚠️', 'WARNING:')}  libfastled compilation disabled: not running in FastLED repository"
             )
 
         out: CompileResult = web_compile(

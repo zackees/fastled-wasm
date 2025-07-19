@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastled.client_server import run_client_server
 from fastled.compile_server import CompileServer
+from fastled.emoji_util import EMO
 from fastled.filewatcher import file_watcher_set
 from fastled.parse_args import Args, parse_args
 from fastled.sketch import find_sketch_directories, looks_like_fastled_repo
@@ -79,7 +80,7 @@ def main() -> int:
     # Check if Playwright browsers are installed
     playwright_dir = Path.home() / ".fastled" / "playwright"
     if playwright_dir.exists() and any(playwright_dir.iterdir()):
-        print(f"🎭 Playwright browsers available at: {playwright_dir}")
+        print(f"{EMO('🎭', '*')} Playwright browsers available at: {playwright_dir}")
 
     # Resolve some of the last interactive arguments
     # 1. If interactive is set and the sketch directory is not given,
