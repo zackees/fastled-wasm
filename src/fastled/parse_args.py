@@ -207,8 +207,10 @@ def parse_args() -> Args:
     if args.debug and not args.app:
         playwright_dir = Path.home() / ".fastled" / "playwright"
         if playwright_dir.exists() and any(playwright_dir.iterdir()):
+            from fastled.emoji_util import EMO
+
             print(
-                "🎭 Detected Playwright cache - automatically enabling app mode for debug"
+                f"{EMO('⚠️', 'WARNING:')} Debug mode detected with Playwright installed - automatically enabling app mode"
             )
             args.app = True
         elif not args.no_interactive:
