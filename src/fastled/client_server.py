@@ -276,28 +276,30 @@ def _try_make_compile_server(
 
 
 def _background_update_docker_image() -> None:
-    """Perform docker image update in the background."""
+    """Perform docker image update in the background silently."""
     try:
-        print("\n🔄 Starting background update of docker image...")
+        # Only attempt update if Docker is installed and running
+        if not DockerManager.is_docker_installed():
+            return
+
         docker_manager = DockerManager()
-        updated = docker_manager.validate_or_download_image(
+        docker_running, _ = docker_manager.is_running()
+        if not docker_running:
+            return
+
+        # Silently update the docker image
+        docker_manager.validate_or_download_image(
             image_name=IMAGE_NAME, tag="latest", upgrade=True
         )
-        if updated:
-            print(
-                f"{EMO('✅', 'SUCCESS:')} Background docker image update completed successfully."
-            )
-        else:
-            print(f"{EMO('ℹ️', 'INFO:')}  Docker image was already up to date.")
     except KeyboardInterrupt:
-        print(
-            f"{EMO('⚠️', 'WARNING:')}  Background docker image update interrupted by user."
-        )
         import _thread
 
         _thread.interrupt_main()
     except Exception as e:
-        print(f"{EMO('⚠️', 'WARNING:')}  Background docker image update failed: {e}")
+        # Log warning but don't disrupt user experience
+        import warnings
+
+        warnings.warn(f"Background docker image update failed: {e}")
 
 
 def _is_local_host(url: str) -> bool:

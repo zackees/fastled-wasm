@@ -509,9 +509,12 @@ class DockerManager:
                     # Quick check for latest version
                     with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
                         cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
-                        cmd_str = subprocess.list2cmdline(cmd_list)
-                        print(f"Running command: {cmd_str}")
-                        subprocess.run(cmd_list, check=True)
+                        subprocess.run(
+                            cmd_list,
+                            check=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     assert local_image_hash is not None
@@ -524,9 +527,12 @@ class DockerManager:
                 with Spinner("Loading "):
                     # We use docker cli here because it shows the download.
                     cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
-                    cmd_str = subprocess.list2cmdline(cmd_list)
-                    print(f"Running command: {cmd_str}")
-                    subprocess.run(cmd_list, check=True)
+                    subprocess.run(
+                        cmd_list,
+                        check=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
                 try:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id
