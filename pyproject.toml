@@ -26,7 +26,7 @@ dependencies = [
     "livereload",
     "disklru>=2.0.4",
     "playwright>=1.40.0",
-
+    "websockify>=0.13.0",
 ]
 
 dynamic = ["version"]
