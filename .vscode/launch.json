@@ -2,13 +2,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "\ud83c\udfaf Auto Debug (Smart File Detection)",
+            "name": "🎯 Auto Debug (Smart File Detection)",
             "type": "auto-debug",
             "request": "launch",
             "map": {
                 "*.ino": "Arduino: Run .ino with FastLED",
                 "*.py": "Python: Current File (UV)"
             }
+        },
+        {
+            "name": "Python: Current File (UV)",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}/src"
+            },
+            "justMyCode": true
         }
     ]
 }
