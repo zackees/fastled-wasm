@@ -187,6 +187,12 @@ def parse_args() -> Args:
         action="store_true",
         help="Run in non-interactive mode (fail instead of prompting for input)",
     )
+    parser.add_argument(
+        "--emsdk-headers",
+        type=str,
+        default=None,
+        help="Export EMSDK headers ZIP to specified path",
+    )
 
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")

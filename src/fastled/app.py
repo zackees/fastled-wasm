@@ -12,6 +12,7 @@ from fastled.compile_server import CompileServer
 from fastled.emoji_util import EMO
 from fastled.filewatcher import file_watcher_set
 from fastled.parse_args import Args, parse_args
+from fastled.settings import DEFAULT_URL
 from fastled.sketch import find_sketch_directories, looks_like_fastled_repo
 
 
@@ -52,6 +53,31 @@ def main() -> int:
     from fastled.select_sketch_directory import select_sketch_directory
 
     args = parse_args()
+
+    if args.emsdk_headers:
+        import httpx
+
+        out_path = args.emsdk_headers
+        base_url = args.web if isinstance(args.web, str) else DEFAULT_URL
+        try:
+            response = httpx.get(f"{base_url}/headers/emsdk")
+            if response.status_code == 200:
+                Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(out_path, "wb") as f:
+                    f.write(response.content)
+                print(f"{EMO('✅','SUCCESS:')} EMSDK headers exported to {out_path}")
+                return 0
+            else:
+                print(
+                    f"{EMO('❌','ERROR:')} Failed to export EMSDK headers: HTTP {response.status_code}"
+                )
+                return 1
+        except KeyboardInterrupt:
+            print("\nExiting from main...")
+            return 1
+        except Exception as e:
+            print(f"{EMO('❌','ERROR:')} Exception: {e}")
+            return 1
 
     # Handle --install command early
     if args.install:

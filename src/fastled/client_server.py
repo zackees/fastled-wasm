@@ -418,11 +418,14 @@ def run_client(
                 app=app,
             )
         else:
-            print("\nCompilation successful.")
+            if result.success:
+                print("\nCompilation successful.")
+            else:
+                print("\nCompilation failed.")
             if compile_server:
                 print("Shutting down compile server...")
                 compile_server.stop()
-            return 0
+            return 0 if result.success else 1
 
         if not keep_running or shutdown.is_set():
             if http_proc:

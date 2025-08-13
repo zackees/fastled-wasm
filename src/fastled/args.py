@@ -29,6 +29,7 @@ class Args:
     install: bool = False  # Install FastLED development environment
     dry_run: bool = False  # Dry run mode for testing
     no_interactive: bool = False  # Non-interactive mode
+    emsdk_headers: str | None = None  # Path to export EMSDK headers ZIP
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -84,6 +85,9 @@ class Args:
         assert isinstance(
             args.no_interactive, bool
         ), f"expected bool, got {type(args.no_interactive)}"
+        assert isinstance(
+            args.emsdk_headers, str | None
+        ), f"expected str | None, got {type(args.emsdk_headers)}"
 
         init: bool | str = False
         if args.init is None:
@@ -115,5 +119,6 @@ class Args:
             ram_disk_size=args.ram_disk_size,
             install=args.install,
             dry_run=args.dry_run,
+            emsdk_headers=args.emsdk_headers,
             no_interactive=args.no_interactive,
         )
