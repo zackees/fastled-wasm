@@ -36,6 +36,7 @@ FastLED WASM Compiler - Useful options:
   --update              Update the docker image for the wasm compiler
   --background-update   Update the docker image in the background after compilation
   --purge               Remove all FastLED containers and images
+  --emsdk-headers <path> Export EMSDK headers ZIP to specified path
   --version             Show version information
   --help                Show detailed help
 Examples:
@@ -208,6 +209,35 @@ def parse_args() -> Args:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+
+    # Handle --emsdk-headers early before other processing
+    if args.emsdk_headers:
+        import httpx
+
+        out_path = args.emsdk_headers
+        base_url = args.web if isinstance(args.web, str) else DEFAULT_URL
+        try:
+            timeout = httpx.Timeout(
+                30.0, read=30.0
+            )  # 30 second timeout for read operations
+            with httpx.stream(
+                "GET", f"{base_url}/headers/emsdk", timeout=timeout
+            ) as response:
+                if response.status_code == 200:
+                    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+                    with open(out_path, "wb") as f:
+                        for chunk in response.iter_bytes(chunk_size=512000):
+                            f.write(chunk)
+                    print(f"SUCCESS: EMSDK headers exported to {out_path}")
+                    sys.exit(0)
+                else:
+                    print(
+                        f"ERROR: Failed to export EMSDK headers: HTTP {response.status_code}"
+                    )
+                    sys.exit(1)
+        except Exception as e:
+            print(f"ERROR: Exception: {e}")
+            sys.exit(1)
 
     # Auto-enable app mode if debug is used and Playwright cache exists
     if args.debug and not args.app:
