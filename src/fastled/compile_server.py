@@ -101,3 +101,9 @@ class CompileServer:
 
     def process_running(self) -> bool:
         return self.impl.process_running()
+
+    def get_emsdk_headers(self, filepath: Path) -> None:
+        """Get EMSDK headers ZIP data from the server and save to filepath."""
+        if not str(filepath).endswith(".zip"):
+            raise ValueError("Filepath must end with .zip")
+        return self.impl.get_emsdk_headers(filepath)

@@ -52,3 +52,37 @@ def find_free_port(start_port: int, end_port: int) -> int | None:
         f"No free port found in the range {start_port}-{end_port}. Using {start_port}."
     )
     return None
+
+
+def download_emsdk_headers(base_url: str, filepath: Path) -> None:
+    """Download EMSDK headers from the specified URL and save to filepath.
+
+    Args:
+        base_url: Base URL of the server (e.g., 'http://localhost:8080')
+        filepath: Path where to save the headers ZIP file (must end with .zip)
+
+    Raises:
+        ValueError: If filepath doesn't end with .zip
+        RuntimeError: If download fails or server returns error
+    """
+    if not str(filepath).endswith(".zip"):
+        raise ValueError("Filepath must end with .zip")
+
+    import httpx
+
+    try:
+        timeout = httpx.Timeout(30.0, read=30.0)
+        with httpx.stream(
+            "GET", f"{base_url}/headers/emsdk", timeout=timeout
+        ) as response:
+            if response.status_code == 200:
+                filepath.parent.mkdir(parents=True, exist_ok=True)
+                with open(filepath, "wb") as f:
+                    for chunk in response.iter_bytes(chunk_size=512000):
+                        f.write(chunk)
+            else:
+                raise RuntimeError(
+                    f"Failed to get EMSDK headers: HTTP {response.status_code}"
+                )
+    except Exception as e:
+        raise RuntimeError(f"Error downloading EMSDK headers: {e}") from e

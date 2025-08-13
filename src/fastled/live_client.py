@@ -99,3 +99,15 @@ class LiveClient:
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.finalize()
+
+    def get_emsdk_headers(self, filepath: Path) -> None:
+        """Get EMSDK headers ZIP data from the server and save to filepath."""
+        if isinstance(self.host, CompileServer):
+            self.host.get_emsdk_headers(filepath)
+        else:
+            # Handle string host or None case by using web_compile approach
+            from fastled.settings import DEFAULT_URL
+            from fastled.util import download_emsdk_headers
+
+            base_url = self.host if isinstance(self.host, str) else DEFAULT_URL
+            download_emsdk_headers(base_url, filepath)

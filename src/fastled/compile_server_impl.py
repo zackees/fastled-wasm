@@ -338,3 +338,14 @@ class CompileServerImpl:
         self.docker.suspend_container(self.container_name)
         self._port = 0
         print("Compile server stopped")
+
+    def get_emsdk_headers(self, filepath: Path) -> None:
+        """Get EMSDK headers ZIP data from the server and save to filepath."""
+        from fastled.util import download_emsdk_headers
+
+        if not self._port:
+            raise RuntimeError("Server has not been started yet")
+        if not self.ping():
+            raise RuntimeError("Server is not running")
+
+        download_emsdk_headers(self.url(), filepath)
