@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Unit test file demonstrating manual API invocation of fastled-wasm-server.
 
