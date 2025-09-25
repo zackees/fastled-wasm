@@ -80,14 +80,100 @@ def string_diff(
     exact_matches = [s for s in string_list if s == input_string]
     substring_matches = [s for s in string_list if input_string in s]
 
-    # If there's an exact match AND other substring matches, return all substring matches
-    # This provides better user experience for partial matching
-    if exact_matches and len(substring_matches) > 1:
-        out: list[tuple[float, str]] = []
-        for i, s in enumerate(substring_matches):
-            s_mapped = map_string.get(s, s)
-            out.append((i, s_mapped))
-        return out
+    # If there's exactly one exact match, and there are substring matches,
+    # check if we should prioritize the exact match or return all variants
+    if len(exact_matches) == 1 and len(substring_matches) > 1:
+        exact_match = exact_matches[0]
+        other_substring_matches = [s for s in substring_matches if s != exact_match]
+
+        # Prioritize exact match only if it appears at the start of other matches
+        # AND those matches have a camelCase boundary (indicating compound words)
+        # We need to use the original (non-lowercased) strings for camelCase detection
+        should_prioritize_exact = True
+        original_exact_match = map_string[exact_match]  # Get the original casing
+
+        for other_match in other_substring_matches:
+            original_other_match = map_string[other_match]  # Get the original casing
+
+            if not original_other_match.lower().startswith(
+                original_exact_match.lower()
+            ):
+                # If the exact match isn't at the start, don't prioritize
+                should_prioritize_exact = False
+                break
+
+            # Check for camelCase boundary after the exact match in the ORIGINAL string
+            remainder = original_other_match[len(original_exact_match) :]
+            if remainder and remainder[0].isupper():
+                # Only prioritize exact match if the exact match is very short (4 chars or less)
+                # AND the remainder suggests a different concept
+                if len(original_exact_match) <= 4 and len(remainder) >= 6:
+                    # This looks like a camelCase compound word (e.g., "wasm" -> "WasmScreenCoords")
+                    continue
+                else:
+                    # This looks like a variant (e.g., "Noise" -> "NoisePlayground", "Fire2012" -> "Fire2012WithPalette")
+                    should_prioritize_exact = False
+                    break
+            else:
+                # This looks like a variant/extension (e.g., "Blur" -> "Blur2d")
+                should_prioritize_exact = False
+                break
+
+        if should_prioritize_exact:
+            out: list[tuple[float, str]] = []
+            for i, s in enumerate(exact_matches):
+                s_mapped = map_string.get(s, s)
+                out.append((i, s_mapped))
+            return out
+        else:
+            # Apply character count filtering only for very specific compound terms
+            # Main criteria: contains numbers AND ends with numbers/letters (like Wave2d, Fire2012)
+            original_exact_match = map_string[exact_match]
+            should_apply_char_filter = (
+                len(original_exact_match) >= 5  # Longer terms
+                and any(c.isdigit() for c in original_exact_match)  # Contains numbers
+                and (
+                    original_exact_match[-1].isdigit()
+                    or original_exact_match[-1].islower()
+                )  # Ends specifically (compound pattern)
+            )
+
+            if should_apply_char_filter:
+                # Filter substring matches based on extra character count
+                # Use a more lenient threshold for shorter base terms
+                if len(original_exact_match) <= 6:
+                    # For short terms, allow more extra chars (e.g., "Wave2d" + "FxWave2d")
+                    MAX_EXTRA_CHARS = min(10, len(original_exact_match) * 2)
+                else:
+                    # For longer terms, allow significant extensions (e.g., "Fire2012" + "Fire2012WithPalette")
+                    MAX_EXTRA_CHARS = 12
+
+                filtered_matches = []
+
+                for s in substring_matches:
+                    original_s = map_string[s]
+                    if s == exact_match:
+                        # Always include the exact match
+                        filtered_matches.append(s)
+                    else:
+                        # Calculate extra characters
+                        extra_chars = len(original_s) - len(original_exact_match)
+                        if extra_chars <= MAX_EXTRA_CHARS:
+                            filtered_matches.append(s)
+
+                # Return filtered matches
+                out: list[tuple[float, str]] = []
+                for i, s in enumerate(filtered_matches):
+                    s_mapped = map_string.get(s, s) or s
+                    out.append((i, s_mapped))
+                return out
+            else:
+                # Return all substring matches (original behavior for base terms)
+                out: list[tuple[float, str]] = []
+                for i, s in enumerate(substring_matches):
+                    s_mapped = map_string.get(s, s) or s
+                    out.append((i, s_mapped))
+                return out
 
     # If there's only an exact match and no other substring matches, return just the exact match
     if exact_matches and len(substring_matches) == 1:

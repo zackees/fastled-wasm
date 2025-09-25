@@ -9,8 +9,6 @@
 #   "python-dateutil"
 # ]
 
-import os
-import shutil
 import subprocess
 
 def _exec(cmd: str) -> int:
