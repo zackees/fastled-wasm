@@ -26,7 +26,6 @@ from docker.models.images import Image
 from filelock import FileLock
 
 from fastled.print_filter import PrintFilter, PrintFilterDefault
-from fastled.spinner import Spinner
 
 CONFIG_DIR = Path(user_data_dir("fastled", "fastled"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -507,14 +506,9 @@ class DockerManager:
                         return False
 
                     # Quick check for latest version
-                    with Spinner(f"Pulling newer version of {image_name}:{tag}..."):
-                        cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
-                        subprocess.run(
-                            cmd_list,
-                            check=True,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
+                    print(f"Pulling newer version of {image_name}:{tag}...")
+                    cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
+                    subprocess.run(cmd_list, check=True)
                     print(f"Updated to newer version of {image_name}:{tag}")
                     local_image_hash = self.client.images.get(f"{image_name}:{tag}").id
                     assert local_image_hash is not None
@@ -524,15 +518,10 @@ class DockerManager:
 
             except ImageNotFound:
                 print(f"Image {image_name}:{tag} not found.")
-                with Spinner("Loading "):
-                    # We use docker cli here because it shows the download.
-                    cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
-                    subprocess.run(
-                        cmd_list,
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
+                print("Loading...")
+                # We use docker cli here because it shows the download.
+                cmd_list = ["docker", "pull", f"{image_name}:{tag}"]
+                subprocess.run(cmd_list, check=True)
                 try:
                     local_image = self.client.images.get(f"{image_name}:{tag}")
                     local_image_hash = local_image.id
