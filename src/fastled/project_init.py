@@ -22,20 +22,27 @@ def get_examples(host: str | None = None) -> list[str]:
 
 
 def _prompt_for_example() -> str:
+    from fastled.select_sketch_directory import _disambiguate_user_choice
+
     examples = get_examples()
-    while True:
-        print("Available examples:")
-        for i, example in enumerate(examples):
-            print(f"  [{i+1}]: {example}")
-        answer = input("Enter the example number or name: ").strip()
-        if answer.isdigit():
-            example_num = int(answer) - 1
-            if example_num < 0 or example_num >= len(examples):
-                print("Invalid example number")
-                continue
-            return examples[example_num]
-        elif answer in examples:
-            return answer
+
+    # Find default example index (prefer DEFAULT_EXAMPLE if it exists)
+    default_index = 0
+    if DEFAULT_EXAMPLE in examples:
+        default_index = examples.index(DEFAULT_EXAMPLE)
+
+    result = _disambiguate_user_choice(
+        examples,
+        option_to_str=lambda x: x,
+        prompt="Available examples:",
+        default_index=default_index,
+    )
+
+    if result is None:
+        # Fallback to DEFAULT_EXAMPLE if user cancelled
+        return DEFAULT_EXAMPLE
+
+    return result
 
 
 class DownloadThread(threading.Thread):
