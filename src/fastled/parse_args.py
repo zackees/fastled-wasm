@@ -368,7 +368,7 @@ def parse_args() -> Args:
                 print("Searching for sketch directories...")
                 sketch_directories = find_sketch_directories(maybe_sketch_dir)
                 selected_dir = select_sketch_directory(
-                    sketch_directories, cwd_is_fastled
+                    sketch_directories, cwd_is_fastled, is_followup=True
                 )
                 if selected_dir:
                     print(f"Using sketch directory: {selected_dir}")
