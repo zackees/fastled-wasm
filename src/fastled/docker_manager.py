@@ -251,7 +251,34 @@ class DockerManager:
     @property
     def client(self) -> DockerClient:
         if self._client is None:
-            self._client = docker.from_env()
+            # Retry logic for WSL startup on Windows
+            max_retries = 10
+            retry_delay = 2  # seconds
+            last_error = None
+
+            for attempt in range(max_retries):
+                try:
+                    self._client = docker.from_env()
+                    if attempt > 0:
+                        print(
+                            f"Successfully connected to Docker after {attempt + 1} attempts"
+                        )
+                    return self._client
+                except DockerException as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        if attempt == 0:
+                            print("Waiting for Docker/WSL to be ready...")
+                        print(
+                            f"Attempt {attempt + 1}/{max_retries} failed, retrying in {retry_delay}s..."
+                        )
+                        time.sleep(retry_delay)
+                    else:
+                        print(
+                            f"Failed to connect to Docker after {max_retries} attempts"
+                        )
+                        raise last_error
+        assert self._client is not None
         return self._client
 
     @staticmethod

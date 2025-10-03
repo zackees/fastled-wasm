@@ -187,11 +187,14 @@ void loop() {
             self.assertGreater(len(wasm_files), 0, "Expected to find .wasm files")
 
             # Verify file sizes are reasonable
+            # Note: graphics_manager_base.js is intentionally empty/minimal
+            skip_size_check = {"graphics_manager_base.js"}
             for js_file in js_files:
                 size = js_file.stat().st_size
-                self.assertGreater(
-                    size, 1000, f"JS file {js_file.name} too small: {size} bytes"
-                )
+                if js_file.name not in skip_size_check:
+                    self.assertGreater(
+                        size, 1000, f"JS file {js_file.name} too small: {size} bytes"
+                    )
                 print(f"📄 {js_file.name}: {size:,} bytes")
 
             for wasm_file in wasm_files:
