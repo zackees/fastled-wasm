@@ -452,7 +452,15 @@ def run_client(
     ) -> tuple[bool, CompileResult]:
         changed_files = debounced_sketch_watcher.get_all_changes()
         if changed_files:
-            print(f"\nChanges detected in {changed_files}")
+            # Filter out any fastled_js changes that slipped through
+            sketch_changes = [
+                f for f in changed_files if "fastled_js" not in Path(f).parts
+            ]
+            if not sketch_changes:
+                # All changes were in fastled_js, ignore them
+                return False, last_compiled_result
+            print(f"\nChanges detected in {sketch_changes}")
+            print("Compiling...")
             last_hash_value = last_compiled_result.hash_value
             out = compile_function(last_hash_value=last_hash_value)
             if not out.success:

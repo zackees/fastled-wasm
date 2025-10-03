@@ -437,21 +437,23 @@ def web_compile(
             response, zip_result, start_time, zip_time, libfastled_time, sketch_time
         )
 
-    except ConnectionError as e:
-        _print_banner(str(e))
+    except KeyboardInterrupt:
+        print("Keyboard interrupt")
+        raise
+    except (ConnectionError, httpx.RemoteProtocolError, httpx.RequestError) as e:
+        # Handle connection and server disconnection issues
+        error_msg = f"Server connection error: {e}"
+        _print_banner(error_msg)
         return CompileResult(
             success=False,
-            stdout=str(e),
+            stdout=error_msg,
             hash_value=None,
             zip_bytes=b"",
             zip_time=zip_time,
             libfastled_time=libfastled_time,
             sketch_time=sketch_time,
-            response_processing_time=0.0,  # No response processing in connection error case
+            response_processing_time=0.0,
         )
-    except KeyboardInterrupt:
-        print("Keyboard interrupt")
-        raise
     except httpx.HTTPError as e:
         print(f"Error: {e}")
         return CompileResult(

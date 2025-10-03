@@ -121,7 +121,7 @@ def main() -> int:
             sketch_list: list[Path] = find_sketch_directories()
             if sketch_list:
                 maybe_dir: str | None = select_sketch_directory(
-                    sketch_list, cwd_looks_like_fastled_repo
+                    sketch_list, cwd_looks_like_fastled_repo, is_followup=True
                 )
                 if maybe_dir is not None:
                     directory = Path(maybe_dir)
