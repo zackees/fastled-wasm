@@ -101,13 +101,11 @@ def select_sketch_directory(
         print(f"\nUsing sketch directory: {sketch_directories[0]}")
         return str(sketch_directories[0])
     elif len(sketch_directories) > 1:
-        # On first scan with >4 options, don't prompt - return None to signal ambiguity
+        # First scan with >4 directories: return None (too many to auto-select)
         if not is_followup and len(sketch_directories) > 4:
-            print(f"\nFound {len(sketch_directories)} sketch directories.")
-            print("Please specify a sketch directory to avoid ambiguity.")
             return None
 
-        # Otherwise, prompt user to disambiguate
+        # Prompt user to disambiguate
         result = _disambiguate_user_choice(
             sketch_directories,
             option_to_str=lambda x: str(x),
