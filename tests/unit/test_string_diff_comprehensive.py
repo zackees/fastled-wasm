@@ -210,6 +210,41 @@ class TestStringDiffComprehensive:
                 expected in result_names
             ), f"Expected '{expected}' in results for spaced input '{input_str}', got: {result_names}"
 
+    def test_whitespace_in_camelcase_names(self):
+        """Test that whitespace between words matches CamelCase names without disambiguation.
+
+        This tests the specific case where 'Noise Ring' should directly match 'FxNoiseRing'
+        without requiring a disambiguation step, since the whitespace is just separating
+        the CamelCase components.
+        """
+        test_cases = [
+            ("Noise Ring", "FxNoiseRing", 1),  # Should be unique match
+            ("Noise Playground", "NoisePlayground", 1),  # Should be unique match
+            ("Noise Plus Palette", "NoisePlusPalette", 1),  # Should be unique match
+            ("Fire Cylinder", "FireCylinder", 1),  # Should be unique match
+            ("Fire Matrix", "FireMatrix", 1),  # Should be unique match
+            ("Blink Parallel", "BlinkParallel", 1),  # Should be unique match
+            ("Color Palette", "ColorPalette", 1),  # Should be unique match
+            ("Color Temperature", "ColorTemperature", 1),  # Should be unique match
+            ("Demo Reel 100", "DemoReel100", 1),  # Should be unique match
+            ("XY Matrix", "XYMatrix", 1),  # Should be unique match
+            ("XY Path", "XYPath", 1),  # Should be unique match
+        ]
+
+        for input_str, expected, expected_count in test_cases:
+            results = string_diff(input_str, self.fastled_examples)
+            result_names = [r[1] for r in results]
+
+            # Check that the expected match is in the results
+            assert (
+                expected in result_names
+            ), f"Expected '{expected}' in results for whitespace input '{input_str}', got: {result_names}"
+
+            # Check that it's a direct match without disambiguation (should return exactly expected_count results)
+            assert (
+                len(results) == expected_count
+            ), f"Expected exactly {expected_count} result(s) for '{input_str}' (no disambiguation), got {len(results)}: {result_names}"
+
     def test_typos_and_minor_edits(self):
         """Test handling of typos and minor edits."""
         test_cases = [
@@ -605,6 +640,7 @@ if __name__ == "__main__":
         test_instance.test_case_insensitive_matches,
         test_instance.test_partial_matches,
         test_instance.test_spaces_in_input,
+        test_instance.test_whitespace_in_camelcase_names,
         test_instance.test_typos_and_minor_edits,
         test_instance.test_prefix_matching,
         test_instance.test_suffix_matching,
