@@ -98,6 +98,66 @@ class TestSelectSketchDirectory(unittest.TestCase):
         # Should be called twice: once for invalid, once for valid
         self.assertEqual(mock_input.call_count, 2)
 
+    @patch("builtins.input", return_value="beats")
+    def test_fuzzy_matching_with_typos(self, mock_input):
+        """Fuzzy matching should handle typos like 'beats' -> 'BeatDetection'."""
+        sketch_dirs = [
+            Path("examples/Audio"),
+            Path("examples/BeatDetection"),
+            Path("examples/Blink"),
+        ]
+        result = select_sketch_directory(
+            sketch_dirs, cwd_is_fastled=False, is_followup=False
+        )
+        # Should fuzzy match "beats" to "BeatDetection"
+        self.assertEqual(str(Path("examples/BeatDetection")), result)
+        mock_input.assert_called_once()
+
+    @patch("builtins.input", return_value="pacifca")
+    def test_fuzzy_matching_with_single_char_typo(self, mock_input):
+        """Fuzzy matching should handle single character typos like 'pacifca' -> 'Pacifica'."""
+        sketch_dirs = [
+            Path("examples/Audio"),
+            Path("examples/Pacifica"),
+            Path("examples/Blink"),
+        ]
+        result = select_sketch_directory(
+            sketch_dirs, cwd_is_fastled=False, is_followup=False
+        )
+        # Should fuzzy match "pacifca" to "Pacifica"
+        self.assertEqual(str(Path("examples/Pacifica")), result)
+        mock_input.assert_called_once()
+
+    @patch("builtins.input", return_value="demreel")
+    def test_fuzzy_matching_missing_char(self, mock_input):
+        """Fuzzy matching should handle missing characters like 'demreel' -> 'DemoReel100'."""
+        sketch_dirs = [
+            Path("examples/Audio"),
+            Path("examples/DemoReel100"),
+            Path("examples/Blink"),
+        ]
+        result = select_sketch_directory(
+            sketch_dirs, cwd_is_fastled=False, is_followup=False
+        )
+        # Should fuzzy match "demreel" to "DemoReel100"
+        self.assertEqual(str(Path("examples/DemoReel100")), result)
+        mock_input.assert_called_once()
+
+    @patch("builtins.input", return_value="cylom")
+    def test_fuzzy_matching_edit_distance(self, mock_input):
+        """Fuzzy matching should handle edit distance like 'cylom' -> 'Cylon'."""
+        sketch_dirs = [
+            Path("examples/Audio"),
+            Path("examples/Cylon"),
+            Path("examples/Blink"),
+        ]
+        result = select_sketch_directory(
+            sketch_dirs, cwd_is_fastled=False, is_followup=False
+        )
+        # Should fuzzy match "cylom" to "Cylon"
+        self.assertEqual(str(Path("examples/Cylon")), result)
+        mock_input.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import Callable, TypeVar, Union
 
+from fastled.string_diff import string_diff
+
 T = TypeVar("T")
 
 
@@ -81,6 +83,44 @@ def _disambiguate_user_choice(
             f"Multiple partial matches for '{user_input}':",
             0,  # Reset default to first match
         )
+
+    # Try fuzzy matching as fallback
+    # For better fuzzy matching on paths, extract just the last component (basename)
+    # to avoid the "examples/" prefix interfering with matching
+    from pathlib import Path as PathLib
+
+    option_basenames = []
+    for option in options:
+        option_str = option_to_str(option)
+        # Extract basename for fuzzy matching
+        basename = (
+            PathLib(option_str).name
+            if "/" in option_str or "\\" in option_str
+            else option_str
+        )
+        option_basenames.append(basename)
+
+    fuzzy_results = string_diff(user_input, option_basenames)
+
+    if fuzzy_results:
+        # Map fuzzy results back to original options
+        fuzzy_matches = []
+        for _, matched_basename in fuzzy_results:
+            for i, basename in enumerate(option_basenames):
+                if basename == matched_basename:
+                    fuzzy_matches.append(options[i])
+                    break
+
+        if len(fuzzy_matches) == 1:
+            return fuzzy_matches[0]
+        elif len(fuzzy_matches) > 1:
+            # Recursive disambiguation with fuzzy matches
+            return _disambiguate_user_choice(
+                fuzzy_matches,
+                option_to_str,
+                f"Multiple fuzzy matches for '{user_input}':",
+                0,
+            )
 
     # No match found
     print(f"No match found for '{user_input}'. Please try again.")
