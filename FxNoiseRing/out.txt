@@ -1,0 +1,268 @@
+Starting FastLED WASM compilation script...
+Keep files flag: False
+Using mapped directory: /tmp/tmpg2rbz7gz
+Cleaning sketch directory to ensure fresh files: /js/src
+Copying files from mapped directory to container...
+Copying file: /tmp/tmpg2rbz7gz/wasm/simple_timer.h -> /js/src/simple_timer.h
+Copying file: /tmp/tmpg2rbz7gz/wasm/FxNoiseRing.ino -> /js/src/FxNoiseRing.ino
+Copying file: /tmp/tmpg2rbz7gz/wasm/build_mode.txt -> /js/src/build_mode.txt
+Transforming files to cpp...
+Found .ino file: /js/src/FxNoiseRing.ino
+Renaming /js/src/FxNoiseRing.ino to FxNoiseRing.ino.cpp
+
+########################################
+# Inserting headers in source files... #
+########################################
+
+Inserting header in file: /js/src/simple_timer.h
+Processed: /js/src/simple_timer.h
+Inserting header in file: /js/src/FxNoiseRing.ino.cpp
+Processed: /js/src/FxNoiseRing.ino.cpp
+Current directory: /js/src structure has [PosixPath('/js/src/simple_timer.h'), PosixPath('/js/src/FxNoiseRing.ino.cpp'), PosixPath('/js/src/build_mode.txt')]
+
+############################################################
+# Transform to cpp and insert header operations completed. #
+############################################################
+
+
+###########################################################
+# Starting compilation process with mode: BuildMode.QUICK #
+#   js_dir: /js                                           #
+#   profile_build: False                                  #
+###########################################################
+
+Starting compilation...
+Starting compilation process...
+
+###################################
+# WASM is building in mode: QUICK #
+###################################
+
+
+####################################################################
+# Build process profiling is disabled                              #
+# use --profile to get metrics on how long the build process took. #
+####################################################################
+
+
+#################################
+# Using direct emcc compilation #
+#################################
+
+✓ Using direct emscripten compiler calls
+✓ Build mode: QUICK
+✓ Compiler root: /js
+✓ Will use compile_sketch.py module for compilation
+✓ Direct compilation command prepared: python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick
+Command: python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick
+Command cwd: /js
+
+##################################################################################
+# Build started with command:                                                    #
+#   python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick #
+##################################################################################
+
+✓ Using stdbuf to force line buffering for real-time output
+0.00
+🚀 Starting FastLED sketch compilation (no-platformio mode)
+0.00 🔊 VERBOSE MODE: Showing detailed emcc/linker output
+0.00 📁 Sketch directory: /js/src
+0.00 🔧 Build mode: quick
+0.00 📂 Output directory: /build/quick
+🚀 Mold daemon started for faster linking
+0.00 ✓ Output directory prepared: /build/quick
+0.00
+📋 Source file discovery:
+0.00 ✓ Found 1 source file(s):
+0.00   1. FxNoiseRing.ino.cpp (4335 bytes)
+🔍 BUILD_FLAGS STATUS: Checking primary location: src/platforms/wasm/compile/build_flags.toml
+⚠️  BUILD_FLAGS WARNING: Primary config not found at src/platforms/wasm/compile/build_flags.toml
+⚠️  BUILD_FLAGS WARNING: This is expected if using standalone FastLED WASM compiler
+🔄 BUILD_FLAGS STATUS: Falling back to package resource: build_flags.toml
+ℹ️  BUILD_FLAGS INFO: Using default compiler flags (this is normal for standalone usage)
+📋 BUILD_FLAGS LOADED: Configuration summary
+   🔧 Universal defines: 8
+   🔧 Universal compiler flags: 11
+   📝 Sketch-specific defines: 2
+   📝 Sketch-specific flags: 0
+   📚 Library-specific defines: 0
+   📚 Library-specific flags: 2
+   🎯 Build modes available: debug, fast_debug, quick, release
+   🔗 Linking configurations: base, sketch, library
+   🐛 DWARF debug configuration: Present
+   ⚡ Strict mode flags: 11
+✅ BUILD_FLAGS READY: Configuration loaded and validated
+0.00
+🔧 Compilation configuration (from build_flags.toml):
+0.00 📋 CXX_FLAGS:
+0.00    1. -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50
+0.00    2. -DFASTLED_FORCE_NAMESPACE=1
+0.00    3. -DFASTLED_USE_PROGMEM=0
+0.00    4. -DUSE_OFFSET_CONVERTER=0
+0.00    5. -DGL_ENABLE_GET_PROC_ADDRESS=0
+0.00    6. -D_REENTRANT=1
+0.00    7. -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0
+0.00    8. -DFASTLED_HAS_NETWORKING=1
+0.00    9. -std=gnu++17
+0.00   10. -fpermissive
+0.00   11. -Wno-constant-logical-operand
+0.00   12. -Wnon-c-typedef-for-linkage
+0.00   13. -Werror=bad-function-cast
+0.00   14. -Werror=cast-function-type
+0.00   15. -fno-threadsafe-statics
+0.00   16. -fno-exceptions
+0.00   17. -fno-rtti
+0.00   18. -pthread
+0.00   19. -fpch-instantiate-templates
+0.00   20. -I.
+0.00   21. -Isrc
+0.00   22. -Isrc/platforms/wasm/compiler
+0.00   23. -I/js/src
+0.00   24. -DSKETCH_COMPILE=1
+0.00   25. -DFASTLED_WASM_USE_CCALL
+0.00   26. -O1
+0.00   27. -g0
+0.00   28. --profiling-funcs
+0.00   29. -fno-inline-functions
+0.00   30. -fno-vectorize
+0.00   31. -fno-unroll-loops
+0.00   32. -fno-strict-aliasing
+0.00   33. -fno-merge-constants
+0.00   34. -fno-merge-all-constants
+0.00   35. -fno-delayed-template-parsing
+0.00   36. -fmax-type-align=4
+0.00   37. -ffast-math
+0.00   38. -fno-math-errno
+0.00   39. -fno-exceptions
+0.00   40. -fno-rtti
+0.00
+📋 LINK_FLAGS:
+0.00    1. -fuse-ld=mold
+0.00    2. -sWASM=1
+0.00    3. -pthread
+0.00    4. -sUSE_PTHREADS=1
+0.00    5. -sPROXY_TO_PTHREAD
+0.00    6. --emit-symbol-map
+0.00    7. -sMODULARIZE=1
+0.00    8. -sEXPORT_NAME=fastled
+0.00    9. -sALLOW_MEMORY_GROWTH=1
+0.00   10. -sINITIAL_MEMORY=134217728
+0.00   11. -sAUTO_NATIVE_LIBRARIES=0
+0.00   12. -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue']
+0.00   13. -sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback']
+0.00   14. -sEXIT_RUNTIME=0
+0.00   15. -sFILESYSTEM=0
+0.00   16. -Wl,--gc-sections
+0.00   17. --source-map-base=http://localhost:8000/
+0.00   18. -sASYNCIFY=1
+0.00   19. -sASYNCIFY_STACK_SIZE=10485760
+0.00   20. -sASYNCIFY_EXPORTS=['_main','_extern_setup','_extern_loop']
+0.00   21. -sASYNCIFY_IMPORTS=['js_fetch_async']
+0.00
+📋 Sources: /js/src/FxNoiseRing.ino.cpp
+0.00 📋 Sketch directory: /js/src
+0.00 EXCLUSIVE MODE: Using regular archives only
+0.00
+📚 FastLED library: /build/quick/libfastled.a
+0.00 ✓ FastLED library found (3900600 bytes, regular archive)
+0.00
+🔨 Compiling 1 source files in parallel:
+0.00 ================================================================================
+0.00 🔧 Using 1 worker threads for parallel compilation
+0.40 ✅ COMPILED [1/1]: FxNoiseRing.ino.cpp → FxNoiseRing.ino.o (success) in 0.40 seconds
+0.40 🔨 Build command:
+0.40   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/FxNoiseRing.ino.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/FxNoiseRing.ino.cpp
+0.40 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.40 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.40     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.40 📤 Compiler output:
+0.40 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.40 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.40   ✓ [1/1] FxNoiseRing.ino.cpp → FxNoiseRing.ino.o (122070 bytes)
+0.40 --------------------------------------------------------------------------------
+0.40 ✅ All 1 source files compiled successfully
+0.40
+🔗 Linking phase - Creating final WASM output:
+0.40 ================================================================================
+0.40 ✓ Linking 1 object file(s) into final output
+0.40 ✓ Total object file size: 122070 bytes
+0.40 ⚡ Linking with quick FastLED library: /build/quick/libfastled.a (regular)
+0.49 📤 Linker output:
+0.49     em++: warning: ASYNCIFY_EXPORTS is deprecated (please use JSPI_EXPORTS instead). Please open a bug if you have a continuing need for this setting [-Wdeprecated]
+0.49     em++: warning: -pthread + ALLOW_MEMORY_GROWTH may run non-wasm code slowly, see https://github.com/WebAssembly/design/issues/1271 [-Wpthreads-mem-growth]
+2.84     warning: no output file specified, not emitting output
+2.86 ✅ LINKED: fastled.js (success) in 2.46 seconds
+2.86 🔗 Build command:
+2.86   /build_tools/ccache-emcxx.sh -fuse-ld=mold -sWASM=1 -pthread -sUSE_PTHREADS=1 -sPROXY_TO_PTHREAD --emit-symbol-map -sMODULARIZE=1 -sEXPORT_NAME=fastled -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sAUTO_NATIVE_LIBRARIES=0 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue'] -sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback'] -sEXIT_RUNTIME=0 -sFILESYSTEM=0 -Wl,--gc-sections --source-map-base=http://localhost:8000/ -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=10485760 -sASYNCIFY_EXPORTS=['_main','_extern_setup','_extern_loop'] -sASYNCIFY_IMPORTS=['js_fetch_async'] -sINITIAL_MEMORY=67108864 -sASSERTIONS=0 -sSTACK_OVERFLOW_CHECK=0 -sWASM_BIGINT=0 -sERROR_ON_UNDEFINED_SYMBOLS=0 -o /build/quick/fastled.js /build/quick/FxNoiseRing.ino.o /build/quick/libfastled.a
+2.86 ================================================================================
+2.86 ✅ JavaScript output: /build/quick/fastled.js (87.1k)
+2.86 ✅ WebAssembly output: /build/quick/fastled.wasm (792.4k)
+2.86
+✅ Program built at: /build/quick/fastled.js
+2.86 🔊 VERBOSE BUILD COMPLETED: All emcc/linker calls shown above
+
+##################################
+# Compilation process Finsished. #
+##################################
+
+
+Compilation successful.
+
+Compilation return code: 0
+
+###########################
+# Compilation successful. #
+###########################
+
+
+###########################################
+# No-PlatformIO build directory structure #
+###########################################
+
+✓ Using direct compilation build directory: /build/quick
+✓ Build mode subdirectory: quick
+✓ Expected output files: fastled.js, fastled.wasm
+✓ Build directory exists: /build/quick
+
+###########################
+# Copying output files... #
+###########################
+
+Copying /build/quick/fastled.wasm to /tmp/tmpg2rbz7gz/wasm/fastled_js/fastled.wasm
+Copying /build/quick/fastled.js to /tmp/tmpg2rbz7gz/wasm/fastled_js/fastled.js
+Copying /build/quick/fastled.js.symbols to /tmp/tmpg2rbz7gz/wasm/fastled_js/fastled.js.symbols
+Copying src/platforms/wasm/compiler/index.html to output directory
+Copying src/platforms/wasm/compiler/index.css to output directory
+Copying files from src/platforms/wasm/compiler/modules to /tmp/tmpg2rbz7gz/wasm/fastled_js/modules
+Copying index.js to output directory
+
+###############################
+# Writing manifest files.json #
+###############################
+
+
+###############################
+# No-PlatformIO Build Summary #
+###############################
+
+✅ Compilation method: Direct emcc calls (bypassed PlatformIO)
+✅ Build mode: QUICK
+✅ Build directory: /build/quick
+✅ Source directory: /tmp/tmpg2rbz7gz/wasm
+✅ Output directory: fastled_js
+📁 Checking output files in /tmp/tmpg2rbz7gz/wasm/fastled_js:
+  ✅ fastled.js (87133 bytes)
+  ✅ fastled.wasm (792426 bytes)
+🎯 Build completed using direct emscripten compilation
+
+################################
+# Cleaning up directories:     #
+#   build (/js/.pio/build) and #
+#   sketch (/js/src)           #
+################################
+
+
+##############################################
+# Compilation process completed successfully #
+##############################################
+

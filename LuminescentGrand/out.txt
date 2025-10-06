@@ -1,0 +1,456 @@
+Starting FastLED WASM compilation script...
+Keep files flag: False
+Using mapped directory: /tmp/tmpzrk20hg_
+Cleaning sketch directory to ensure fresh files: /js/src
+Copying files from mapped directory to container...
+Copying directory: /tmp/tmpzrk20hg_/wasm/shared
+Copying file: /tmp/tmpzrk20hg_/wasm/LuminescentGrand.ino -> /js/src/LuminescentGrand.ino
+Copying directory: /tmp/tmpzrk20hg_/wasm/arduino
+Copying file: /tmp/tmpzrk20hg_/wasm/build_mode.txt -> /js/src/build_mode.txt
+Transforming files to cpp...
+Found .ino file: /js/src/LuminescentGrand.ino
+Renaming /js/src/LuminescentGrand.ino to LuminescentGrand.ino.cpp
+
+########################################
+# Inserting headers in source files... #
+########################################
+
+Inserting header in file: /js/src/LuminescentGrand.ino.cpp
+Processed: /js/src/LuminescentGrand.ino.cpp
+Inserting header in file: /js/src/shared/color_mapper.cpp
+Processed: /js/src/shared/color_mapper.cpp
+Inserting header in file: /js/src/shared/framebuffer.cpp
+Processed: /js/src/shared/framebuffer.cpp
+Inserting header in file: /js/src/shared/led_layout_array.h
+Processed: /js/src/shared/led_layout_array.h
+Inserting header in file: /js/src/shared/defs.h
+Processed: /js/src/shared/defs.h
+Inserting header in file: /js/src/shared/dprint.h
+Processed: /js/src/shared/dprint.h
+Inserting header in file: /js/src/shared/ApproximatingFunction.h
+Processed: /js/src/shared/ApproximatingFunction.h
+Inserting header in file: /js/src/shared/led_layout_array.cpp
+Processed: /js/src/shared/led_layout_array.cpp
+Inserting header in file: /js/src/shared/color_mapper.h
+Processed: /js/src/shared/color_mapper.h
+Inserting header in file: /js/src/shared/Keyboard.h
+Processed: /js/src/shared/Keyboard.h
+Inserting header in file: /js/src/shared/Keyboard.cpp
+Processed: /js/src/shared/Keyboard.cpp
+Inserting header in file: /js/src/shared/Painter.cpp
+Processed: /js/src/shared/Painter.cpp
+Inserting header in file: /js/src/shared/color.h
+Processed: /js/src/shared/color.h
+Inserting header in file: /js/src/shared/settings.h
+Processed: /js/src/shared/settings.h
+Inserting header in file: /js/src/shared/framebuffer.h
+Processed: /js/src/shared/framebuffer.h
+Inserting header in file: /js/src/shared/color.cpp
+Processed: /js/src/shared/color.cpp
+Inserting header in file: /js/src/shared/Painter.h
+Processed: /js/src/shared/Painter.h
+Inserting header in file: /js/src/shared/util.cpp
+Processed: /js/src/shared/util.cpp
+Inserting header in file: /js/src/shared/dprint.cpp
+Processed: /js/src/shared/dprint.cpp
+Inserting header in file: /js/src/shared/led_rope_interface.h
+Processed: /js/src/shared/led_rope_interface.h
+Inserting header in file: /js/src/shared/util.h
+Processed: /js/src/shared/util.h
+Inserting header in file: /js/src/arduino/serialMIDI.h
+Processed: /js/src/arduino/serialMIDI.h
+Inserting header in file: /js/src/arduino/LedRopeTCL.h
+Processed: /js/src/arduino/LedRopeTCL.h
+Inserting header in file: /js/src/arduino/MIDI.hpp
+Processed: /js/src/arduino/MIDI.hpp
+Inserting header in file: /js/src/arduino/ui_state.h
+Processed: /js/src/arduino/ui_state.h
+Inserting header in file: /js/src/arduino/midi_Namespace.h
+Processed: /js/src/arduino/midi_Namespace.h
+Inserting header in file: /js/src/arduino/ui_state.cpp
+Processed: /js/src/arduino/ui_state.cpp
+Inserting header in file: /js/src/arduino/MIDI.cpp
+Processed: /js/src/arduino/MIDI.cpp
+Inserting header in file: /js/src/arduino/midi_Settings.h
+Processed: /js/src/arduino/midi_Settings.h
+Inserting header in file: /js/src/arduino/midi_Message.h
+Processed: /js/src/arduino/midi_Message.h
+Inserting header in file: /js/src/arduino/midi_Defs.h
+Processed: /js/src/arduino/midi_Defs.h
+Inserting header in file: /js/src/arduino/buttons.h
+Processed: /js/src/arduino/buttons.h
+Inserting header in file: /js/src/arduino/MIDI.h
+Processed: /js/src/arduino/MIDI.h
+Inserting header in file: /js/src/arduino/midi_Platform.h
+Processed: /js/src/arduino/midi_Platform.h
+Inserting header in file: /js/src/arduino/LedRopeTCL.cpp
+Processed: /js/src/arduino/LedRopeTCL.cpp
+Current directory: /js/src structure has [PosixPath('/js/src/LuminescentGrand.ino.cpp'), PosixPath('/js/src/shared'), PosixPath('/js/src/arduino'), PosixPath('/js/src/build_mode.txt')]
+
+############################################################
+# Transform to cpp and insert header operations completed. #
+############################################################
+
+
+###########################################################
+# Starting compilation process with mode: BuildMode.QUICK #
+#   js_dir: /js                                           #
+#   profile_build: False                                  #
+###########################################################
+
+Starting compilation...
+Starting compilation process...
+
+###################################
+# WASM is building in mode: QUICK #
+###################################
+
+
+####################################################################
+# Build process profiling is disabled                              #
+# use --profile to get metrics on how long the build process took. #
+####################################################################
+
+
+#################################
+# Using direct emcc compilation #
+#################################
+
+✓ Using direct emscripten compiler calls
+✓ Build mode: QUICK
+✓ Compiler root: /js
+✓ Will use compile_sketch.py module for compilation
+✓ Direct compilation command prepared: python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick
+Command: python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick
+Command cwd: /js
+
+##################################################################################
+# Build started with command:                                                    #
+#   python -m fastled_wasm_compiler.compile_sketch --sketch /js/src --mode quick #
+##################################################################################
+
+✓ Using stdbuf to force line buffering for real-time output
+0.00
+🚀 Starting FastLED sketch compilation (no-platformio mode)
+0.00 🔊 VERBOSE MODE: Showing detailed emcc/linker output
+0.00 📁 Sketch directory: /js/src
+0.00 🔧 Build mode: quick
+0.00 📂 Output directory: /build/quick
+🚀 Mold daemon started for faster linking
+0.00 ✓ Output directory prepared: /build/quick
+0.00
+📋 Source file discovery:
+0.00 ✓ Found 12 source file(s):
+0.00   1. LuminescentGrand.ino.cpp (7046 bytes)
+0.00   2. color_mapper.cpp (5755 bytes)
+0.00   3. framebuffer.cpp (1441 bytes)
+0.00   4. led_layout_array.cpp (2131 bytes)
+0.00   5. Keyboard.cpp (5556 bytes)
+0.00   6. Painter.cpp (14455 bytes)
+0.00   7. color.cpp (4007 bytes)
+0.00   8. util.cpp (4004 bytes)
+0.00   9. dprint.cpp (70 bytes)
+0.00   10. ui_state.cpp (2346 bytes)
+0.00   11. MIDI.cpp (4274 bytes)
+0.00   12. LedRopeTCL.cpp (5031 bytes)
+🔍 BUILD_FLAGS STATUS: Checking primary location: src/platforms/wasm/compile/build_flags.toml
+⚠️  BUILD_FLAGS WARNING: Primary config not found at src/platforms/wasm/compile/build_flags.toml
+⚠️  BUILD_FLAGS WARNING: This is expected if using standalone FastLED WASM compiler
+🔄 BUILD_FLAGS STATUS: Falling back to package resource: build_flags.toml
+ℹ️  BUILD_FLAGS INFO: Using default compiler flags (this is normal for standalone usage)
+📋 BUILD_FLAGS LOADED: Configuration summary
+   🔧 Universal defines: 8
+   🔧 Universal compiler flags: 11
+   📝 Sketch-specific defines: 2
+   📝 Sketch-specific flags: 0
+   📚 Library-specific defines: 0
+   📚 Library-specific flags: 2
+   🎯 Build modes available: debug, fast_debug, quick, release
+   🔗 Linking configurations: base, sketch, library
+   🐛 DWARF debug configuration: Present
+   ⚡ Strict mode flags: 11
+✅ BUILD_FLAGS READY: Configuration loaded and validated
+0.00
+🔧 Compilation configuration (from build_flags.toml):
+0.00 📋 CXX_FLAGS:
+0.00    1. -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50
+0.00    2. -DFASTLED_FORCE_NAMESPACE=1
+0.00    3. -DFASTLED_USE_PROGMEM=0
+0.00    4. -DUSE_OFFSET_CONVERTER=0
+0.00    5. -DGL_ENABLE_GET_PROC_ADDRESS=0
+0.00    6. -D_REENTRANT=1
+0.00    7. -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0
+0.00    8. -DFASTLED_HAS_NETWORKING=1
+0.00    9. -std=gnu++17
+0.00   10. -fpermissive
+0.00   11. -Wno-constant-logical-operand
+0.00   12. -Wnon-c-typedef-for-linkage
+0.00   13. -Werror=bad-function-cast
+0.00   14. -Werror=cast-function-type
+0.00   15. -fno-threadsafe-statics
+0.00   16. -fno-exceptions
+0.00   17. -fno-rtti
+0.00   18. -pthread
+0.00   19. -fpch-instantiate-templates
+0.00   20. -I.
+0.00   21. -Isrc
+0.00   22. -Isrc/platforms/wasm/compiler
+0.00   23. -I/js/src
+0.00   24. -DSKETCH_COMPILE=1
+0.00   25. -DFASTLED_WASM_USE_CCALL
+0.00   26. -O1
+0.00   27. -g0
+0.00   28. --profiling-funcs
+0.00   29. -fno-inline-functions
+0.00   30. -fno-vectorize
+0.00   31. -fno-unroll-loops
+0.00   32. -fno-strict-aliasing
+0.00   33. -fno-merge-constants
+0.00   34. -fno-merge-all-constants
+0.00   35. -fno-delayed-template-parsing
+0.00   36. -fmax-type-align=4
+0.00   37. -ffast-math
+0.00   38. -fno-math-errno
+0.00   39. -fno-exceptions
+0.00   40. -fno-rtti
+0.00
+📋 LINK_FLAGS:
+0.00    1. -fuse-ld=mold
+0.00    2. -sWASM=1
+0.00    3. -pthread
+0.00    4. -sUSE_PTHREADS=1
+0.00    5. -sPROXY_TO_PTHREAD
+0.00    6. --emit-symbol-map
+0.00    7. -sMODULARIZE=1
+0.00    8. -sEXPORT_NAME=fastled
+0.00    9. -sALLOW_MEMORY_GROWTH=1
+0.00   10. -sINITIAL_MEMORY=134217728
+0.00   11. -sAUTO_NATIVE_LIBRARIES=0
+0.00   12. -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue']
+0.00   13. -sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback']
+0.00   14. -sEXIT_RUNTIME=0
+0.00   15. -sFILESYSTEM=0
+0.00   16. -Wl,--gc-sections
+0.00   17. --source-map-base=http://localhost:8000/
+0.00   18. -sASYNCIFY=1
+0.00   19. -sASYNCIFY_STACK_SIZE=10485760
+0.00   20. -sASYNCIFY_EXPORTS=['_main','_extern_setup','_extern_loop']
+0.00   21. -sASYNCIFY_IMPORTS=['js_fetch_async']
+0.00
+📋 Sources: /js/src/LuminescentGrand.ino.cpp /js/src/shared/color_mapper.cpp /js/src/shared/framebuffer.cpp /js/src/shared/led_layout_array.cpp /js/src/shared/Keyboard.cpp /js/src/shared/Painter.cpp /js/src/shared/color.cpp /js/src/shared/util.cpp /js/src/shared/dprint.cpp /js/src/arduino/ui_state.cpp /js/src/arduino/MIDI.cpp /js/src/arduino/LedRopeTCL.cpp
+0.00 📋 Sketch directory: /js/src
+0.00 EXCLUSIVE MODE: Using regular archives only
+0.00
+📚 FastLED library: /build/quick/libfastled.a
+0.00 ✓ FastLED library found (3900600 bytes, regular archive)
+0.00
+🔨 Compiling 12 source files in parallel:
+0.00 ================================================================================
+0.00 🔧 Using 4 worker threads for parallel compilation
+0.19 ✅ COMPILED [1/12]: led_layout_array.cpp → led_layout_array.o (success) in 0.18 seconds
+0.19 🔨 Build command:
+0.19   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/led_layout_array.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/led_layout_array.cpp
+0.19 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.19 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.19     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.19 📤 Compiler output:
+0.19 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.19 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.19   ✓ [1/12] led_layout_array.cpp → led_layout_array.o (1563 bytes)
+0.21 ✅ COMPILED [2/12]: framebuffer.cpp → framebuffer.o (success) in 0.20 seconds
+0.21 🔨 Build command:
+0.21   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/framebuffer.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/framebuffer.cpp
+0.21 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.21 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.21     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.21 📤 Compiler output:
+0.21 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.21 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.21   ✓ [2/12] framebuffer.cpp → framebuffer.o (2266 bytes)
+0.22 ✅ COMPILED [3/12]: color_mapper.cpp → color_mapper.o (success) in 0.21 seconds
+0.22 🔨 Build command:
+0.22   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/color_mapper.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/color_mapper.cpp
+0.22 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.22 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.22     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.22 📤 Compiler output:
+0.22 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.22 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.22   ✓ [3/12] color_mapper.cpp → color_mapper.o (6569 bytes)
+0.40 ✅ COMPILED [4/12]: Keyboard.cpp → Keyboard.o (success) in 0.21 seconds
+0.40 🔨 Build command:
+0.40   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/Keyboard.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/Keyboard.cpp
+0.40 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.40 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.40     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.40 📤 Compiler output:
+0.40 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.40 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.40   ✓ [4/12] Keyboard.cpp → Keyboard.o (3024 bytes)
+0.43 ✅ COMPILED [5/12]: LuminescentGrand.ino.cpp → LuminescentGrand.ino.o (success) in 0.42 seconds
+0.43 🔨 Build command:
+0.43   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/LuminescentGrand.ino.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/LuminescentGrand.ino.cpp
+0.43 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.43 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.43     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.43 📤 Compiler output:
+0.43 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.43 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.43   ✓ [5/12] LuminescentGrand.ino.cpp → LuminescentGrand.ino.o (49170 bytes)
+0.43 ✅ COMPILED [6/12]: color.cpp → color.o (success) in 0.21 seconds
+0.43 🔨 Build command:
+0.43   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/color.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/color.cpp
+0.43 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.43 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.43     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.43 📤 Compiler output:
+0.43 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.43 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.43   ✓ [6/12] color.cpp → color.o (2814 bytes)
+0.57 ✅ COMPILED [7/12]: Painter.cpp → Painter.o (success) in 0.36 seconds
+0.57 🔨 Build command:
+0.57   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/Painter.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/Painter.cpp
+0.57 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.57 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.57     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.57 📤 Compiler output:
+0.57 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.57 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.57   ✓ [7/12] Painter.cpp → Painter.o (26408 bytes)
+0.61 ✅ COMPILED [8/12]: dprint.cpp → dprint.o (success) in 0.19 seconds
+0.61 🔨 Build command:
+0.61   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/dprint.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/dprint.cpp
+0.61 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.61 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.61     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.61 📤 Compiler output:
+0.61 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.61 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.61   ✓ [8/12] dprint.cpp → dprint.o (414 bytes)
+0.62 ✅ COMPILED [9/12]: util.cpp → util.o (success) in 0.22 seconds
+0.62 🔨 Build command:
+0.62   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/util.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/shared/util.cpp
+0.62 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.62 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.62     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.62 📤 Compiler output:
+0.62 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.62 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.62   ✓ [9/12] util.cpp → util.o (6031 bytes)
+0.73 ✅ COMPILED [10/12]: ui_state.cpp → ui_state.o (success) in 0.31 seconds
+0.73 🔨 Build command:
+0.73   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/ui_state.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/arduino/ui_state.cpp
+0.73 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.73 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.73     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.73 📤 Compiler output:
+0.73 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.73 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.73   ✓ [10/12] ui_state.cpp → ui_state.o (45569 bytes)
+0.77 ✅ COMPILED [11/12]: MIDI.cpp → MIDI.o (success) in 0.20 seconds
+0.77 🔨 Build command:
+0.77   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/MIDI.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/arduino/MIDI.cpp
+0.77 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+0.77 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+0.77     🔒 Source files remain unmodified (include guards handle double inclusion)
+0.77 📤 Compiler output:
+0.77 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+0.77 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+0.77   ✓ [11/12] MIDI.cpp → MIDI.o (864 bytes)
+1.08 ✅ COMPILED [12/12]: LedRopeTCL.cpp → LedRopeTCL.o (success) in 0.46 seconds
+1.08 🔨 Build command:
+1.08   /build_tools/ccache-emcxx.sh -c -x c++ -o /build/quick/LedRopeTCL.o -DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50 -DFASTLED_FORCE_NAMESPACE=1 -DFASTLED_USE_PROGMEM=0 -DUSE_OFFSET_CONVERTER=0 -DGL_ENABLE_GET_PROC_ADDRESS=0 -D_REENTRANT=1 -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 -DFASTLED_HAS_NETWORKING=1 -std=gnu++17 -fpermissive -Wno-constant-logical-operand -Wnon-c-typedef-for-linkage -Werror=bad-function-cast -Werror=cast-function-type -fno-threadsafe-statics -fno-exceptions -fno-rtti -pthread -fpch-instantiate-templates -I. -Isrc -Isrc/platforms/wasm/compiler -I/js/src -DSKETCH_COMPILE=1 -DFASTLED_WASM_USE_CCALL -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti -include /build/quick/fastled_pch.h /js/src/arduino/LedRopeTCL.cpp
+1.08 🔧 Mode-specific flags: -O1 -g0 --profiling-funcs -fno-inline-functions -fno-vectorize -fno-unroll-loops -fno-strict-aliasing -fno-merge-constants -fno-merge-all-constants -fno-delayed-template-parsing -fmax-type-align=4 -ffast-math -fno-math-errno -fno-exceptions -fno-rtti
+1.08 🚀 PCH OPTIMIZATION: Using precompiled header fastled_pch.h
+1.08     🔒 Source files remain unmodified (include guards handle double inclusion)
+1.08 📤 Compiler output:
+1.08 [emcc] em++: warning: linker flag ignored during compilation: '--profiling-funcs' [-Wunused-command-line-argument]
+1.08 [emcc] clang++: warning: optimization flag '-fno-merge-constants' is not supported [-Wignored-optimization-argument]
+1.08   ✓ [12/12] LedRopeTCL.cpp → LedRopeTCL.o (107099 bytes)
+1.08 --------------------------------------------------------------------------------
+1.08 ✅ All 12 source files compiled successfully
+1.08
+🔗 Linking phase - Creating final WASM output:
+1.08 ================================================================================
+1.08 ✓ Linking 12 object file(s) into final output
+1.08 ✓ Total object file size: 251791 bytes
+1.08 ⚡ Linking with quick FastLED library: /build/quick/libfastled.a (regular)
+1.17 📤 Linker output:
+1.17     em++: warning: ASYNCIFY_EXPORTS is deprecated (please use JSPI_EXPORTS instead). Please open a bug if you have a continuing need for this setting [-Wdeprecated]
+1.17     em++: warning: -pthread + ALLOW_MEMORY_GROWTH may run non-wasm code slowly, see https://github.com/WebAssembly/design/issues/1271 [-Wpthreads-mem-growth]
+3.49     warning: no output file specified, not emitting output
+3.52 ✅ LINKED: fastled.js (success) in 2.44 seconds
+3.52 🔗 Build command:
+3.52   /build_tools/ccache-emcxx.sh -fuse-ld=mold -sWASM=1 -pthread -sUSE_PTHREADS=1 -sPROXY_TO_PTHREAD --emit-symbol-map -sMODULARIZE=1 -sEXPORT_NAME=fastled -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sAUTO_NATIVE_LIBRARIES=0 -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue'] -sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback'] -sEXIT_RUNTIME=0 -sFILESYSTEM=0 -Wl,--gc-sections --source-map-base=http://localhost:8000/ -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=10485760 -sASYNCIFY_EXPORTS=['_main','_extern_setup','_extern_loop'] -sASYNCIFY_IMPORTS=['js_fetch_async'] -sINITIAL_MEMORY=67108864 -sASSERTIONS=0 -sSTACK_OVERFLOW_CHECK=0 -sWASM_BIGINT=0 -sERROR_ON_UNDEFINED_SYMBOLS=0 -o /build/quick/fastled.js /build/quick/led_layout_array.o /build/quick/framebuffer.o /build/quick/color_mapper.o /build/quick/Keyboard.o /build/quick/LuminescentGrand.ino.o /build/quick/color.o /build/quick/Painter.o /build/quick/dprint.o /build/quick/util.o /build/quick/ui_state.o /build/quick/MIDI.o /build/quick/LedRopeTCL.o /build/quick/libfastled.a
+3.52 ================================================================================
+3.52 ✅ JavaScript output: /build/quick/fastled.js (87.8k)
+3.52 ✅ WebAssembly output: /build/quick/fastled.wasm (803.5k)
+3.52
+✅ Program built at: /build/quick/fastled.js
+3.52 🔊 VERBOSE BUILD COMPLETED: All emcc/linker calls shown above
+
+##################################
+# Compilation process Finsished. #
+##################################
+
+
+Compilation successful.
+
+Compilation return code: 0
+
+###########################
+# Compilation successful. #
+###########################
+
+
+###########################################
+# No-PlatformIO build directory structure #
+###########################################
+
+✓ Using direct compilation build directory: /build/quick
+✓ Build mode subdirectory: quick
+✓ Expected output files: fastled.js, fastled.wasm
+✓ Build directory exists: /build/quick
+
+###########################
+# Copying output files... #
+###########################
+
+Copying /build/quick/fastled.wasm to /tmp/tmpzrk20hg_/wasm/fastled_js/fastled.wasm
+Copying /build/quick/fastled.js to /tmp/tmpzrk20hg_/wasm/fastled_js/fastled.js
+Copying /build/quick/fastled.js.symbols to /tmp/tmpzrk20hg_/wasm/fastled_js/fastled.js.symbols
+Copying src/platforms/wasm/compiler/index.html to output directory
+Copying src/platforms/wasm/compiler/index.css to output directory
+Copying files from src/platforms/wasm/compiler/modules to /tmp/tmpzrk20hg_/wasm/fastled_js/modules
+Copying index.js to output directory
+
+###############################
+# Writing manifest files.json #
+###############################
+
+
+###############################
+# No-PlatformIO Build Summary #
+###############################
+
+✅ Compilation method: Direct emcc calls (bypassed PlatformIO)
+✅ Build mode: QUICK
+✅ Build directory: /build/quick
+✅ Source directory: /tmp/tmpzrk20hg_/wasm
+✅ Output directory: fastled_js
+📁 Checking output files in /tmp/tmpzrk20hg_/wasm/fastled_js:
+  ✅ fastled.js (87757 bytes)
+  ✅ fastled.wasm (803528 bytes)
+🎯 Build completed using direct emscripten compilation
+
+################################
+# Cleaning up directories:     #
+#   build (/js/.pio/build) and #
+#   sketch (/js/src)           #
+################################
+
+
+##############################################
+# Compilation process completed successfully #
+##############################################
+
