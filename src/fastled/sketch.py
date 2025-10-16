@@ -25,10 +25,27 @@ def find_sketch_directories(directory: Path | None = None) -> list[Path]:
             if looks_like_sketch_directory(path, quick=True):
                 sketch_directories.append(path)
             if dir_name.lower() == "examples":
-                for example in path.iterdir():
-                    if example.is_dir():
-                        if looks_like_sketch_directory(example, quick=True):
-                            sketch_directories.append(example)
+                # Recursively search examples directory for sketch directories
+                def search_examples_recursive(
+                    examples_path: Path, depth: int = 0, max_depth: int = 3
+                ):
+                    nonlocal file_count
+                    if depth >= max_depth:
+                        return
+                    for example in examples_path.iterdir():
+                        if example.is_dir():
+                            if str(example.name).startswith("."):
+                                continue
+                            file_count += 1
+                            if file_count > _MAX_FILES_SEARCH_LIMIT:
+                                return
+                            if looks_like_sketch_directory(example, quick=True):
+                                sketch_directories.append(example)
+                            else:
+                                # Keep searching deeper if this isn't a sketch directory
+                                search_examples_recursive(example, depth + 1, max_depth)
+
+                search_examples_recursive(path)
     # make relative to cwd
     sketch_directories = [p.relative_to(directory) for p in sketch_directories]
     return sketch_directories
