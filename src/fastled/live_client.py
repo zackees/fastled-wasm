@@ -23,6 +23,7 @@ class LiveClient:
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
         no_platformio: bool = False,
+        enable_https: bool = True,  # Enable HTTPS for the local server
     ) -> None:
         self.sketch_directory = sketch_directory
         self.host = host
@@ -36,6 +37,7 @@ class LiveClient:
         self.thread: threading.Thread | None = None
         self.auto_updates = auto_updates
         self.no_platformio = no_platformio
+        self.enable_https = enable_https
         if auto_start:
             self.start()
         if self.auto_updates is False:
@@ -55,6 +57,7 @@ class LiveClient:
             shutdown=self.shutdown,
             http_port=self.http_port,
             no_platformio=self.no_platformio,
+            enable_https=self.enable_https,
         )
         return rtn
 

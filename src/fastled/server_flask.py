@@ -341,7 +341,35 @@ def _run_flask_server(
         # server.watch(str(fastled_js / "index.css"))
         # Start the server
         logger.info(f"Starting server on port {port}")
-        server.serve(port=port, debug=True)
+
+        # Configure SSL if certificates are provided
+        if certfile and keyfile:
+            logger.info(
+                f"Configuring SSL with certfile: {certfile}, keyfile: {keyfile}"
+            )
+            # Monkey-patch the server to use SSL
+            # The livereload Server doesn't expose ssl_context directly,
+            # so we need to use the underlying tornado server
+            import ssl
+
+            from tornado import httpserver
+            from tornado.ioloop import IOLoop
+            from tornado.wsgi import WSGIContainer
+
+            # Create SSL context
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_ctx.load_cert_chain(str(certfile), str(keyfile))
+
+            # Wrap the WSGI app in Tornado's WSGIContainer
+            wsgi_container = WSGIContainer(server.app)  # type: ignore[arg-type]
+
+            # Create HTTP server with SSL
+            http_server = httpserver.HTTPServer(wsgi_container, ssl_options=ssl_ctx)
+            http_server.listen(port)
+            logger.info(f"HTTPS server started on port {port}")
+            IOLoop.current().start()
+        else:
+            server.serve(port=port, debug=True)
     except KeyboardInterrupt:
         logger.info("Server stopped by keyboard interrupt")
         import _thread

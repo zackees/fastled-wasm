@@ -67,6 +67,7 @@ class FetchSourceFileTester(unittest.TestCase):
             auto_updates=False,
             open_web_browser=False,
             http_port=http_port,
+            enable_https=False,  # Disable HTTPS for testing
         )
         with client:
             wait_for_server(f"http://localhost:{http_port}", timeout=100)

@@ -82,6 +82,7 @@ class Api:
             int | None
         ) = None,  # None means auto select a free port. -1 means no server.
         no_platformio: bool = False,
+        enable_https: bool = True,  # Enable HTTPS for the local server
     ) -> LiveClient:
         return LiveClient(
             sketch_directory=sketch_directory,
@@ -94,6 +95,7 @@ class Api:
             profile=profile,
             http_port=http_port,
             no_platformio=no_platformio,
+            enable_https=enable_https,
         )
 
     @staticmethod
@@ -219,6 +221,7 @@ class Test:
         compile_server_port: int | None = None,
         open_browser: bool = True,
         app: bool = False,
+        enable_https: bool = False,  # Default to HTTP for tests (tests use http:// URLs)
     ) -> Process:
         from fastled.open_browser import spawn_http_server
 
@@ -231,6 +234,7 @@ class Test:
             compile_server_port=compile_server_port,
             open_browser=open_browser,
             app=app,
+            enable_https=enable_https,
         )
         return proc
 

@@ -204,9 +204,9 @@ def _try_start_server_or_get_url(
     local_host_needs_server = False
     if is_local_host:
         addr = "localhost" if localhost or not isinstance(args_web, str) else args_web
-        urls = [addr]
         if ":" not in addr:
-            urls.append(f"{addr}:{SERVER_PORT}")
+            addr = f"{addr}:{SERVER_PORT}"
+        urls = [addr]
 
         result: ConnectionResult | None = find_good_connection(urls)
         if result is not None:
@@ -328,6 +328,7 @@ def run_client(
     no_platformio: bool = False,
     app: bool = False,  # Use app-like browser experience
     background_update: bool = False,
+    enable_https: bool = True,  # Enable HTTPS for the local server
 ) -> int:
     has_checked_newer_version_yet = False
     compile_server: CompileServer | None = None
@@ -416,6 +417,7 @@ def run_client(
                 compile_server_port=port,
                 open_browser=open_web_browser,
                 app=app,
+                enable_https=enable_https,
             )
         else:
             if result.success:

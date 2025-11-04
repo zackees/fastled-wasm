@@ -57,9 +57,15 @@ def is_port_free(port: int) -> bool:
     import httpx
 
     try:
-        response = httpx.get(f"http://localhost:{port}", timeout=1)
-        response.raise_for_status()
-        return False
+        # Try HTTPS first, then fall back to HTTP
+        try:
+            response = httpx.get(f"https://localhost:{port}", timeout=1, verify=False)
+            response.raise_for_status()
+            return False
+        except (httpx.HTTPError, httpx.ConnectError):
+            response = httpx.get(f"http://localhost:{port}", timeout=1)
+            response.raise_for_status()
+            return False
     except (httpx.HTTPError, httpx.ConnectError):
         return True
 
@@ -75,16 +81,21 @@ def find_free_port(start_port: int) -> int:
     raise ValueError("Could not find a free port")
 
 
-def wait_for_server(port: int, timeout: int = 10) -> None:
+def wait_for_server(port: int, timeout: int = 10, enable_https: bool = True) -> None:
     """Wait for the server to start."""
     from httpx import get
 
     future_time = time.time() + timeout
+    protocol = "https" if enable_https else "http"
     while future_time > time.time():
         try:
-            url = f"http://localhost:{port}"
+            # Try the specified protocol (HTTPS with SSL verification disabled for self-signed certs)
+            url = f"{protocol}://localhost:{port}"
             # print(f"Waiting for server to start at {url}")
-            response = get(url, timeout=1)
+            verify = (
+                False if enable_https else True
+            )  # Only disable SSL verification for HTTPS
+            response = get(url, timeout=1, verify=verify)
             if response.status_code == 200:
                 return
         except Exception:
@@ -98,6 +109,7 @@ def spawn_http_server(
     port: int | None = None,
     open_browser: bool = True,
     app: bool = False,
+    enable_https: bool = True,
 ) -> Process:
 
     if port is not None and not is_port_free(port):
@@ -105,6 +117,17 @@ def spawn_http_server(
     if port is None:
         offset = random.randint(0, 100)
         port = find_free_port(DEFAULT_PORT + offset)
+
+    # Get SSL certificate paths from the fastled assets directory if HTTPS is enabled
+    certfile: Path | None = None
+    keyfile: Path | None = None
+
+    if enable_https:
+        import fastled
+
+        assets_dir = Path(fastled.__file__).parent / "assets"
+        certfile = assets_dir / "localhost.pem"
+        keyfile = assets_dir / "localhost-key.pem"
 
     # port: int,
     # cwd: Path,
@@ -114,7 +137,7 @@ def spawn_http_server(
 
     proc = Process(
         target=run_flask_in_thread,
-        args=(port, fastled_js, compile_server_port),
+        args=(port, fastled_js, compile_server_port, certfile, keyfile),
         daemon=True,
     )
     add_cleanup(proc)
@@ -123,9 +146,10 @@ def spawn_http_server(
     # Add to cleanup set with weak reference
     add_cleanup(proc)
 
-    wait_for_server(port)
+    wait_for_server(port, enable_https=enable_https)
     if open_browser:
-        url = f"http://localhost:{port}"
+        protocol = "https" if enable_https else "http"
+        url = f"{protocol}://localhost:{port}"
         should_use_playwright = app
 
         if should_use_playwright:

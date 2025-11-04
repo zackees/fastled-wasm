@@ -1,3 +1,5 @@
 include pyproject.toml
 include requirements.testing.txt
 include template_python_cmd/assets/example.txt
+include src/fastled/assets/localhost.pem
+include src/fastled/assets/localhost-key.pem
