@@ -296,7 +296,7 @@ def _run_flask_server(
                 # Some servers don't set the Content-Type header for a bunch of files.
                 content_type = None
                 if path.endswith(".js"):
-                    content_type = "application/javascript"
+                    content_type = "text/javascript; charset=utf-8"
                 elif path.endswith(".css"):
                     content_type = "text/css"
                 elif path.endswith(".wasm"):
