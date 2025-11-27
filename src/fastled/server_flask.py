@@ -1,6 +1,7 @@
 import argparse
 import logging
 import time
+from datetime import datetime, timezone
 from multiprocessing import Process
 from pathlib import Path
 
@@ -41,6 +42,49 @@ def _is_dwarf_source(path: str) -> bool:
     if not _is_dwarf_source:
         logger.debug(f"Path '{path}' is not a dwarf source file")
     return _is_dwarf_source
+
+
+def _check_certificate_expiration(
+    certfile: Path,
+) -> tuple[bool, int | None, str | None]:
+    """
+    Check if a certificate is expiring soon or has expired.
+
+    Args:
+        certfile: Path to the certificate file
+
+    Returns:
+        Tuple of (is_valid, days_remaining, expiration_date_str)
+        - is_valid: True if cert is valid and not expiring within 30 days
+        - days_remaining: Number of days until expiration (negative if expired)
+        - expiration_date_str: Human-readable expiration date
+    """
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+
+        # Read and parse the certificate
+        with open(certfile, "rb") as f:
+            cert_data = f.read()
+            cert = x509.load_pem_x509_certificate(cert_data, default_backend())
+
+        # Get expiration date
+        expiration_date = cert.not_valid_after_utc
+        expiration_str = expiration_date.strftime("%Y-%m-%d")
+
+        # Calculate days remaining
+        now = datetime.now(timezone.utc)
+        days_remaining = (expiration_date - now).days
+
+        # Check if expiring within 30 days or already expired
+        is_valid = days_remaining > 30
+
+        return is_valid, days_remaining, expiration_str
+
+    except Exception as e:
+        logger.warning(f"Failed to check certificate expiration: {e}")
+        # Return None values to indicate check failed but don't block SSL
+        return True, None, None
 
 
 def _run_flask_server(
@@ -343,32 +387,66 @@ def _run_flask_server(
         logger.info(f"Starting server on port {port}")
 
         # Configure SSL if certificates are provided
+        ssl_enabled = False
         if certfile and keyfile:
-            logger.info(
-                f"Configuring SSL with certfile: {certfile}, keyfile: {keyfile}"
-            )
-            # Monkey-patch the server to use SSL
-            # The livereload Server doesn't expose ssl_context directly,
-            # so we need to use the underlying tornado server
-            import ssl
+            try:
+                logger.info(
+                    f"Configuring SSL with certfile: {certfile}, keyfile: {keyfile}"
+                )
 
-            from tornado import httpserver
-            from tornado.ioloop import IOLoop
-            from tornado.wsgi import WSGIContainer
+                # Check certificate expiration
+                is_valid, days_remaining, expiration_date = (
+                    _check_certificate_expiration(certfile)
+                )
+                if days_remaining is not None:
+                    if days_remaining < 0:
+                        logger.warning(
+                            f"WARNING: SSL certificate has EXPIRED (expired on {expiration_date}). "
+                            "Please regenerate certificates to ensure continued HTTPS functionality."
+                        )
+                    elif days_remaining <= 30:
+                        logger.warning(
+                            f"WARNING: SSL certificate expires in {days_remaining} days (on {expiration_date}). "
+                            "Please regenerate certificates soon."
+                        )
+                    else:
+                        logger.info(
+                            f"SSL certificate valid until {expiration_date} ({days_remaining} days remaining)"
+                        )
 
-            # Create SSL context
-            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_ctx.load_cert_chain(str(certfile), str(keyfile))
+                # Monkey-patch the server to use SSL
+                # The livereload Server doesn't expose ssl_context directly,
+                # so we need to use the underlying tornado server
+                import ssl
 
-            # Wrap the WSGI app in Tornado's WSGIContainer
-            wsgi_container = WSGIContainer(server.app)  # type: ignore[arg-type]
+                from tornado import httpserver
+                from tornado.ioloop import IOLoop
+                from tornado.wsgi import WSGIContainer
 
-            # Create HTTP server with SSL
-            http_server = httpserver.HTTPServer(wsgi_container, ssl_options=ssl_ctx)
-            http_server.listen(port)
-            logger.info(f"HTTPS server started on port {port}")
-            IOLoop.current().start()
-        else:
+                # Wrap the WSGI app in Tornado's WSGIContainer
+                wsgi_container = WSGIContainer(server.app)  # type: ignore[arg-type]
+
+                # Create a proper SSLContext for server-side SSL
+                ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                ssl_ctx.load_cert_chain(str(certfile), str(keyfile))
+                # Don't verify client certificates (this is a server, not a client)
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE
+
+                http_server = httpserver.HTTPServer(wsgi_container, ssl_options=ssl_ctx)
+                http_server.listen(port)
+                logger.info(f"HTTPS server started on port {port}")
+                ssl_enabled = True
+                IOLoop.current().start()
+            except Exception as ssl_error:
+                logger.warning(
+                    f"Failed to start HTTPS server: {ssl_error}. "
+                    "Falling back to HTTP. "
+                    "WARNING: Microphone access may not work without HTTPS."
+                )
+                ssl_enabled = False
+
+        if not ssl_enabled:
             server.serve(port=port, debug=True)
     except KeyboardInterrupt:
         logger.info("Server stopped by keyboard interrupt")

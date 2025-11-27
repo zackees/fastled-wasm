@@ -608,6 +608,7 @@ def run_client_server(args: Args) -> int:
     build_mode: BuildMode = BuildMode.from_args(args)
     no_platformio = bool(args.no_platformio)
     app = bool(args.app)
+    enable_https = bool(args.enable_https)
 
     if not force_compile and not looks_like_sketch_directory(directory):
         # if there is only one directory in the sketch directory, use that
@@ -672,6 +673,7 @@ def run_client_server(args: Args) -> int:
             no_platformio=no_platformio,
             app=app,
             background_update=background_update,
+            enable_https=enable_https,
         )
     except KeyboardInterrupt:
         return 1

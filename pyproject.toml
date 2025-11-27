@@ -28,6 +28,7 @@ dependencies = [
     "playwright>=1.40.0",
     "websockify>=0.13.0",
     "fasteners>=0.20",
+    "cryptography>=41.0.0",
 ]
 
 dynamic = ["version"]

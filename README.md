@@ -120,6 +120,12 @@ This tool features full C++ debugging through the browser.
 
 For instructions on setup see [DEBUGGER.md](DEBUGGER.md)
 
+# HTTPS/SSL
+
+FastLED WASM Server includes built-in HTTPS support using self-signed SSL certificates. HTTPS is required for microphone access and other browser security features.
+
+For complete documentation on HTTPS setup, certificate trust, troubleshooting, and regeneration, see [HTTPS_SSL.md](HTTPS_SSL.md)
+
 # Command Line Use
 
 Change to the directory where the sketch lives and run, will run the compilation

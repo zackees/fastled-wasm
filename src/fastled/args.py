@@ -30,6 +30,7 @@ class Args:
     dry_run: bool = False  # Dry run mode for testing
     no_interactive: bool = False  # Non-interactive mode
     emsdk_headers: str | None = None  # Path to export EMSDK headers ZIP
+    enable_https: bool = True  # Enable HTTPS for local server (default: True)
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -88,6 +89,9 @@ class Args:
         assert isinstance(
             args.emsdk_headers, str | None
         ), f"expected str | None, got {type(args.emsdk_headers)}"
+        assert isinstance(
+            args.no_https, bool
+        ), f"expected bool, got {type(args.no_https)}"
 
         init: bool | str = False
         if args.init is None:
@@ -121,4 +125,5 @@ class Args:
             dry_run=args.dry_run,
             emsdk_headers=args.emsdk_headers,
             no_interactive=args.no_interactive,
+            enable_https=not args.no_https,  # Invert no_https to enable_https
         )

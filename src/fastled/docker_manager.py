@@ -88,6 +88,152 @@ def _win32_docker_location() -> str | None:
     return None
 
 
+def _check_wsl2_docker_backend() -> tuple[bool, str]:
+    """
+    Check if Docker's WSL2 backend (docker-desktop) is running.
+
+    Returns:
+        tuple[bool, str]: (is_running, status_message)
+    """
+    try:
+        result = subprocess.run(
+            ["wsl", "--list", "--verbose"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            return False, "WSL2 not installed (wsl command not found)"
+
+        output = result.stdout
+
+        # Handle WSL output encoding issues (Git Bash adds spaces between characters)
+        cleaned_lines = []
+        for line in output.split("\n"):
+            cleaned = line.replace("\x00", "").strip()
+            # Remove spaces between single characters: "d o c k e r" -> "docker"
+            if " " in cleaned and len([c for c in cleaned.split() if len(c) == 1]) > 3:
+                cleaned = cleaned.replace(" ", "")
+            cleaned_lines.append(cleaned)
+
+        # Detect status: running/stopped
+        for line in cleaned_lines:
+            if "docker-desktop" in line.lower():
+                if "running" in line.lower():
+                    return True, "docker-desktop WSL2 backend is running"
+                elif "stopped" in line.lower():
+                    return False, "docker-desktop WSL2 backend is stopped"
+
+        return False, "docker-desktop WSL2 distribution not found"
+
+    except FileNotFoundError:
+        return False, "WSL2 not installed (wsl command not found)"
+    except subprocess.TimeoutExpired:
+        return False, "WSL2 command timed out"
+    except Exception as e:
+        return False, f"Error checking WSL2 backend: {e}"
+
+
+def _find_docker_desktop_executable() -> str | None:
+    """
+    Locate Docker Desktop.exe across common installation paths.
+
+    Returns:
+        str | None: Path to Docker Desktop.exe if found, None otherwise
+    """
+    home_dir = Path.home()
+    search_paths = [
+        "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+        "C:\\Program Files (x86)\\Docker\\Docker\\Docker Desktop.exe",
+        f"{home_dir}\\AppData\\Local\\Programs\\Docker\\Docker\\Docker Desktop.exe",
+    ]
+
+    for path in search_paths:
+        if Path(path).exists():
+            return path
+
+    return None
+
+
+def _kill_docker_desktop_windows() -> bool:
+    """
+    Forcefully terminate Docker Desktop and backend processes.
+
+    Returns:
+        bool: True if processes were killed successfully
+    """
+    try:
+        # Kill Docker Desktop GUI
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "Docker Desktop.exe"],
+            capture_output=True,
+            timeout=10,
+        )
+
+        # Kill Docker backend engine
+        subprocess.run(
+            ["taskkill", "/F", "/IM", "com.docker.backend.exe"],
+            capture_output=True,
+            timeout=10,
+        )
+
+        time.sleep(3)  # Allow cleanup
+        return True
+    except Exception:
+        return False
+
+
+def _restart_docker_desktop_windows() -> tuple[bool, str]:
+    """
+    Complete Docker Desktop restart workflow.
+
+    Returns:
+        tuple[bool, str]: (success, message)
+    """
+    print("  Attempting to restart Docker Desktop to fix WSL2 backend...", flush=True)
+
+    docker_path = _find_docker_desktop_executable()
+    if not docker_path:
+        return False, "Docker Desktop executable not found"
+
+    print("  Stopping Docker Desktop...", flush=True)
+    _kill_docker_desktop_windows()
+
+    time.sleep(5)  # Wait for cleanup
+
+    print("  Starting Docker Desktop...", flush=True)
+    subprocess.Popen(
+        [docker_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+    print("  Waiting for Docker Desktop and WSL2 backend to initialize...", flush=True)
+
+    # Poll for up to 2 minutes
+    for attempt in range(120):
+        time.sleep(1)
+
+        # Check if Docker engine is available
+        is_running, _ = DockerManager.is_running()
+        if is_running:
+            # Also check WSL2 backend
+            wsl_running, _ = _check_wsl2_docker_backend()
+            if wsl_running:
+                return (
+                    True,
+                    "Docker Desktop restarted successfully - WSL2 backend is running",
+                )
+
+        # Progress indicator every 15 seconds
+        if (attempt + 1) % 15 == 0:
+            print(f"  Still waiting ({attempt + 1}s)...", flush=True)
+
+    return (
+        False,
+        "Docker Desktop started but WSL2 backend failed to initialize within 2 minutes",
+    )
+
+
 def get_lock(image_name: str) -> FileLock:
     """Get the file lock for this DockerManager instance."""
     lock_file = CONFIG_DIR / f"{image_name}.lock"
@@ -384,12 +530,76 @@ class DockerManager:
         print("Attempting to start Docker...")
 
         try:
+            # Check if Docker is already running
+            is_running, _ = self.is_running()
+            if is_running:
+                print("Docker is already running.")
+                return True
+
             if sys.platform == "win32":
-                docker_path = _win32_docker_location()
+                # Check WSL2 backend status on Windows
+                print("  Checking Docker Desktop WSL2 backend status...", flush=True)
+                wsl_running, wsl_message = _check_wsl2_docker_backend()
+                print(f"  WSL2 Status: {wsl_message}", flush=True)
+
+                # Detect split-brain state and trigger restart
+                if not wsl_running and "stopped" in wsl_message.lower():
+                    print(
+                        "  Issue detected: Docker Desktop app may be running but WSL2 backend is stopped",
+                        flush=True,
+                    )
+                    success, message = _restart_docker_desktop_windows()
+                    if success:
+                        print(f"  {message}")
+                        return True
+                    else:
+                        print(f"  {message}")
+                        return False
+
+                # Standard startup flow
+                docker_path = _find_docker_desktop_executable()
                 if not docker_path:
                     print("Docker Desktop not found.")
                     return False
-                subprocess.run(["start", "", docker_path], shell=True)
+
+                subprocess.Popen(
+                    [docker_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+
+                # Wait for Docker to start up
+                print("Waiting for Docker Desktop to start...")
+                attempts = 0
+                max_attempts = 120  # 2 minutes
+                while attempts < max_attempts:
+                    attempts += 1
+                    time.sleep(1)
+
+                    is_running, _ = self.is_running()
+                    if is_running:
+                        # Verify WSL2 backend
+                        wsl_running, wsl_msg = _check_wsl2_docker_backend()
+                        if wsl_running:
+                            print("Docker Desktop started successfully.")
+                            return True
+                        else:
+                            print(f"  Warning: {wsl_msg}", flush=True)
+
+                    if (attempts) % 10 == 0:
+                        print(f"  Still waiting ({attempts}s)...", flush=True)
+
+                # If startup failed, try full restart
+                print(
+                    "  Docker Desktop didn't start properly, attempting full restart...",
+                    flush=True,
+                )
+                success, message = _restart_docker_desktop_windows()
+                if success:
+                    print(f"  {message}")
+                    return True
+                else:
+                    print(f"  {message}")
+                    return False
+
             elif sys.platform == "darwin":
                 subprocess.run(["open", "-a", "Docker"])
                 time.sleep(2)  # Give Docker time to start
@@ -399,13 +609,14 @@ class DockerManager:
                 print("Unknown platform. Cannot auto-launch Docker.")
                 return False
 
-            # Wait for Docker to start up with increasing delays
+            # Wait for Docker to start up with increasing delays (non-Windows platforms)
             print("Waiting for Docker Desktop to start...")
             attempts = 0
             max_attempts = 20  # Increased max wait time
             while attempts < max_attempts:
                 attempts += 1
-                if self.is_running():
+                is_running, _ = self.is_running()
+                if is_running:
                     print("Docker started successfully.")
                     return True
 

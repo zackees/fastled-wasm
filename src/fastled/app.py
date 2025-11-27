@@ -190,6 +190,7 @@ def main() -> int:
                 host=server,
                 auto_start=True,
                 keep_running=not just_compile,
+                enable_https=args.enable_https,
             ) as _:
                 while True:
                     time.sleep(0.2)  # wait for user to exit

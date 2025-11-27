@@ -32,6 +32,7 @@ FastLED WASM Compiler - Useful options:
   --web [url]           Use web compiler
   --server              Run the compiler server
   --no-platformio       Bypass PlatformIO constraints using local Docker compilation
+  --no-https            Disable HTTPS and use HTTP for local server
   --quick               Build in quick mode (default)
   --profile             Enable profiling the C++ build system
   --update              Update the docker image for the wasm compiler
@@ -194,6 +195,12 @@ def parse_args() -> Args:
         type=str,
         default=None,
         help="Export EMSDK headers ZIP to specified path",
+    )
+
+    parser.add_argument(
+        "--no-https",
+        action="store_true",
+        help="Disable HTTPS and use HTTP for the local server (useful for debugging)",
     )
 
     build_mode = parser.add_mutually_exclusive_group()
