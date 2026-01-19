@@ -128,7 +128,7 @@ void loop() {
     }
 
 
-    fxEngine.draw(millis(), leds);
+    fxEngine.draw(::millis(), leds);
     FastLED.show();
     frame++;
 }

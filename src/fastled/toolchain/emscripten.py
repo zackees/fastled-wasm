@@ -620,10 +620,15 @@ class EmscriptenToolchain:
             print(error_msg)
             raise RuntimeError(error_msg) from e
 
-        # Copy index.html if available
-        self._create_index_html(output_dir, config.output_name)
+        # Copy full production frontend assets from FastLED
+        print("Copying frontend assets...")
+        self._copy_frontend_assets(output_dir, fastled_dir)
 
-        # Cleanup temp directory
+        # Cleanup build directory (intermediate compilation files)
+        if build_dir.exists():
+            shutil.rmtree(build_dir, ignore_errors=True)
+
+        # Cleanup temp directory (downloaded FastLED)
         if self._temp_dir and self._temp_dir.exists():
             shutil.rmtree(self._temp_dir, ignore_errors=True)
             self._temp_dir = None
@@ -635,8 +640,79 @@ class EmscriptenToolchain:
 
         return output_file
 
-    def _create_index_html(self, output_dir: Path, module_name: str) -> None:
-        """Create a basic index.html to run the compiled WASM."""
+    def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
+        """Copy the full production frontend assets from FastLED's wasm compiler directory.
+
+        This copies the production-ready frontend files including:
+        - index.html - Full-featured UI with menus, controls
+        - index.css - Styling
+        - index.js - Application logic
+        - modules/ - JavaScript modules for audio, graphics, UI, recording
+
+        These assets provide feature parity with the Docker build output.
+        """
+        compiler_assets_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
+
+        if not compiler_assets_dir.exists():
+            print(
+                f"Warning: Frontend assets not found at {compiler_assets_dir}, using minimal index.html"
+            )
+            self._create_minimal_index_html(output_dir, "fastled")
+            return
+
+        # Copy index.html
+        index_html = compiler_assets_dir / "index.html"
+        if index_html.exists():
+            shutil.copy2(index_html, output_dir / "index.html")
+            print(f"  Copied: index.html ({index_html.stat().st_size} bytes)")
+
+        # Copy index.css
+        index_css = compiler_assets_dir / "index.css"
+        if index_css.exists():
+            shutil.copy2(index_css, output_dir / "index.css")
+            print(f"  Copied: index.css ({index_css.stat().st_size} bytes)")
+
+        # Copy index.js
+        index_js = compiler_assets_dir / "index.js"
+        if index_js.exists():
+            shutil.copy2(index_js, output_dir / "index.js")
+            print(f"  Copied: index.js ({index_js.stat().st_size} bytes)")
+
+        # Copy modules directory
+        modules_dir = compiler_assets_dir / "modules"
+        if modules_dir.exists():
+            output_modules_dir = output_dir / "modules"
+            output_modules_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                modules_dir,
+                output_modules_dir,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(".*"),  # Ignore hidden files
+            )
+            module_count = len(list(output_modules_dir.rglob("*.js")))
+            print(f"  Copied: modules/ ({module_count} JavaScript modules)")
+
+        # Copy vendor directory (contains Three.js for 3D rendering)
+        vendor_dir = compiler_assets_dir / "vendor"
+        if vendor_dir.exists():
+            output_vendor_dir = output_dir / "vendor"
+            output_vendor_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                vendor_dir,
+                output_vendor_dir,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(".*"),  # Ignore hidden files
+            )
+            vendor_count = len(list(output_vendor_dir.rglob("*.js")))
+            print(f"  Copied: vendor/ ({vendor_count} vendor files)")
+
+        # Create empty files.json manifest (for consistency with Docker build)
+        files_json = output_dir / "files.json"
+        files_json.write_text("[]")
+        print("  Created: files.json (empty manifest)")
+
+    def _create_minimal_index_html(self, output_dir: Path, module_name: str) -> None:
+        """Create a minimal fallback index.html when full assets are not available."""
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
