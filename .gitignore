@@ -152,3 +152,4 @@ dist/
 /fastled/
 logs
 vscode-plugin
+.loop

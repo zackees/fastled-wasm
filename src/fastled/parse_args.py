@@ -29,6 +29,7 @@ _DEFAULT_HELP_TEXT = """
 FastLED WASM Compiler - Useful options:
   <directory>           Directory containing the FastLED sketch to compile
   --init [example]      Initialize one of the top tier WASM examples
+  --native              Compile using native EMSDK (no Docker required)
   --web [url]           Use web compiler
   --server              Run the compiler server
   --no-platformio       Bypass PlatformIO constraints using local Docker compilation
@@ -44,6 +45,7 @@ FastLED WASM Compiler - Useful options:
 Examples:
   fastled (will auto detect the sketch directory and prompt you)
   fastled my_sketch
+  fastled --native my_sketch (compiles using native EMSDK, no Docker)
   fastled my_sketch --web (compiles using the web compiler only)
   fastled my_sketch --background-update (compiles and updates docker image in background)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
@@ -201,6 +203,19 @@ def parse_args() -> Args:
         "--no-https",
         action="store_true",
         help="Disable HTTPS and use HTTP for the local server (useful for debugging)",
+    )
+
+    parser.add_argument(
+        "--native",
+        action="store_true",
+        help="Compile using native EMSDK toolchain (no Docker required)",
+    )
+
+    parser.add_argument(
+        "--fastled-path",
+        type=str,
+        default=None,
+        help="Path to FastLED library for native compilation (defaults to downloading from master repo)",
     )
 
     build_mode = parser.add_mutually_exclusive_group()

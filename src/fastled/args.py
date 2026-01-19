@@ -31,6 +31,10 @@ class Args:
     no_interactive: bool = False  # Non-interactive mode
     emsdk_headers: str | None = None  # Path to export EMSDK headers ZIP
     enable_https: bool = True  # Enable HTTPS for local server (default: True)
+    native: bool = False  # Use native EMSDK compilation (no Docker required)
+    fastled_path: Path | str | None = (
+        None  # Path to FastLED library for native compilation
+    )
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -92,6 +96,10 @@ class Args:
         assert isinstance(
             args.no_https, bool
         ), f"expected bool, got {type(args.no_https)}"
+        assert isinstance(args.native, bool), f"expected bool, got {type(args.native)}"
+        assert isinstance(
+            args.fastled_path, str | None
+        ), f"expected str | None, got {type(args.fastled_path)}"
 
         init: bool | str = False
         if args.init is None:
@@ -126,4 +134,6 @@ class Args:
             emsdk_headers=args.emsdk_headers,
             no_interactive=args.no_interactive,
             enable_https=not args.no_https,  # Invert no_https to enable_https
+            native=args.native,
+            fastled_path=Path(args.fastled_path) if args.fastled_path else None,
         )

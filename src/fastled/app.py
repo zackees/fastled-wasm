@@ -199,6 +199,27 @@ def main() -> int:
             server.stop()
             return 1
 
+    # Handle native compilation mode
+    if args.native:
+        from fastled.compile_native import run_native_compile
+        from fastled.types import BuildMode
+
+        if directory is None:
+            print("Error: No sketch directory specified for native compilation.")
+            return 1
+
+        print("Running in native EMSDK compilation mode (no Docker required).")
+        build_mode = BuildMode.from_args(args)
+        return run_native_compile(
+            directory=directory,
+            build_mode=build_mode,
+            profile=args.profile,
+            open_browser=not just_compile,
+            keep_running=not just_compile,
+            enable_https=args.enable_https,
+            fastled_path=args.fastled_path,
+        )
+
     if has_server:
         print("Running in server only mode.")
         return run_server(args)

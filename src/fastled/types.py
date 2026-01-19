@@ -60,6 +60,7 @@ class BuildMode(Enum):
 
 class Platform(Enum):
     WASM = "WASM"
+    NATIVE = "NATIVE"  # Native EMSDK compilation (no Docker required)
 
     @classmethod
     def from_string(cls, platform_str: str) -> "Platform":
