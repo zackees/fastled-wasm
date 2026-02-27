@@ -683,75 +683,77 @@ class EmscriptenToolchain:
         return output_file
 
     def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
-        """Copy the full production frontend assets from FastLED's wasm compiler directory.
+        """Copy Vite-built frontend assets from FastLED's wasm compiler directory.
 
-        This copies the production-ready frontend files including:
-        - index.html - Full-featured UI with menus, controls
-        - index.css - Styling
-        - index.js - Application logic
-        - modules/ - JavaScript modules for audio, graphics, UI, recording
-
-        These assets provide feature parity with the Docker build output.
+        The upstream FastLED repo uses TypeScript + Vite. This method builds the
+        frontend (if needed) and copies the dist/ output. Falls back to a minimal
+        index.html if Node.js is not available.
         """
-        compiler_assets_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
+        compiler_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
+        dist_dir = compiler_dir / "dist"
 
-        if not compiler_assets_dir.exists():
+        if not compiler_dir.exists():
             print(
-                f"Warning: Frontend assets not found at {compiler_assets_dir}, using minimal index.html"
+                f"Warning: Frontend assets not found at {compiler_dir}, using minimal index.html"
             )
             self._create_minimal_index_html(output_dir, "fastled")
             return
 
-        # Copy index.html
-        index_html = compiler_assets_dir / "index.html"
-        if index_html.exists():
-            shutil.copy2(index_html, output_dir / "index.html")
-            print(f"  Copied: index.html ({index_html.stat().st_size} bytes)")
+        # Build frontend with Vite if dist/ doesn't exist
+        if not dist_dir.exists():
+            npx = shutil.which("npx")
+            if not npx:
+                print(
+                    "Warning: Node.js not found. Cannot build frontend. Using minimal index.html"
+                )
+                print(
+                    "  Install Node.js from https://nodejs.org/ for the full UI experience."
+                )
+                self._create_minimal_index_html(output_dir, "fastled")
+                return
 
-        # Copy index.css
-        index_css = compiler_assets_dir / "index.css"
-        if index_css.exists():
-            shutil.copy2(index_css, output_dir / "index.css")
-            print(f"  Copied: index.css ({index_css.stat().st_size} bytes)")
+            # Install npm dependencies if needed
+            if not (compiler_dir / "node_modules").exists():
+                print("Installing frontend dependencies...")
+                subprocess.run(["npm", "install"], cwd=str(compiler_dir), check=True)
 
-        # Copy index.js
-        index_js = compiler_assets_dir / "index.js"
-        if index_js.exists():
-            shutil.copy2(index_js, output_dir / "index.js")
-            print(f"  Copied: index.js ({index_js.stat().st_size} bytes)")
-
-        # Copy modules directory
-        modules_dir = compiler_assets_dir / "modules"
-        if modules_dir.exists():
-            output_modules_dir = output_dir / "modules"
-            output_modules_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                modules_dir,
-                output_modules_dir,
-                dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns(".*"),  # Ignore hidden files
+            # Build with Vite
+            print("Building frontend with Vite...")
+            result = subprocess.run(
+                [npx, "vite", "build"],
+                cwd=str(compiler_dir),
+                capture_output=True,
+                text=True,
             )
-            module_count = len(list(output_modules_dir.rglob("*.js")))
-            print(f"  Copied: modules/ ({module_count} JavaScript modules)")
+            if result.returncode != 0:
+                print(f"Warning: Vite build failed: {result.stderr}")
+                self._create_minimal_index_html(output_dir, "fastled")
+                return
 
-        # Copy vendor directory (contains Three.js for 3D rendering)
-        vendor_dir = compiler_assets_dir / "vendor"
-        if vendor_dir.exists():
-            output_vendor_dir = output_dir / "vendor"
-            output_vendor_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(
-                vendor_dir,
-                output_vendor_dir,
-                dirs_exist_ok=True,
-                ignore=shutil.ignore_patterns(".*"),  # Ignore hidden files
+        if not dist_dir.exists():
+            print(
+                "Warning: Vite build succeeded but dist/ not created. Using minimal index.html"
             )
-            vendor_count = len(list(output_vendor_dir.rglob("*.js")))
-            print(f"  Copied: vendor/ ({vendor_count} vendor files)")
+            self._create_minimal_index_html(output_dir, "fastled")
+            return
 
-        # Create empty files.json manifest (for consistency with Docker build)
+        # Copy everything from dist/ to output
+        print("Copying Vite build output...")
+        for item in dist_dir.iterdir():
+            dest = output_dir / item.name
+            if item.is_dir():
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
+
+        # Write empty files.json manifest for consistency
         files_json = output_dir / "files.json"
-        files_json.write_text("[]")
-        print("  Created: files.json (empty manifest)")
+        if not files_json.exists():
+            files_json.write_text("[]")
+
+        print("  Frontend assets copied from Vite build output")
 
     def _create_minimal_index_html(self, output_dir: Path, module_name: str) -> None:
         """Create a minimal fallback index.html when full assets are not available."""
