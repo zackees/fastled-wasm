@@ -233,6 +233,16 @@ def parse_args() -> Args:
 
     args = parser.parse_args()
 
+    # Auto-detect FastLED repo for --native mode
+    if args.native and not args.fastled_path:
+        cwd = Path(os.getcwd())
+        fastled_repo = _find_fastled_repo(cwd)
+        if fastled_repo is not None:
+            print(
+                f"Detected FastLED repo at {fastled_repo}, using it for native compilation."
+            )
+            args.fastled_path = str(fastled_repo)
+
     # Handle --emsdk-headers early before other processing
     if args.emsdk_headers:
         from fastled.header_dump import dump_emsdk_headers

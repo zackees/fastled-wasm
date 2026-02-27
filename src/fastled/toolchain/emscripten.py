@@ -377,6 +377,35 @@ class EmscriptenToolchain:
         self._fastled_path = fastled_dir
         return fastled_dir
 
+    def _uses_unity_build(self, fastled_dir: Path) -> bool:
+        """Check if the FastLED repo uses unity build pattern (_build.cpp files)."""
+        src_dir = fastled_dir / "src"
+        return (src_dir / "_build.cpp").exists() and (
+            src_dir / "fl" / "_build.cpp"
+        ).exists()
+
+    def _create_wasm_platform_build(self, build_dir: Path, fastled_dir: Path) -> Path:
+        """Create a custom platforms unity build that only includes wasm/stub/shared."""
+        content = """// Auto-generated platform build for WASM native compilation
+// Only includes wasm, stub, and shared platform sources
+
+#include "FastLED.h"
+
+// Platform root-level sources (guarded by #ifdef, safe for all platforms)
+#include "platforms/compile_test.cpp.hpp"
+#include "platforms/debug_setup.cpp.hpp"
+#include "platforms/ota.cpp.hpp"
+#include "platforms/stub_main.cpp.hpp"
+
+// WASM-relevant platform subdirectories only
+#include "platforms/shared/_build.cpp.hpp"
+#include "platforms/stub/_build.cpp.hpp"
+#include "platforms/wasm/_build.cpp.hpp"
+"""
+        platform_build = build_dir / "wasm_platforms_build.cpp"
+        platform_build.write_text(content)
+        return platform_build
+
     def _get_wasm_sources(self, fastled_dir: Path) -> list[Path]:
         """Get FastLED WASM platform source files."""
         src_dir = fastled_dir / "src"
@@ -527,14 +556,27 @@ class EmscriptenToolchain:
         # Build compiler command
         output_file = output_dir / f"{config.output_name}.js"
 
-        # Get and add source files
-        core_sources = self._get_fastled_core_sources(fastled_dir)
-        wasm_sources = self._get_wasm_sources(fastled_dir)
-        all_sources = core_sources + wasm_sources
-
-        print(
-            f"Compiling with {len(sketch_sources)} sketch files and {len(all_sources)} FastLED files..."
-        )
+        # Get source files - use unity build pattern if available
+        if self._uses_unity_build(fastled_dir):
+            src_dir = fastled_dir / "src"
+            all_sources: list[Path] = [
+                src_dir / "_build.cpp",
+                src_dir / "fl" / "_build.cpp",
+                src_dir / "third_party" / "_build.cpp",
+                self._create_wasm_platform_build(build_dir, fastled_dir),
+            ]
+            # Filter to only existing files
+            all_sources = [s for s in all_sources if s.exists()]
+            print(
+                f"Compiling with {len(sketch_sources)} sketch files using unity build ({len(all_sources)} build units)..."
+            )
+        else:
+            core_sources = self._get_fastled_core_sources(fastled_dir)
+            wasm_sources = self._get_wasm_sources(fastled_dir)
+            all_sources = core_sources + wasm_sources
+            print(
+                f"Compiling with {len(sketch_sources)} sketch files and {len(all_sources)} FastLED files..."
+            )
 
         # Use a response file to avoid Windows command line length limits
         # The response file contains all arguments, one per line
