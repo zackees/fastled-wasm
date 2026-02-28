@@ -356,42 +356,46 @@ def parse_args() -> Args:
         else:
             args.auto_update = None
 
-        if (
-            not cwd_is_fastled
-            and not args.localhost
-            and not args.web
-            and not args.server
-        ):
-            from fastled.docker_manager import DockerManager
+        # Skip Docker/web/localhost detection when using native mode
+        if not args.native:
+            if (
+                not cwd_is_fastled
+                and not args.localhost
+                and not args.web
+                and not args.server
+            ):
+                from fastled.docker_manager import DockerManager
 
-            if DockerManager.is_docker_installed():
-                if not DockerManager.ensure_linux_containers_for_windows():
-                    print(
-                        f"Windows must be in linux containers mode, but is in Windows container mode, Using web compiler at {DEFAULT_URL}."
-                    )
-                    args.web = DEFAULT_URL
+                if DockerManager.is_docker_installed():
+                    if not DockerManager.ensure_linux_containers_for_windows():
+                        print(
+                            f"Windows must be in linux containers mode, but is in Windows container mode, Using web compiler at {DEFAULT_URL}."
+                        )
+                        args.web = DEFAULT_URL
+                    else:
+                        print(
+                            "Docker is installed. Defaulting to --local mode, use --web to override and use the web compiler instead."
+                        )
+                        args.localhost = True
                 else:
                     print(
-                        "Docker is installed. Defaulting to --local mode, use --web to override and use the web compiler instead."
+                        f"Docker is not installed. Using web compiler at {DEFAULT_URL}."
                     )
-                    args.localhost = True
-            else:
-                print(f"Docker is not installed. Using web compiler at {DEFAULT_URL}.")
-                args.web = DEFAULT_URL
-        if cwd_is_fastled and not args.web and not args.server:
-            print("Forcing --local mode because we are in the FastLED repo")
-            args.localhost = True
-        if args.no_platformio:
-            print(
-                "--no-platformio mode enabled: forcing local Docker compilation to bypass PlatformIO constraints"
-            )
-            args.localhost = True
-            args.web = None  # Clear web flag to ensure local compilation
-        if args.localhost:
-            args.web = "localhost"
-        if args.interactive and not args.server:
-            print("--interactive forces --server mode")
-            args.server = True
+                    args.web = DEFAULT_URL
+            if cwd_is_fastled and not args.web and not args.server:
+                print("Forcing --local mode because we are in the FastLED repo")
+                args.localhost = True
+            if args.no_platformio:
+                print(
+                    "--no-platformio mode enabled: forcing local Docker compilation to bypass PlatformIO constraints"
+                )
+                args.localhost = True
+                args.web = None  # Clear web flag to ensure local compilation
+            if args.localhost:
+                args.web = "localhost"
+            if args.interactive and not args.server:
+                print("--interactive forces --server mode")
+                args.server = True
         if args.directory is None and not args.server:
             # does current directory look like a sketch?
             maybe_sketch_dir = Path(os.getcwd())
