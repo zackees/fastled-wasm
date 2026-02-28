@@ -47,7 +47,7 @@ class ApiTester(unittest.TestCase):
         """Tests that a project can be init'd, then compiled using a local server."""
 
         with TemporaryDirectory() as tmpdir:
-            with Api.server() as server:
+            with Api.server(port=0) as server:
                 assert isinstance(server, CompileServer)
                 sketch_directory = Api.project_init(
                     example="Blink", outputdir=tmpdir, host=server

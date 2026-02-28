@@ -6,7 +6,6 @@ from fastled.compile_server import CompileServer
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
-CLIENT_CMD = f"fastled --just-compile --localhost {TEST_DIR}"
 
 
 def _enabled() -> bool:
@@ -22,14 +21,15 @@ class ServerLocalClientTester(unittest.TestCase):
     @unittest.skipUnless(_enabled(), "Skipping test on non-Linux system on github")
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer(auto_start=True)
-        rtn = os.system(CLIENT_CMD)
+        server = CompileServer(auto_start=True, port=0)
+        url = server.url()
+        client_cmd = f"fastled --just-compile --web {url} {TEST_DIR}"
+        rtn = os.system(client_cmd)
 
         # Stop the server
         server.stop()
 
         # Verify server stopped
-        # self.assertTrue(rtn == 0, "Client did not stop")
         self.assertEqual(0, rtn, "Client did compile successfully")
 
 

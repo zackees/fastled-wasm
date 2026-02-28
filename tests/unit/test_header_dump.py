@@ -23,7 +23,7 @@ class HeaderDumpTester(unittest.TestCase):
     def test_compile_server_header_dump(self) -> None:
         """Test that EMSDK headers can be dumped from a live CompileServer."""
 
-        server = CompileServer(auto_start=True)
+        server = CompileServer(auto_start=True, port=0)
         try:
             with TemporaryDirectory() as tmpdir:
                 output_path = Path(tmpdir) / "emsdk_headers.zip"
@@ -58,7 +58,7 @@ class HeaderDumpTester(unittest.TestCase):
     def test_dump_with_server_url(self) -> None:
         """Test that EMSDK headers can be dumped using a specific server URL."""
 
-        server = CompileServer(auto_start=True)
+        server = CompileServer(auto_start=True, port=0)
         try:
             with TemporaryDirectory() as tmpdir:
                 output_path = Path(tmpdir) / "emsdk_headers_url.zip"

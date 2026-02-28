@@ -76,18 +76,6 @@ def set_clear() -> None:
     os.environ["FASTLED_FORCE_CLEAR"] = "1"
 
 
-def _win32_docker_location() -> str | None:
-    home_dir = Path.home()
-    out = [
-        "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
-        f"{home_dir}\\AppData\\Local\\Docker\\Docker Desktop.exe",
-    ]
-    for loc in out:
-        if Path(loc).exists():
-            return loc
-    return None
-
-
 def _check_wsl2_docker_backend() -> tuple[bool, str]:
     """
     Check if Docker's WSL2 backend (docker-desktop) is running.
@@ -304,6 +292,8 @@ class RunningContainer:
     def _log_monitor(self):
         from_date = _utc_now_no_tz() if not self.first_run else None
         to_date = _utc_now_no_tz()
+        consecutive_errors = 0
+        max_consecutive_errors = 5
 
         while self.running:
             try:
@@ -312,6 +302,7 @@ class RunningContainer:
                 ):
                     # print(log.decode("utf-8"), end="")
                     self.filter.print(log)
+                consecutive_errors = 0
                 time.sleep(0.1)
                 from_date = to_date
                 to_date = _utc_now_no_tz()
@@ -319,6 +310,11 @@ class RunningContainer:
                 print("Monitoring logs interrupted by user.")
                 _thread.interrupt_main()
                 break
+            except NotFound:
+                consecutive_errors += 1
+                if consecutive_errors >= max_consecutive_errors:
+                    break
+                time.sleep(0.5)
             except Exception as e:
                 print(f"Error monitoring logs: {e}")
                 break
@@ -976,7 +972,6 @@ class DockerManager:
                 volumes=volumes_dict,
                 ports=ports,  # type: ignore
                 environment=environment,
-                remove=True,
             )
         return container
 
@@ -1086,6 +1081,24 @@ class DockerManager:
         except Exception as e:
             print(f"Failed to suspend container {container.name}: {e}")
 
+    def remove_container(self, container: Container | str) -> None:
+        """
+        Force-remove a container (stop + remove). Used for dynamic test containers
+        to prevent stale container accumulation.
+        """
+        if isinstance(container, str):
+            container_name = container
+            tmp = self.get_container(container_name)
+            if not tmp:
+                return
+            container = tmp
+        assert isinstance(container, Container)
+        try:
+            container.remove(force=True)
+            print(f"Container {container.name} has been removed.")
+        except Exception as e:
+            print(f"Failed to remove container {container.name}: {e}")
+
     def resume_container(self, container: Container | str) -> None:
         """
         Resume (unpause) the container.
@@ -1102,11 +1115,7 @@ class DockerManager:
         elif isinstance(container, Container):
             container_name = container.name
         assert isinstance(container, Container)
-        if not container:
-            print(f"Could not resume container {container}.")
-            return
         try:
-            assert isinstance(container, Container)
             container.unpause()
             print(f"Container {container.name} has been resumed.")
         except Exception as e:

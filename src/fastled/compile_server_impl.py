@@ -19,7 +19,7 @@ from fastled.emoji_util import EMO
 from fastled.settings import DEFAULT_CONTAINER_NAME, IMAGE_NAME, SERVER_PORT
 from fastled.sketch import looks_like_fastled_repo
 from fastled.types import BuildMode, CompileResult, CompileServerError
-from fastled.util import port_is_free, print_banner
+from fastled.util import find_free_port, port_is_free, print_banner
 
 SERVER_OPTIONS = [
     "--allow-shutdown",  # Allow the server to be shut down without a force kill.
@@ -42,6 +42,36 @@ def _try_get_fastled_src(path: Path) -> Path | None:
     return None
 
 
+_DYNAMIC_CONTAINER_PREFIX = f"{DEFAULT_CONTAINER_NAME}-"
+
+
+def _cleanup_stale_dynamic_containers() -> None:
+    """Remove any leftover dynamic test containers (e.g. from force-killed processes).
+
+    Only removes containers that are not currently running, to avoid interfering
+    with parallel test execution.
+    """
+    try:
+        docker = DockerManager()
+        running, _ = docker.is_running()
+        if not running:
+            return
+        containers = docker.client.containers.list(all=True)
+        for container in containers:
+            name = container.name or ""
+            if (
+                name.startswith(_DYNAMIC_CONTAINER_PREFIX)
+                and container.status != "running"
+            ):
+                try:
+                    container.remove(force=True)
+                    print(f"Cleaned up stale test container: {name}")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 class CompileServerImpl:
     def __init__(
         self,
@@ -53,7 +83,17 @@ class CompileServerImpl:
         remove_previous: bool = False,
         no_platformio: bool = False,
         allow_libcompile: bool = True,
+        port: int | None = None,
     ) -> None:
+        # port=0 means auto-find a free port (useful for parallel test isolation)
+        if port == 0:
+            found = find_free_port(9050, 9200)
+            if found is None:
+                raise CompileServerError("No free port found in range 9050-9200")
+            port = found
+        if port is not None and container_name is None:
+            # Derive a unique container name from the port to avoid collisions
+            container_name = f"{DEFAULT_CONTAINER_NAME}-{port}"
         container_name = container_name or DEFAULT_CONTAINER_NAME
         if interactive and not mapped_dir:
             raise ValueError(
@@ -83,6 +123,7 @@ class CompileServerImpl:
             allow_libcompile = False
 
         self.allow_libcompile = allow_libcompile
+        self._requested_port = port  # None means use SERVER_PORT default
         self._port = 0  # 0 until compile server is started
         if auto_start:
             self.start()
@@ -99,7 +140,6 @@ class CompileServerImpl:
                 if self.interactive:
                     print("Exited from container.")
                     sys.exit(0)
-                    return
                 raise CompileServerError("Server did not start")
         if not self.interactive:
             msg = f"# FastLED Compile Server started at {self.url()} #"
@@ -190,6 +230,9 @@ class CompileServerImpl:
     def wait_for_startup(self, timeout: int = 100) -> bool:
         """Wait for the server to start up."""
         start_time = time.time()
+        # Grace period: don't check container status for the first few seconds
+        # to allow Docker to fully register the container.
+        grace_period = 5.0
         while time.time() - start_time < timeout:
             # ping the server to see if it's up
             if not self._port:
@@ -199,12 +242,19 @@ class CompileServerImpl:
             if self.ping():
                 return True
             time.sleep(0.1)
-            if not self.docker.is_container_running(self.container_name):
+            elapsed = time.time() - start_time
+            if elapsed > grace_period and not self.docker.is_container_running(
+                self.container_name
+            ):
                 return False
         return False
 
     def _start(self) -> int:
         print("Compiling server starting")
+
+        # Clean up stale dynamic test containers from previous runs (e.g. force-killed)
+        if self._requested_port is not None:
+            _cleanup_stale_dynamic_containers()
 
         # Ensure Docker is running
         running: bool
@@ -232,7 +282,7 @@ class CompileServerImpl:
         INTERNAL_DOCKER_PORT = 80
 
         print("Docker image now validated")
-        port = SERVER_PORT
+        port = self._requested_port if self._requested_port is not None else SERVER_PORT
         if self.interactive:
             server_command = ["/bin/bash"]
         else:
@@ -335,7 +385,11 @@ class CompileServerImpl:
         if self.running_container:
             self.running_container.detach()
             self.running_container = None
-        self.docker.suspend_container(self.container_name)
+        # If using a dynamic port, fully remove the container to avoid stale containers
+        if self._requested_port is not None:
+            self.docker.remove_container(self.container_name)
+        else:
+            self.docker.suspend_container(self.container_name)
         self._port = 0
         print("Compile server stopped")
 

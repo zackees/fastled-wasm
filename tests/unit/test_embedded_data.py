@@ -26,7 +26,7 @@ class WebCompilerTester(unittest.TestCase):
     )
     def test_server_big_data_roundtrip(self) -> None:
         """Tests that embedded data is round tripped correctly."""
-        server = CompileServer(auto_start=True)
+        server = CompileServer(auto_start=True, port=0)
         result: CompileResult = server.web_compile(TEST_DIR)
 
         # Stop the server

@@ -107,6 +107,7 @@ class Api:
         container_name: str | None = None,  # Specific docker container name.
         remove_previous: bool = False,
         no_platformio: bool = False,
+        port: int | None = None,  # 0 = auto-find free port, None = use default.
     ) -> CompileServer:
         """Uses docker to spawn a compile server from the given name."""
 
@@ -118,6 +119,7 @@ class Api:
             auto_start=auto_start,
             remove_previous=remove_previous,
             no_platformio=no_platformio,
+            port=port,
         )
         return out
 
@@ -131,6 +133,7 @@ class Api:
         container_name: str | None = None,  # Specific docker container name.
         remove_previous=False,
         no_platformio: bool = False,
+        port: int | None = None,  # 0 = auto-find free port, None = use default.
     ) -> Generator[CompileServer, None, None]:
         server = Api.spawn_server(
             interactive=interactive,
@@ -140,6 +143,7 @@ class Api:
             container_name=container_name,
             remove_previous=remove_previous,
             no_platformio=no_platformio,
+            port=port,
         )
         try:
             yield server

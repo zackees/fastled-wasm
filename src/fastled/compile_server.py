@@ -17,6 +17,7 @@ class CompileServer:
         remove_previous: bool = False,
         no_platformio: bool = False,
         allow_libcompile: bool = True,
+        port: int | None = None,
     ) -> None:
         from fastled.compile_server_impl import (  # avoid circular import
             CompileServerImpl,
@@ -33,6 +34,7 @@ class CompileServer:
             remove_previous=remove_previous,
             no_platformio=no_platformio,
             allow_libcompile=allow_libcompile,
+            port=port,
         )
 
     # May throw CompileServerError if server could not be started.

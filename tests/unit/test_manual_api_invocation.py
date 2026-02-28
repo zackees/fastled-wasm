@@ -36,7 +36,7 @@ class TestManualApiInvocation(unittest.TestCase):
         # Check if we can run local docker tests
         if cls._enabled():
             print("\n🚀 Starting local FastLED WASM server for manual API tests...")
-            cls.server = Api.spawn_server()
+            cls.server = Api.spawn_server(port=0)
             cls.base_url = cls.server.url()
             print(f"✅ Server started at: {cls.base_url}")
         else:
@@ -189,10 +189,11 @@ void loop() {
             # Verify file sizes are reasonable
             # Note: graphics_manager_base.js is intentionally empty/minimal
             # CopyShader.js is a small Three.js shader file (~571 bytes)
-            skip_size_check = {"graphics_manager_base.js", "CopyShader.js"}
+            # File names may have hash suffixes (e.g., CopyShader-BWJjsCP-.js)
+            skip_size_check_prefixes = ("graphics_manager_base", "CopyShader")
             for js_file in js_files:
                 size = js_file.stat().st_size
-                if js_file.name not in skip_size_check:
+                if not js_file.stem.startswith(skip_size_check_prefixes):
                     self.assertGreater(
                         size, 1000, f"JS file {js_file.name} too small: {size} bytes"
                     )

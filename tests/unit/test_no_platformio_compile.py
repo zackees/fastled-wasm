@@ -67,7 +67,7 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         )
 
         # Start compile server with no_platformio=True for real integration test
-        server_impl = CompileServerImpl(no_platformio=True, auto_start=True)
+        server_impl = CompileServerImpl(no_platformio=True, auto_start=True, port=0)
 
         try:
             # Check if server is running
@@ -123,7 +123,7 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         3. The no-platformio flag actually affects the compilation process
         """
         # Test with regular mode first
-        server_regular = CompileServerImpl(no_platformio=False, auto_start=True)
+        server_regular = CompileServerImpl(no_platformio=False, auto_start=True, port=0)
 
         try:
             # Test regular compilation
@@ -150,7 +150,9 @@ class NoPlatformIOCompileTester(unittest.TestCase):
                 print(f"Cleanup warning for regular server: {e}")
 
         # Now test no-platformio compilation after regular server is stopped
-        server_no_platformio = CompileServerImpl(no_platformio=True, auto_start=True)
+        server_no_platformio = CompileServerImpl(
+            no_platformio=True, auto_start=True, port=0
+        )
 
         try:
             # Test no-platformio compilation
@@ -206,7 +208,7 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         )
 
         # Start compile server with no_platformio=True
-        server_impl = CompileServerImpl(no_platformio=True, auto_start=True)
+        server_impl = CompileServerImpl(no_platformio=True, auto_start=True, port=0)
 
         try:
             # Check if server is running
@@ -253,7 +255,7 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         )
 
         build_modes = [BuildMode.QUICK, BuildMode.DEBUG, BuildMode.RELEASE]
-        server_impl = CompileServerImpl(no_platformio=True, auto_start=True)
+        server_impl = CompileServerImpl(no_platformio=True, auto_start=True, port=0)
 
         try:
             # Check if server is running
@@ -300,7 +302,7 @@ class NoPlatformIOCompileTester(unittest.TestCase):
         """Test that a project initialized via API can be compiled in no-platformio mode."""
 
         with TemporaryDirectory() as tmpdir:
-            server_impl = CompileServerImpl(no_platformio=True, auto_start=True)
+            server_impl = CompileServerImpl(no_platformio=True, auto_start=True, port=0)
 
             try:
                 # Check if server is running

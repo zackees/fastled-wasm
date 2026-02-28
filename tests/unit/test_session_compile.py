@@ -32,7 +32,7 @@ class TestSessionCompile(unittest.TestCase):
         # Check if we can run local docker tests
         if cls._enabled():
             print("\n🚀 Starting local FastLED WASM server for session ID tests...")
-            cls.server = Api.spawn_server()
+            cls.server = Api.spawn_server(port=0)
             cls.base_url = cls.server.url()
             print(f"✅ Server started at: {cls.base_url}")
         else:

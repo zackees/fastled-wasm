@@ -26,7 +26,7 @@ class ProjectInitTester(unittest.TestCase):
     def test_get_examples(self) -> None:
         """Test get_examples function."""
         if _local_server_enabled():
-            with Api.server(auto_updates=True) as server:
+            with Api.server(auto_updates=True, port=0) as server:
                 examples = get_examples(server.url())
         else:
             examples = get_examples()
@@ -41,7 +41,7 @@ class ProjectInitTester(unittest.TestCase):
         # Test the web_compile function with actual server call
         with TemporaryDirectory() as tmpdir:
             out = Path(tmpdir)
-            with Api.server() as server:
+            with Api.server(port=0) as server:
                 project_init(example="wasm", outputdir=out, host=server.url())
                 # print out everything in the out dir
                 for f in out.iterdir():

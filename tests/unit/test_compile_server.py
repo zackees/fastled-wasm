@@ -17,7 +17,7 @@ class WebCompilerTester(unittest.TestCase):
     )
     def test_server(self) -> None:
         """Test basic server start/stop functionality."""
-        server = CompileServer(auto_start=True)
+        server = CompileServer(auto_start=True, port=0)
         result: CompileResult = server.web_compile(TEST_DIR)
         # Stop the server
         server.stop()
