@@ -15,6 +15,27 @@ from fastled.sketch import (
 )
 
 
+def _resolve_path(path_str: str) -> str:
+    """Resolve a path string, handling MSYS /c/... style paths on Windows."""
+    import re
+
+    resolved = Path(path_str).resolve()
+    if resolved.exists():
+        return str(resolved)
+    # Handle MSYS-style paths: /c/Users/... -> C:\Users\...
+    if sys.platform == "win32":
+        m = re.match(r"^/([a-zA-Z])/(.*)", path_str)
+        if m:
+            win_path = Path(f"{m.group(1).upper()}:/{m.group(2)}")
+            if win_path.exists():
+                return str(win_path.resolve())
+    # Try expanduser for ~ paths
+    expanded = Path(os.path.expanduser(path_str)).resolve()
+    if expanded.exists():
+        return str(expanded)
+    return path_str
+
+
 def _find_fastled_repo(start: Path) -> Path | None:
     """Find the FastLED repo directory by searching upwards from the current directory."""
     current = start
@@ -232,6 +253,10 @@ def parse_args() -> Args:
     cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
 
     args = parser.parse_args()
+
+    # Resolve --fastled-path to an absolute path (handles MSYS /c/... paths on Windows)
+    if args.fastled_path:
+        args.fastled_path = _resolve_path(args.fastled_path)
 
     # Auto-detect FastLED repo for --native mode
     if args.native and not args.fastled_path:

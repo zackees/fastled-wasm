@@ -130,40 +130,65 @@ class EmscriptenConfig:
     build_mode: BuildMode
     output_name: str = "fastled"
     # Common flags for all builds
-    common_flags: tuple[str, ...] = (
-        "-s",
-        "WASM=1",
-        "-s",
-        "MODULARIZE=1",
-        "-s",
-        "EXPORT_ES6=1",
-        "-s",
-        "EXPORTED_RUNTIME_METHODS=['ccall','cwrap']",
-        "-s",
-        "EXPORTED_FUNCTIONS=['_main','_extern_setup','_extern_loop']",
-        "-s",
-        "ALLOW_MEMORY_GROWTH=1",
-        "-s",
-        "INITIAL_MEMORY=16777216",  # 16MB
-        "-s",
-        "STACK_SIZE=1048576",  # 1MB stack
-        "-DFASTLED_WASM",
-        "-DFASTLED_USE_STUB_ARDUINO",  # Enable stub timing declarations (millis, micros, etc.)
-        "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",  # Required when using -fno-rtti with emscripten/val.h
-        "-std=c++17",
-        "-fno-rtti",
+    # Compile flags - must match build_flags.toml [all] section
+    compile_flags: tuple[str, ...] = (
+        # Defines from build_flags.toml [all].defines
+        "-DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50",
+        "-DFASTLED_FORCE_NAMESPACE=1",
+        "-DFASTLED_USE_PROGMEM=0",
+        "-DUSE_OFFSET_CONVERTER=0",
+        "-DGL_ENABLE_GET_PROC_ADDRESS=0",
+        "-D_REENTRANT=1",
+        "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
+        # Sketch-specific defines from build_flags.toml [sketch].defines
+        "-DSKETCH_COMPILE=1",
+        "-DFASTLED_WASM_USE_CCALL",
+        # Compiler flags from build_flags.toml [all].compiler_flags
+        "-std=gnu++17",
+        "-fpermissive",
+        "-Wno-constant-logical-operand",
+        "-Wnon-c-typedef-for-linkage",
+        "-Werror=bad-function-cast",
+        "-Werror=cast-function-type",
+        "-fno-threadsafe-statics",
         "-fno-exceptions",
-        "-Wno-error=undefined",  # Downgrade undefined symbol errors to warnings
+        "-fno-rtti",
+        "-pthread",
+        "-fpch-instantiate-templates",
     )
+    # Link flags - must match build_flags.toml [linking.base] + [linking.sketch]
+    link_flags: tuple[str, ...] = (
+        # [linking.base] flags
+        "-sWASM=1",
+        "-pthread",
+        "-sUSE_PTHREADS=1",
+        "-sPROXY_TO_PTHREAD",
+        # [linking.sketch] flags
+        "-sMODULARIZE=1",
+        "-sEXPORT_NAME=fastled",
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sINITIAL_MEMORY=134217728",  # 128MB
+        "-sAUTO_NATIVE_LIBRARIES=0",
+        "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue']",
+        "-sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback']",
+        "-sEXIT_RUNTIME=0",
+        "-sFILESYSTEM=0",
+        "-sERROR_ON_UNDEFINED_SYMBOLS=0",
+    )
+
+    @property
+    def common_flags(self) -> tuple[str, ...]:
+        """Combined compile + link flags."""
+        return self.compile_flags + self.link_flags
 
     def get_optimization_flags(self) -> list[str]:
         """Get optimization flags based on build mode."""
         if self.build_mode == BuildMode.DEBUG:
-            return ["-g", "-O0", "-s", "ASSERTIONS=2"]
+            return ["-g", "-O0", "-sASSERTIONS=2"]
         elif self.build_mode == BuildMode.QUICK:
-            return ["-O1", "-s", "ASSERTIONS=1"]
+            return ["-O1", "-sASSERTIONS=0"]
         else:  # RELEASE
-            return ["-O3", "-flto", "-s", "ASSERTIONS=0"]
+            return ["-O3", "-flto", "-sASSERTIONS=0"]
 
 
 class EmscriptenToolchain:
