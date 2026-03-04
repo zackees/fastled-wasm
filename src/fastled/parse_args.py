@@ -50,7 +50,7 @@ _DEFAULT_HELP_TEXT = """
 FastLED WASM Compiler - Useful options:
   <directory>           Directory containing the FastLED sketch to compile
   --init [example]      Initialize one of the top tier WASM examples
-  --native              Compile using native EMSDK (no Docker required)
+  --docker              Use Docker compilation (native EMSDK is the default)
   --web [url]           Use web compiler
   --server              Run the compiler server
   --no-platformio       Bypass PlatformIO constraints using local Docker compilation
@@ -64,9 +64,9 @@ FastLED WASM Compiler - Useful options:
   --version             Show version information
   --help                Show detailed help
 Examples:
-  fastled (will auto detect the sketch directory and prompt you)
+  fastled (will auto detect the sketch directory and compile natively)
   fastled my_sketch
-  fastled --native my_sketch (compiles using native EMSDK, no Docker)
+  fastled my_sketch --docker (compiles using Docker instead of native EMSDK)
   fastled my_sketch --web (compiles using the web compiler only)
   fastled my_sketch --background-update (compiles and updates docker image in background)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
@@ -229,7 +229,14 @@ def parse_args() -> Args:
     parser.add_argument(
         "--native",
         action="store_true",
-        help="Compile using native EMSDK toolchain (no Docker required)",
+        default=True,
+        help="(Default) Compile using native EMSDK toolchain (no Docker required)",
+    )
+
+    parser.add_argument(
+        "--docker",
+        action="store_true",
+        help="Use Docker compilation instead of native EMSDK",
     )
 
     parser.add_argument(
@@ -257,6 +264,10 @@ def parse_args() -> Args:
     # Resolve --fastled-path to an absolute path (handles MSYS /c/... paths on Windows)
     if args.fastled_path:
         args.fastled_path = _resolve_path(args.fastled_path)
+
+    # If --docker, --web, --localhost, --server, or --no-platformio is specified, disable native mode
+    if args.docker or args.web or args.localhost or args.server or args.no_platformio:
+        args.native = False
 
     # Auto-detect FastLED repo for --native mode
     if args.native and not args.fastled_path:
@@ -383,7 +394,25 @@ def parse_args() -> Args:
 
         # Skip Docker/web/localhost detection when using native mode
         if not args.native:
-            if (
+            if args.docker:
+                # Explicit --docker flag: use local Docker compilation
+                from fastled.docker_manager import DockerManager
+
+                if DockerManager.is_docker_installed():
+                    if not DockerManager.ensure_linux_containers_for_windows():
+                        print(
+                            f"Windows must be in linux containers mode, but is in Windows container mode. Using web compiler at {DEFAULT_URL}."
+                        )
+                        args.web = DEFAULT_URL
+                    else:
+                        print("Using Docker compilation (--docker flag).")
+                        args.localhost = True
+                else:
+                    print(
+                        f"Docker is not installed but --docker was specified. Falling back to web compiler at {DEFAULT_URL}."
+                    )
+                    args.web = DEFAULT_URL
+            elif (
                 not cwd_is_fastled
                 and not args.localhost
                 and not args.web

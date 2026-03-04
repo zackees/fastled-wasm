@@ -199,7 +199,7 @@ def main() -> int:
             server.stop()
             return 1
 
-    # Handle native compilation mode
+    # Handle native compilation mode (now the default)
     if args.native:
         from fastled.compile_native import run_native_compile
         from fastled.types import BuildMode
@@ -208,7 +208,9 @@ def main() -> int:
             print("Error: No sketch directory specified for native compilation.")
             return 1
 
-        print("Running in native EMSDK compilation mode (no Docker required).")
+        print(
+            "Running in native EMSDK compilation mode (no Docker required). Use --docker to use Docker instead."
+        )
         build_mode = BuildMode.from_args(args)
         return run_native_compile(
             directory=directory,
