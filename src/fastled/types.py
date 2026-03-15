@@ -29,12 +29,6 @@ class CompileResult:
         self.stdout = pf.print(self.stdout)
 
 
-class CompileServerError(Exception):
-    """Error class for failing to instantiate CompileServer."""
-
-    pass
-
-
 class BuildMode(Enum):
     DEBUG = "DEBUG"
     QUICK = "QUICK"
@@ -71,12 +65,3 @@ class Platform(Enum):
             raise ValueError(
                 f"Platform must be one of {valid_modes}, got {platform_str}"
             )
-
-
-@dataclass
-class FileResponse:
-    """File response from the server."""
-
-    filename: str
-    content: str
-    mimetype: str

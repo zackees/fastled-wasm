@@ -6,7 +6,6 @@ from pathlib import Path
 from fastled.args import Args
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
-from fastled.settings import DEFAULT_URL, IMAGE_NAME
 from fastled.sketch import (
     find_sketch_by_partial_name,
     find_sketch_directories,
@@ -50,31 +49,18 @@ _DEFAULT_HELP_TEXT = """
 FastLED WASM Compiler - Useful options:
   <directory>           Directory containing the FastLED sketch to compile
   --init [example]      Initialize one of the top tier WASM examples
-  --docker              Use Docker compilation (native EMSDK is the default)
-  --web [url]           Use web compiler
-  --server              Run the compiler server
-  --no-platformio       Bypass PlatformIO constraints using local Docker compilation
   --no-https            Disable HTTPS and use HTTP for local server
   --quick               Build in quick mode (default)
   --profile             Enable profiling the C++ build system
-  --update              Update the docker image for the wasm compiler
-  --background-update   Update the docker image in the background after compilation
-  --purge               Remove all FastLED containers and images
-  --emsdk-headers <path> Export EMSDK headers ZIP to specified path
   --version             Show version information
   --help                Show detailed help
 Examples:
   fastled (will auto detect the sketch directory and compile natively)
   fastled my_sketch
-  fastled my_sketch --docker (compiles using Docker instead of native EMSDK)
-  fastled my_sketch --web (compiles using the web compiler only)
-  fastled my_sketch --background-update (compiles and updates docker image in background)
   fastled --init Blink (initializes a new sketch directory with the Blink example)
-  fastled --server (runs the compiler server in the current directory)
 
-For those using Docker:
+Build modes:
   --debug               Build with debug symbols for dev-tools debugging
-
   --release             Build in optimized release mode
 """
 
@@ -108,92 +94,14 @@ def parse_args() -> Args:
         help="Just compile, skip opening the browser and watching for changes.",
     )
     parser.add_argument(
-        "--ram-disk-size",
-        type=str,
-        default="1gb",
-        help="Size of the RAM disk for compilation (e.g., '1gb', '512mb')",
-    )
-    parser.add_argument(
-        "--web",
-        "-w",
-        type=str,
-        nargs="?",
-        # const does not seem to be working as expected
-        const=DEFAULT_URL,  # Default value when --web is specified without value
-        help="Use web compiler. Optional URL can be provided (default: https://fastled.onrender.com)",
-    )
-    parser.add_argument(
-        "-i",
-        "--interactive",
-        action="store_true",
-        help="Run in interactive mode (Not available with --web)",
-    )
-    parser.add_argument(
         "--profile",
         action="store_true",
         help="Enable profiling of the C++ build system used for wasm compilation.",
     )
     parser.add_argument(
-        "--force-compile",
-        action="store_true",
-        help="Skips the test to see if the current directory is a valid FastLED sketch directory",
-    )
-    parser.add_argument(
-        "--no-auto-updates",
-        action="store_true",
-        help="Disable automatic updates of the wasm compiler image when using docker. (Default: False)",
-    )
-    parser.add_argument(
-        "--no-platformio",
-        action="store_true",
-        help="Bypass PlatformIO constraints by using local Docker compilation with custom build environment",
-    )
-    parser.add_argument(
         "--app",
         action="store_true",
         help="Use Playwright app-like browser experience (will download browsers if needed)",
-    )
-    parser.add_argument(
-        "-u",
-        "--update",
-        "--upgrade",
-        action="store_true",
-        help="Update the wasm compiler (if necessary) before running",
-    )
-    parser.add_argument(
-        "--background-update",
-        action="store_true",
-        help="Update the docker image in the background after compilation (user doesn't have to wait)",
-    )
-    parser.add_argument(
-        "--localhost",
-        "--local",
-        "-l",
-        action="store_true",
-        help="(Default): Use localhost for web compilation from an instance of fastled --server, creating it if necessary",
-    )
-    parser.add_argument(
-        "--build",
-        "-b",
-        action="store_true",
-        help="Build the wasm compiler image from the FastLED repo",
-    )
-    parser.add_argument(
-        "--server",
-        "-s",
-        action="store_true",
-        help="Run the server in the current directory, volume mapping fastled if we are in the repo",
-    )
-    parser.add_argument(
-        "--purge",
-        action="store_true",
-        help="Remove all FastLED containers and images",
-    )
-
-    parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Remove all FastLED containers and images",
     )
 
     parser.add_argument(
@@ -213,30 +121,11 @@ def parse_args() -> Args:
         action="store_true",
         help="Run in non-interactive mode (fail instead of prompting for input)",
     )
-    parser.add_argument(
-        "--emsdk-headers",
-        type=str,
-        default=None,
-        help="Export EMSDK headers ZIP to specified path",
-    )
 
     parser.add_argument(
         "--no-https",
         action="store_true",
         help="Disable HTTPS and use HTTP for the local server (useful for debugging)",
-    )
-
-    parser.add_argument(
-        "--native",
-        action="store_true",
-        default=True,
-        help="(Default) Compile using native EMSDK toolchain (no Docker required)",
-    )
-
-    parser.add_argument(
-        "--docker",
-        action="store_true",
-        help="Use Docker compilation instead of native EMSDK",
     )
 
     parser.add_argument(
@@ -257,20 +146,14 @@ def parse_args() -> Args:
         "--release", action="store_true", help="Build in release mode"
     )
 
-    cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
-
     args = parser.parse_args()
 
     # Resolve --fastled-path to an absolute path (handles MSYS /c/... paths on Windows)
     if args.fastled_path:
         args.fastled_path = _resolve_path(args.fastled_path)
 
-    # If --docker, --web, --localhost, --server, or --no-platformio is specified, disable native mode
-    if args.docker or args.web or args.localhost or args.server or args.no_platformio:
-        args.native = False
-
-    # Auto-detect FastLED repo for --native mode
-    if args.native and not args.fastled_path:
+    # Auto-detect FastLED repo for native compilation
+    if not args.fastled_path:
         cwd = Path(os.getcwd())
         fastled_repo = _find_fastled_repo(cwd)
         if fastled_repo is not None:
@@ -279,14 +162,6 @@ def parse_args() -> Args:
             )
             args.fastled_path = str(fastled_repo)
 
-    # Handle --emsdk-headers early before other processing
-    if args.emsdk_headers:
-        from fastled.header_dump import dump_emsdk_headers
-
-        out_path = args.emsdk_headers
-        dump_emsdk_headers(out_path)
-        sys.exit(0)
-
     # Auto-enable app mode if debug is used and Playwright cache exists
     if args.debug and not args.app:
         playwright_dir = Path.home() / ".fastled" / "playwright"
@@ -294,7 +169,7 @@ def parse_args() -> Args:
             from fastled.emoji_util import EMO
 
             print(
-                f"{EMO('⚠️', 'WARNING:')} Debug mode detected with Playwright installed - automatically enabling app mode"
+                f"{EMO('warning', 'WARNING:')} Debug mode detected with Playwright installed - automatically enabling app mode"
             )
             args.app = True
         elif not args.no_interactive:
@@ -306,41 +181,15 @@ def parse_args() -> Args:
             )
             if answer in ["y", "yes"]:
                 print(
-                    "📦 To install Playwright, run: pip install playwright && python -m playwright install"
+                    "To install Playwright, run: pip install playwright && python -m playwright install"
                 )
                 print("Then run your command again with --app flag")
                 sys.exit(0)
-
-    # TODO: propagate the library.
-    # from fastled.docker_manager import force_remove_previous
-
-    # if force_remove_previous():
-    #     print("Removing previous containers...")
-    # do itinfront he camer
-    # nonw invoke via the
-    #
-    # Work in progress.
-    # set_ramdisk_size("50mb")
-
-    # if args.ram_disk_size != "0":
-    #     from fastled.docker_manager import set_ramdisk_size
-    #     from fastled.util import banner_string
-
-    #     msg = banner_string(f"Setting tmpfs size to {args.ram_disk_size}")
-    #     print(msg)
-    #     set_ramdisk_size(args.ram_disk_size)
 
     # Handle --install early before other processing
     if args.install:
         # Don't process other arguments when --install is used
         return Args.from_namespace(args)
-
-    if args.purge:
-        from fastled.docker_manager import DockerManager
-
-        docker = DockerManager()
-        docker.purge(IMAGE_NAME)
-        sys.exit(0)
 
     if args.init:
         example = args.init if args.init is not True else None
@@ -359,134 +208,46 @@ def parse_args() -> Args:
 
     if not (args.debug or args.quick or args.release):
         if is_fastled_dir:
-            # if --quick, --debug, --release are not specified then default to --debug
             args.quick = True
             print("Defaulting to --quick mode in fastled repo")
         else:
             args.quick = True
             print("Defaulting to --quick mode")
 
-    if args.build or args.interactive:
-        if args.directory is not None:
-            args.directory = str(Path(args.directory).absolute())
-        if not is_fastled_dir:
-            print("This command must be run from within the FastLED repo. Exiting...")
-            sys.exit(1)
-        if cwd != fastled_dir and fastled_dir is not None:
-            print(f"Switching to FastLED repo at {fastled_dir}")
-            os.chdir(fastled_dir)
-        if args.directory is None:
-            args.directory = str(Path("examples/wasm").absolute())
-        if args.interactive:
-            if not args.build:
-                print("Adding --build flag when using --interactive")
-                args.build = True
-        user_wants_update = args.update
-        if user_wants_update is not True:
-            args.no_auto_updates = True
-        return Args.from_namespace(args)
-
-    if not args.update:
-        if args.no_auto_updates:
-            args.auto_update = False
+    if args.directory is None:
+        # does current directory look like a sketch?
+        maybe_sketch_dir = Path(os.getcwd())
+        if looks_like_sketch_directory(maybe_sketch_dir):
+            args.directory = str(maybe_sketch_dir)
         else:
-            args.auto_update = None
-
-        # Skip Docker/web/localhost detection when using native mode
-        if not args.native:
-            if args.docker:
-                # Explicit --docker flag: use local Docker compilation
-                from fastled.docker_manager import DockerManager
-
-                if DockerManager.is_docker_installed():
-                    if not DockerManager.ensure_linux_containers_for_windows():
-                        print(
-                            f"Windows must be in linux containers mode, but is in Windows container mode. Using web compiler at {DEFAULT_URL}."
-                        )
-                        args.web = DEFAULT_URL
-                    else:
-                        print("Using Docker compilation (--docker flag).")
-                        args.localhost = True
-                else:
-                    print(
-                        f"Docker is not installed but --docker was specified. Falling back to web compiler at {DEFAULT_URL}."
-                    )
-                    args.web = DEFAULT_URL
-            elif (
-                not cwd_is_fastled
-                and not args.localhost
-                and not args.web
-                and not args.server
-            ):
-                from fastled.docker_manager import DockerManager
-
-                if DockerManager.is_docker_installed():
-                    if not DockerManager.ensure_linux_containers_for_windows():
-                        print(
-                            f"Windows must be in linux containers mode, but is in Windows container mode, Using web compiler at {DEFAULT_URL}."
-                        )
-                        args.web = DEFAULT_URL
-                    else:
-                        print(
-                            "Docker is installed. Defaulting to --local mode, use --web to override and use the web compiler instead."
-                        )
-                        args.localhost = True
-                else:
-                    print(
-                        f"Docker is not installed. Using web compiler at {DEFAULT_URL}."
-                    )
-                    args.web = DEFAULT_URL
-            if cwd_is_fastled and not args.web and not args.server:
-                print("Forcing --local mode because we are in the FastLED repo")
-                args.localhost = True
-            if args.no_platformio:
-                print(
-                    "--no-platformio mode enabled: forcing local Docker compilation to bypass PlatformIO constraints"
-                )
-                args.localhost = True
-                args.web = None  # Clear web flag to ensure local compilation
-            if args.localhost:
-                args.web = "localhost"
-            if args.interactive and not args.server:
-                print("--interactive forces --server mode")
-                args.server = True
-        if args.directory is None and not args.server:
-            # does current directory look like a sketch?
-            maybe_sketch_dir = Path(os.getcwd())
-            if looks_like_sketch_directory(maybe_sketch_dir):
-                args.directory = str(maybe_sketch_dir)
+            print("Searching for sketch directories...")
+            cwd_is_fastled = looks_like_fastled_repo(Path(os.getcwd()))
+            sketch_directories = find_sketch_directories(maybe_sketch_dir)
+            selected_dir = select_sketch_directory(
+                sketch_directories, cwd_is_fastled, is_followup=True
+            )
+            if selected_dir:
+                print(f"Using sketch directory: {selected_dir}")
+                args.directory = selected_dir
             else:
-                print("Searching for sketch directories...")
-                sketch_directories = find_sketch_directories(maybe_sketch_dir)
-                selected_dir = select_sketch_directory(
-                    sketch_directories, cwd_is_fastled, is_followup=True
-                )
-                if selected_dir:
-                    print(f"Using sketch directory: {selected_dir}")
-                    args.directory = selected_dir
-                else:
-                    print(
-                        "\nYou either need to specify a sketch directory or run in --server mode."
-                    )
-                    sys.exit(1)
-        elif args.directory is not None:
-            # Check if directory is a file path
-            if os.path.isfile(args.directory):
-                dir_path = Path(args.directory).parent
-                if looks_like_sketch_directory(dir_path):
-                    print(f"Using sketch directory: {dir_path}")
-                    args.directory = str(dir_path)
-            # Check if directory exists as a path
-            elif not os.path.exists(args.directory):
-                # Directory doesn't exist - try partial name matching
-                try:
-                    matched_dir = find_sketch_by_partial_name(args.directory)
-                    print(
-                        f"Matched '{args.directory}' to sketch directory: {matched_dir}"
-                    )
-                    args.directory = str(matched_dir)
-                except ValueError as e:
-                    print(f"Error: {e}")
-                    sys.exit(1)
+                print("\nYou need to specify a sketch directory.")
+                sys.exit(1)
+    elif args.directory is not None:
+        # Check if directory is a file path
+        if os.path.isfile(args.directory):
+            dir_path = Path(args.directory).parent
+            if looks_like_sketch_directory(dir_path):
+                print(f"Using sketch directory: {dir_path}")
+                args.directory = str(dir_path)
+        # Check if directory exists as a path
+        elif not os.path.exists(args.directory):
+            # Directory doesn't exist - try partial name matching
+            try:
+                matched_dir = find_sketch_by_partial_name(args.directory)
+                print(f"Matched '{args.directory}' to sketch directory: {matched_dir}")
+                args.directory = str(matched_dir)
+            except ValueError as e:
+                print(f"Error: {e}")
+                sys.exit(1)
 
     return Args.from_namespace(args)

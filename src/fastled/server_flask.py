@@ -5,11 +5,7 @@ from datetime import datetime, timezone
 from multiprocessing import Process
 from pathlib import Path
 
-import httpx
-from livereload import Server
-
 # Logging configuration
-# _ENABLE_LOGGING = os.environ.get("FLASK_SERVER_LOGGING", "0") == "1"
 _ENABLE_LOGGING = False
 
 
@@ -27,70 +23,41 @@ else:
     logger.disabled = True
 
 
-def _is_dwarf_source(path: str) -> bool:
-    """Check if the path is a dwarf source file."""
-    logger.debug(f"_is_dwarf_source called with path: {path}")
-    if "dwarfsource" in path:
-        logger.debug(f"Path '{path}' contains 'dwarfsource'")
-        return True
-    _is_dwarf_source = False
-    for p in ["fastledsource", "sketchsource", "dwarfsource", "drawfsource"]:
-        if p in path:
-            _is_dwarf_source = True
-            logger.debug(f"Path '{p}' contains '{path}'")
-            break
-    if not _is_dwarf_source:
-        logger.debug(f"Path '{path}' is not a dwarf source file")
-    return _is_dwarf_source
-
-
 def _check_certificate_expiration(
     certfile: Path,
 ) -> tuple[bool, int | None, str | None]:
     """
     Check if a certificate is expiring soon or has expired.
 
-    Args:
-        certfile: Path to the certificate file
-
     Returns:
         Tuple of (is_valid, days_remaining, expiration_date_str)
-        - is_valid: True if cert is valid and not expiring within 30 days
-        - days_remaining: Number of days until expiration (negative if expired)
-        - expiration_date_str: Human-readable expiration date
     """
     try:
         from cryptography import x509
         from cryptography.hazmat.backends import default_backend
 
-        # Read and parse the certificate
         with open(certfile, "rb") as f:
             cert_data = f.read()
             cert = x509.load_pem_x509_certificate(cert_data, default_backend())
 
-        # Get expiration date
         expiration_date = cert.not_valid_after_utc
         expiration_str = expiration_date.strftime("%Y-%m-%d")
 
-        # Calculate days remaining
         now = datetime.now(timezone.utc)
         days_remaining = (expiration_date - now).days
 
-        # Check if expiring within 30 days or already expired
         is_valid = days_remaining > 30
 
         return is_valid, days_remaining, expiration_str
 
     except Exception as e:
         logger.warning(f"Failed to check certificate expiration: {e}")
-        # Return None values to indicate check failed but don't block SSL
         return True, None, None
 
 
 def _run_flask_server(
     fastled_js: Path,
     port: int,
-    compile_server_port: int,
     certfile: Path | None = None,
     keyfile: Path | None = None,
 ) -> None:
@@ -105,10 +72,10 @@ def _run_flask_server(
     try:
         from flask import Flask, Response, request, send_from_directory
         from flask_cors import CORS
+        from livereload import Server
 
         app = Flask(__name__)
 
-        # Enable CORS for all domains on all routes
         CORS(
             app,
             resources={
@@ -124,15 +91,11 @@ def _run_flask_server(
             },
         )
 
-        # Must be a full path or flask will fail to find the file.
         fastled_js = fastled_js.resolve()
-
-        # logger.error(f"Server error: {e}")
 
         @app.after_request
         def add_security_headers(response):
             """Add security headers required for cross-origin isolation and audio worklets"""
-            # Required for SharedArrayBuffer and audio worklets
             response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
             response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
             return response
@@ -161,139 +124,24 @@ def _run_flask_server(
                 logger.info(f"Index response status: {response.status_code}")
             return response
 
-        @app.route("/sourcefiles/<path:path>")
-        def serve_source_files(path):
-            """Proxy requests to /sourcefiles/* to the compile server"""
-            from flask import request
-
-            start_time = time.time()
-            logger.info(f"Serving source file: {path}")
-
-            # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/sourcefiles/{path}"
-            logger.info(f"Forwarding to: {target_url}")
-
-            # Log request headers
-            request_headers = {
-                key: value for key, value in request.headers if key != "Host"
-            }
-            logger.debug(f"Request headers: {request_headers}")
-
-            # Forward the request with the same method, headers, and body
-            try:
-                with httpx.Client() as client:
-                    resp = client.request(
-                        method=request.method,
-                        url=target_url,
-                        headers=request_headers,
-                        content=request.get_data(),
-                        cookies=request.cookies,
-                        follow_redirects=True,
-                    )
-
-                logger.info(f"Response status: {resp.status_code}")
-                logger.debug(f"Response headers: {dict(resp.headers)}")
-
-                # Create a Flask Response object from the httpx response
-                raw_data = resp.content
-                logger.debug(f"Response size: {len(raw_data)} bytes")
-
-                response = Response(
-                    raw_data, status=resp.status_code, headers=dict(resp.headers)
-                )
-
-                elapsed_time = time.time() - start_time
-                logger.info(f"Request completed in {elapsed_time:.3f} seconds")
-
-                return response
-
-            except Exception as e:
-                logger.error(f"Error forwarding request: {e}", exc_info=True)
-                return Response(f"Error: {str(e)}", status=500)
-
-        def handle_dwarfsource(path: str) -> Response:
-            """Handle requests to /sourcefiles/*"""
-            from flask import Response, request
-
-            # Request body should be
-            # {
-            #     "path": "string"
-            # }
-
-            start_time = time.time()
-            logger.info("\n##################################")
-            logger.info(f"# Serving source file /sourcefiles/ {path}")
-            logger.info("##################################\n")
-
-            logger.info(f"Processing sourcefile request for {path}")
-
-            # Forward the request to the compile server
-            target_url = f"http://localhost:{compile_server_port}/dwarfsource"
-            logger.info(f"Forwarding to: {target_url}")
-
-            # Log request headers
-            request_headers = {
-                key: value for key, value in request.headers if key != "Host"
-            }
-            logger.debug(f"Request headers: {request_headers}")
-
-            body: dict[str, str] = {
-                "path": path,
-            }
+        @app.route("/<path:path>")
+        def serve_files(path: str):
+            logger.info(f"Received request for path: {path}")
 
             try:
-                # Forward the request with the same method, headers, and body
-                with httpx.Client() as client:
-                    resp = client.request(
-                        method="POST",
-                        url=target_url,
-                        headers=request_headers,
-                        json=body,
-                        cookies=request.cookies,
-                        follow_redirects=True,
-                    )
+                start_time = time.time()
+                logger.info(f"Processing local file request for {path}")
 
-                logger.info(f"Response status: {resp.status_code}")
-                logger.debug(f"Response headers: {dict(resp.headers)}")
-
-                # Create a Flask Response object from the httpx response
-                raw_data = resp.content
-                logger.debug(f"Response size: {len(raw_data)} bytes")
-
-                response = Response(
-                    raw_data, status=resp.status_code, headers=dict(resp.headers)
-                )
-
-                elapsed_time = time.time() - start_time
-                logger.info(f"Request completed in {elapsed_time:.3f} seconds")
-
-                return response
-
-            except Exception as e:
-                logger.error(f"Error handling sourcefile request: {e}", exc_info=True)
-                return Response(f"Error: {str(e)}", status=500)
-
-        def handle_local_file_fetch(path: str) -> Response:
-            start_time = time.time()
-            logger.info("\n##################################")
-            logger.info(f"# Serving generic file {path}")
-            logger.info("##################################\n")
-
-            logger.info(f"Processing local file request for {path}")
-
-            try:
                 file_path = fastled_js / path
                 logger.info(f"Full file path: {file_path}")
                 logger.info(f"File exists: {file_path.exists()}")
 
-                # Check if file exists before trying to serve it
                 if not file_path.exists():
                     logger.warning(f"File not found: {file_path}")
                     return Response(f"File not found: {path}", status=404)
 
                 response = send_from_directory(fastled_js, path)
 
-                # Some servers don't set the Content-Type header for a bunch of files.
                 content_type = None
                 if path.endswith(".js"):
                     content_type = "text/javascript; charset=utf-8"
@@ -320,7 +168,6 @@ def _run_flask_server(
                     logger.info(f"Setting Content-Type to {content_type}")
                     response.headers["Content-Type"] = content_type
 
-                # now also add headers to force no caching
                 response.headers["Cache-Control"] = (
                     "no-cache, no-store, must-revalidate"
                 )
@@ -337,39 +184,9 @@ def _run_flask_server(
 
             except Exception as e:
                 logger.error(f"Error serving local file {path}: {e}", exc_info=True)
-                # Check if this is a FileNotFoundError (which can happen with send_from_directory)
                 if isinstance(e, FileNotFoundError):
                     return Response(f"File not found: {path}", status=404)
                 return Response(f"Error serving file: {str(e)}", status=500)
-
-        @app.route("/fastapi")
-        def server_backend_redirect():
-            """Redirect to the compile server"""
-            logger.info("Redirecting to compile server")
-            target_url = f"http://localhost:{compile_server_port}/docs"
-            logger.info(f"Redirecting to: {target_url}")
-            return Response(
-                f"Redirecting to compile server: <a href='{target_url}'>{target_url}</a>",
-                status=302,
-                headers={"Location": target_url},
-            )
-
-        @app.route("/<path:path>")
-        def serve_files(path: str):
-            logger.info(f"Received request for path: {path}")
-
-            try:
-                is_debug_src_code_request = _is_dwarf_source(path)
-                logger.info(f"is debug_src_code_request: {is_debug_src_code_request}")
-                if is_debug_src_code_request:
-                    logger.info(f"Handling as dwarf source file request: {path}")
-                    return handle_dwarfsource(path)
-                else:
-                    logger.info(f"Handling as local file: {path}")
-                    return handle_local_file_fetch(path)
-            except Exception as e:
-                logger.error(f"Error in serve_files for {path}: {e}", exc_info=True)
-                return Response(f"Server error: {str(e)}", status=500)
 
         @app.errorhandler(Exception)
         def handle_exception(e):
@@ -379,14 +196,9 @@ def _run_flask_server(
 
         logger.info("Setting up livereload server")
         server = Server(app.wsgi_app)
-        # Watch index.html for changes
         server.watch(str(fastled_js / "index.html"))
-        # server.watch(str(fastled_js / "index.js"))
-        # server.watch(str(fastled_js / "index.css"))
-        # Start the server
         logger.info(f"Starting server on port {port}")
 
-        # Configure SSL if certificates are provided
         ssl_enabled = False
         if certfile and keyfile:
             try:
@@ -394,7 +206,6 @@ def _run_flask_server(
                     f"Configuring SSL with certfile: {certfile}, keyfile: {keyfile}"
                 )
 
-                # Check certificate expiration
                 is_valid, days_remaining, expiration_date = (
                     _check_certificate_expiration(certfile)
                 )
@@ -414,22 +225,16 @@ def _run_flask_server(
                             f"SSL certificate valid until {expiration_date} ({days_remaining} days remaining)"
                         )
 
-                # Monkey-patch the server to use SSL
-                # The livereload Server doesn't expose ssl_context directly,
-                # so we need to use the underlying tornado server
                 import ssl
 
                 from tornado import httpserver
                 from tornado.ioloop import IOLoop
                 from tornado.wsgi import WSGIContainer
 
-                # Wrap the WSGI app in Tornado's WSGIContainer
                 wsgi_container = WSGIContainer(server.app)  # type: ignore[arg-type]
 
-                # Create a proper SSLContext for server-side SSL
                 ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                 ssl_ctx.load_cert_chain(str(certfile), str(keyfile))
-                # Don't verify client certificates (this is a server, not a client)
                 ssl_ctx.check_hostname = False
                 ssl_ctx.verify_mode = ssl.CERT_NONE
 
@@ -464,7 +269,6 @@ def _run_flask_server(
 def run_flask_in_thread(
     port: int,
     cwd: Path,
-    compile_server_port: int,
     certfile: Path | None = None,
     keyfile: Path | None = None,
 ) -> None:
@@ -473,13 +277,12 @@ def run_flask_in_thread(
         if _ENABLE_LOGGING:
             logger.info(f"Starting Flask server thread on port {port}")
             logger.info(f"Serving files from {cwd}")
-            logger.info(f"Compile server port: {compile_server_port}")
             if certfile:
                 logger.info(f"Using SSL certificate: {certfile}")
             if keyfile:
                 logger.info(f"Using SSL key: {keyfile}")
 
-        _run_flask_server(cwd, port, compile_server_port, certfile, keyfile)
+        _run_flask_server(cwd, port, certfile, keyfile)
     except KeyboardInterrupt:
         logger.info("Flask server thread stopped by keyboard interrupt")
         import _thread
@@ -488,6 +291,27 @@ def run_flask_in_thread(
         pass
     except Exception as e:
         logger.error(f"Error in Flask server thread: {e}", exc_info=True)
+
+
+def run_flask_server_process(
+    port: int,
+    cwd: Path,
+    certfile: Path | None = None,
+    keyfile: Path | None = None,
+) -> Process:
+    """Run the Flask server in a separate process."""
+    if _ENABLE_LOGGING:
+        logger.info(f"Starting Flask server process on port {port}")
+        logger.info(f"Serving files from {cwd}")
+
+    process = Process(
+        target=run_flask_in_thread,
+        args=(port, cwd, certfile, keyfile),
+    )
+    process.start()
+    if _ENABLE_LOGGING:
+        logger.info(f"Flask server process started with PID {process.pid}")
+    return process
 
 
 def parse_args() -> argparse.Namespace:
@@ -518,29 +342,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_flask_server_process(
-    port: int,
-    cwd: Path,
-    compile_server_port: int,
-    certfile: Path | None = None,
-    keyfile: Path | None = None,
-) -> Process:
-    """Run the Flask server in a separate process."""
-    if _ENABLE_LOGGING:
-        logger.info(f"Starting Flask server process on port {port}")
-        logger.info(f"Serving files from {cwd}")
-        logger.info(f"Compile server port: {compile_server_port}")
-
-    process = Process(
-        target=run_flask_in_thread,
-        args=(port, cwd, compile_server_port, certfile, keyfile),
-    )
-    process.start()
-    if _ENABLE_LOGGING:
-        logger.info(f"Flask server process started with PID {process.pid}")
-    return process
-
-
 def main() -> None:
     """Main function."""
     if _ENABLE_LOGGING:
@@ -552,11 +353,8 @@ def main() -> None:
             logger.info(f"Using SSL certificate: {args.certfile}")
         if args.keyfile:
             logger.info(f"Using SSL key: {args.keyfile}")
-        logger.warning("Note: main() is missing compile_server_port parameter")
 
-    # Note: This call is missing the compile_server_port parameter
-    # This is a bug in the original code
-    run_flask_in_thread(args.port, args.fastled_js, 0, args.certfile, args.keyfile)
+    run_flask_in_thread(args.port, args.fastled_js, args.certfile, args.keyfile)
     if _ENABLE_LOGGING:
         logger.info("Main function completed")
 

@@ -52,13 +52,10 @@ class MicrophoneHttpsIntegrationTest(unittest.TestCase):
     async def _test_microphone_available_over_https_async(self):
         """Async implementation of HTTPS microphone availability test."""
         port = BASE_PORT
-        compile_server_port = port + 1
-
         # Start HTTPS server
         proc = Test.spawn_http_server(
             DEMO_DIR,
             port=port,
-            compile_server_port=compile_server_port,
             open_browser=False,
             enable_https=True,
         )
@@ -152,13 +149,10 @@ class MicrophoneHttpsIntegrationTest(unittest.TestCase):
     async def _test_microphone_context_over_http_async(self):
         """Async implementation of HTTP microphone context test."""
         port = BASE_PORT + 10
-        compile_server_port = port + 1
-
         # Start HTTP server (disable HTTPS)
         proc = Test.spawn_http_server(
             DEMO_DIR,
             port=port,
-            compile_server_port=compile_server_port,
             open_browser=False,
             enable_https=False,  # Force HTTP mode
         )
@@ -245,13 +239,10 @@ class MicrophoneHttpsIntegrationTest(unittest.TestCase):
     async def _test_https_certificate_validation_async(self):
         """Async implementation of HTTPS certificate validation test."""
         port = BASE_PORT + 20
-        compile_server_port = port + 1
-
         # Start HTTPS server
         proc = Test.spawn_http_server(
             DEMO_DIR,
             port=port,
-            compile_server_port=compile_server_port,
             open_browser=False,
             enable_https=True,
         )

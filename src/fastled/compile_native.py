@@ -142,6 +142,7 @@ def run_native_compile(
     keep_running: bool = True,
     enable_https: bool = True,
     fastled_path: Path | str | None = None,
+    app: bool = False,
 ) -> int:
     """
     Run native compilation with optional browser and file watching.
@@ -184,9 +185,8 @@ def run_native_compile(
         http_proc = spawn_http_server(
             output_dir,
             port=None,  # Auto-select port
-            compile_server_port=0,  # No compile server for native
             open_browser=True,
-            app=False,
+            app=app,
             enable_https=enable_https,
         )
 

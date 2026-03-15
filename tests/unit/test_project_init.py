@@ -1,23 +1,10 @@
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
-from fastled import Api
-from fastled.project_init import get_examples, project_init
+from fastled.project_init import get_examples
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
-
-_ENABLED = (
-    False  # test_project_init broke with the compiler rebuild. Come back to this.
-)
-
-
-def _local_server_enabled() -> bool:
-    """Check if this system can run the tests."""
-    from fastled import Test
-
-    return Test.can_run_local_docker_tests()
 
 
 class ProjectInitTester(unittest.TestCase):
@@ -25,28 +12,9 @@ class ProjectInitTester(unittest.TestCase):
 
     def test_get_examples(self) -> None:
         """Test get_examples function."""
-        if _local_server_enabled():
-            with Api.server(auto_updates=True, port=0) as server:
-                examples = get_examples(server.url())
-        else:
-            examples = get_examples()
+        examples = get_examples()
         self.assertTrue(len(examples) > 0)
         self.assertTrue("wasm" in examples)
-
-    @unittest.skipUnless(
-        _ENABLED and _local_server_enabled(), "This is not a fast test"
-    )
-    def test_compile(self) -> None:
-        """Test web compilation functionality with real server."""
-        # Test the web_compile function with actual server call
-        with TemporaryDirectory() as tmpdir:
-            out = Path(tmpdir)
-            with Api.server(port=0) as server:
-                project_init(example="wasm", outputdir=out, host=server.url())
-                # print out everything in the out dir
-                for f in out.iterdir():
-                    print(f)
-                self.assertTrue((out / "wasm" / "wasm.ino").exists())
 
 
 if __name__ == "__main__":

@@ -89,9 +89,7 @@ def wait_for_server(port: int, timeout: int = 10, enable_https: bool = True) -> 
     protocol = "https" if enable_https else "http"
     while future_time > time.time():
         try:
-            # Try the specified protocol (HTTPS with SSL verification disabled for self-signed certs)
             url = f"{protocol}://localhost:{port}"
-            # print(f"Waiting for server to start at {url}")
             verify = (
                 False if enable_https else True
             )  # Only disable SSL verification for HTTPS
@@ -105,7 +103,6 @@ def wait_for_server(port: int, timeout: int = 10, enable_https: bool = True) -> 
 
 def spawn_http_server(
     fastled_js: Path,
-    compile_server_port: int,
     port: int | None = None,
     open_browser: bool = True,
     app: bool = False,
@@ -129,15 +126,9 @@ def spawn_http_server(
         certfile = assets_dir / "localhost.pem"
         keyfile = assets_dir / "localhost-key.pem"
 
-    # port: int,
-    # cwd: Path,
-    # compile_server_port: int,
-    # certfile: Path | None = None,
-    # keyfile: Path | None = None,
-
     proc = Process(
         target=run_flask_in_thread,
-        args=(port, fastled_js, compile_server_port, certfile, keyfile),
+        args=(port, fastled_js, certfile, keyfile),
         daemon=True,
     )
     add_cleanup(proc)
@@ -165,9 +156,7 @@ def spawn_http_server(
             print(
                 "Auto-resize enabled: Browser window will automatically adjust to content size"
             )
-            print(
-                "🔧 C++ DevTools Support extension will be loaded for DWARF debugging"
-            )
+            print("C++ DevTools Support extension will be loaded for DWARF debugging")
             global _playwright_browser_proxy
             _playwright_browser_proxy = open_with_playwright(
                 url, enable_extensions=True

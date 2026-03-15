@@ -6,8 +6,9 @@ from pathlib import Path
 
 import httpx
 
-from fastled.settings import DEFAULT_URL
 from fastled.spinner import Spinner
+
+DEFAULT_URL = "https://fastled.onrender.com"
 
 DEFAULT_EXAMPLE = "wasm"
 

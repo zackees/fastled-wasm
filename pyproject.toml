@@ -13,22 +13,15 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "httpx>=0.28.1",
     "watchdog>=6.0.0",
-    ########## Begin Docker Manager Dependencies
-    "docker>=7.1.0",
-    "filelock>=3.16.1",
-    "appdirs>=1.4.4",
-    "rapidfuzz>=3.10.1",
-    "progress>=1.6",
-    ########## End Docker Manager Dependencies
     "watchfiles>=1.0.5",
     "Flask>=3.0.0",
     "flask-cors>=4.0.0",
     "livereload",
     "disklru>=2.0.4",
     "playwright>=1.40.0",
-    "websockify>=0.13.0",
     "fasteners>=0.20",
     "cryptography>=41.0.0",
+    "clang-tool-chain",
 ]
 
 dynamic = ["version"]

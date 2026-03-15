@@ -100,8 +100,8 @@ def ensure_clang_tool_chain_emscripten() -> Path | None:
         sig = inspect.signature(ensure_emscripten_available)
         if len(sig.parameters) == 0:
             # New platform-neutral API
-            ensure_emscripten_available()
-            return get_emscripten_install_dir()
+            ensure_emscripten_available()  # type: ignore[call-arg]
+            return get_emscripten_install_dir()  # type: ignore[call-arg]
         else:
             # Caller handles this case - we don't have platform/arch info
             # Just return None and let the fallback mechanisms handle it
@@ -409,7 +409,7 @@ class EmscriptenToolchain:
             src_dir / "fl" / "_build.cpp"
         ).exists()
 
-    def _create_wasm_platform_build(self, build_dir: Path, fastled_dir: Path) -> Path:
+    def _create_wasm_platform_build(self, build_dir: Path) -> Path:
         """Create a custom platforms unity build that only includes wasm/stub/shared."""
         content = """// Auto-generated platform build for WASM native compilation
 // Only includes wasm, stub, and shared platform sources
@@ -588,7 +588,7 @@ class EmscriptenToolchain:
                 src_dir / "_build.cpp",
                 src_dir / "fl" / "_build.cpp",
                 src_dir / "third_party" / "_build.cpp",
-                self._create_wasm_platform_build(build_dir, fastled_dir),
+                self._create_wasm_platform_build(build_dir),
             ]
             # Filter to only existing files
             all_sources = [s for s in all_sources if s.exists()]

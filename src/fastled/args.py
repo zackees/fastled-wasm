@@ -8,33 +8,15 @@ class Args:
     directory: Path | None
     init: bool | str
     just_compile: bool
-    web: str | None
-    interactive: bool
     profile: bool
-    force_compile: bool
-    no_platformio: bool
     app: bool  # New flag to trigger Playwright browser with browser download if needed
-    auto_update: bool | None
-    update: bool
-    background_update: bool
-    localhost: bool
-    build: bool
-    server: bool
-    purge: bool
     debug: bool
     quick: bool
     release: bool
-    ram_disk_size: str  # suffixed liked "25mb" or "1gb"
-    clear = False  # Force the last running container to be removed. Useful for benchmarking.
     install: bool = False  # Install FastLED development environment
     dry_run: bool = False  # Dry run mode for testing
     no_interactive: bool = False  # Non-interactive mode
-    emsdk_headers: str | None = None  # Path to export EMSDK headers ZIP
     enable_https: bool = True  # Enable HTTPS for local server (default: True)
-    native: bool = (
-        True  # Use native EMSDK compilation (no Docker required) - now default
-    )
-    docker: bool = False  # Explicitly use Docker compilation
     fastled_path: Path | str | None = (
         None  # Path to FastLED library for native compilation
     )
@@ -51,34 +33,9 @@ class Args:
             args.just_compile, bool
         ), f"expected bool, got {type(args.just_compile)}"
         assert isinstance(
-            args.web, str | None
-        ), f"expected str | None, got {type(args.web)}"
-        assert isinstance(
-            args.interactive, bool
-        ), f"expected bool, got {type(args.interactive)}"
-        assert isinstance(
             args.profile, bool
         ), f"expected bool, got {type(args.profile)}"
-        assert isinstance(
-            args.force_compile, bool
-        ), f"expected bool, got {type(args.force_compile)}"
-        assert isinstance(
-            args.no_platformio, bool
-        ), f"expected bool, got {type(args.no_platformio)}"
         assert isinstance(args.app, bool), f"expected bool, got {type(args.app)}"
-        assert isinstance(
-            args.no_auto_updates, bool | None
-        ), f"expected bool | None, got {type(args.no_auto_updates)}"
-        assert isinstance(args.update, bool), f"expected bool, got {type(args.update)}"
-        assert isinstance(
-            args.background_update, bool
-        ), f"expected bool, got {type(args.background_update)}"
-        assert isinstance(
-            args.localhost, bool
-        ), f"expected bool, got {type(args.localhost)}"
-        assert isinstance(args.build, bool), f"expected bool, got {type(args.build)}"
-        assert isinstance(args.server, bool), f"expected bool, got {type(args.server)}"
-        assert isinstance(args.purge, bool), f"expected bool, got {type(args.purge)}"
         assert isinstance(args.debug, bool), f"expected bool, got {type(args.debug)}"
         assert isinstance(args.quick, bool), f"expected bool, got {type(args.quick)}"
         assert isinstance(
@@ -94,13 +51,8 @@ class Args:
             args.no_interactive, bool
         ), f"expected bool, got {type(args.no_interactive)}"
         assert isinstance(
-            args.emsdk_headers, str | None
-        ), f"expected str | None, got {type(args.emsdk_headers)}"
-        assert isinstance(
             args.no_https, bool
         ), f"expected bool, got {type(args.no_https)}"
-        assert isinstance(args.native, bool), f"expected bool, got {type(args.native)}"
-        assert isinstance(args.docker, bool), f"expected bool, got {type(args.docker)}"
         assert isinstance(
             args.fastled_path, str | None
         ), f"expected str | None, got {type(args.fastled_path)}"
@@ -116,29 +68,14 @@ class Args:
             directory=Path(args.directory) if args.directory else None,
             init=init,
             just_compile=args.just_compile,
-            web=args.web,
-            interactive=args.interactive,
             profile=args.profile,
-            force_compile=args.force_compile,
-            no_platformio=args.no_platformio,
             app=args.app,
-            auto_update=not args.no_auto_updates,
-            update=args.update,
-            background_update=args.background_update,
-            localhost=args.localhost,
-            build=args.build,
-            server=args.server,
-            purge=args.purge,
             debug=args.debug,
             quick=args.quick,
             release=args.release,
-            ram_disk_size=args.ram_disk_size,
             install=args.install,
             dry_run=args.dry_run,
-            emsdk_headers=args.emsdk_headers,
             no_interactive=args.no_interactive,
             enable_https=not args.no_https,  # Invert no_https to enable_https
-            native=args.native,
-            docker=args.docker,
             fastled_path=Path(args.fastled_path) if args.fastled_path else None,
         )
