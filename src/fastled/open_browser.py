@@ -134,9 +134,6 @@ def spawn_http_server(
     add_cleanup(proc)
     proc.start()
 
-    # Add to cleanup set with weak reference
-    add_cleanup(proc)
-
     wait_for_server(port, enable_https=enable_https)
     if open_browser:
         protocol = "https" if enable_https else "http"
