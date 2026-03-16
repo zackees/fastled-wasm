@@ -4,15 +4,11 @@ Emscripten Toolchain for FastLED
 Provides native compilation using the Emscripten SDK (EMSDK) for compiling
 FastLED sketches to WebAssembly without Docker.
 
-This toolchain leverages FastLED's built-in WASM platform support located
-in src/platforms/wasm, which provides Arduino-compatible stubs and WASM
-bindings.
+When a local FastLED repo is detected (with ci/wasm_build.py), delegates to
+the repo's own build system which uses Meson+Ninja with command capture and
+caching via clang-tool-chain for fast incremental rebuilds.
 
-The toolchain supports two modes:
-1. clang-tool-chain package (preferred): Uses the clang-tool-chain pip package
-   which auto-downloads and manages Emscripten. Installation directory:
-   ~/.clang-tool-chain/emscripten/
-2. Standard EMSDK: Falls back to system EMSDK if clang-tool-chain is not available.
+Otherwise falls back to a direct em++ invocation.
 """
 
 import os
@@ -27,44 +23,23 @@ from fastled.types import BuildMode
 
 
 def _get_clang_tool_chain_emscripten_dir() -> Path | None:
-    """
-    Get the clang-tool-chain Emscripten installation directory.
-
-    The clang-tool-chain package installs Emscripten to:
-    ~/.clang-tool-chain/emscripten/
-
-    This function searches for the actual installation location which contains
-    the 'emscripten' subdirectory with emcc.py and other scripts.
-
-    Returns:
-        Path to Emscripten installation directory, or None if not found.
-    """
-    # Check for environment variable override
+    """Get the clang-tool-chain Emscripten installation directory."""
     env_path = os.environ.get("CLANG_TOOL_CHAIN_DOWNLOAD_PATH")
-    if env_path:
-        base_dir = Path(env_path)
-    else:
-        base_dir = Path.home() / ".clang-tool-chain"
-
+    base_dir = Path(env_path) if env_path else Path.home() / ".clang-tool-chain"
     emscripten_base = base_dir / "emscripten"
 
     if not emscripten_base.exists():
         return None
 
-    # Check if this is the actual installation (has emscripten/emcc.py)
     if (emscripten_base / "emscripten" / "emcc.py").exists():
         return emscripten_base
 
-    # Search for the installation in subdirectories (e.g., win/x86_64/)
-    # This handles legacy platform-specific installations
     for subdir in emscripten_base.iterdir():
         if subdir.is_dir():
-            # Check one level deep (e.g., emscripten/win/)
             for arch_dir in subdir.iterdir():
                 if arch_dir.is_dir():
                     if (arch_dir / "emscripten" / "emcc.py").exists():
                         return arch_dir
-            # Also check directly (e.g., emscripten/darwin/)
             if (subdir / "emscripten" / "emcc.py").exists():
                 return subdir
 
@@ -72,24 +47,12 @@ def _get_clang_tool_chain_emscripten_dir() -> Path | None:
 
 
 def ensure_clang_tool_chain_emscripten() -> Path | None:
-    """
-    Ensure clang-tool-chain Emscripten is installed.
-
-    If clang-tool-chain is installed as a pip package, this will trigger
-    the auto-download of Emscripten on first use.
-
-    Returns:
-        Path to Emscripten installation directory, or None if clang-tool-chain
-        is not available.
-    """
-    # First check if already installed
+    """Ensure clang-tool-chain Emscripten is installed."""
     existing_dir = _get_clang_tool_chain_emscripten_dir()
     if existing_dir:
         return existing_dir
 
-    # Try to import clang-tool-chain and trigger installation
     try:
-        # Try platform-neutral API first (preferred)
         import inspect
 
         from clang_tool_chain.installers.emscripten import (  # type: ignore[import-not-found]
@@ -99,19 +62,36 @@ def ensure_clang_tool_chain_emscripten() -> Path | None:
 
         sig = inspect.signature(ensure_emscripten_available)
         if len(sig.parameters) == 0:
-            # New platform-neutral API
             ensure_emscripten_available()  # type: ignore[call-arg]
             return get_emscripten_install_dir()  # type: ignore[call-arg]
         else:
-            # Caller handles this case - we don't have platform/arch info
-            # Just return None and let the fallback mechanisms handle it
             return None
     except ImportError:
-        # clang-tool-chain package not installed
         return None
     except Exception as e:
         print(f"Warning: Failed to ensure clang-tool-chain Emscripten: {e}")
         return None
+
+
+def _setup_emscripten_env(env: dict[str, str]) -> None:
+    """Set up Emscripten environment variables like ci/wasm_tools.py does."""
+    clang_tool_chain_dir = _get_clang_tool_chain_emscripten_dir()
+    if not clang_tool_chain_dir:
+        return
+
+    emscripten_dir = clang_tool_chain_dir / "emscripten"
+    config_path = clang_tool_chain_dir / ".emscripten"
+    bin_dir = clang_tool_chain_dir / "bin"
+
+    if emscripten_dir.exists():
+        env["EMSCRIPTEN"] = str(emscripten_dir)
+        env["EMSCRIPTEN_ROOT"] = str(emscripten_dir)
+    if config_path.exists():
+        env["EM_CONFIG"] = str(config_path)
+    env["EMSDK_PYTHON"] = sys.executable
+    env["EMCC_SKIP_SANITY_CHECK"] = "1"
+    if bin_dir.exists():
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
 
 
 @dataclass
@@ -129,10 +109,7 @@ class EmscriptenConfig:
 
     build_mode: BuildMode
     output_name: str = "fastled"
-    # Common flags for all builds
-    # Compile flags - must match build_flags.toml [all] section
     compile_flags: tuple[str, ...] = (
-        # Defines from build_flags.toml [all].defines
         "-DFASTLED_ENGINE_EVENTS_MAX_LISTENERS=50",
         "-DFASTLED_FORCE_NAMESPACE=1",
         "-DFASTLED_USE_PROGMEM=0",
@@ -140,10 +117,8 @@ class EmscriptenConfig:
         "-DGL_ENABLE_GET_PROC_ADDRESS=0",
         "-D_REENTRANT=1",
         "-DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0",
-        # Sketch-specific defines from build_flags.toml [sketch].defines
         "-DSKETCH_COMPILE=1",
         "-DFASTLED_WASM_USE_CCALL",
-        # Compiler flags from build_flags.toml [all].compiler_flags
         "-std=gnu++17",
         "-fpermissive",
         "-Wno-constant-logical-operand",
@@ -156,18 +131,15 @@ class EmscriptenConfig:
         "-pthread",
         "-fpch-instantiate-templates",
     )
-    # Link flags - must match build_flags.toml [linking.base] + [linking.sketch]
     link_flags: tuple[str, ...] = (
-        # [linking.base] flags
         "-sWASM=1",
         "-pthread",
         "-sUSE_PTHREADS=1",
         "-sPROXY_TO_PTHREAD",
-        # [linking.sketch] flags
         "-sMODULARIZE=1",
         "-sEXPORT_NAME=fastled",
         "-sALLOW_MEMORY_GROWTH=1",
-        "-sINITIAL_MEMORY=134217728",  # 128MB
+        "-sINITIAL_MEMORY=134217728",
         "-sAUTO_NATIVE_LIBRARIES=0",
         "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','stringToUTF8','UTF8ToString','lengthBytesUTF8','HEAPU8','getValue']",
         "-sEXPORTED_FUNCTIONS=['_malloc','_free','_main','_extern_setup','_extern_loop','_fastled_declare_files','_getStripPixelData','_getFrameData','_getScreenMapData','_freeFrameData','_getFrameVersion','_hasNewFrameData','_js_fetch_success_callback','_js_fetch_error_callback']",
@@ -178,26 +150,22 @@ class EmscriptenConfig:
 
     @property
     def common_flags(self) -> tuple[str, ...]:
-        """Combined compile + link flags."""
         return self.compile_flags + self.link_flags
 
     def get_optimization_flags(self) -> list[str]:
-        """Get optimization flags based on build mode."""
         if self.build_mode == BuildMode.DEBUG:
             return ["-g", "-O0", "-sASSERTIONS=2"]
         elif self.build_mode == BuildMode.QUICK:
             return ["-O1", "-sASSERTIONS=0"]
-        else:  # RELEASE
+        else:
             return ["-O3", "-flto", "-sASSERTIONS=0"]
 
 
 class EmscriptenToolchain:
-    """
-    Emscripten toolchain for compiling FastLED sketches to WebAssembly.
+    """Emscripten toolchain for compiling FastLED sketches to WebAssembly.
 
-    This toolchain compiles Arduino/FastLED sketches directly using the
-    Emscripten SDK without requiring Docker. It uses FastLED's built-in
-    WASM platform support.
+    When a FastLED repo with ci/wasm_build.py is available, delegates to
+    that build system for proper compilation with command capture/caching.
     """
 
     FASTLED_GITHUB_URL = "https://github.com/FastLED/FastLED"
@@ -210,43 +178,22 @@ class EmscriptenToolchain:
         fastled_path: Path | str | None = None,
         emsdk_path: Path | str | None = None,
     ):
-        """
-        Initialize the Emscripten toolchain.
-
-        Args:
-            fastled_path: Path to FastLED library. If None, downloads from master.
-            emsdk_path: Path to EMSDK installation. If None, searches PATH.
-        """
         self._fastled_path: Path | None = Path(fastled_path) if fastled_path else None
         self._emsdk_path: Path | None = Path(emsdk_path) if emsdk_path else None
         self._compiler_paths: CompilerPaths | None = None
         self._temp_dir: Path | None = None
 
     def _find_emsdk(self) -> Path | None:
-        """Find EMSDK installation path.
-
-        Priority order:
-        1. clang-tool-chain package installation (~/.clang-tool-chain/emscripten/)
-        2. EMSDK environment variable
-        3. Common installation paths (~/emsdk, /opt/emsdk, C:/emsdk, etc.)
-        """
-        # Priority 1: Check clang-tool-chain installation
+        """Find EMSDK installation path."""
         clang_tool_chain_dir = _get_clang_tool_chain_emscripten_dir()
         if clang_tool_chain_dir and clang_tool_chain_dir.exists():
-            # clang-tool-chain structure:
-            # ~/.clang-tool-chain/emscripten/
-            #   ├── bin/           - Contains clang, clang++, wasm-ld, wasm-opt, etc.
-            #   ├── emscripten/    - Contains emcc.py, em++.py, emar.py, etc.
-            #   └── .emscripten    - Config file
             if (clang_tool_chain_dir / "emscripten").exists():
                 return clang_tool_chain_dir
 
-        # Priority 2: Check EMSDK environment variable
         emsdk_env = os.environ.get("EMSDK")
         if emsdk_env:
             return Path(emsdk_env)
 
-        # Priority 3: Check common installation paths
         common_paths = [
             Path.home() / "emsdk",
             Path("/opt/emsdk"),
@@ -254,7 +201,6 @@ class EmscriptenToolchain:
             Path.home() / ".emsdk",
             Path.home() / "AppData" / "Local" / "emsdk",
         ]
-
         for path in common_paths:
             if path.exists() and (path / "upstream" / "emscripten").exists():
                 return path
@@ -262,28 +208,14 @@ class EmscriptenToolchain:
         return None
 
     def _find_compilers(self) -> CompilerPaths:
-        """Find Emscripten compiler executables.
-
-        Supports two installation types:
-        1. clang-tool-chain: Emscripten scripts are Python files in emscripten/ subdirectory
-        2. Standard EMSDK: Emscripten scripts are in upstream/emscripten/
-        """
-        # First try to ensure clang-tool-chain Emscripten is available
-        # This will auto-download if clang-tool-chain package is installed
+        """Find Emscripten compiler executables."""
         clang_tool_chain_dir = ensure_clang_tool_chain_emscripten()
         if clang_tool_chain_dir and clang_tool_chain_dir.exists():
-            # clang-tool-chain structure:
-            # ~/.clang-tool-chain/emscripten/
-            #   ├── bin/           - Contains clang, clang++, wasm-ld, wasm-opt, etc.
-            #   ├── emscripten/    - Contains emcc.py, em++.py, emar.py, etc.
-            #   └── .emscripten    - Config file
             emscripten_scripts_dir = clang_tool_chain_dir / "emscripten"
             if emscripten_scripts_dir.exists():
-                # Emscripten tools in clang-tool-chain are Python scripts (.py files)
                 emcc_path = emscripten_scripts_dir / "emcc.py"
                 empp_path = emscripten_scripts_dir / "em++.py"
                 emar_path = emscripten_scripts_dir / "emar.py"
-
                 if emcc_path.exists() and empp_path.exists():
                     return CompilerPaths(
                         emcc=emcc_path,
@@ -291,42 +223,33 @@ class EmscriptenToolchain:
                         emar=emar_path if emar_path.exists() else emcc_path,
                     )
 
-        # Try clang-tool-chain wrapper commands if available in PATH
-        ctc_emcc = shutil.which("clang-tool-chain-emcc")
-        ctc_empp = shutil.which("clang-tool-chain-em++")
-        ctc_emar = shutil.which("clang-tool-chain-emar")
+        for name_emcc, name_empp, name_emar in [
+            ("clang-tool-chain-emcc", "clang-tool-chain-em++", "clang-tool-chain-emar"),
+        ]:
+            ctc_emcc = shutil.which(name_emcc)
+            ctc_empp = shutil.which(name_empp)
+            ctc_emar = shutil.which(name_emar)
+            if ctc_emcc and ctc_empp:
+                return CompilerPaths(
+                    emcc=Path(ctc_emcc),
+                    empp=Path(ctc_empp),
+                    emar=Path(ctc_emar) if ctc_emar else Path(ctc_emcc),
+                )
 
-        if ctc_emcc and ctc_empp:
-            return CompilerPaths(
-                emcc=Path(ctc_emcc),
-                empp=Path(ctc_empp),
-                emar=Path(ctc_emar) if ctc_emar else Path(ctc_emcc),
-            )
-
-        # Try standard Emscripten in PATH
         emcc = shutil.which("emcc")
         empp = shutil.which("em++")
         emar = shutil.which("emar")
-
         if emcc and empp and emar:
-            return CompilerPaths(
-                emcc=Path(emcc),
-                empp=Path(empp),
-                emar=Path(emar),
-            )
+            return CompilerPaths(emcc=Path(emcc), empp=Path(empp), emar=Path(emar))
 
-        # Try EMSDK path
         emsdk = self._emsdk_path or self._find_emsdk()
         if emsdk:
-            # Check if this is a clang-tool-chain directory
             if (emsdk / "emscripten").exists() and not (emsdk / "upstream").exists():
-                # clang-tool-chain structure
                 emscripten_scripts_dir = emsdk / "emscripten"
                 emcc_path = emscripten_scripts_dir / "emcc.py"
                 empp_path = emscripten_scripts_dir / "em++.py"
                 emar_path = emscripten_scripts_dir / "emar.py"
             else:
-                # Standard EMSDK structure
                 emscripten_dir = emsdk / "upstream" / "emscripten"
                 if sys.platform == "win32":
                     emcc_path = emscripten_dir / "emcc.bat"
@@ -362,20 +285,16 @@ class EmscriptenToolchain:
         import httpx
 
         print("Downloading FastLED library from GitHub master...")
-
         response = httpx.get(
             self.FASTLED_ARCHIVE_URL, follow_redirects=True, timeout=60
         )
         response.raise_for_status()
 
-        # Extract the zip
         with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
             zf.extractall(target_dir)
 
-        # The extracted folder is named FastLED-master
         fastled_dir = target_dir / "FastLED-master"
         if not fastled_dir.exists():
-            # Try to find any extracted directory
             dirs = [
                 d
                 for d in target_dir.iterdir()
@@ -393,17 +312,110 @@ class EmscriptenToolchain:
         if self._fastled_path and self._fastled_path.exists():
             return self._fastled_path
 
-        # Create a temp directory for downloaded FastLED
         if self._temp_dir is None:
             self._temp_dir = Path(tempfile.mkdtemp(prefix="fastled_native_"))
 
-        # Download FastLED
         fastled_dir = self._download_fastled(self._temp_dir)
         self._fastled_path = fastled_dir
         return fastled_dir
 
+    def _has_wasm_build_system(self, fastled_dir: Path) -> bool:
+        """Check if the FastLED repo has ci/wasm_build.py."""
+        return (fastled_dir / "ci" / "wasm_build.py").exists()
+
+    def _compile_via_wasm_build(
+        self,
+        sketch_dir: Path,
+        output_dir: Path,
+        fastled_dir: Path,
+        build_mode: BuildMode,
+    ) -> Path:
+        """Delegate to FastLED's ci/wasm_build.py which uses Meson+Ninja
+        with command capture/caching via clang-tool-chain.
+
+        This is the preferred path — it matches the upstream build exactly
+        and gets fast incremental rebuilds for free.
+        """
+        # Map BuildMode to wasm_build mode string
+        mode_map = {
+            BuildMode.DEBUG: "debug",
+            BuildMode.QUICK: "quick",
+            BuildMode.RELEASE: "release",
+        }
+        mode = mode_map[build_mode]
+
+        # wasm_build.py expects an example name and output path.
+        # For arbitrary sketch dirs we create a temporary example symlink.
+        sketch_name = sketch_dir.name
+        example_dir = fastled_dir / "examples" / sketch_name
+
+        # If sketch_dir IS already inside the FastLED examples tree, use it directly
+        try:
+            sketch_dir.relative_to(fastled_dir / "examples")
+            is_in_tree = True
+        except ValueError:
+            is_in_tree = False
+
+        output_js = output_dir / "fastled.js"
+
+        # wasm_build.py uses relative imports (from ci.wasm_flags import ...)
+        # so it must be invoked via `uv run python` from the FastLED repo root.
+        uv = shutil.which("uv")
+        if uv:
+            cmd = [
+                uv,
+                "run",
+                "python",
+                str(fastled_dir / "ci" / "wasm_build.py"),
+                "--example",
+                sketch_name,
+                "-o",
+                str(output_js),
+                "--mode",
+                mode,
+            ]
+        else:
+            cmd = [
+                sys.executable,
+                str(fastled_dir / "ci" / "wasm_build.py"),
+                "--example",
+                sketch_name,
+                "-o",
+                str(output_js),
+                "--mode",
+                mode,
+            ]
+
+        env = os.environ.copy()
+        _setup_emscripten_env(env)
+
+        if not is_in_tree:
+            # Create a temporary symlink so wasm_build.py can find the sketch
+            if not example_dir.exists():
+                example_dir.symlink_to(sketch_dir, target_is_directory=True)
+            needs_cleanup = True
+        else:
+            needs_cleanup = False
+
+        try:
+            print(f"Delegating to FastLED build system (mode: {mode})...")
+            result = subprocess.run(
+                cmd,
+                cwd=str(fastled_dir),
+                env=env,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"FastLED build system failed with return code {result.returncode}"
+                )
+        finally:
+            if needs_cleanup and example_dir.is_symlink():
+                example_dir.unlink()
+
+        return output_js
+
     def _uses_unity_build(self, fastled_dir: Path) -> bool:
-        """Check if the FastLED repo uses unity build pattern (_build.cpp files)."""
+        """Check if the FastLED repo uses unity build pattern."""
         src_dir = fastled_dir / "src"
         return (src_dir / "_build.cpp").exists() and (
             src_dir / "fl" / "_build.cpp"
@@ -434,24 +446,11 @@ class EmscriptenToolchain:
     def _get_wasm_sources(self, fastled_dir: Path) -> list[Path]:
         """Get FastLED WASM platform source files."""
         src_dir = fastled_dir / "src"
-        wasm_dir = src_dir / "platforms" / "wasm"
-        stub_dir = src_dir / "platforms" / "stub"
-        shared_dir = src_dir / "platforms" / "shared"
-
         sources: list[Path] = []
-
-        # Add WASM platform sources
-        if wasm_dir.exists():
-            sources.extend(wasm_dir.rglob("*.cpp"))
-
-        # Add stub platform sources (used by WASM)
-        if stub_dir.exists():
-            sources.extend(stub_dir.rglob("*.cpp"))
-
-        # Add shared platform sources (contains ActiveStripData, UI, etc.)
-        if shared_dir.exists():
-            sources.extend(shared_dir.rglob("*.cpp"))
-
+        for d in ["platforms/wasm", "platforms/stub", "platforms/shared"]:
+            p = src_dir / d
+            if p.exists():
+                sources.extend(p.rglob("*.cpp"))
         return sources
 
     def _get_fastled_core_sources(self, fastled_dir: Path) -> list[Path]:
@@ -462,48 +461,29 @@ class EmscriptenToolchain:
 
         sources: list[Path] = []
         for pattern in ["*.cpp", "*.c"]:
-            sources.extend(src_dir.glob(pattern))  # Only top-level src files
+            sources.extend(src_dir.glob(pattern))
 
-        # Add fl/ subdirectory sources
-        fl_dir = src_dir / "fl"
-        if fl_dir.exists():
-            for pattern in ["*.cpp", "*.c"]:
-                sources.extend(fl_dir.rglob(pattern))
-
-        # Add fx/ subdirectory sources
-        fx_dir = src_dir / "fx"
-        if fx_dir.exists():
-            for pattern in ["*.cpp", "*.c"]:
-                sources.extend(fx_dir.rglob(pattern))
+        for subdir in ["fl", "fx"]:
+            d = src_dir / subdir
+            if d.exists():
+                for pattern in ["*.cpp", "*.c"]:
+                    sources.extend(d.rglob(pattern))
 
         return sources
 
     def _get_sketch_sources(self, sketch_dir: Path) -> list[Path]:
         """Get sketch source files (.ino, .cpp, .c)."""
         sources: list[Path] = []
-
-        # Find .ino files and treat them as .cpp
         for ino_file in sketch_dir.glob("*.ino"):
             sources.append(ino_file)
-
-        # Find .cpp and .c files
         for pattern in ["*.cpp", "*.c"]:
             sources.extend(sketch_dir.glob(pattern))
-
         return sources
 
     def _create_sketch_wrapper(
         self, sketch_sources: list[Path], output_dir: Path
     ) -> Path:
-        """Create sketch.cpp wrapper that provides setup() and loop() for FastLED WASM platform.
-
-        FastLED's WASM platform (entry_point.cpp) already provides:
-        - main() function
-        - extern_setup() / extern_loop() exports
-
-        We just need to provide the user's setup() and loop() functions.
-        """
-        # Read sketch content
+        """Create sketch.cpp wrapper."""
         sketch_content = ""
         for src in sketch_sources:
             if src.suffix == ".ino":
@@ -512,12 +492,7 @@ class EmscriptenToolchain:
 
         wrapper_content = f"""
 // Auto-generated sketch wrapper for FastLED WASM native compilation
-// FastLED's entry_point.cpp provides main(), extern_setup(), extern_loop()
-// This file provides the user's setup() and loop() functions
-
 #include "FastLED.h"
-
-// Include sketch code which defines setup() and loop()
 {sketch_content}
 """
         sketch_path = output_dir / "sketch.cpp"
@@ -531,44 +506,64 @@ class EmscriptenToolchain:
         build_mode: BuildMode = BuildMode.QUICK,
         profile: bool = False,
     ) -> Path:
-        """
-        Compile a FastLED sketch to WebAssembly.
+        """Compile a FastLED sketch to WebAssembly.
 
-        Args:
-            sketch_dir: Path to the sketch directory
-            output_dir: Output directory for compiled files
-            build_mode: Build mode (DEBUG, QUICK, RELEASE)
-            profile: Enable profiling output
-
-        Returns:
-            Path to the compiled JavaScript file
+        If the FastLED repo has ci/wasm_build.py, delegates to that build
+        system for proper Meson+Ninja compilation with command capture and
+        caching. Otherwise falls back to a single-pass em++ invocation.
         """
         if self._compiler_paths is None:
             self._compiler_paths = self._find_compilers()
 
-        config = EmscriptenConfig(build_mode=build_mode)
-
-        # Get FastLED library
         fastled_dir = self._get_fastled_path()
         print(f"Using FastLED library at: {fastled_dir}")
 
-        # Create output directory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create build directory
+        # Preferred path: delegate to FastLED's build system
+        if self._has_wasm_build_system(fastled_dir):
+            output_js = self._compile_via_wasm_build(
+                sketch_dir, output_dir, fastled_dir, build_mode
+            )
+
+            # Copy frontend assets
+            print("Copying frontend assets...")
+            self._copy_frontend_assets(output_dir, fastled_dir)
+
+            self._cleanup_temp()
+
+            wasm_file = output_dir / "fastled.wasm"
+            print("Compilation successful!")
+            print(f"  JS:   {output_js}")
+            print(f"  WASM: {wasm_file}")
+            return output_js
+
+        # Fallback: single-pass em++ (no caching, for repos without ci/wasm_build.py)
+        return self._compile_fallback(
+            sketch_dir, output_dir, fastled_dir, build_mode, profile
+        )
+
+    def _compile_fallback(
+        self,
+        sketch_dir: Path,
+        output_dir: Path,
+        fastled_dir: Path,
+        build_mode: BuildMode,
+        profile: bool,
+    ) -> Path:
+        """Fallback single-pass em++ compilation for repos without ci/wasm_build.py."""
+        assert self._compiler_paths is not None
+        config = EmscriptenConfig(build_mode=build_mode)
+
         build_dir = output_dir / ".build"
         build_dir.mkdir(exist_ok=True)
 
-        # Get source files
         sketch_sources = self._get_sketch_sources(sketch_dir)
-
         if not sketch_sources:
             raise FileNotFoundError(f"No sketch files found in {sketch_dir}")
 
-        # Create sketch wrapper (FastLED provides main/entry points)
         sketch_file = self._create_sketch_wrapper(sketch_sources, build_dir)
 
-        # Build include paths
         include_paths = [
             f"-I{fastled_dir}/src",
             f"-I{fastled_dir}/src/platforms/wasm",
@@ -578,10 +573,8 @@ class EmscriptenToolchain:
             f"-I{sketch_dir}",
         ]
 
-        # Build compiler command
         output_file = output_dir / f"{config.output_name}.js"
 
-        # Get source files - use unity build pattern if available
         if self._uses_unity_build(fastled_dir):
             src_dir = fastled_dir / "src"
             all_sources: list[Path] = [
@@ -590,7 +583,6 @@ class EmscriptenToolchain:
                 src_dir / "third_party" / "_build.cpp",
                 self._create_wasm_platform_build(build_dir),
             ]
-            # Filter to only existing files
             all_sources = [s for s in all_sources if s.exists()]
             print(
                 f"Compiling with {len(sketch_sources)} sketch files using unity build ({len(all_sources)} build units)..."
@@ -603,74 +595,40 @@ class EmscriptenToolchain:
                 f"Compiling with {len(sketch_sources)} sketch files and {len(all_sources)} FastLED files..."
             )
 
-        # Use a response file to avoid Windows command line length limits
-        # The response file contains all arguments, one per line
-        # Convert Windows backslashes to forward slashes for Emscripten compatibility
         response_file = build_dir / "compile_args.rsp"
 
         def to_posix_path(p: str) -> str:
-            """Convert path to forward slashes for Emscripten."""
             return p.replace("\\", "/")
+
+        # Add --js-library for JS bindings
+        js_library = (
+            fastled_dir / "src" / "platforms" / "wasm" / "compiler" / "js_library.js"
+        )
+        extra_link_flags: list[str] = []
+        if js_library.exists():
+            extra_link_flags.append(f"--js-library={to_posix_path(str(js_library))}")
 
         response_content_lines = [
             *[to_posix_path(p) for p in include_paths],
             *config.common_flags,
             *config.get_optimization_flags(),
+            *extra_link_flags,
             "-o",
             to_posix_path(str(output_file)),
             to_posix_path(str(sketch_file)),
             *[to_posix_path(str(s)) for s in all_sources],
         ]
-        response_content = "\n".join(response_content_lines)
-        response_file.write_text(response_content)
+        response_file.write_text("\n".join(response_content_lines))
 
-        # Build command based on compiler type
         empp_path = self._compiler_paths.empp
         env = os.environ.copy()
+        _setup_emscripten_env(env)
 
-        # Check if this is a clang-tool-chain installation (Python script)
-        if empp_path.suffix == ".py":
-            # clang-tool-chain: Run the .py script with Python
-            # Need to set up environment variables for Emscripten
-            clang_tool_chain_dir = _get_clang_tool_chain_emscripten_dir()
-            if clang_tool_chain_dir:
-                # Set up Emscripten environment variables
-                env["EMSCRIPTEN"] = str(clang_tool_chain_dir / "emscripten")
-                env["EMSCRIPTEN_ROOT"] = str(clang_tool_chain_dir / "emscripten")
-                config_path = clang_tool_chain_dir / ".emscripten"
-                if config_path.exists():
-                    env["EM_CONFIG"] = str(config_path)
-                # Add bin directory to PATH for clang, wasm-opt, etc.
-                bin_dir = clang_tool_chain_dir / "bin"
-                if bin_dir.exists():
-                    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
-
-            cmd = [
-                sys.executable,  # Python interpreter
-                str(empp_path),
-                f"@{response_file}",
-            ]
-        elif "clang-tool-chain" in str(empp_path):
-            # clang-tool-chain wrapper script (clang-tool-chain-em++)
-            # These handle their own environment setup
-            cmd = [
-                str(empp_path),
-                f"@{response_file}",
-            ]
-        else:
-            # Standard EMSDK: Run emcc/em++ directly
-            cmd = [
-                str(empp_path),
-                f"@{response_file}",
-            ]
+        cmd = self._build_emcc_cmd(empp_path, response_file, env)
 
         if profile:
             print(f"Response file: {response_file}")
             print(f"Compile command: {' '.join(cmd)}")
-            if empp_path.suffix == ".py":
-                print("Using clang-tool-chain Emscripten")
-                print(f"EMSCRIPTEN={env.get('EMSCRIPTEN', 'not set')}")
-                print(f"EM_CONFIG={env.get('EM_CONFIG', 'not set')}")
 
         try:
             result = subprocess.run(
@@ -687,33 +645,37 @@ class EmscriptenToolchain:
             print(error_msg)
             raise RuntimeError(error_msg) from e
 
-        # Copy full production frontend assets from FastLED
         print("Copying frontend assets...")
         self._copy_frontend_assets(output_dir, fastled_dir)
 
-        # Cleanup build directory (intermediate compilation files)
         if build_dir.exists():
             shutil.rmtree(build_dir, ignore_errors=True)
 
-        # Cleanup temp directory (downloaded FastLED)
-        if self._temp_dir and self._temp_dir.exists():
-            shutil.rmtree(self._temp_dir, ignore_errors=True)
-            self._temp_dir = None
+        self._cleanup_temp()
 
         wasm_file = output_dir / f"{config.output_name}.wasm"
         print("Compilation successful!")
         print(f"  JS:   {output_file}")
         print(f"  WASM: {wasm_file}")
-
         return output_file
 
-    def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
-        """Copy Vite-built frontend assets from FastLED's wasm compiler directory.
+    def _build_emcc_cmd(
+        self, empp_path: Path, response_file: Path, env: dict[str, str]
+    ) -> list[str]:
+        """Build the em++ command list."""
+        if empp_path.suffix == ".py":
+            return [sys.executable, str(empp_path), f"@{response_file}"]
+        else:
+            return [str(empp_path), f"@{response_file}"]
 
-        The upstream FastLED repo uses TypeScript + Vite. This method builds the
-        frontend (if needed) and copies the dist/ output. Falls back to a minimal
-        index.html if Node.js is not available.
-        """
+    def _cleanup_temp(self) -> None:
+        """Cleanup temp directory if it was created for downloaded FastLED."""
+        if self._temp_dir and self._temp_dir.exists():
+            shutil.rmtree(self._temp_dir, ignore_errors=True)
+            self._temp_dir = None
+
+    def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
+        """Copy Vite-built frontend assets from FastLED's wasm compiler directory."""
         compiler_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
         dist_dir = compiler_dir / "dist"
 
@@ -724,25 +686,19 @@ class EmscriptenToolchain:
             self._create_minimal_index_html(output_dir, "fastled")
             return
 
-        # Build frontend with Vite if dist/ doesn't exist
         if not dist_dir.exists():
             npx = shutil.which("npx")
             if not npx:
                 print(
                     "Warning: Node.js not found. Cannot build frontend. Using minimal index.html"
                 )
-                print(
-                    "  Install Node.js from https://nodejs.org/ for the full UI experience."
-                )
                 self._create_minimal_index_html(output_dir, "fastled")
                 return
 
-            # Install npm dependencies if needed
             if not (compiler_dir / "node_modules").exists():
                 print("Installing frontend dependencies...")
                 subprocess.run(["npm", "install"], cwd=str(compiler_dir), check=True)
 
-            # Build with Vite
             print("Building frontend with Vite...")
             result = subprocess.run(
                 [npx, "vite", "build"],
@@ -756,13 +712,9 @@ class EmscriptenToolchain:
                 return
 
         if not dist_dir.exists():
-            print(
-                "Warning: Vite build succeeded but dist/ not created. Using minimal index.html"
-            )
             self._create_minimal_index_html(output_dir, "fastled")
             return
 
-        # Copy everything from dist/ to output
         print("Copying Vite build output...")
         for item in dist_dir.iterdir():
             dest = output_dir / item.name
@@ -773,7 +725,6 @@ class EmscriptenToolchain:
             else:
                 shutil.copy2(item, dest)
 
-        # Write empty files.json manifest for consistency
         files_json = output_dir / "files.json"
         if not files_json.exists():
             files_json.write_text("[]")
@@ -781,7 +732,7 @@ class EmscriptenToolchain:
         print("  Frontend assets copied from Vite build output")
 
     def _create_minimal_index_html(self, output_dir: Path, module_name: str) -> None:
-        """Create a minimal fallback index.html when full assets are not available."""
+        """Create a minimal fallback index.html."""
         html_content = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -799,14 +750,11 @@ class EmscriptenToolchain:
 
         async function main() {{
             const module = await Module();
-
-            // Initialize FastLED
             module._extern_setup();
 
             const canvas = document.getElementById('canvas');
             const ctx = canvas.getContext('2d');
 
-            // Animation loop
             function animate() {{
                 module._extern_loop();
                 requestAnimationFrame(animate);
@@ -837,33 +785,15 @@ class EmscriptenToolchain:
             paths = self._find_compilers()
             emcc_path = paths.emcc
             env = os.environ.copy()
+            _setup_emscripten_env(env)
 
-            # Check if this is a clang-tool-chain installation (Python script)
             if emcc_path.suffix == ".py":
-                # clang-tool-chain: Run the .py script with Python
-                clang_tool_chain_dir = _get_clang_tool_chain_emscripten_dir()
-                if clang_tool_chain_dir:
-                    env["EMSCRIPTEN"] = str(clang_tool_chain_dir / "emscripten")
-                    env["EMSCRIPTEN_ROOT"] = str(clang_tool_chain_dir / "emscripten")
-                    config_path = clang_tool_chain_dir / ".emscripten"
-                    if config_path.exists():
-                        env["EM_CONFIG"] = str(config_path)
-                    bin_dir = clang_tool_chain_dir / "bin"
-                    if bin_dir.exists():
-                        env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
-
                 cmd = [sys.executable, str(emcc_path), "--version"]
             else:
                 cmd = [str(emcc_path), "--version"]
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                env=env,
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if result.returncode == 0:
-                # First line contains version
                 return result.stdout.split("\n")[0]
             return None
         except (FileNotFoundError, subprocess.SubprocessError):
