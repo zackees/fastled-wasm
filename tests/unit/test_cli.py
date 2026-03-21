@@ -25,17 +25,11 @@ class MainTester(unittest.TestCase):
             cp: subprocess.CompletedProcess = subprocess.run(
                 "fastled --just-compile",
                 shell=True,
-                capture_output=True,
                 check=False,
             )
             ok = cp.returncode == 0
             if not ok:
-                stdout = cp.stdout.decode("utf-8", errors="replace")
-                stderr = cp.stderr.decode("utf-8", errors="replace")
-                error_msg = "stdout:\n" + stdout + "\nstderr:\n" + stderr
-                self.fail(
-                    f"Command failed with return code {cp.returncode}:\n{error_msg}"
-                )
+                self.fail(f"Command failed with return code {cp.returncode}")
         finally:
             os.chdir(original_dir)
 
