@@ -46,6 +46,37 @@ def _get_clang_tool_chain_emscripten_dir() -> Path | None:
     return None
 
 
+def _get_platform_arch() -> tuple[str, str]:
+    """Get the current platform and architecture strings for clang-tool-chain."""
+    import struct
+
+    if sys.platform == "win32":
+        plat = "win"
+    elif sys.platform == "darwin":
+        plat = "darwin"
+    else:
+        plat = "linux"
+
+    # Detect architecture from pointer size and platform hints
+    is_64bit = struct.calcsize("P") * 8 == 64
+    _uname = getattr(os, "uname", None)
+    if _uname is not None:
+        machine = _uname().machine.lower()
+    elif is_64bit:
+        machine = "amd64"
+    else:
+        machine = "x86"
+
+    if machine in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif machine in ("arm64", "aarch64"):
+        arch = "arm64"
+    else:
+        arch = machine
+
+    return plat, arch
+
+
 def ensure_clang_tool_chain_emscripten() -> Path | None:
     """Ensure clang-tool-chain Emscripten is installed."""
     existing_dir = _get_clang_tool_chain_emscripten_dir()
@@ -61,9 +92,14 @@ def ensure_clang_tool_chain_emscripten() -> Path | None:
         )
 
         sig = inspect.signature(ensure_emscripten_available)
-        if len(sig.parameters) == 0:
+        num_params = len(sig.parameters)
+        if num_params == 0:
             ensure_emscripten_available()  # type: ignore[call-arg]
             return get_emscripten_install_dir()  # type: ignore[call-arg]
+        elif num_params == 2:
+            plat, arch = _get_platform_arch()
+            ensure_emscripten_available(plat, arch)  # type: ignore[call-arg]
+            return get_emscripten_install_dir(plat, arch)  # type: ignore[call-arg]
         else:
             return None
     except ImportError:
