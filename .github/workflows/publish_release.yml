@@ -24,31 +24,15 @@ jobs:
       with:
         fetch-depth: 2  # Need previous commit to compare
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install UV
-      run: pip install uv
-
-    - name: Install dependencies
-      run: ./install
-      shell: bash
-
     - name: Get current version
       id: current_version
       run: |
-        uv run fastled --version > current_version.txt
-        echo "current=$(cat current_version.txt)" >> $GITHUB_OUTPUT
+        echo "current=$(grep '__version__' src/fastled/__version__.py | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
 
     - name: Get previous version
       id: prev_version
       run: |
-        git checkout HEAD~1
-        ./clean
-        uv run fastled --version > prev_version.txt
-        echo "previous=$(cat prev_version.txt)" >> $GITHUB_OUTPUT
+        echo "previous=$(git show HEAD~1:src/fastled/__version__.py | grep '__version__' | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Create Tag if version changed
