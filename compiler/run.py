@@ -6,8 +6,9 @@ import warnings
 from pathlib import Path
 from typing import Tuple
 
-from fastled_wasm_compiler import Compiler
-from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC
+from fastled_wasm_compiler import Compiler  # type: ignore[reportMissingImports]
+
+from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC  # type: ignore[reportMissingImports]  # isort: skip
 
 _PORT = os.environ.get("PORT", 80)
 

@@ -16,7 +16,7 @@ import time
 import unittest
 from pathlib import Path
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 from playwright.async_api import async_playwright
 
 from fastled import Test

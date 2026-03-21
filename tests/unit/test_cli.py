@@ -7,7 +7,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"

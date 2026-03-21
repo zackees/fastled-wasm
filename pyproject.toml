@@ -21,7 +21,7 @@ dependencies = [
     "playwright>=1.40.0",
     "fasteners>=0.20",
     "cryptography>=41.0.0",
-    "clang-tool-chain",
+    "clang-tool-chain>=1.2.6",
     "rapidfuzz",
     "progress",
 ]
