@@ -5,13 +5,19 @@ This module provides native compilation functionality using locally installed EM
 instead of Docker containers. It uses the EmscriptenToolchain from the toolchain module.
 """
 
-import shutil
-import tempfile
+from __future__ import annotations
+
+import io
 import time
+import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastled.emoji_util import EMO
 from fastled.types import BuildMode, CompileResult
+
+if TYPE_CHECKING:
+    from fastled.toolchain.emscripten import EmscriptenToolchain
 
 
 def compile_native(
@@ -19,6 +25,7 @@ def compile_native(
     build_mode: BuildMode = BuildMode.QUICK,
     profile: bool = False,
     fastled_path: Path | str | None = None,
+    toolchain: EmscriptenToolchain | None = None,
 ) -> CompileResult:
     """
     Compile a FastLED sketch using native EMSDK toolchain.
@@ -28,6 +35,7 @@ def compile_native(
         build_mode: Build mode (DEBUG, QUICK, RELEASE)
         profile: Enable profiling output
         fastled_path: Path to FastLED library. If None, downloads from master repo.
+        toolchain: Optional pre-created toolchain instance to reuse across compilations.
 
     Returns:
         CompileResult with compilation status and output
@@ -40,8 +48,9 @@ def compile_native(
     print(f"{EMO('📋', 'MODE:')} Build mode: {build_mode.value}")
     print(f"{EMO('📁', 'OUTPUT:')} Output directory: {output_dir}")
 
-    # Create toolchain
-    toolchain = EmscriptenToolchain(fastled_path=fastled_path)
+    # Reuse or create toolchain
+    if toolchain is None:
+        toolchain = EmscriptenToolchain(fastled_path=fastled_path)
 
     # Check if Emscripten is installed
     if not toolchain.check_installation():
@@ -86,18 +95,14 @@ def compile_native(
 
         compile_time = time.time() - start_time
 
-        # Create a zip of the output for consistency with web compilation
+        # Create an in-memory zip of the output for consistency with web compilation
         zip_start = time.time()
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_zip:
-            tmp_zip_path = Path(tmp_zip.name)
-
-        shutil.make_archive(
-            str(tmp_zip_path.with_suffix("")),
-            "zip",
-            output_dir,
-        )
-        zip_bytes = tmp_zip_path.read_bytes()
-        tmp_zip_path.unlink()
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in output_dir.rglob("*"):
+                if file_path.is_file():
+                    zf.write(file_path, file_path.relative_to(output_dir))
+        zip_bytes = zip_buffer.getvalue()
         zip_time = time.time() - zip_start
 
         wasm_file = js_file.with_suffix(".wasm")
@@ -162,8 +167,12 @@ def run_native_compile(
     from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
     from fastled.keyboard import SpaceBarWatcher
     from fastled.open_browser import spawn_http_server
+    from fastled.toolchain.emscripten import EmscriptenToolchain
 
-    result = compile_native(directory, build_mode, profile, fastled_path)
+    # Create toolchain once and reuse across all compilations in watch mode
+    toolchain = EmscriptenToolchain(fastled_path=fastled_path)
+
+    result = compile_native(directory, build_mode, profile, fastled_path, toolchain)
 
     if not result.success:
         print(f"\n{EMO('❌', 'ERROR:')} Compilation failed:")
@@ -206,7 +215,9 @@ def run_native_compile(
         while True:
             if SpaceBarWatcher.watch_space_bar_pressed(timeout=1.0):
                 print("\nCompiling...")
-                result = compile_native(directory, build_mode, profile, fastled_path)
+                result = compile_native(
+                    directory, build_mode, profile, fastled_path, toolchain
+                )
                 if result.success:
                     print(f"{EMO('✅', 'SUCCESS:')} Recompilation successful!")
                 else:
@@ -224,7 +235,7 @@ def run_native_compile(
                     print(f"\nChanges detected in {sketch_changes}")
                     print("Compiling...")
                     result = compile_native(
-                        directory, build_mode, profile, fastled_path
+                        directory, build_mode, profile, fastled_path, toolchain
                     )
                     if result.success:
                         print(f"{EMO('✅', 'SUCCESS:')} Recompilation successful!")

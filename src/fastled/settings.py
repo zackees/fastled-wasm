@@ -2,7 +2,7 @@ import os
 import platform
 import sys
 
-FILE_CHANGED_DEBOUNCE_SECONDS = 2.0
+FILE_CHANGED_DEBOUNCE_SECONDS = 1.0
 MACHINE = platform.machine().lower()
 IS_ARM: bool = "arm" in MACHINE or "aarch64" in MACHINE
 PLATFORM_TAG: str = "-arm64" if IS_ARM else ""

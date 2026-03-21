@@ -3,11 +3,12 @@ Unit test file.
 """
 
 import subprocess
+import sys
 import unittest
 
 from fastled import __version__
 
-COMMAND = "fastled --version"
+COMMAND = [sys.executable, "-m", "fastled", "--version"]
 
 
 class MainTester(unittest.TestCase):
@@ -15,7 +16,7 @@ class MainTester(unittest.TestCase):
 
     def test_command(self) -> None:
         """Test command line interface (CLI)."""
-        stdout = subprocess.check_output(COMMAND, shell=True, stdin=subprocess.DEVNULL)
+        stdout = subprocess.check_output(COMMAND, stdin=subprocess.DEVNULL)
         version_stdout = stdout.decode("utf-8").strip()
         self.assertEqual(
             version_stdout,

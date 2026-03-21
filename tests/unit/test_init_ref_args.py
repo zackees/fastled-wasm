@@ -3,16 +3,29 @@
 import subprocess
 import sys
 import unittest
+from pathlib import Path
+
+_SRC_DIR = str(Path(__file__).parent.parent.parent / "src")
 
 
 def _run_fastled(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run fastled CLI with the given arguments, capturing output."""
+    """Run fastled CLI with the given arguments, capturing output.
+
+    Uses PYTHONPATH to ensure we run against the local source tree rather than
+    a potentially stale system-installed package.
+    """
+    import os
+
+    env = os.environ.copy()
+    # Prepend src/ so `python -m fastled` resolves to the local source
+    env["PYTHONPATH"] = _SRC_DIR + os.pathsep + env.get("PYTHONPATH", "")
     return subprocess.run(
         [sys.executable, "-m", "fastled", *args],
         capture_output=True,
         text=True,
         timeout=60,
         stdin=subprocess.DEVNULL,
+        env=env,
     )
 
 

@@ -15,23 +15,30 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from fastled.types import BuildMode
 
+_clang_tool_chain_emscripten_dir_cache: Path | None | str = "UNSET"
+
 
 def _get_clang_tool_chain_emscripten_dir() -> Path | None:
-    """Get the clang-tool-chain Emscripten installation directory."""
+    """Get the clang-tool-chain Emscripten installation directory (cached)."""
+    global _clang_tool_chain_emscripten_dir_cache
+    if _clang_tool_chain_emscripten_dir_cache != "UNSET":
+        return _clang_tool_chain_emscripten_dir_cache  # type: ignore[return-value]
+
     env_path = os.environ.get("CLANG_TOOL_CHAIN_DOWNLOAD_PATH")
     base_dir = Path(env_path) if env_path else Path.home() / ".clang-tool-chain"
     emscripten_base = base_dir / "emscripten"
 
     if not emscripten_base.exists():
+        _clang_tool_chain_emscripten_dir_cache = None
         return None
 
     if (emscripten_base / "emscripten" / "emcc.py").exists():
+        _clang_tool_chain_emscripten_dir_cache = emscripten_base
         return emscripten_base
 
     for subdir in emscripten_base.iterdir():
@@ -39,10 +46,13 @@ def _get_clang_tool_chain_emscripten_dir() -> Path | None:
             for arch_dir in subdir.iterdir():
                 if arch_dir.is_dir():
                     if (arch_dir / "emscripten" / "emcc.py").exists():
+                        _clang_tool_chain_emscripten_dir_cache = arch_dir
                         return arch_dir
             if (subdir / "emscripten" / "emcc.py").exists():
+                _clang_tool_chain_emscripten_dir_cache = subdir
                 return subdir
 
+    _clang_tool_chain_emscripten_dir_cache = None
     return None
 
 
@@ -223,7 +233,7 @@ class EmscriptenToolchain:
         self._fastled_path: Path | None = Path(fastled_path) if fastled_path else None
         self._emsdk_path: Path | None = Path(emsdk_path) if emsdk_path else None
         self._compiler_paths: CompilerPaths | None = None
-        self._temp_dir: Path | None = None
+        self._version: str | None = None
 
     def _find_emsdk(self) -> Path | None:
         """Find EMSDK installation path."""
@@ -319,6 +329,9 @@ class EmscriptenToolchain:
             "  Or set EMSDK environment variable to point to your EMSDK installation."
         )
 
+    CACHE_DIR = Path.home() / ".fastled" / "cache"
+    CACHE_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
+
     def _download_fastled(self, target_dir: Path) -> Path:
         """Download FastLED library from GitHub master branch."""
         import io
@@ -349,15 +362,60 @@ class EmscriptenToolchain:
 
         return fastled_dir
 
+    def _is_cache_fresh(self) -> bool:
+        """Check if the cached FastLED download is still fresh."""
+        import time
+
+        timestamp_file = self.CACHE_DIR / "fastled-master" / ".cache_timestamp"
+        if not timestamp_file.exists():
+            return False
+        try:
+            cached_time = float(timestamp_file.read_text().strip())
+            return (time.time() - cached_time) < self.CACHE_MAX_AGE_SECONDS
+        except (ValueError, OSError):
+            return False
+
     def _get_fastled_path(self) -> Path:
-        """Get the path to FastLED library, downloading if necessary."""
+        """Get the path to FastLED library, downloading if necessary.
+
+        Uses a persistent cache at ~/.fastled/cache/ to avoid re-downloading
+        on every cold compile. Cache is refreshed after 24 hours.
+        """
+        import time
+
         if self._fastled_path and self._fastled_path.exists():
             return self._fastled_path
 
-        if self._temp_dir is None:
-            self._temp_dir = Path(tempfile.mkdtemp(prefix="fastled_native_"))
+        # Check persistent cache
+        cache_extract_dir = self.CACHE_DIR / "fastled-master"
+        if cache_extract_dir.exists() and self._is_cache_fresh():
+            # Find the FastLED dir inside the cache
+            dirs = [
+                d
+                for d in cache_extract_dir.iterdir()
+                if d.is_dir() and d.name.startswith("FastLED")
+            ]
+            if dirs:
+                print("Using cached FastLED library...")
+                self._fastled_path = dirs[0]
+                return dirs[0]
 
-        fastled_dir = self._download_fastled(self._temp_dir)
+        # Download to persistent cache
+        cache_extract_dir.mkdir(parents=True, exist_ok=True)
+        # Clean old cache contents
+        for item in cache_extract_dir.iterdir():
+            if item.name == ".cache_timestamp":
+                continue
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+
+        fastled_dir = self._download_fastled(cache_extract_dir)
+        # Write timestamp
+        timestamp_file = cache_extract_dir / ".cache_timestamp"
+        timestamp_file.write_text(str(time.time()))
+
         self._fastled_path = fastled_dir
         return fastled_dir
 
@@ -430,6 +488,12 @@ class EmscriptenToolchain:
 
         env = os.environ.copy()
         _setup_emscripten_env(env)
+
+        # Clean stale per-sketch build cache to avoid encoding mismatches
+        # (e.g. wrapper files written with cp1252 but read as UTF-8 by uv)
+        sketch_build_cache = example_dir / ".build" / "wasm"
+        if sketch_build_cache.exists():
+            shutil.rmtree(sketch_build_cache, ignore_errors=True)
 
         if not is_in_tree:
             # Create a temporary symlink so wasm_build.py can find the sketch
@@ -572,8 +636,6 @@ class EmscriptenToolchain:
             print("Copying frontend assets...")
             self._copy_frontend_assets(output_dir, fastled_dir)
 
-            self._cleanup_temp()
-
             wasm_file = output_dir / "fastled.wasm"
             print("Compilation successful!")
             print(f"  JS:   {output_js}")
@@ -666,7 +728,7 @@ class EmscriptenToolchain:
         env = os.environ.copy()
         _setup_emscripten_env(env)
 
-        cmd = self._build_emcc_cmd(empp_path, response_file, env)
+        cmd = self._build_emcc_cmd(empp_path, response_file)
 
         if profile:
             print(f"Response file: {response_file}")
@@ -693,31 +755,36 @@ class EmscriptenToolchain:
         if build_dir.exists():
             shutil.rmtree(build_dir, ignore_errors=True)
 
-        self._cleanup_temp()
-
         wasm_file = output_dir / f"{config.output_name}.wasm"
         print("Compilation successful!")
         print(f"  JS:   {output_file}")
         print(f"  WASM: {wasm_file}")
         return output_file
 
-    def _build_emcc_cmd(
-        self, empp_path: Path, response_file: Path, env: dict[str, str]
-    ) -> list[str]:
+    def _build_emcc_cmd(self, empp_path: Path, response_file: Path) -> list[str]:
         """Build the em++ command list."""
         if empp_path.suffix == ".py":
             return [sys.executable, str(empp_path), f"@{response_file}"]
         else:
             return [str(empp_path), f"@{response_file}"]
 
-    def _cleanup_temp(self) -> None:
-        """Cleanup temp directory if it was created for downloaded FastLED."""
-        if self._temp_dir and self._temp_dir.exists():
-            shutil.rmtree(self._temp_dir, ignore_errors=True)
-            self._temp_dir = None
+    @staticmethod
+    def _compute_dir_hash(directory: Path) -> str:
+        """Compute a quick hash of a directory based on file names and sizes."""
+        import hashlib
+
+        h = hashlib.md5()
+        for f in sorted(directory.rglob("*")):
+            if f.is_file():
+                h.update(str(f.relative_to(directory)).encode())
+                h.update(str(f.stat().st_size).encode())
+        return h.hexdigest()
 
     def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
-        """Copy Vite-built frontend assets from FastLED's wasm compiler directory."""
+        """Copy Vite-built frontend assets from FastLED's wasm compiler directory.
+
+        Skips the copy if the dist directory hasn't changed since the last copy.
+        """
         compiler_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
         dist_dir = compiler_dir / "dist"
 
@@ -757,6 +824,13 @@ class EmscriptenToolchain:
             self._create_minimal_index_html(output_dir, "fastled")
             return
 
+        # Check if dist has changed since last copy using a hash marker
+        hash_marker = output_dir / ".frontend_hash"
+        current_hash = self._compute_dir_hash(dist_dir)
+        if hash_marker.exists() and hash_marker.read_text().strip() == current_hash:
+            print("  Frontend assets unchanged, skipping copy.")
+            return
+
         print("Copying Vite build output...")
         for item in dist_dir.iterdir():
             dest = output_dir / item.name
@@ -766,6 +840,8 @@ class EmscriptenToolchain:
                 shutil.copytree(item, dest)
             else:
                 shutil.copy2(item, dest)
+
+        hash_marker.write_text(current_hash)
 
         files_json = output_dir / "files.json"
         if not files_json.exists():
@@ -816,16 +892,21 @@ class EmscriptenToolchain:
     def check_installation(self) -> bool:
         """Check if Emscripten is properly installed."""
         try:
-            self._find_compilers()
+            if self._compiler_paths is None:
+                self._compiler_paths = self._find_compilers()
             return True
         except FileNotFoundError:
             return False
 
     def get_version(self) -> str | None:
-        """Get Emscripten version if installed."""
+        """Get Emscripten version if installed (cached after first call)."""
+        if self._version is not None:
+            return self._version
+
         try:
-            paths = self._find_compilers()
-            emcc_path = paths.emcc
+            if self._compiler_paths is None:
+                self._compiler_paths = self._find_compilers()
+            emcc_path = self._compiler_paths.emcc
             env = os.environ.copy()
             _setup_emscripten_env(env)
 
@@ -836,7 +917,8 @@ class EmscriptenToolchain:
 
             result = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if result.returncode == 0:
-                return result.stdout.split("\n")[0]
+                self._version = result.stdout.split("\n")[0]
+                return self._version
             return None
         except (FileNotFoundError, subprocess.SubprocessError):
             return None
