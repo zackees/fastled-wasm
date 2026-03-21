@@ -17,33 +17,34 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      new_version: ${{ steps.current_version.outputs.current }}
-      should_release: ${{ steps.current_version.outputs.current != steps.prev_version.outputs.previous }}
+      new_version: ${{ steps.version_check.outputs.current }}
+      should_release: ${{ steps.version_check.outputs.should_release }}
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 2  # Need previous commit to compare
 
-    - name: Get current version
-      id: current_version
+    - name: Check if version needs release
+      id: version_check
       run: |
-        echo "current=$(grep '__version__' src/fastled/__version__.py | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
-
-    - name: Get previous version
-      id: prev_version
-      run: |
-        echo "previous=$(git show HEAD~1:src/fastled/__version__.py | grep '__version__' | sed 's/.*"\(.*\)"/\1/')" >> $GITHUB_OUTPUT
-      shell: bash
+        VERSION=$(grep '^__version__' src/fastled/__version__.py | sed 's/.*"\(.*\)"/\1/')
+        echo "current=$VERSION" >> $GITHUB_OUTPUT
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/fastled/$VERSION/json")
+        if [ "$STATUS" = "200" ]; then
+          echo "should_release=false" >> $GITHUB_OUTPUT
+          echo "Version $VERSION already on PyPI, skipping release"
+        else
+          echo "should_release=true" >> $GITHUB_OUTPUT
+          echo "Version $VERSION not on PyPI, will release"
+        fi
 
     - name: Create Tag if version changed
-      if: steps.current_version.outputs.current != steps.prev_version.outputs.previous
+      if: steps.version_check.outputs.should_release == 'true'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git tag -a "v${{ steps.current_version.outputs.current }}" -m "Release v${{ steps.current_version.outputs.current }}"
-        git push origin "v${{ steps.current_version.outputs.current }}"
+        git tag -a "v${{ steps.version_check.outputs.current }}" -m "Release v${{ steps.version_check.outputs.current }}"
+        git push origin "v${{ steps.version_check.outputs.current }}"
 
   build-executables:
     needs: [create-tag]
