@@ -34,22 +34,28 @@ class PlaywrightIntegrationTester(unittest.TestCase):
         test_url = "http://localhost:8089"
 
         # Mock the multiprocessing.Process to work normally (Playwright available)
+        # Also mock os._exit to prevent the monitor thread from killing the process
         with patch("multiprocessing.Process") as mock_process_class:
             mock_process = MagicMock()
+            # Make join() block so monitor thread doesn't race ahead
+            mock_process.join.side_effect = lambda *args, **kwargs: None
+            mock_process.exitcode = None  # Process hasn't exited
+            mock_process.is_alive.return_value = False
             mock_process_class.return_value = mock_process
 
-            # Call the function
-            proxy = open_with_playwright(test_url)
+            with patch("os._exit"):
+                # Call the function
+                proxy = open_with_playwright(test_url)
 
-            # Verify that a new process was created and started
-            mock_process_class.assert_called_once()
-            mock_process.start.assert_called_once()
+                # Verify that a new process was created and started
+                mock_process_class.assert_called_once()
+                mock_process.start.assert_called_once()
 
-            # Verify that a proxy object was returned
-            self.assertIsNotNone(proxy)
+                # Verify that a proxy object was returned
+                self.assertIsNotNone(proxy)
 
-            # Test cleanup
-            proxy.close()  # Should not raise an exception
+                # Test cleanup
+                proxy.close()  # Should not raise an exception
 
 
 if __name__ == "__main__":

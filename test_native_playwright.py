@@ -5,7 +5,6 @@ Uses subprocess isolation to avoid asyncio/threading conflicts on Windows.
 """
 
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -15,7 +14,7 @@ from pathlib import Path
 FASTLED_JS = Path.home() / "dev" / "fastled7" / "examples" / "Blink" / "fastled_js"
 
 # Inline server script - runs in its own subprocess
-SERVER_SCRIPT = r'''
+SERVER_SCRIPT = r"""
 import sys, socket
 from pathlib import Path
 from flask import Flask, Response, send_from_directory
@@ -50,10 +49,10 @@ srv = make_server("127.0.0.1", 0, app)
 port = srv.server_address[1]
 print(f"PORT:{port}", flush=True)
 srv.serve_forever()
-'''
+"""
 
 # Inline Playwright script - runs in its own subprocess
-PLAYWRIGHT_SCRIPT = r'''
+PLAYWRIGHT_SCRIPT = r"""
 import json, os, sys, time
 from pathlib import Path
 
@@ -122,7 +121,7 @@ print(json.dumps({
     "relevant": [m[:200] for m in console_msgs if any(kw in m.lower() for kw in ["fastled","worker","extern_setup","extern_loop","initialized","animation","error","failed","not defined","import.meta","mime","pthread","platform pump"])],
     "errors": [e[:200] for e in errors],
 }))
-'''
+"""
 
 
 def main() -> int:
@@ -145,7 +144,8 @@ def main() -> int:
         [sys.executable, "-u", "-c", SERVER_SCRIPT, str(FASTLED_JS.resolve())],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
 
     port = None
@@ -181,7 +181,8 @@ def main() -> int:
         pw_result = subprocess.run(
             [sys.executable, "-u", "-c", PLAYWRIGHT_SCRIPT, str(port)],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=90,
         )
         result = json.loads(pw_result.stdout.strip().split("\n")[-1])
@@ -190,9 +191,11 @@ def main() -> int:
         result = {"setup_ok": False, "relevant": [], "errors": ["timeout"], "console_count": 0}
     except Exception as e:
         print(f"  Playwright error: {e}")
-        if 'pw_result' in dir():
-            print(f"  stdout: {pw_result.stdout[:500]}")  # type: ignore
-            print(f"  stderr: {pw_result.stderr[:500]}")  # type: ignore
+        if "pw_result" in locals():
+            stdout = pw_result.stdout or ""  # type: ignore
+            stderr = pw_result.stderr or ""  # type: ignore
+            print(f"  stdout: {stdout[:500]}")
+            print(f"  stderr: {stderr[:500]}")
         result = {"setup_ok": False, "relevant": [], "errors": [str(e)], "console_count": 0}
     finally:
         server_proc.kill()

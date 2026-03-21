@@ -94,7 +94,9 @@ def wait_for_server(port: int, timeout: int = 10, enable_https: bool = True) -> 
                 False if enable_https else True
             )  # Only disable SSL verification for HTTPS
             response = get(url, timeout=1, verify=verify)
-            if response.status_code == 200:
+            # Any HTTP response means the server is up, even if
+            # it returns 500 (e.g., no index.html in served directory)
+            if response.status_code < 600:
                 return
         except Exception:
             continue
@@ -108,7 +110,6 @@ def spawn_http_server(
     app: bool = False,
     enable_https: bool = True,
 ) -> Process:
-
     if port is not None and not is_port_free(port):
         raise ValueError(f"Port {port} was specified but in use")
     if port is None:
