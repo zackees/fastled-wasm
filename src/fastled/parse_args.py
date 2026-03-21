@@ -129,6 +129,12 @@ def parse_args() -> Args:
     )
 
     parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Deprecated, only kept for backwards compatibility",
+    )
+
+    parser.add_argument(
         "--fastled-path",
         type=str,
         default=None,
