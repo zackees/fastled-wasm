@@ -23,6 +23,7 @@ dependencies = [
     "cryptography>=41.0.0",
     "clang-tool-chain",
     "rapidfuzz",
+    "progress",
 ]
 
 dynamic = ["version"]
