@@ -126,6 +126,12 @@ def _setup_emscripten_env(env: dict[str, str]) -> None:
         env["EM_CONFIG"] = str(config_path)
     env["EMSDK_PYTHON"] = sys.executable
     env["EMCC_SKIP_SANITY_CHECK"] = "1"
+    # Force emscripten to use response files for all subprocess calls.
+    # Without this, emscripten passes hundreds of .c files directly on the
+    # command line when building system libraries (libc), which exceeds
+    # Windows' 8191-char limit for .bat wrappers and causes "subprocess
+    # failed (returned 255)" errors on CI.
+    env["EM_FORCE_RESPONSE_FILES"] = "1"
     if bin_dir.exists():
         env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
 
