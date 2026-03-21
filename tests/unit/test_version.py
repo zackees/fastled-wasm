@@ -15,7 +15,7 @@ class MainTester(unittest.TestCase):
 
     def test_command(self) -> None:
         """Test command line interface (CLI)."""
-        stdout = subprocess.check_output(COMMAND, shell=True)
+        stdout = subprocess.check_output(COMMAND, shell=True, stdin=subprocess.DEVNULL)
         version_stdout = stdout.decode("utf-8").strip()
         self.assertEqual(
             version_stdout,
