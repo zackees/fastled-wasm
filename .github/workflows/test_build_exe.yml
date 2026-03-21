@@ -11,7 +11,7 @@ jobs:
             ubuntu-24.04,  # linux/amd64
             windows-latest,  # x64
             macos-latest,  # arm64
-            macos-13  # x86
+            macos-14  # x86
         ]
         python-version: [3.11]
     
