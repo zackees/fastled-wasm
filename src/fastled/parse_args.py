@@ -135,6 +135,24 @@ def parse_args() -> Args:
     )
 
     parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Use latest release when initializing examples with --init (default behavior)",
+    )
+    parser.add_argument(
+        "--branch",
+        type=str,
+        default=None,
+        help="Use a specific branch when initializing examples with --init (e.g. --branch master)",
+    )
+    parser.add_argument(
+        "--commit",
+        type=str,
+        default=None,
+        help="Use a specific commit SHA when initializing examples with --init",
+    )
+
+    parser.add_argument(
         "--fastled-path",
         type=str,
         default=None,
@@ -199,8 +217,19 @@ def parse_args() -> Args:
 
     if args.init:
         example = args.init if args.init is not True else None
+        # --latest is mutually exclusive with --branch and --commit
+        if args.latest and (args.branch or args.commit):
+            print("Error: --latest cannot be used with --branch or --commit")
+            sys.exit(1)
+        # Resolve ref: --commit takes precedence over --branch
+        ref: str | None = None
+        if args.commit:
+            ref = args.commit
+        elif args.branch:
+            ref = args.branch
+        # --latest (or default) leaves ref=None, which means latest release
         try:
-            args.directory = project_init(example, args.directory)
+            args.directory = project_init(example, args.directory, ref=ref)
         except Exception as e:
             print(f"Failed to initialize project: {e}")
             sys.exit(1)

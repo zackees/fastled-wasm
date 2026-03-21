@@ -349,7 +349,7 @@ def build_example(example: str, outputdir: Path) -> None:
     if not which("fastled"):
         raise FileNotFoundError("fastled executable not found")
     src_dir = outputdir / example / "src"
-    _exec(f"fastled --init={example} {src_dir}")
+    _exec(f"fastled --init={example} --branch master {src_dir}")
     assert src_dir.exists()
     _exec(f"fastled {src_dir / example} --just-compile")
     fastled_dir = src_dir / example / "fastled_js"
