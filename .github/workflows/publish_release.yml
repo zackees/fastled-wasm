@@ -62,8 +62,6 @@ jobs:
             arch: X64
           - os: macos-latest  # arm64
             arch: ARM64
-          - os: macos-13  # x86
-            arch: X64
     runs-on: ${{ matrix.runs-on || matrix.os }}
     
     steps:
@@ -134,7 +132,6 @@ jobs:
         [ -f artifacts/fastled-Linux-X64/fastled ] && chmod +x artifacts/fastled-Linux-X64/fastled && zip -j release/fastled-linux-x64.zip artifacts/fastled-Linux-X64/fastled
         [ -f artifacts/fastled-Linux-ARM64/fastled ] && chmod +x artifacts/fastled-Linux-ARM64/fastled && zip -j release/fastled-linux-arm64.zip artifacts/fastled-Linux-ARM64/fastled
         [ -f artifacts/fastled-macOS-ARM64/fastled ] && chmod +x artifacts/fastled-macOS-ARM64/fastled && zip -j release/fastled-macos-arm64.zip artifacts/fastled-macOS-ARM64/fastled
-        [ -f artifacts/fastled-macOS-X64/fastled ] && chmod +x artifacts/fastled-macOS-X64/fastled && zip -j release/fastled-macos-x64.zip artifacts/fastled-macOS-X64/fastled
 
         find release -type f -name 'fastled*' -exec chmod +x {} \;
 
