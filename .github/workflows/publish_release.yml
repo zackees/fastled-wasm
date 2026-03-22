@@ -20,7 +20,7 @@ jobs:
       new_version: ${{ steps.version_check.outputs.current }}
       should_release: ${{ steps.version_check.outputs.should_release }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Check if version needs release
       id: version_check
@@ -65,7 +65,7 @@ jobs:
     runs-on: ${{ matrix.runs-on || matrix.os }}
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - uses: actions/setup-python@v5
       with:
@@ -155,7 +155,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
