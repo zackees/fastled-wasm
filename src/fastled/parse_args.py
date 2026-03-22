@@ -221,6 +221,10 @@ def parse_args() -> Args:
         # Don't process other arguments when --install is used
         return Args.from_namespace(args)
 
+    # Handle --purge early: if no directory given, skip directory resolution
+    if args.purge and args.directory is None:
+        return Args.from_namespace(args)
+
     if args.init:
         example = args.init if args.init is not True else None
         # --latest is mutually exclusive with --branch and --commit

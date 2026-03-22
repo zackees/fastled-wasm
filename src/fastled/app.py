@@ -48,6 +48,8 @@ def main() -> int:
     if args.purge:
         cache_dir = Path.home() / ".fastled" / "cache"
         purge_cache(cache_dir, args.fastled_path)
+        if args.directory is None:
+            return 0
 
     just_compile: bool = args.just_compile
     directory: Path | None = Path(args.directory) if args.directory else None
