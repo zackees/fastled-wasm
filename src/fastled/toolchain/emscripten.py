@@ -369,13 +369,21 @@ class EmscriptenToolchain:
             else:
                 raise FileNotFoundError("Failed to extract FastLED library")
 
-        return fastled_dir
+        # Rename to a shorter name to avoid Windows path length limits.
+        # The deeply nested build paths (e.g. .build/meson-wasm-quick/...)
+        # combined with long directory names cause emar command lines to
+        # exceed Windows' CreateProcess limit ([WinError 206]).
+        short_dir = target_dir / "repo"
+        if short_dir.exists():
+            shutil.rmtree(short_dir, ignore_errors=True)
+        fastled_dir.rename(short_dir)
+        return short_dir
 
     def _is_cache_fresh(self) -> bool:
         """Check if the cached FastLED download is still fresh."""
         import time
 
-        timestamp_file = self.CACHE_DIR / "fastled-master" / ".cache_timestamp"
+        timestamp_file = self.CACHE_DIR / "fl" / ".cache_timestamp"
         if not timestamp_file.exists():
             return False
         try:
@@ -396,18 +404,14 @@ class EmscriptenToolchain:
             return self._fastled_path
 
         # Check persistent cache
-        cache_extract_dir = self.CACHE_DIR / "fastled-master"
+        cache_extract_dir = self.CACHE_DIR / "fl"
         if cache_extract_dir.exists() and self._is_cache_fresh():
-            # Find the FastLED dir inside the cache
-            dirs = [
-                d
-                for d in cache_extract_dir.iterdir()
-                if d.is_dir() and d.name.startswith("FastLED")
-            ]
-            if dirs:
+            # Check for the renamed "repo" dir (short name to avoid Windows path limits)
+            repo_dir = cache_extract_dir / "repo"
+            if repo_dir.is_dir():
                 print("Using cached FastLED library...")
-                self._fastled_path = dirs[0]
-                return dirs[0]
+                self._fastled_path = repo_dir
+                return repo_dir
 
         # Download to persistent cache
         cache_extract_dir.mkdir(parents=True, exist_ok=True)
