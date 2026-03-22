@@ -10,6 +10,26 @@ from fastled.emoji_util import EMO
 from fastled.parse_args import parse_args
 
 
+def purge_cache(cache_dir: Path, fastled_path: Path | str | None = None) -> None:
+    """Purge cached FastLED repo and WASM build artifacts."""
+    import shutil
+
+    if cache_dir.exists():
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        print(f"Purged FastLED cache: {cache_dir}")
+    else:
+        print("No FastLED cache to purge.")
+    # Also purge WASM build caches in the fastled_path if provided
+    if fastled_path:
+        fastled_build = Path(fastled_path) / ".build"
+        for wasm_dir in fastled_build.glob("meson-wasm-*"):
+            for stale in ["wasm_ld_args.json", "wasm_ld_args.key", "fastled_glue.js"]:
+                f = wasm_dir / stale
+                if f.exists():
+                    f.unlink()
+                    print(f"Purged: {f}")
+
+
 def main() -> int:
     from fastled import __version__
 
@@ -23,6 +43,11 @@ def main() -> int:
             dry_run=args.dry_run, no_interactive=args.no_interactive
         )
         return 0 if result else 1
+
+    # Handle --purge: clear cached FastLED repo and WASM build artifacts
+    if args.purge:
+        cache_dir = Path.home() / ".fastled" / "cache"
+        purge_cache(cache_dir, args.fastled_path)
 
     just_compile: bool = args.just_compile
     directory: Path | None = Path(args.directory) if args.directory else None

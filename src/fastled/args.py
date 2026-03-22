@@ -20,6 +20,7 @@ class Args:
     fastled_path: Path | str | None = (
         None  # Path to FastLED library for native compilation
     )
+    purge: bool = False  # Purge cached FastLED repo, forcing fresh re-download
 
     @staticmethod
     def from_namespace(args: argparse.Namespace) -> "Args":
@@ -78,4 +79,5 @@ class Args:
             no_interactive=args.no_interactive,
             enable_https=not args.no_https,  # Invert no_https to enable_https
             fastled_path=Path(args.fastled_path) if args.fastled_path else None,
+            purge=args.purge,
         )

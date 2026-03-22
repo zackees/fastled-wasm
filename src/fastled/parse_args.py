@@ -159,6 +159,12 @@ def parse_args() -> Args:
         help="Path to FastLED library for native compilation (defaults to downloading from master repo)",
     )
 
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Purge the cached FastLED repo download, forcing a fresh re-download on next build",
+    )
+
     build_mode = parser.add_mutually_exclusive_group()
     build_mode.add_argument("--debug", action="store_true", help="Build in debug mode")
     build_mode.add_argument(

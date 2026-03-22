@@ -54,6 +54,10 @@ disable = [
 [tool.isort]
 profile = "black"
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
 [tool.mypy]
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
