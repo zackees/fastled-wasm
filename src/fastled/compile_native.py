@@ -203,7 +203,7 @@ def run_native_compile(
         return 0
 
     # Set up file watching
-    excluded_patterns = ["fastled_js"]
+    excluded_patterns = ["fastled_js", ".build"]
     debounced_watcher = DebouncedFileWatcherProcess(
         FileWatcherProcess(directory, excluded_patterns=excluded_patterns),
     )
