@@ -228,5 +228,41 @@ class TestEmscriptenNoImportOfPlatformModule(unittest.TestCase):
         )
 
 
+class TestEmscriptenWinPathWorkaround(unittest.TestCase):
+    """Test that the Windows path-length workarounds are in place."""
+
+    def test_setup_emscripten_env_sets_em_cache_on_win(self) -> None:
+        """Verify EM_CACHE is set to a short path when platform is win32."""
+        import sys
+        from unittest.mock import patch
+
+        from fastled.toolchain.emscripten import _setup_emscripten_env
+
+        env: dict[str, str] = {}
+        with patch.object(sys, "platform", "win32"):
+            _setup_emscripten_env(env)
+
+        self.assertIn("EM_CACHE", env, "EM_CACHE should be set on Windows")
+        # The cache path must be short to avoid [WinError 206]
+        self.assertLessEqual(
+            len(env["EM_CACHE"]),
+            20,
+            f"EM_CACHE path should be short, got: {env['EM_CACHE']}",
+        )
+
+    def test_setup_emscripten_env_no_em_cache_on_linux(self) -> None:
+        """Verify EM_CACHE is not set on non-Windows platforms."""
+        import sys
+        from unittest.mock import patch
+
+        from fastled.toolchain.emscripten import _setup_emscripten_env
+
+        env: dict[str, str] = {}
+        with patch.object(sys, "platform", "linux"):
+            _setup_emscripten_env(env)
+
+        self.assertNotIn("EM_CACHE", env, "EM_CACHE should not be set on Linux")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -136,6 +136,16 @@ def _setup_emscripten_env(env: dict[str, str]) -> None:
         # exist yet when this function is first called.
         env["EMCC_CORES"] = "128"
 
+        # Redirect the Emscripten system library cache to a short path.
+        # When Emscripten archives libc (1000+ object files) with emar,
+        # the combined length of all object-file paths can exceed Windows'
+        # CreateProcess 32 K-char limit ([WinError 206]).  Using a short
+        # EM_CACHE path (e.g. C:\emc) instead of the deeply nested default
+        # keeps the emar command line well within the limit.
+        short_cache = Path(os.environ.get("SystemDrive", "C:")) / "emc"
+        short_cache.mkdir(parents=True, exist_ok=True)
+        env["EM_CACHE"] = str(short_cache)
+
     clang_tool_chain_dir = _get_clang_tool_chain_emscripten_dir()
     if not clang_tool_chain_dir:
         return
