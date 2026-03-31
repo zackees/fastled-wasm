@@ -233,13 +233,15 @@ class TestEmscriptenWinPathWorkaround(unittest.TestCase):
 
     def test_setup_emscripten_env_sets_em_cache_on_win(self) -> None:
         """Verify EM_CACHE is set to a short path when platform is win32."""
-        import sys
         from unittest.mock import patch
 
         from fastled.toolchain.emscripten import _setup_emscripten_env
 
         env: dict[str, str] = {}
-        with patch.object(sys, "platform", "win32"):
+        with (
+            patch("sys.platform", "win32"),
+            patch("fastled.toolchain.emscripten.Path.mkdir"),
+        ):
             _setup_emscripten_env(env)
 
         self.assertIn("EM_CACHE", env, "EM_CACHE should be set on Windows")
@@ -252,13 +254,12 @@ class TestEmscriptenWinPathWorkaround(unittest.TestCase):
 
     def test_setup_emscripten_env_no_em_cache_on_linux(self) -> None:
         """Verify EM_CACHE is not set on non-Windows platforms."""
-        import sys
         from unittest.mock import patch
 
         from fastled.toolchain.emscripten import _setup_emscripten_env
 
         env: dict[str, str] = {}
-        with patch.object(sys, "platform", "linux"):
+        with patch("sys.platform", "linux"):
             _setup_emscripten_env(env)
 
         self.assertNotIn("EM_CACHE", env, "EM_CACHE should not be set on Linux")
