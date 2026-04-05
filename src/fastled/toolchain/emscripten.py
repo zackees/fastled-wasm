@@ -23,6 +23,25 @@ from fastled.types import BuildMode
 _clang_tool_chain_emscripten_dir_cache: Path | None | str = "UNSET"
 
 
+def _resolve_example_name(
+    sketch_dir: Path, fastled_dir: Path
+) -> tuple[str, Path, bool]:
+    """Resolve the example name for wasm_build.py's --example flag.
+
+    Returns (example_name, example_dir, is_in_tree).
+    For in-tree sketches, example_name is the relative path from examples/
+    (e.g. "Fx/FxCylon" for examples/Fx/FxCylon).
+    For external sketches, example_name is the leaf directory name.
+    """
+    try:
+        rel_path = sketch_dir.relative_to(fastled_dir / "examples")
+        # Use forward slashes for the example name even on Windows
+        return str(rel_path).replace("\\", "/"), sketch_dir, True
+    except ValueError:
+        name = sketch_dir.name
+        return name, fastled_dir / "examples" / name, False
+
+
 def _get_clang_tool_chain_emscripten_dir() -> Path | None:
     """Get the clang-tool-chain Emscripten installation directory (cached)."""
     global _clang_tool_chain_emscripten_dir_cache
@@ -458,16 +477,12 @@ class EmscriptenToolchain:
         mode = mode_map[build_mode]
 
         # wasm_build.py expects an example name and output path.
-        # For arbitrary sketch dirs we create a temporary example symlink.
-        sketch_name = sketch_dir.name
-        example_dir = fastled_dir / "examples" / sketch_name
-
-        # If sketch_dir IS already inside the FastLED examples tree, use it directly
-        try:
-            sketch_dir.relative_to(fastled_dir / "examples")
-            is_in_tree = True
-        except ValueError:
-            is_in_tree = False
+        # For in-tree nested sketches (e.g. examples/Fx/FxCylon) we must
+        # preserve the full relative path, not just the leaf directory name.
+        # See https://github.com/zackees/fastled-wasm/issues/12
+        sketch_name, example_dir, is_in_tree = _resolve_example_name(
+            sketch_dir, fastled_dir
+        )
 
         output_js = output_dir / "fastled.js"
 
