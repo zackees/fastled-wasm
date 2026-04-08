@@ -13,6 +13,7 @@ class Args:
     debug: bool
     quick: bool
     release: bool
+    serve_dir: Path | None = None
     install: bool = False  # Install FastLED development environment
     dry_run: bool = False  # Dry run mode for testing
     no_interactive: bool = False  # Non-interactive mode
@@ -27,6 +28,9 @@ class Args:
         assert isinstance(
             args.directory, str | None
         ), f"expected str | None, got {type(args.directory)}"
+        assert isinstance(
+            args.serve_dir, str | None
+        ), f"expected str | None, got {type(args.serve_dir)}"
         assert isinstance(
             args.init, bool | str | None
         ), f"expected bool, got {type(args.init)}"
@@ -67,6 +71,7 @@ class Args:
             init = args.init
         return Args(
             directory=Path(args.directory) if args.directory else None,
+            serve_dir=Path(args.serve_dir) if args.serve_dir else None,
             init=init,
             just_compile=args.just_compile,
             profile=args.profile,

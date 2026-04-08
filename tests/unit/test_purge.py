@@ -45,6 +45,7 @@ class TestPurgeArgs:
         """Args.from_namespace correctly passes through the purge flag."""
         ns = argparse.Namespace(
             directory=None,
+            serve_dir=None,
             init=None,
             just_compile=False,
             profile=False,

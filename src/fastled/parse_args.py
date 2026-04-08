@@ -48,6 +48,7 @@ def _find_fastled_repo(start: Path) -> Path | None:
 _DEFAULT_HELP_TEXT = """
 FastLED WASM Compiler - Useful options:
   <directory>           Directory containing the FastLED sketch to compile
+  --serve-dir <dir>     Serve an existing output directory without compiling
   --init [example]      Initialize one of the top tier WASM examples
   --no-https            Disable HTTPS and use HTTP for local server
   --quick               Build in quick mode (default)
@@ -81,6 +82,12 @@ def parse_args() -> Args:
         nargs="?",
         default=None,
         help="Directory containing the FastLED sketch to compile",
+    )
+    parser.add_argument(
+        "--serve-dir",
+        type=str,
+        default=None,
+        help="Serve an existing directory without compiling a sketch",
     )
     parser.add_argument(
         "--init",
@@ -181,6 +188,8 @@ def parse_args() -> Args:
     # Resolve --fastled-path to an absolute path (handles MSYS /c/... paths on Windows)
     if args.fastled_path:
         args.fastled_path = _resolve_path(args.fastled_path)
+    if args.serve_dir:
+        args.serve_dir = _resolve_path(args.serve_dir)
 
     # Auto-detect FastLED repo for native compilation
     if not args.fastled_path:
@@ -219,6 +228,9 @@ def parse_args() -> Args:
     # Handle --install early before other processing
     if args.install:
         # Don't process other arguments when --install is used
+        return Args.from_namespace(args)
+
+    if args.serve_dir:
         return Args.from_namespace(args)
 
     # Handle --purge early: if no directory given, skip directory resolution
