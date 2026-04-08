@@ -42,7 +42,7 @@ jobs:
         fi
 
         if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-          ./dist/fastled --init wasm && ./dist/fastled --just-compile fastled/wasm
+          ./dist/fastled --init wasm && ./dist/fastled --just-compile fastled
         fi
 
     - name: Smoke test HTTPS server from executable
@@ -52,7 +52,7 @@ jobs:
         set -euo pipefail
 
         export BROWSER=/bin/true
-        ./dist/fastled fastled/wasm > smoke.log 2>&1 &
+        ./dist/fastled fastled > smoke.log 2>&1 &
         pid=$!
 
         cleanup() {
