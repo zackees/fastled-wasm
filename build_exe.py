@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).parent
+ASSETS_DIR = HERE / "src" / "fastled" / "assets"
 
 def check_pyinstaller():
     """Check if pyinstaller is installed, install if not."""
@@ -36,6 +37,12 @@ def main():
         "--name", "fastled",
         #"--target-architecture", "universal2"
     ]
+
+    for asset_name in ("localhost.pem", "localhost-key.pem"):
+        asset_path = ASSETS_DIR / asset_name
+        if not asset_path.exists():
+            raise FileNotFoundError(f"Missing PyInstaller asset: {asset_path}")
+        cmd.extend(["--add-data", f"{asset_path}{os.pathsep}fastled/assets"])
     
     try:
         subprocess.run(cmd, check=True)

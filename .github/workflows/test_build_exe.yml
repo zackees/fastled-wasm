@@ -42,8 +42,47 @@ jobs:
         fi
 
         if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-          ./dist/fastled --init wasm && ./dist/fastled --just-compile --local fastled/wasm
+          ./dist/fastled --init wasm && ./dist/fastled --just-compile fastled/wasm
         fi
+
+    - name: Smoke test HTTPS server from executable
+      if: matrix.os == 'ubuntu-24.04'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        export BROWSER=/bin/true
+        ./dist/fastled fastled/wasm > smoke.log 2>&1 &
+        pid=$!
+
+        cleanup() {
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          fi
+        }
+        trap cleanup EXIT
+
+        for _ in $(seq 1 180); do
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Executable exited before HTTPS server became ready."
+            tail -n 200 smoke.log || true
+            exit 1
+          fi
+
+          for port in $(seq 8089 8289); do
+            if curl -ksSf "https://127.0.0.1:${port}/" >/dev/null; then
+              echo "HTTPS smoke test passed on port ${port}."
+              exit 0
+            fi
+          done
+
+          sleep 1
+        done
+
+        echo "Timed out waiting for HTTPS server from executable."
+        tail -n 200 smoke.log || true
+        exit 1
       
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
