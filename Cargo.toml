@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/fastled-cli",
     "crates/fastled-py",
+    "crates/fastled-tauri",
 ]
 
 [workspace.package]

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicovince/tauri-docs/refs/heads/dev/src/content/docs/_schema/config.schema.json",
+  "productName": "FastLED Viewer",
+  "version": "2.0.6",
+  "identifier": "com.fastled.viewer",
+  "build": {
+    "frontendDist": "./frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "icon": []
+  }
+}
