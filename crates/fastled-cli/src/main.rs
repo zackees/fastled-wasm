@@ -1,6 +1,7 @@
 use clap::Parser;
 use std::process::{Command, ExitCode};
 
+mod archive;
 mod watcher;
 
 /// FastLED WASM compilation CLI.
