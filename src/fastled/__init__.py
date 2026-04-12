@@ -4,6 +4,11 @@ from multiprocessing import Process
 from pathlib import Path
 
 from .__version__ import __version__
+
+try:
+    from fastled._native import version as _native_version
+except ImportError:
+    _native_version = None
 from .build_service import BuildService
 from .build_types import BuildRequest, BuildResult
 from .site.build import build
