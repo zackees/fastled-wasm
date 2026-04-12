@@ -17,6 +17,14 @@ if __name__ == "__main__":
         maintainer="Zachary Vorhies",
         keywords=KEYWORDS,
         url=URL,
-        package_data={"": ["assets/example.txt", "assets/localhost.pem", "assets/localhost-key.pem"]},
+        package_data={
+            "": [
+                "assets/example.txt",
+                "assets/localhost.pem",
+                "assets/localhost-key.pem",
+                "frontend/*",
+                "frontend/**/*",
+            ]
+        },
         include_package_data=True)
 

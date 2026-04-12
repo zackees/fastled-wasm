@@ -32,7 +32,7 @@ class TestAppFlagPassedToNativeCompile(unittest.TestCase):
 
 
 class TestNoDeadCodeModules(unittest.TestCase):
-    """Bug 2: Dead code files left over from Docker/server migration must be removed."""
+    """Bug 2: Dead code files left over from the backend cleanup must be removed."""
 
     DEAD_MODULES = [
         "find_good_connection",

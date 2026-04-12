@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from fastled.filewatcher import FileWatcherProcess
+from fastled.interrupts import handle_keyboard_interrupt
 
 
 class FileChangeProcessTester(unittest.TestCase):
@@ -39,13 +40,15 @@ class FileChangeProcessTester(unittest.TestCase):
                 self.assertEqual(
                     os.path.basename(changed_files[0]), os.path.basename(str(test_file))
                 )
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 type_str_of_exception = str(type(e))
                 print(f"Got exception: {type_str_of_exception}")
                 if "queue.Empty" in type_str_of_exception:
                     self.fail("No file change detected")
                 print(f"Got exception: {e}")
-                raise e
+                raise
             finally:
                 proc.stop()
 

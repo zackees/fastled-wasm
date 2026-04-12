@@ -8,6 +8,8 @@ from typing import Tuple
 
 from fastled_wasm_compiler import Compiler  # type: ignore[reportMissingImports]
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 from fastled_wasm_compiler.paths import VOLUME_MAPPED_SRC  # type: ignore[reportMissingImports]  # isort: skip
 
 _PORT = os.environ.get("PORT", 80)
@@ -92,8 +94,9 @@ def main() -> int:
             rtn = _run_server(unknown_args)
             return rtn
         raise ValueError(f"Unknown mode: {args.mode}")
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("Exiting...")
+        handle_keyboard_interrupt(ki)
         return 1
 
 

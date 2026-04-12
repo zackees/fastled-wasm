@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from urllib.request import urlretrieve
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 
 def download_auto_debug_extension() -> Path | None:
     """
@@ -34,6 +36,8 @@ def download_auto_debug_extension() -> Path | None:
             print("❌ Failed to download extension")
             return None
 
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         print(f"❌ Error downloading extension: {e}")
         return None
@@ -85,6 +89,8 @@ def install_vscode_extensions(extension_path: Path) -> bool:
             try:
                 extension_path.unlink()
                 extension_path.parent.rmdir()
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception:
                 pass
 

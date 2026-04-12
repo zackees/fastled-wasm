@@ -2,7 +2,7 @@
 Emscripten Toolchain for FastLED
 
 Provides native compilation using the Emscripten SDK (EMSDK) for compiling
-FastLED sketches to WebAssembly without Docker.
+FastLED sketches to WebAssembly.
 
 When a local FastLED repo is detected (with ci/wasm_build.py), delegates to
 the repo's own build system which uses Meson+Ninja with command capture and
@@ -18,6 +18,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from fastled.interrupts import handle_keyboard_interrupt
+from fastled.toolchain.emscripten_archive import install_emscripten_from_archive
 from fastled.types import BuildMode
 
 _clang_tool_chain_emscripten_dir_cache: Path | None | str = "UNSET"
@@ -47,6 +49,16 @@ def _get_clang_tool_chain_emscripten_dir() -> Path | None:
     global _clang_tool_chain_emscripten_dir_cache
     if _clang_tool_chain_emscripten_dir_cache != "UNSET":
         return _clang_tool_chain_emscripten_dir_cache  # type: ignore[return-value]
+
+    try:
+        internal_dir = install_emscripten_from_archive()
+        if (internal_dir / "emscripten" / "emcc.py").exists():
+            _clang_tool_chain_emscripten_dir_cache = internal_dir
+            return internal_dir
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
+    except Exception:
+        pass
 
     env_path = os.environ.get("CLANG_TOOL_CHAIN_DOWNLOAD_PATH")
     base_dir = Path(env_path) if env_path else Path.home() / ".clang-tool-chain"
@@ -133,6 +145,8 @@ def ensure_clang_tool_chain_emscripten() -> Path | None:
             return None
     except ImportError:
         return None
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         print(f"Warning: Failed to ensure clang-tool-chain Emscripten: {e}")
         return None
@@ -462,85 +476,50 @@ class EmscriptenToolchain:
         fastled_dir: Path,
         build_mode: BuildMode,
     ) -> Path:
-        """Delegate to FastLED's ci/wasm_build.py which uses Meson+Ninja
-        with command capture/caching via clang-tool-chain.
+        """Run the copied Meson/Ninja WASM builder from this repo."""
+        from fastled.toolchain import internal_wasm_build
 
-        This is the preferred path — it matches the upstream build exactly
-        and gets fast incremental rebuilds for free.
-        """
-        # Map BuildMode to wasm_build mode string
         mode_map = {
             BuildMode.DEBUG: "debug",
             BuildMode.QUICK: "quick",
             BuildMode.RELEASE: "release",
         }
         mode = mode_map[build_mode]
-
-        # wasm_build.py expects an example name and output path.
-        # For in-tree nested sketches (e.g. examples/Fx/FxCylon) we must
-        # preserve the full relative path, not just the leaf directory name.
-        # See https://github.com/zackees/fastled-wasm/issues/12
         sketch_name, example_dir, is_in_tree = _resolve_example_name(
             sketch_dir, fastled_dir
         )
-
         output_js = output_dir / "fastled.js"
 
-        # wasm_build.py uses relative imports (from ci.wasm_flags import ...)
-        # so it must be invoked via `uv run python` from the FastLED repo root.
-        uv = shutil.which("uv")
-        if uv:
-            cmd = [
-                uv,
-                "run",
-                "python",
-                str(fastled_dir / "ci" / "wasm_build.py"),
-                "--example",
-                sketch_name,
-                "-o",
-                str(output_js),
-                "--mode",
-                mode,
-            ]
-        else:
-            cmd = [
-                sys.executable,
-                str(fastled_dir / "ci" / "wasm_build.py"),
-                "--example",
-                sketch_name,
-                "-o",
-                str(output_js),
-                "--mode",
-                mode,
-            ]
-
-        env = os.environ.copy()
-        _setup_emscripten_env(env)
-
-        # Clean stale per-sketch build cache to avoid encoding mismatches
-        # (e.g. wrapper files written with cp1252 but read as UTF-8 by uv)
-        sketch_build_cache = example_dir / ".build" / "wasm"
-        if sketch_build_cache.exists():
-            shutil.rmtree(sketch_build_cache, ignore_errors=True)
-
         if not is_in_tree:
-            # Create a temporary symlink so wasm_build.py can find the sketch
             if not example_dir.exists():
                 example_dir.symlink_to(sketch_dir, target_is_directory=True)
             needs_cleanup = True
         else:
             needs_cleanup = False
 
+        meson_build_dir = fastled_dir / ".build" / f"meson-wasm-{mode}"
+
         try:
-            print(f"Delegating to FastLED build system (mode: {mode})...")
-            result = subprocess.run(
-                cmd,
-                cwd=str(fastled_dir),
-                env=env,
+            internal_wasm_build.configure_project_root(fastled_dir)
+            print(f"Running internal WASM build system (mode: {mode})...")
+            result = internal_wasm_build.build(
+                example=sketch_name,
+                output=str(output_js),
+                mode=mode,
             )
-            if result.returncode != 0:
+            if result != 0 and meson_build_dir.exists():
+                print(
+                    "FastLED build system failed once, wiping stale Meson cache and retrying..."
+                )
+                shutil.rmtree(meson_build_dir, ignore_errors=True)
+                result = internal_wasm_build.build(
+                    example=sketch_name,
+                    output=str(output_js),
+                    mode=mode,
+                )
+            if result != 0:
                 raise RuntimeError(
-                    f"FastLED build system failed with return code {result.returncode}"
+                    f"FastLED build system failed with return code {result}"
                 )
         finally:
             if needs_cleanup and example_dir.is_symlink():
@@ -809,73 +788,21 @@ class EmscriptenToolchain:
         return h.hexdigest()
 
     def _copy_frontend_assets(self, output_dir: Path, fastled_dir: Path) -> None:
-        """Copy Vite-built frontend assets from FastLED's wasm compiler directory.
+        """Copy frontend assets built by fastled-wasm's bundled esbuild pipeline."""
+        from fastled.frontend_esbuild import copy_frontend_to_output
 
-        Skips the copy if the dist directory hasn't changed since the last copy.
-        """
-        compiler_dir = fastled_dir / "src" / "platforms" / "wasm" / "compiler"
-        dist_dir = compiler_dir / "dist"
-
-        if not compiler_dir.exists():
-            print(
-                f"Warning: Frontend assets not found at {compiler_dir}, using minimal index.html"
-            )
+        try:
+            copy_frontend_to_output(output_dir)
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+        except Exception as exc:
+            print(f"Warning: frontend build failed: {exc}")
             self._create_minimal_index_html(output_dir, "fastled")
             return
-
-        if not dist_dir.exists():
-            npx = shutil.which("npx")
-            if not npx:
-                print(
-                    "Warning: Node.js not found. Cannot build frontend. Using minimal index.html"
-                )
-                self._create_minimal_index_html(output_dir, "fastled")
-                return
-
-            if not (compiler_dir / "node_modules").exists():
-                print("Installing frontend dependencies...")
-                subprocess.run(["npm", "install"], cwd=str(compiler_dir), check=True)
-
-            print("Building frontend with Vite...")
-            result = subprocess.run(
-                [npx, "vite", "build"],
-                cwd=str(compiler_dir),
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                print(f"Warning: Vite build failed: {result.stderr}")
-                self._create_minimal_index_html(output_dir, "fastled")
-                return
-
-        if not dist_dir.exists():
-            self._create_minimal_index_html(output_dir, "fastled")
-            return
-
-        # Check if dist has changed since last copy using a hash marker
-        hash_marker = output_dir / ".frontend_hash"
-        current_hash = self._compute_dir_hash(dist_dir)
-        if hash_marker.exists() and hash_marker.read_text().strip() == current_hash:
-            print("  Frontend assets unchanged, skipping copy.")
-            return
-
-        print("Copying Vite build output...")
-        for item in dist_dir.iterdir():
-            dest = output_dir / item.name
-            if item.is_dir():
-                if dest.exists():
-                    shutil.rmtree(dest)
-                shutil.copytree(item, dest)
-            else:
-                shutil.copy2(item, dest)
-
-        hash_marker.write_text(current_hash)
 
         files_json = output_dir / "files.json"
         if not files_json.exists():
             files_json.write_text("[]")
-
-        print("  Frontend assets copied from Vite build output")
 
     def _create_minimal_index_html(self, output_dir: Path, module_name: str) -> None:
         """Create a minimal fallback index.html."""

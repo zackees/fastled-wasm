@@ -16,7 +16,6 @@ dependencies = [
     "watchfiles>=1.0.5",
     "Flask>=3.0.0",
     "flask-cors>=4.0.0",
-    "livereload",
     "disklru>=2.0.4",
     "playwright>=1.40.0",
     "fasteners>=0.20",
@@ -24,6 +23,8 @@ dependencies = [
     "clang-tool-chain>=1.2.6",
     "rapidfuzz",
     "progress",
+    "zcmds_win32",
+    "zccache>=1.1.20",
 ]
 
 dynamic = ["version"]

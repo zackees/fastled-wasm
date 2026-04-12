@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from fastled.args import Args
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.project_init import project_init
 from fastled.select_sketch_directory import select_sketch_directory
 from fastled.sketch import (
@@ -136,12 +137,6 @@ def parse_args() -> Args:
     )
 
     parser.add_argument(
-        "--local",
-        action="store_true",
-        help="Deprecated, only kept for backwards compatibility",
-    )
-
-    parser.add_argument(
         "--latest",
         action="store_true",
         help="Use latest release when initializing examples with --init (default behavior)",
@@ -252,6 +247,8 @@ def parse_args() -> Args:
         # --latest (or default) leaves ref=None, which means latest release
         try:
             args.directory = project_init(example, args.directory, ref=ref)
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             print(f"Failed to initialize project: {e}")
             sys.exit(1)

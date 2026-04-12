@@ -10,6 +10,7 @@ from pathlib import Path
 # Add the src directory to the path so we can import string_diff
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.string_diff import string_diff, string_diff_paths
 
 
@@ -663,6 +664,8 @@ if __name__ == "__main__":
         try:
             test_method()
             print(f"✓ {test_method.__name__}")
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             print(f"✗ {test_method.__name__}: {e}")
             import traceback

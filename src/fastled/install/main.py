@@ -2,6 +2,8 @@
 
 import sys
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 from .examples_manager import install_fastled_examples_via_project_init
 from .extension_manager import install_auto_debug_extension
 from .project_detection import (
@@ -115,6 +117,9 @@ def fastled_install(dry_run: bool = False, no_interactive: bool = False) -> bool
         print("\n✅ FastLED installation completed successfully!")
         return True
 
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
+        raise
     except Exception as e:
         print(f"\n❌ Installation failed: {e}")
         import traceback

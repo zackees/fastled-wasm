@@ -3,6 +3,7 @@ import subprocess
 from pathlib import Path
 from shutil import copytree, rmtree, which
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.site.examples import EXAMPLES
 
 CSS_CONTENT = """
@@ -412,6 +413,8 @@ def build(outputdir: Path, fast: bool | None = None, check=False) -> list[Except
         if not fast or not example_dir.exists():
             try:
                 build_example(example=example, outputdir=outputdir)
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 if check:
                     raise
@@ -419,6 +422,8 @@ def build(outputdir: Path, fast: bool | None = None, check=False) -> list[Except
 
     try:
         generate_css(outputdir=outputdir)
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         if check:
             raise
@@ -426,6 +431,8 @@ def build(outputdir: Path, fast: bool | None = None, check=False) -> list[Except
 
     try:
         build_index_html(outputdir=outputdir)
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         if check:
             raise

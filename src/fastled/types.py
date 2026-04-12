@@ -50,18 +50,3 @@ class BuildMode(Enum):
             return BuildMode.RELEASE
         else:
             return BuildMode.QUICK
-
-
-class Platform(Enum):
-    WASM = "WASM"
-    NATIVE = "NATIVE"  # Native EMSDK compilation (no Docker required)
-
-    @classmethod
-    def from_string(cls, platform_str: str) -> "Platform":
-        try:
-            return cls[platform_str.upper()]
-        except KeyError:
-            valid_modes = [mode.name for mode in cls]
-            raise ValueError(
-                f"Platform must be one of {valid_modes}, got {platform_str}"
-            )

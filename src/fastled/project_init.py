@@ -9,9 +9,8 @@ from pathlib import Path
 
 import httpx
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.spinner import Spinner
-
-DEFAULT_URL = "https://fastled.onrender.com"
 
 DEFAULT_EXAMPLE = "wasm"
 
@@ -50,6 +49,8 @@ def _get_latest_release_tag() -> str | None:
         )
         response.raise_for_status()
         return response.json()["tag_name"]
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception:
         return None
 
@@ -96,6 +97,8 @@ def _resolve_ref(ref: str | None) -> tuple[str, str]:
         resp = httpx.head(tag_url, follow_redirects=True, timeout=10)
         if resp.status_code == 200:
             return ref, tag_url
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception:
         pass
 
@@ -194,6 +197,9 @@ def _download_fastled_repo(ref: str | None = None) -> tuple[DownloadResult, str]
         response = httpx.get(url, follow_redirects=True, timeout=60)
         response.raise_for_status()
         return DownloadResult(content=response.content), ref_name
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
+        raise
     except Exception as e:
         return DownloadResult(error=e), ref_name
 
@@ -225,11 +231,10 @@ def _collect_examples_from_dir(examples_dir: Path) -> list[str]:
     return sorted(found)
 
 
-def get_examples(host: str | None = None, ref: str | None = None) -> list[str]:
+def get_examples(ref: str | None = None) -> list[str]:
     """Get list of available examples from the FastLED GitHub repo.
 
     Args:
-        host: Fallback server host for example listing.
         ref: Git ref to use. None means latest release.
     """
     # If we're inside the FastLED repo, use local examples
@@ -242,13 +247,8 @@ def get_examples(host: str | None = None, ref: str | None = None) -> list[str]:
     with Spinner("Downloading FastLED repo..."):
         result, _ = _download_fastled_repo(ref)
     if not result.ok:
-        # Fall back to server if GitHub download fails
-        fallback_host = host or DEFAULT_URL
-        url_info = f"{fallback_host}/info"
-        response = httpx.get(url_info, timeout=4)
-        response.raise_for_status()
-        examples: list[str] = response.json()["examples"]
-        return sorted(examples)
+        assert result.error is not None
+        raise result.error
 
     assert result.content is not None
     tmp_dir = Path(tempfile.mkdtemp(prefix="fastled_examples_"))
@@ -288,7 +288,6 @@ def _prompt_for_example(ref: str | None = None) -> str:
 def project_init(
     example: str | None = "PROMPT",  # prompt for example
     outputdir: Path | None = None,
-    host: str | None = None,  # noqa: ARG001 - kept for API compatibility
     ref: str | None = None,
 ) -> Path:
     """Initialize a new FastLED project by downloading the example from GitHub.
@@ -296,11 +295,9 @@ def project_init(
     Args:
         example: Example name, "PROMPT" to prompt user, or None for default.
         outputdir: Output directory (defaults to "fastled").
-        host: Unused, kept for API compatibility.
         ref: Git ref to download. None means latest release. Use "master" for
              master branch, a branch name, or a commit SHA.
     """
-    del host  # unused, kept for API compatibility
     outputdir = Path(outputdir) if outputdir is not None else Path("fastled")
     outputdir.mkdir(exist_ok=True, parents=True)
 
@@ -319,6 +316,8 @@ def project_init(
     if example == "PROMPT" or example is None:
         try:
             example = _prompt_for_example(ref=ref)
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception:
             print(
                 f"Failed to fetch examples, using default example '{DEFAULT_EXAMPLE}'"

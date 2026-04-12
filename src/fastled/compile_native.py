@@ -1,19 +1,16 @@
 """
-Native EMSDK Compilation Integration Module
-
-This module provides native compilation functionality using locally installed EMSDK
-instead of Docker containers. It uses the EmscriptenToolchain from the toolchain module.
+Native EMSDK compilation entrypoints.
 """
 
 from __future__ import annotations
 
-import io
-import time
-import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from fastled.build_service import BuildService
+from fastled.build_types import BuildRequest
 from fastled.emoji_util import EMO
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.types import BuildMode, CompileResult
 
 if TYPE_CHECKING:
@@ -28,17 +25,9 @@ def compile_native(
     toolchain: EmscriptenToolchain | None = None,
 ) -> CompileResult:
     """
-    Compile a FastLED sketch using native EMSDK toolchain.
+    Compile a FastLED sketch using the native build service.
 
-    Args:
-        directory: Path to the sketch directory
-        build_mode: Build mode (DEBUG, QUICK, RELEASE)
-        profile: Enable profiling output
-        fastled_path: Path to FastLED library. If None, downloads from master repo.
-        toolchain: Optional pre-created toolchain instance to reuse across compilations.
-
-    Returns:
-        CompileResult with compilation status and output
+    The optional `toolchain` argument is kept for compatibility with existing callers.
     """
     from fastled.toolchain.emscripten import EmscriptenToolchain
 
@@ -48,11 +37,9 @@ def compile_native(
     print(f"{EMO('📋', 'MODE:')} Build mode: {build_mode.value}")
     print(f"{EMO('📁', 'OUTPUT:')} Output directory: {output_dir}")
 
-    # Reuse or create toolchain
     if toolchain is None:
         toolchain = EmscriptenToolchain(fastled_path=fastled_path)
 
-    # Check if Emscripten is installed
     if not toolchain.check_installation():
         version_info = toolchain.get_version()
         if version_info:
@@ -82,61 +69,16 @@ def compile_native(
     if version:
         print(f"{EMO('✨', 'EMSDK:')} {version}")
 
-    start_time = time.time()
-
-    try:
-        # Compile using native EMSDK
-        js_file = toolchain.compile(
+    service = BuildService()
+    result = service.build(
+        BuildRequest(
             sketch_dir=directory,
-            output_dir=output_dir,
             build_mode=build_mode,
             profile=profile,
+            fastled_path=Path(fastled_path) if fastled_path else None,
         )
-
-        compile_time = time.time() - start_time
-
-        # Create an in-memory zip of the output for consistency with web compilation
-        zip_start = time.time()
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in output_dir.rglob("*"):
-                if file_path.is_file():
-                    zf.write(file_path, file_path.relative_to(output_dir))
-        zip_bytes = zip_buffer.getvalue()
-        zip_time = time.time() - zip_start
-
-        wasm_file = js_file.with_suffix(".wasm")
-        stdout = f"Native compilation successful!\nOutput: {js_file}\nWASM: {wasm_file}"
-
-        return CompileResult(
-            success=True,
-            stdout=stdout,
-            hash_value=None,  # Native doesn't use hash caching currently
-            zip_bytes=zip_bytes,
-            zip_time=zip_time,
-            libfastled_time=0.0,  # Library is pre-built
-            sketch_time=compile_time,
-            response_processing_time=0.0,
-        )
-
-    except Exception as e:
-        compile_time = time.time() - start_time
-        error_msg = f"Native compilation failed: {e}"
-        if profile:
-            import traceback
-
-            error_msg += f"\n{traceback.format_exc()}"
-
-        return CompileResult(
-            success=False,
-            stdout=error_msg,
-            hash_value=None,
-            zip_bytes=b"",
-            zip_time=0.0,
-            libfastled_time=0.0,
-            sketch_time=compile_time,
-            response_processing_time=0.0,
-        )
+    )
+    return result.compile_result
 
 
 def run_native_compile(
@@ -151,28 +93,22 @@ def run_native_compile(
 ) -> int:
     """
     Run native compilation with optional browser and file watching.
-
-    Args:
-        directory: Path to the sketch directory
-        build_mode: Build mode (DEBUG, QUICK, RELEASE)
-        profile: Enable profiling output
-        open_browser: Whether to open browser after compilation
-        keep_running: Whether to watch for file changes and recompile
-        enable_https: Enable HTTPS for the local server
-        fastled_path: Path to FastLED library. If None, downloads from master repo.
-
-    Returns:
-        Exit code (0 for success, non-zero for failure)
     """
     from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
     from fastled.keyboard import SpaceBarWatcher
     from fastled.open_browser import spawn_http_server
     from fastled.toolchain.emscripten import EmscriptenToolchain
 
-    # Create toolchain once and reuse across all compilations in watch mode
     toolchain = EmscriptenToolchain(fastled_path=fastled_path)
-
-    result = compile_native(directory, build_mode, profile, fastled_path, toolchain)
+    request = BuildRequest(
+        sketch_dir=directory,
+        build_mode=build_mode,
+        profile=profile,
+        fastled_path=Path(fastled_path) if fastled_path else None,
+    )
+    service = BuildService()
+    service.register_toolchain(request.fastled_path, toolchain)
+    result = service.build(request)
 
     if not result.success:
         print(f"\n{EMO('❌', 'ERROR:')} Compilation failed:")
@@ -181,28 +117,27 @@ def run_native_compile(
 
     print(f"\n{EMO('✅', 'SUCCESS:')} Compilation successful!")
     print(f"  Time: {result.sketch_time:.2f} seconds")
-    print(f"  Output: {directory / 'fastled_js'}")
+    print(f"  Strategy: {result.strategy}")
+    print(f"  Output: {result.output_dir}")
 
     if not open_browser and not keep_running:
         return 0
 
-    # Start HTTP server
-    output_dir = directory / "fastled_js"
     http_proc = None
-
     if open_browser:
         http_proc = spawn_http_server(
-            output_dir,
-            port=None,  # Auto-select port
+            result.output_dir,
+            port=None,
             open_browser=True,
             app=app,
             enable_https=enable_https,
+            sketch_dir=directory,
+            fastled_path=request.fastled_path,
         )
 
     if not keep_running:
         return 0
 
-    # Set up file watching
     excluded_patterns = ["fastled_js", ".build"]
     debounced_watcher = DebouncedFileWatcherProcess(
         FileWatcherProcess(directory, excluded_patterns=excluded_patterns),
@@ -215,11 +150,11 @@ def run_native_compile(
         while True:
             if SpaceBarWatcher.watch_space_bar_pressed(timeout=1.0):
                 print("\nCompiling...")
-                result = compile_native(
-                    directory, build_mode, profile, fastled_path, toolchain
-                )
+                result = service.build(request)
                 if result.success:
-                    print(f"{EMO('✅', 'SUCCESS:')} Recompilation successful!")
+                    print(
+                        f"{EMO('✅', 'SUCCESS:')} Recompilation successful! ({result.strategy})"
+                    )
                 else:
                     print(f"{EMO('❌', 'ERROR:')} Recompilation failed:")
                     print(result.stdout)
@@ -234,18 +169,18 @@ def run_native_compile(
                 if sketch_changes:
                     print(f"\nChanges detected in {sketch_changes}")
                     print("Compiling...")
-                    result = compile_native(
-                        directory, build_mode, profile, fastled_path, toolchain
-                    )
+                    result = service.build(request)
                     if result.success:
-                        print(f"{EMO('✅', 'SUCCESS:')} Recompilation successful!")
+                        print(
+                            f"{EMO('✅', 'SUCCESS:')} Recompilation successful! ({result.strategy})"
+                        )
                     else:
                         print(f"{EMO('❌', 'ERROR:')} Recompilation failed:")
                         print(result.stdout)
-                    continue
 
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("\nStopping watch mode...")
+        handle_keyboard_interrupt(ki)
     finally:
         debounced_watcher.stop()
         if http_proc:

@@ -3,3 +3,4 @@ include requirements.testing.txt
 include template_python_cmd/assets/example.txt
 include src/fastled/assets/localhost.pem
 include src/fastled/assets/localhost-key.pem
+recursive-include src/fastled/frontend *.ts *.js *.css *.html *.json *.d.ts *.h *.ttf *.map
