@@ -137,14 +137,27 @@ fn run_python_compile_streaming(
 }
 
 // ---------------------------------------------------------------------------
+// Viewer mode selector
+// ---------------------------------------------------------------------------
+
+/// Controls how the compiled output is displayed to the user.
+enum ViewerMode {
+    /// Open the default system browser.
+    Browser,
+    /// Launch the native Tauri viewer pointing at the output directory.
+    TauriViewer,
+}
+
+// ---------------------------------------------------------------------------
 // Compile + serve + watch (replaces Flask-based flow)
 // ---------------------------------------------------------------------------
 
 /// Compile a sketch, serve the output via the built-in HTTP server, and
 /// watch for file changes to trigger recompilation.
 ///
-/// Build output is streamed to the browser in real time via SSE.
-fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
+/// Build output is streamed to the browser (or Tauri viewer) in real time
+/// via SSE.
+fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     let sketch_dir = PathBuf::from(dir);
     if !sketch_dir.is_dir() {
         eprintln!("fastled: sketch directory does not exist: {dir}");
@@ -179,7 +192,16 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
 
         let url = format!("http://{addr}");
         println!("Serving at {url}");
-        open_browser(&url);
+
+        match mode {
+            ViewerMode::Browser => open_browser(&url),
+            ViewerMode::TauriViewer => {
+                if let Err(e) = viewer::launch_tauri_viewer(&output_dir) {
+                    eprintln!("fastled: Tauri viewer failed: {e}, falling back to browser");
+                    open_browser(&url);
+                }
+            }
+        }
 
         // --- Initial compilation ------------------------------------------------
         send_sse(
@@ -404,10 +426,9 @@ fn should_use_tauri_viewer(cli: &Cli) -> bool {
 /// Convert the parsed `Cli` struct back into the argv that the Python CLI
 /// expects, so we can pass it through verbatim.
 ///
-/// When `tauri_viewer` is `true` the Python process is asked only to compile
-/// (via `--just-compile`); the Rust caller will subsequently launch the Tauri
-/// viewer instead of delegating browser launching to Python.
-fn rebuild_python_args(cli: &Cli, tauri_viewer: bool) -> Vec<String> {
+/// This is used only for the delegation path (--just-compile, --init,
+/// --install) where Python handles the full operation.
+fn rebuild_python_args(cli: &Cli) -> Vec<String> {
     let mut args: Vec<String> = Vec::new();
 
     if let Some(dir) = &cli.directory {
@@ -424,15 +445,13 @@ fn rebuild_python_args(cli: &Cli, tauri_viewer: bool) -> Vec<String> {
             args.push(init_val.clone());
         }
     }
-    // When Tauri viewer is handling display, tell Python to only compile.
-    if cli.just_compile || tauri_viewer {
+    if cli.just_compile {
         args.push("--just-compile".to_string());
     }
     if cli.profile {
         args.push("--profile".to_string());
     }
-    // Pass --app through only when we are NOT taking over with the Tauri viewer.
-    if cli.app && !tauri_viewer {
+    if cli.app {
         args.push("--app".to_string());
     }
     if cli.install {
@@ -476,16 +495,6 @@ fn rebuild_python_args(cli: &Cli, tauri_viewer: bool) -> Vec<String> {
     }
 
     args
-}
-
-/// Derive the expected build output directory from CLI arguments.
-///
-/// Mirrors `BuildRequest::output_dir()` in `build.rs`: the Python CLI always
-/// writes compiled artefacts to `<sketch_dir>/fastled_js`.
-fn output_dir_from_cli(cli: &Cli) -> Option<PathBuf> {
-    cli.directory
-        .as_ref()
-        .map(|d| PathBuf::from(d).join("fastled_js"))
 }
 
 /// Serve a directory using the built-in Rust HTTP server.
@@ -557,26 +566,29 @@ fn main() -> ExitCode {
     let use_tauri = should_use_tauri_viewer(&cli);
 
     // Normal compilation flow with Rust HTTP server + watch mode.
-    // This replaces the old Flask-based flow.  Conditions:
+    // Both browser and Tauri viewer paths use the same compile_and_serve()
+    // infrastructure so compilation output is streamed via SSE in real time.
+    //
+    // Conditions:
     //  - a sketch directory was provided
     //  - the user did NOT pass --just-compile
-    //  - we are NOT in the Tauri viewer flow (Tauri has its own lifecycle)
     //  - it's not a non-compile command (--init, --install)
     if let Some(ref dir) = cli.directory {
-        if !cli.just_compile && !use_tauri && cli.init.is_none() && !cli.install {
-            return compile_and_serve(dir, &cli);
+        if !cli.just_compile && cli.init.is_none() && !cli.install {
+            let mode = if use_tauri {
+                ViewerMode::TauriViewer
+            } else {
+                ViewerMode::Browser
+            };
+            return compile_and_serve(dir, &cli, mode);
         }
     }
 
     // --- Delegate to Python for everything else ------------------------------
-    // (--just-compile, --init, --install, Tauri viewer flow, etc.)
-
-    if use_tauri {
-        eprintln!("fastled: native Tauri viewer detected — compiling then launching viewer");
-    }
+    // (--just-compile, --init, --install, etc.)
 
     let python = find_python();
-    let py_args = rebuild_python_args(&cli, use_tauri);
+    let py_args = rebuild_python_args(&cli);
 
     let status = Command::new(&python)
         .args(["-m", "fastled.app"])
@@ -593,43 +605,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
-    // If we are driving the Tauri viewer and the Python compile step succeeded,
-    // launch the native viewer pointing at the build output directory.
-    if use_tauri && exit_code == ExitCode::SUCCESS {
-        if let Some(out_dir) = output_dir_from_cli(&cli) {
-            match viewer::launch_tauri_viewer(&out_dir) {
-                Ok(mut child) => {
-                    // Wait for the viewer to exit so the terminal session stays
-                    // alive until the user closes the window.
-                    let viewer_status = child.wait();
-                    match viewer_status {
-                        Ok(s) => {
-                            let code = s.code().unwrap_or(1);
-                            return ExitCode::from(code as u8);
-                        }
-                        Err(e) => {
-                            eprintln!("fastled: error waiting for viewer: {e}");
-                            return ExitCode::FAILURE;
-                        }
-                    }
-                }
-                Err(e) => {
-                    // Tauri viewer failed — fall back to Rust HTTP server.
-                    eprintln!("fastled: failed to launch Tauri viewer: {e}");
-                    eprintln!("fastled: falling back to browser");
-                    // cli.directory must be Some because output_dir_from_cli succeeded.
-                    if let Some(ref dir) = cli.directory {
-                        return compile_and_serve(dir, &cli);
-                    }
-                    return ExitCode::FAILURE;
-                }
-            }
-        } else {
-            eprintln!("fastled: --app with Tauri viewer requires a sketch directory argument");
-            return ExitCode::FAILURE;
-        }
-    }
 
     exit_code
 }
