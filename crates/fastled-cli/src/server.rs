@@ -5,15 +5,20 @@
 //! does not exist yet (compilation in progress) a built-in loading page
 //! is returned that polls `/build-status.json` for live updates.
 
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -34,24 +39,52 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
              animation: spin 1s linear infinite; margin-bottom: 20px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   #status { font-size: 1.2em; }
-  #log { margin-top: 20px; max-width: 80%; max-height: 40vh;
-         overflow-y: auto; font-size: 0.85em; color: #888;
-         white-space: pre-wrap; text-align: left; }
+  #log { margin-top: 20px; width: 80%; max-height: 50vh;
+         overflow-y: auto; font-size: 0.85em; color: #aaa;
+         white-space: pre-wrap; text-align: left; line-height: 1.4;
+         padding: 8px; background: #1a1a1a; border-radius: 4px; }
 </style>
 <script>
+  const logEl = document.addEventListener('DOMContentLoaded', () => {
+    const log = document.getElementById('log');
+    const status = document.getElementById('status');
+
+    function appendLog(line) {
+      log.textContent += line + '\n';
+      log.scrollTop = log.scrollHeight;
+    }
+
+    // Try SSE first, fall back to polling.
+    if (typeof EventSource !== 'undefined') {
+      const es = new EventSource('/build-stream');
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === 'log') {
+            appendLog(d.line);
+          } else if (d.type === 'status') {
+            status.textContent = d.message || d.status;
+            if (d.status === 'success') { es.close(); location.reload(); }
+          }
+        } catch(err) {}
+      };
+      es.onerror = () => { es.close(); poll(); };
+    } else {
+      poll();
+    }
+  });
+
   async function poll() {
     try {
       const r = await fetch('/build-status.json');
       if (r.ok) {
         const s = await r.json();
         document.getElementById('status').textContent = s.message || 'Compiling...';
-        if (s.log) document.getElementById('log').textContent = s.log;
         if (s.status === 'success') { location.reload(); return; }
       }
     } catch(e) {}
     setTimeout(poll, 500);
   }
-  poll();
 </script>
 </head><body>
 <div class="spinner"></div>
@@ -66,6 +99,9 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
 #[derive(Clone)]
 struct AppState {
     serve_dir: Arc<PathBuf>,
+    /// Broadcast channel for SSE build streaming.  `None` when serving a
+    /// static directory (no compilation happening).
+    build_tx: Option<broadcast::Sender<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +155,25 @@ async fn serve_file(
     }
 }
 
+/// SSE endpoint that streams build log lines and status events.
+async fn build_stream(State(state): State<AppState>) -> Response {
+    let tx = match &state.build_tx {
+        Some(tx) => tx,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let rx = tx.subscribe();
+    let stream = BroadcastStream::new(rx).filter_map(|result| {
+        result
+            .ok()
+            .map(|data| Ok::<_, Infallible>(Event::default().data(data)))
+    });
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
 fn mime_for_path(path: &str) -> &'static str {
     match path.rsplit('.').next().unwrap_or("") {
         "html" => "text/html; charset=utf-8",
@@ -146,13 +201,19 @@ fn mime_for_path(path: &str) -> &'static str {
 ///
 /// Returns the actual address the server bound to (useful when port 0 is
 /// requested for automatic assignment).
-pub async fn start_server(serve_dir: PathBuf, port: u16) -> anyhow::Result<SocketAddr> {
+pub async fn start_server(
+    serve_dir: PathBuf,
+    port: u16,
+    build_tx: Option<broadcast::Sender<String>>,
+) -> anyhow::Result<SocketAddr> {
     let state = AppState {
         serve_dir: Arc::new(serve_dir),
+        build_tx,
     };
 
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/build-stream", get(build_stream))
         .route("/{*path}", get(serve_file))
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::HeaderName::from_static("cross-origin-embedder-policy"),
@@ -202,7 +263,9 @@ mod tests {
     /// Helper: create a temp dir, start the server, return (addr, dir).
     async fn setup_server() -> (SocketAddr, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let addr = start_server(dir.path().to_path_buf(), 0).await.unwrap();
+        let addr = start_server(dir.path().to_path_buf(), 0, None)
+            .await
+            .unwrap();
         // Give the server a moment to bind.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
@@ -328,5 +391,90 @@ mod tests {
             .unwrap();
         // Should not serve files outside the serve dir
         assert_ne!(resp.status(), 200);
+    }
+
+    // ------------------------------------------------------------------
+    // SSE build-stream tests
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_sse_returns_404_without_broadcast() {
+        // Server started without broadcast channel → /build-stream returns 404.
+        let (addr, _dir) = setup_server().await;
+        let resp = reqwest::get(format!("http://{addr}/build-stream"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn test_sse_endpoint_streams_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, _rx) = broadcast::channel::<String>(16);
+        let addr = start_server(dir.path().to_path_buf(), 0, Some(tx.clone()))
+            .await
+            .unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let url = format!("http://{addr}/build-stream");
+
+        // Connect to SSE endpoint.
+        let client = reqwest::Client::new();
+        let mut resp = client.get(&url).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(
+            ct.contains("text/event-stream"),
+            "expected event-stream content-type, got: {ct}"
+        );
+
+        // Give the server handler a moment to subscribe to the broadcast.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // Send test events.
+        tx.send(r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string())
+            .unwrap();
+        tx.send(r#"{"type":"status","status":"success","message":"Done"}"#.to_string())
+            .unwrap();
+
+        // Read SSE chunks until we see both events (or timeout).
+        let mut collected = String::new();
+        let deadline = std::time::Duration::from_secs(3);
+        while let Ok(Ok(Some(chunk))) = tokio::time::timeout(deadline, resp.chunk()).await {
+            collected.push_str(&String::from_utf8_lossy(&chunk));
+            if collected.contains("Building sketch...") && collected.contains("success") {
+                break;
+            }
+        }
+
+        assert!(
+            collected.contains("Building sketch..."),
+            "expected log line in SSE body, got: {collected}"
+        );
+        assert!(
+            collected.contains("success"),
+            "expected status event in SSE body, got: {collected}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_loading_page_contains_eventsource() {
+        let (addr, _dir) = setup_server().await;
+        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        let body = resp.text().await.unwrap();
+        assert!(
+            body.contains("EventSource"),
+            "loading page should use EventSource for SSE"
+        );
+        assert!(
+            body.contains("/build-stream"),
+            "loading page should connect to /build-stream"
+        );
     }
 }
