@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 mod archive;
@@ -9,6 +9,170 @@ mod project;
 mod server;
 mod viewer;
 mod watcher;
+
+// ---------------------------------------------------------------------------
+// Build-status IPC (Rust writes, loading page polls)
+// ---------------------------------------------------------------------------
+
+fn write_build_status(output_dir: &Path, status: &str, message: &str) {
+    let status_file = output_dir.join("build-status.json");
+    let json = format!(
+        r#"{{"status":"{}","message":"{}"}}"#,
+        status,
+        message.replace('\\', "\\\\").replace('"', "\\\"")
+    );
+    let _ = std::fs::write(status_file, json);
+}
+
+// ---------------------------------------------------------------------------
+// Python compile subprocess (inherits stdio for live output)
+// ---------------------------------------------------------------------------
+
+/// Run `python -m fastled.app --just-compile <dir> [flags]`.
+///
+/// Returns `true` when the compilation succeeds.  The subprocess inherits
+/// stdin/stdout/stderr so the user sees live output.
+fn run_python_compile(cli: &Cli, extra_args: &[&str]) -> bool {
+    let python = find_python();
+    let mut args = vec![
+        "-m".to_string(),
+        "fastled.app".to_string(),
+        "--just-compile".to_string(),
+    ];
+
+    if let Some(dir) = &cli.directory {
+        args.push(dir.clone());
+    }
+
+    // Build mode
+    if cli.debug {
+        args.push("--debug".to_string());
+    } else if cli.release {
+        args.push("--release".to_string());
+    }
+
+    if cli.profile {
+        args.push("--profile".to_string());
+    }
+    if let Some(fp) = &cli.fastled_path {
+        args.push("--fastled-path".to_string());
+        args.push(fp.clone());
+    }
+
+    for arg in extra_args {
+        args.push(arg.to_string());
+    }
+
+    match Command::new(&python).args(&args).status() {
+        Ok(s) => s.success(),
+        Err(e) => {
+            eprintln!("fastled: failed to launch `{python} -m fastled.app`: {e}");
+            false
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Compile + serve + watch (replaces Flask-based flow)
+// ---------------------------------------------------------------------------
+
+/// Compile a sketch, serve the output via the built-in HTTP server, and
+/// watch for file changes to trigger recompilation.
+///
+/// This replaces the Python Flask server + file watcher loop with a native
+/// Rust implementation.
+fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
+    let sketch_dir = PathBuf::from(dir);
+    if !sketch_dir.is_dir() {
+        eprintln!("fastled: sketch directory does not exist: {dir}");
+        return ExitCode::FAILURE;
+    }
+
+    let output_dir = sketch_dir.join("fastled_js");
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
+        eprintln!(
+            "fastled: could not create output directory {}: {e}",
+            output_dir.display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    // Write initial compiling status for the loading page.
+    write_build_status(&output_dir, "compiling", "Compiling...");
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async {
+        // Start the Rust HTTP server (background tokio task).
+        let addr = match server::start_server(output_dir.clone(), 0).await {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("fastled: failed to start server: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let url = format!("http://{addr}");
+        println!("Serving at {url}");
+        open_browser(&url);
+
+        // --- Initial compilation ------------------------------------------------
+        let mut extra: Vec<&str> = Vec::new();
+        if cli.purge {
+            extra.push("--purge");
+        }
+        let success = run_python_compile(cli, &extra);
+
+        if success {
+            write_build_status(&output_dir, "success", "Done");
+        } else {
+            write_build_status(&output_dir, "error", "Compilation failed");
+        }
+
+        // --- Watch mode ---------------------------------------------------------
+        println!("\nWill recompile on sketch changes or space bar press.");
+        println!("Press Ctrl+C to stop...");
+
+        let watcher_result =
+            watcher::FileWatcher::new(sketch_dir.clone(), watcher::DEFAULT_DEBOUNCE_MS);
+        let mut file_watcher = match watcher_result {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("fastled: file watcher failed: {e}");
+                tokio::signal::ctrl_c().await.ok();
+                return ExitCode::SUCCESS;
+            }
+        };
+        let rx = file_watcher.start();
+
+        loop {
+            let should_rebuild = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                Ok(changed) => {
+                    println!("\nChanges detected in {changed:?}");
+                    true
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => keyboard::check_for_space(),
+                Err(_) => break,
+            };
+
+            if should_rebuild {
+                println!("Compiling...");
+                write_build_status(&output_dir, "compiling", "Recompiling...");
+
+                let success = run_python_compile(cli, &[]);
+                if success {
+                    println!("Recompilation successful!");
+                    write_build_status(&output_dir, "success", "Done");
+                } else {
+                    eprintln!("Recompilation failed.");
+                    write_build_status(&output_dir, "error", "Compilation failed");
+                }
+            }
+        }
+
+        file_watcher.stop();
+        ExitCode::SUCCESS
+    })
+}
 
 /// FastLED WASM compilation CLI.
 ///
@@ -301,6 +465,21 @@ fn main() -> ExitCode {
 
     let use_tauri = should_use_tauri_viewer(&cli);
 
+    // Normal compilation flow with Rust HTTP server + watch mode.
+    // This replaces the old Flask-based flow.  Conditions:
+    //  - a sketch directory was provided
+    //  - the user did NOT pass --just-compile
+    //  - we are NOT in the Tauri viewer flow (Tauri has its own lifecycle)
+    //  - it's not a non-compile command (--init, --install)
+    if let Some(ref dir) = cli.directory {
+        if !cli.just_compile && !use_tauri && cli.init.is_none() && !cli.install {
+            return compile_and_serve(dir, &cli);
+        }
+    }
+
+    // --- Delegate to Python for everything else ------------------------------
+    // (--just-compile, --init, --install, Tauri viewer flow, etc.)
+
     if use_tauri {
         eprintln!("fastled: native Tauri viewer detected — compiling then launching viewer");
     }
@@ -345,23 +524,14 @@ fn main() -> ExitCode {
                     }
                 }
                 Err(e) => {
+                    // Tauri viewer failed — fall back to Rust HTTP server.
                     eprintln!("fastled: failed to launch Tauri viewer: {e}");
-                    eprintln!("fastled: falling back to legacy Flask browser");
-                    // Re-run Python without --just-compile to use Flask fallback.
-                    let fallback_args = rebuild_python_args(&cli, false);
-                    let fallback_status = Command::new(&python)
-                        .args(["-m", "fastled.app"])
-                        .args(&fallback_args)
-                        .status();
-                    return match fallback_status {
-                        Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),
-                        Err(e2) => {
-                            eprintln!(
-                                "fastled: fallback also failed to launch `{python} -m fastled.app`: {e2}"
-                            );
-                            ExitCode::FAILURE
-                        }
-                    };
+                    eprintln!("fastled: falling back to browser");
+                    // cli.directory must be Some because output_dir_from_cli succeeded.
+                    if let Some(ref dir) = cli.directory {
+                        return compile_and_serve(dir, &cli);
+                    }
+                    return ExitCode::FAILURE;
                 }
             }
         } else {

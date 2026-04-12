@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from fastled.build_service import BuildService
 from fastled.build_types import BuildRequest
 from fastled.emoji_util import EMO
-from fastled.interrupts import handle_keyboard_interrupt
 from fastled.types import BuildMode, CompileResult
 
 if TYPE_CHECKING:
@@ -93,10 +92,13 @@ def run_native_compile(
 ) -> int:
     """
     Run native compilation with optional browser and file watching.
+
+    NOTE: The HTTP server and file watching are now handled by the Rust CLI
+    (compile_and_serve in main.rs).  When called via ``--just-compile`` this
+    function only performs the compilation step and returns immediately.
     """
-    from fastled.filewatcher import DebouncedFileWatcherProcess, FileWatcherProcess
-    from fastled.keyboard import SpaceBarWatcher
-    from fastled.open_browser import spawn_http_server
+    del open_browser, keep_running, enable_https, app  # handled by Rust CLI
+
     from fastled.toolchain.emscripten import EmscriptenToolchain
 
     toolchain = EmscriptenToolchain(fastled_path=fastled_path)
@@ -119,71 +121,5 @@ def run_native_compile(
     print(f"  Time: {result.sketch_time:.2f} seconds")
     print(f"  Strategy: {result.strategy}")
     print(f"  Output: {result.output_dir}")
-
-    if not open_browser and not keep_running:
-        return 0
-
-    http_proc = None
-    if open_browser:
-        http_proc = spawn_http_server(
-            result.output_dir,
-            port=None,
-            open_browser=True,
-            app=app,
-            enable_https=enable_https,
-            sketch_dir=directory,
-            fastled_path=request.fastled_path,
-        )
-
-    if not keep_running:
-        return 0
-
-    excluded_patterns = ["fastled_js", ".build"]
-    debounced_watcher = DebouncedFileWatcherProcess(
-        FileWatcherProcess(directory, excluded_patterns=excluded_patterns),
-    )
-
-    print("\nWill compile on sketch changes or if you hit the space bar.")
-    print("Press Ctrl+C to stop...")
-
-    try:
-        while True:
-            if SpaceBarWatcher.watch_space_bar_pressed(timeout=1.0):
-                print("\nCompiling...")
-                result = service.build(request)
-                if result.success:
-                    print(
-                        f"{EMO('✅', 'SUCCESS:')} Recompilation successful! ({result.strategy})"
-                    )
-                else:
-                    print(f"{EMO('❌', 'ERROR:')} Recompilation failed:")
-                    print(result.stdout)
-                SpaceBarWatcher.watch_space_bar_pressed()
-                continue
-
-            changed_files = debounced_watcher.get_all_changes()
-            if changed_files:
-                sketch_changes = [
-                    f for f in changed_files if "fastled_js" not in Path(f).parts
-                ]
-                if sketch_changes:
-                    print(f"\nChanges detected in {sketch_changes}")
-                    print("Compiling...")
-                    result = service.build(request)
-                    if result.success:
-                        print(
-                            f"{EMO('✅', 'SUCCESS:')} Recompilation successful! ({result.strategy})"
-                        )
-                    else:
-                        print(f"{EMO('❌', 'ERROR:')} Recompilation failed:")
-                        print(result.stdout)
-
-    except KeyboardInterrupt as ki:
-        print("\nStopping watch mode...")
-        handle_keyboard_interrupt(ki)
-    finally:
-        debounced_watcher.stop()
-        if http_proc:
-            http_proc.kill()
 
     return 0

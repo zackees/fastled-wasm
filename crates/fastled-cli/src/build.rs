@@ -8,9 +8,10 @@
 //! Rust layer as a thin orchestration shell.
 //!
 //! This module is included as a library component; the CLI main loop will
-//! integrate it in a later phase.
+//! integrate it in a later phase for captured-output builds.
 
-// Not yet wired into the CLI entry point — suppress dead-code warnings.
+// The CLI currently uses `run_python_compile()` in main.rs (inherited stdio).
+// This module provides a captured-output alternative for future use.
 #![allow(dead_code)]
 
 use std::path::PathBuf;

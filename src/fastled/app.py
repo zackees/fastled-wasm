@@ -53,32 +53,14 @@ def main() -> int:
         return 0 if result else 1
 
     if args.serve_dir is not None:
-        from fastled.open_browser import spawn_http_server
-
-        serve_dir = Path(args.serve_dir)
-        if not serve_dir.exists():
-            print(f"Error: Serve directory does not exist: {serve_dir}")
-            return 1
-
-        protocol = "https" if args.enable_https else "http"
-        proc = spawn_http_server(
-            serve_dir,
-            open_browser=False,
-            app=False,
-            enable_https=args.enable_https,
+        # --serve-dir is handled natively by the Rust CLI (main.rs).
+        # If we reach here, the user called `python -m fastled.app --serve-dir`
+        # directly, which is no longer supported.
+        print(
+            "Error: --serve-dir is now handled by the Rust CLI.\n"
+            "Use `fastled --serve-dir <dir>` instead."
         )
-        print(f"Serving directory: {serve_dir}")
-        print(f"Listening on {protocol}://localhost")
-        try:
-            proc.join()
-        except KeyboardInterrupt as ki:
-            print("\nStopping server...")
-            handle_keyboard_interrupt(ki)
-        finally:
-            if proc.is_alive():
-                proc.kill()
-                proc.join(timeout=5)
-        return 0
+        return 1
 
     # Handle --purge: clear cached FastLED repo and WASM build artifacts
     if args.purge:

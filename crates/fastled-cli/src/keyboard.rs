@@ -10,9 +10,6 @@
 //! The module is included as a library component; the CLI main loop will
 //! integrate it in a later phase.
 
-// Not yet wired into the CLI entry point — suppress dead-code warnings.
-#![allow(dead_code)]
-
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -58,6 +55,7 @@ pub fn check_for_space() -> bool {
 
 /// Spawn a background thread that continuously reads keyboard events and
 /// sends them through the returned channel.
+#[allow(dead_code)]
 ///
 /// The thread exits when the channel receiver is dropped or when a
 /// `Ctrl+C` / `Esc` event is received.

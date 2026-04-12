@@ -11,7 +11,6 @@ Note: These tests use Playwright to run actual browser automation tests.
 """
 
 import asyncio
-import os
 import random
 import time
 import unittest
@@ -19,9 +18,6 @@ from pathlib import Path
 
 import pytest
 from playwright.async_api import async_playwright
-
-# Enable Flask server logging for debugging if needed
-os.environ["FLASK_SERVER_LOGGING"] = "0"
 
 from fastled import Test
 

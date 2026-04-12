@@ -77,26 +77,20 @@ class AnimartrixE2ETest(unittest.TestCase):
         """Start server, open page in Playwright, and check for JS errors."""
         proc = Test.spawn_http_server(
             FASTLED_JS_DIR,
-            port=TEST_PORT,
             open_browser=False,
-            enable_https=True,
+            enable_https=False,
         )
 
         try:
-            time.sleep(1)
-            server_url = f"https://localhost:{TEST_PORT}"
+            time.sleep(2)
+            # The Rust server auto-assigns a port; use localhost default
+            server_url = "http://localhost:8089"
 
             async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--ignore-certificate-errors",
-                        "--allow-insecure-localhost",
-                    ],
-                )
+                browser = await p.chromium.launch(headless=True)
 
                 try:
-                    context = await browser.new_context(ignore_https_errors=True)
+                    context = await browser.new_context()
                     page = await context.new_page()
 
                     # Collect console errors

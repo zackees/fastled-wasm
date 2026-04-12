@@ -1,6 +1,6 @@
 """FastLED Wasm Compiler package."""
 
-from multiprocessing import Process
+import subprocess
 from pathlib import Path
 
 from .__version__ import __version__
@@ -55,18 +55,18 @@ class Test:
         port: int | None = None,
         open_browser: bool = True,
         app: bool = False,
-        enable_https: bool = False,  # Default to HTTP for tests (tests use http:// URLs)
-    ) -> Process:
+        enable_https: bool = False,
+    ) -> subprocess.Popen:
+        """Spawn the Rust CLI HTTP server as a subprocess."""
         from fastled.open_browser import spawn_http_server
 
+        del port, enable_https  # handled by Rust server (auto-assigns port)
         if isinstance(directory, str):
             directory = Path(directory)
-        proc: Process = spawn_http_server(
+        proc: subprocess.Popen = spawn_http_server(
             directory,
-            port=port,
             open_browser=open_browser,
             app=app,
-            enable_https=enable_https,
         )
         return proc
 
