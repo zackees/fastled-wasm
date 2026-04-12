@@ -17,7 +17,7 @@ import unittest
 from pathlib import Path
 
 import pytest  # type: ignore[reportMissingImports]
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright  # type: ignore[reportMissingImports]
 
 from fastled import Test
 

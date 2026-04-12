@@ -135,7 +135,9 @@ class PlaywrightBrowser:
         """Start the Playwright browser."""
         if self.browser is None and self.context is None:
 
-            from playwright.async_api import async_playwright
+            from playwright.async_api import (  # type: ignore[reportMissingImports]
+                async_playwright,
+            )
 
             self.playwright = async_playwright()
             playwright = await self.playwright.start()
