@@ -72,8 +72,11 @@ def _launch_tauri_viewer(frontend_dir: Path) -> subprocess.Popen | None:
             [str(viewer), "--frontend-dir", str(frontend_dir)],
         )
         return proc
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception:
         return None
+
 
 # Global reference to keep Playwright browser alive
 _playwright_browser_proxy = None
