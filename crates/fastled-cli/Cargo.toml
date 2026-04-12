@@ -24,6 +24,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 strsim = { workspace = true }
+crossterm = { workspace = true }
 tempfile = "3"
 
 [dev-dependencies]
