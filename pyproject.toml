@@ -18,7 +18,6 @@ dependencies = [
     "Flask>=3.0.0",
     "flask-cors>=4.0.0",
     "disklru>=2.0.4",
-    "playwright>=1.40.0",
     "fasteners>=0.20",
     "cryptography>=41.0.0",
     "clang-tool-chain>=1.2.6",
