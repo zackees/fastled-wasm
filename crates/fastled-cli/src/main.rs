@@ -1,6 +1,7 @@
 use clap::Parser;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 mod archive;
 mod build;
@@ -25,14 +26,32 @@ fn write_build_status(output_dir: &Path, status: &str, message: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Python compile subprocess (inherits stdio for live output)
+// Streaming compile (captures output line-by-line, sends via broadcast)
 // ---------------------------------------------------------------------------
 
-/// Run `python -m fastled.app --just-compile <dir> [flags]`.
+/// Escape a string for JSON embedding.
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Send an SSE event through the broadcast channel.
+fn send_sse(tx: &tokio::sync::broadcast::Sender<String>, json: &str) {
+    let _ = tx.send(json.to_string());
+}
+
+/// Run `python -m fastled.app --just-compile` with piped stdout/stderr.
 ///
-/// Returns `true` when the compilation succeeds.  The subprocess inherits
-/// stdin/stdout/stderr so the user sees live output.
-fn run_python_compile(cli: &Cli, extra_args: &[&str]) -> bool {
+/// Each line is printed to the terminal AND sent through the broadcast
+/// channel so the loading page receives it via SSE.
+fn run_python_compile_streaming(
+    cli: &Cli,
+    extra_args: &[&str],
+    tx: &tokio::sync::broadcast::Sender<String>,
+) -> bool {
     let python = find_python();
     let mut args = vec![
         "-m".to_string(),
@@ -43,14 +62,11 @@ fn run_python_compile(cli: &Cli, extra_args: &[&str]) -> bool {
     if let Some(dir) = &cli.directory {
         args.push(dir.clone());
     }
-
-    // Build mode
     if cli.debug {
         args.push("--debug".to_string());
     } else if cli.release {
         args.push("--release".to_string());
     }
-
     if cli.profile {
         args.push("--profile".to_string());
     }
@@ -58,15 +74,63 @@ fn run_python_compile(cli: &Cli, extra_args: &[&str]) -> bool {
         args.push("--fastled-path".to_string());
         args.push(fp.clone());
     }
-
     for arg in extra_args {
         args.push(arg.to_string());
     }
 
-    match Command::new(&python).args(&args).status() {
-        Ok(s) => s.success(),
+    let mut child = match Command::new(&python)
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
         Err(e) => {
             eprintln!("fastled: failed to launch `{python} -m fastled.app`: {e}");
+            return false;
+        }
+    };
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+
+    let tx_out = tx.clone();
+    let stdout_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines().map_while(Result::ok) {
+            println!("{line}");
+            send_sse(
+                &tx_out,
+                &format!(
+                    r#"{{"type":"log","line":"{}","stream":"stdout"}}"#,
+                    json_escape(&line)
+                ),
+            );
+        }
+    });
+
+    let tx_err = tx.clone();
+    let stderr_thread = std::thread::spawn(move || {
+        let reader = std::io::BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            eprintln!("{line}");
+            send_sse(
+                &tx_err,
+                &format!(
+                    r#"{{"type":"log","line":"{}","stream":"stderr"}}"#,
+                    json_escape(&line)
+                ),
+            );
+        }
+    });
+
+    stdout_thread.join().ok();
+    stderr_thread.join().ok();
+
+    match child.wait() {
+        Ok(s) => s.success(),
+        Err(e) => {
+            eprintln!("fastled: error waiting for subprocess: {e}");
             false
         }
     }
@@ -79,8 +143,7 @@ fn run_python_compile(cli: &Cli, extra_args: &[&str]) -> bool {
 /// Compile a sketch, serve the output via the built-in HTTP server, and
 /// watch for file changes to trigger recompilation.
 ///
-/// This replaces the Python Flask server + file watcher loop with a native
-/// Rust implementation.
+/// Build output is streamed to the browser in real time via SSE.
 fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     let sketch_dir = PathBuf::from(dir);
     if !sketch_dir.is_dir() {
@@ -97,13 +160,16 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Write initial compiling status for the loading page.
+    // Broadcast channel for SSE streaming to browser.
+    let (tx, _rx) = tokio::sync::broadcast::channel::<String>(256);
+
+    // Write initial compiling status for polling fallback.
     write_build_status(&output_dir, "compiling", "Compiling...");
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
         // Start the Rust HTTP server (background tokio task).
-        let addr = match server::start_server(output_dir.clone(), 0).await {
+        let addr = match server::start_server(output_dir.clone(), 0, Some(tx.clone())).await {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("fastled: failed to start server: {e}");
@@ -116,16 +182,29 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         open_browser(&url);
 
         // --- Initial compilation ------------------------------------------------
+        send_sse(
+            &tx,
+            r#"{"type":"status","status":"compiling","message":"Compiling..."}"#,
+        );
+
         let mut extra: Vec<&str> = Vec::new();
         if cli.purge {
             extra.push("--purge");
         }
-        let success = run_python_compile(cli, &extra);
+        let success = run_python_compile_streaming(cli, &extra, &tx);
 
         if success {
             write_build_status(&output_dir, "success", "Done");
+            send_sse(
+                &tx,
+                r#"{"type":"status","status":"success","message":"Done"}"#,
+            );
         } else {
             write_build_status(&output_dir, "error", "Compilation failed");
+            send_sse(
+                &tx,
+                r#"{"type":"status","status":"error","message":"Compilation failed"}"#,
+            );
         }
 
         // --- Watch mode ---------------------------------------------------------
@@ -157,14 +236,26 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             if should_rebuild {
                 println!("Compiling...");
                 write_build_status(&output_dir, "compiling", "Recompiling...");
+                send_sse(
+                    &tx,
+                    r#"{"type":"status","status":"compiling","message":"Recompiling..."}"#,
+                );
 
-                let success = run_python_compile(cli, &[]);
+                let success = run_python_compile_streaming(cli, &[], &tx);
                 if success {
                     println!("Recompilation successful!");
                     write_build_status(&output_dir, "success", "Done");
+                    send_sse(
+                        &tx,
+                        r#"{"type":"status","status":"success","message":"Done"}"#,
+                    );
                 } else {
                     eprintln!("Recompilation failed.");
                     write_build_status(&output_dir, "error", "Compilation failed");
+                    send_sse(
+                        &tx,
+                        r#"{"type":"status","status":"error","message":"Compilation failed"}"#,
+                    );
                 }
             }
         }
@@ -410,7 +501,7 @@ fn serve_directory(dir: &str, cli: &Cli) -> ExitCode {
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
-        let addr = match server::start_server(path.clone(), 0).await {
+        let addr = match server::start_server(path.clone(), 0, None).await {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("fastled: failed to start server: {e}");
