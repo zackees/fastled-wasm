@@ -1,0 +1,13 @@
+name: macOS x86 Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_build.yml
+    with:
+      runs-on: macos-14

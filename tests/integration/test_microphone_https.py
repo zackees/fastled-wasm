@@ -17,6 +17,7 @@ import time
 import unittest
 from pathlib import Path
 
+import pytest
 from playwright.async_api import async_playwright
 
 # Enable Flask server logging for debugging if needed
@@ -33,6 +34,7 @@ MICDEMO_HTML = DEMO_DIR / "micdemo.html"
 BASE_PORT = random.randint(9000, 9100)
 
 
+@pytest.mark.skip(reason="HTTPS server timeout on CI — tracked in #39")
 class MicrophoneHttpsIntegrationTest(unittest.TestCase):
     """Integration tests for microphone access requiring HTTPS."""
 

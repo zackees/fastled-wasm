@@ -1,0 +1,13 @@
+name: Windows x86 Unit Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_unit-test.yml
+    with:
+      runs-on: windows-2025

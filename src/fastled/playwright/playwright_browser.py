@@ -256,16 +256,14 @@ class PlaywrightBrowser:
             if self.enable_extensions and self._extensions_dir:
                 try:
                     # Check if the extension is available in the DevTools
-                    extensions_available = await self.page.evaluate(
-                        """
+                    extensions_available = await self.page.evaluate("""
                         () => {
                             // Check if chrome.devtools is available (extension context)
                             return typeof chrome !== 'undefined' && 
                                    typeof chrome.runtime !== 'undefined' &&
                                    chrome.runtime.id !== undefined;
                         }
-                    """
-                    )
+                    """)
 
                     if extensions_available:
                         print(

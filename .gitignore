@@ -16,6 +16,7 @@ prod_env/
 data/
 !tests/**/embedded/data
 build/
+!src/fastled/frontend/vendor/**/build/
 develop-eggs/
 dist/
 downloads/

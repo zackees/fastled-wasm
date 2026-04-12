@@ -1,0 +1,13 @@
+name: Linux ARM Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_build.yml
+    with:
+      runs-on: ubuntu-24.04-arm

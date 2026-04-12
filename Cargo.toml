@@ -15,7 +15,7 @@ repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
-pyo3 = { version = "0.23", features = ["abi3-py310"] }
+pyo3 = { version = "0.23", features = ["abi3-py310", "generate-import-lib"] }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 notify = { version = "7", features = ["macos_fsevent"] }
