@@ -180,6 +180,15 @@ def _extract_archive(archive_path: Path, install_dir: Path) -> None:
             shutil.move(str(child), staging_dir / child.name)
         shutil.rmtree(extracted_root, ignore_errors=True)
 
+    # Fix execute permissions on Unix (tarfile filter="data" may strip them).
+    if os.name != "nt":
+        for subdir in ("bin", "emscripten", "libexec"):
+            bin_dir = staging_dir / subdir
+            if bin_dir.is_dir():
+                for p in bin_dir.rglob("*"):
+                    if p.is_file():
+                        p.chmod(p.stat().st_mode | 0o111)
+
     (staging_dir / "done.txt").write_text("ok\n", encoding="utf-8")
 
     if install_dir.exists():

@@ -50,17 +50,24 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Install
+      - name: Install (native)
+        if: inputs.maturin-target == ''
         run: ./install
+
+      - name: Install (cross-compile)
+        if: inputs.maturin-target != ''
+        run: |
+          uv venv --python 3.11 --seed
+          uv pip install "maturin>=1.7,<2"
+          rustup target add "${{ inputs.maturin-target }}"
 
       - name: Build wheel
         run: |
-          TARGET_FLAG=""
           if [ -n "${{ inputs.maturin-target }}" ]; then
-            rustup target add "${{ inputs.maturin-target }}"
-            TARGET_FLAG="--target ${{ inputs.maturin-target }}"
+            uv run maturin build --release --target "${{ inputs.maturin-target }}"
+          else
+            uv run maturin build --release
           fi
-          uv run maturin build --release $TARGET_FLAG
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4

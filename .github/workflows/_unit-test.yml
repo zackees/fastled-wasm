@@ -17,6 +17,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: sccache
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
 
