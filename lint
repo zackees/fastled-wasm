@@ -1,42 +1,26 @@
 #!/bin/bash
 set -e
 
-# if venv doesn't exist, invoke ./install
-if [ ! -d ".venv" ]; then
-    echo "No venv present, so installing..."
-    ./install
-fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-. ./activate
-
-# Ensure the rustup-managed toolchain bin is first in PATH so cargo, rustc,
-# clippy and rustfmt resolve to the toolchain declared in rust-toolchain.toml
-# rather than any system-installed (e.g. Chocolatey) Rust binaries.
-RUSTUP_HOME="${RUSTUP_HOME:-$USERPROFILE/.rustup}"
-if [ -z "$RUSTUP_HOME" ] && [ -n "$HOME" ]; then
-  RUSTUP_HOME="$HOME/.rustup"
+# Rust linting (skip if cargo not available)
+if command -v cargo &> /dev/null; then
+  echo Running cargo fmt check
+  "$SCRIPT_DIR/_cargo" fmt --all --check
+  echo Running cargo clippy
+  "$SCRIPT_DIR/_cargo" clippy --workspace --all-targets -- -D warnings
+else
+  echo "WARNING: cargo not found, skipping Rust linting"
 fi
-CARGO_HOME="${CARGO_HOME:-$USERPROFILE/.cargo}"
-if [ -z "$CARGO_HOME" ] && [ -n "$HOME" ]; then
-  CARGO_HOME="$HOME/.cargo"
-fi
-if [ -d "$CARGO_HOME/bin" ]; then
-  export PATH="$(cygpath -u "$CARGO_HOME/bin"):$PATH"
-fi
-
-echo Running cargo fmt check
-cargo fmt --all --check
-echo Running cargo clippy
-cargo clippy --workspace --all-targets -- -D warnings
 
 echo Running ruff src compiler
-ruff check --fix src compiler
+uv run ruff check --fix src compiler
 echo Running ruff tests compiler
-ruff check --fix tests compiler
+uv run ruff check --fix tests compiler
 echo Running black src tests compiler
-black src tests compiler
+uv run black src tests compiler
 echo Running isort src tests compiler
-isort --profile black src tests compiler
+uv run isort --profile black src tests compiler
 echo Running pyright src tests compiler
 uv run pyright src compiler tests
 echo Running keyboard interrupt checker src tests compiler

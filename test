@@ -2,24 +2,13 @@
 
 set -euo pipefail
 
-if [ ! -d ".venv" ]; then
-    echo "No venv present, so installing..."
-    ./install
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Rust tests (skip if cargo not available)
+if command -v cargo &> /dev/null; then
+  "$SCRIPT_DIR/_cargo" test --workspace
+else
+  echo "WARNING: cargo not found, skipping Rust tests"
 fi
 
-. ./activate
-
-# Ensure the rustup-managed toolchain bin is first in PATH so cargo uses the
-# toolchain declared in rust-toolchain.toml rather than any system-installed
-# (e.g. Chocolatey) Rust binaries.
-CARGO_HOME="${CARGO_HOME:-$USERPROFILE/.cargo}"
-if [ -z "$CARGO_HOME" ] && [ -n "$HOME" ]; then
-  CARGO_HOME="$HOME/.cargo"
-fi
-if [ -d "$CARGO_HOME/bin" ]; then
-  export PATH="$(cygpath -u "$CARGO_HOME/bin"):$PATH"
-fi
-
-cargo test --workspace
-
-pytest -x -v -s --durations=0 tests/unit "$@"
+uv run pytest -x -v -s --durations=0 tests/unit "$@"
