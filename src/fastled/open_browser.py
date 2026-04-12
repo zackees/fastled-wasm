@@ -9,7 +9,6 @@ from multiprocessing import Process
 from pathlib import Path
 
 from fastled.interrupts import handle_keyboard_interrupt
-from fastled.playwright.playwright_browser import open_with_playwright
 from fastled.server_flask import run_flask_in_thread
 
 
@@ -77,26 +76,6 @@ def _launch_tauri_viewer(frontend_dir: Path) -> subprocess.Popen | None:
     except Exception:
         return None
 
-
-# Global reference to keep Playwright browser alive
-_playwright_browser_proxy = None
-
-
-def cleanup_playwright_browser() -> None:
-    """Clean up the Playwright browser on exit."""
-    try:
-        global _playwright_browser_proxy
-        if _playwright_browser_proxy:
-            _playwright_browser_proxy.close()
-            _playwright_browser_proxy = None
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-    except Exception:
-        pass
-
-
-# Register cleanup function
-atexit.register(cleanup_playwright_browser)
 
 DEFAULT_PORT = 8089  # different than live version.
 PYTHON_EXE = sys.executable
@@ -184,11 +163,12 @@ def spawn_http_server(
     fastled_js: Path,
     port: int | None = None,
     open_browser: bool = True,
-    app: bool = False,
+    app: bool = False,  # Deprecated, ignored — Tauri viewer is always tried first
     enable_https: bool = True,
     sketch_dir: Path | None = None,
     fastled_path: Path | None = None,
 ) -> Process:
+    del app  # Unused — kept for backward compatibility
     if port is not None and not is_port_free(port):
         raise ValueError(f"Port {port} was specified but in use")
     if port is None:
@@ -227,24 +207,10 @@ def spawn_http_server(
         protocol = "https" if enable_https else "http"
         url = f"{protocol}://localhost:{port}"
 
-        if app:
-            # --app mode: try Tauri viewer first, fall back to Playwright
-            tauri_proc = _launch_tauri_viewer(fastled_js)
-            if tauri_proc is not None:
-                print("Opening FastLED sketch in Tauri viewer")
-            else:
-                # Fall back to Playwright
-                print("Tauri viewer not found, falling back to Playwright browser")
-                from fastled.playwright.playwright_browser import (
-                    install_playwright_browsers,
-                )
-
-                install_playwright_browsers()
-                print(f"Opening FastLED sketch in Playwright browser: {url}")
-                global _playwright_browser_proxy
-                _playwright_browser_proxy = open_with_playwright(
-                    url, enable_extensions=True
-                )
+        # Try Tauri viewer first (native webview), fall back to system browser.
+        tauri_proc = _launch_tauri_viewer(fastled_js)
+        if tauri_proc is not None:
+            print("Opening FastLED sketch in Tauri viewer")
         else:
             print(f"Opening browser to {url}")
             import webbrowser

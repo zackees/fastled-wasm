@@ -50,9 +50,6 @@ jobs:
       - name: Install
         run: ./install
 
-      - name: Install Playwright browsers
-        run: uv run playwright install chromium
-
       - name: Integration Tests
         run: uv run pytest -x -v -s tests/integration
 

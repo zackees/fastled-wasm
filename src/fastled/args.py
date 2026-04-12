@@ -9,7 +9,7 @@ class Args:
     init: bool | str
     just_compile: bool
     profile: bool
-    app: bool  # New flag to trigger Playwright browser with browser download if needed
+    app: bool  # Deprecated — Tauri viewer is now the default; kept for backward compat
     debug: bool
     quick: bool
     release: bool

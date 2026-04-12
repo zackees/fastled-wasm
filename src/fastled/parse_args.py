@@ -109,7 +109,7 @@ def parse_args() -> Args:
     parser.add_argument(
         "--app",
         action="store_true",
-        help="Use Playwright app-like browser experience (will download browsers if needed)",
+        help=argparse.SUPPRESS,  # Deprecated: Tauri viewer is now the default
     )
 
     parser.add_argument(
@@ -196,29 +196,8 @@ def parse_args() -> Args:
             )
             args.fastled_path = str(fastled_repo)
 
-    # Auto-enable app mode if debug is used and Playwright cache exists
-    if args.debug and not args.app:
-        playwright_dir = Path.home() / ".fastled" / "playwright"
-        if playwright_dir.exists() and any(playwright_dir.iterdir()):
-            from fastled.emoji_util import EMO
-
-            print(
-                f"{EMO('warning', 'WARNING:')} Debug mode detected with Playwright installed - automatically enabling app mode"
-            )
-            args.app = True
-        elif not args.no_interactive:
-            # Prompt user to install Playwright only if not in no-interactive mode
-            answer = (
-                input("Would you like to install the FastLED debugger? [y/n] ")
-                .strip()
-                .lower()
-            )
-            if answer in ["y", "yes"]:
-                print(
-                    "To install Playwright, run: pip install playwright && python -m playwright install"
-                )
-                print("Then run your command again with --app flag")
-                sys.exit(0)
+    # --app is now a no-op; Tauri viewer is always used when available.
+    # Keep the flag for backward compatibility but ignore it.
 
     # Handle --install early before other processing
     if args.install:
