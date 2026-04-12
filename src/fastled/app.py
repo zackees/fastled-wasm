@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fastled.emoji_util import EMO
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.parse_args import parse_args
 
 
@@ -23,7 +24,14 @@ def purge_cache(cache_dir: Path, fastled_path: Path | str | None = None) -> None
     if fastled_path:
         fastled_build = Path(fastled_path) / ".build"
         for wasm_dir in fastled_build.glob("meson-wasm-*"):
-            for stale in ["wasm_ld_args.json", "wasm_ld_args.key", "fastled_glue.js"]:
+            for stale in [
+                "wasm_ld_args.json",
+                "wasm_ld_args.key",
+                "fastled_glue.js",
+                "js_glue_fingerprint",
+                "link_environment_fingerprint",
+                "libemscripten_js_symbols.so",
+            ]:
                 f = wasm_dir / stale
                 if f.exists():
                     f.unlink()
@@ -63,8 +71,9 @@ def main() -> int:
         print(f"Listening on {protocol}://localhost")
         try:
             proc.join()
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as ki:
             print("\nStopping server...")
+            handle_keyboard_interrupt(ki)
         finally:
             if proc.is_alive():
                 proc.kill()
@@ -102,7 +111,7 @@ def main() -> int:
         print("Error: No sketch directory specified for compilation.")
         return 1
 
-    print("Running in native EMSDK compilation mode (no Docker required).")
+    print("Running in native EMSDK compilation mode.")
     build_mode = BuildMode.from_args(args)
     return run_native_compile(
         directory=directory,
@@ -120,8 +129,9 @@ if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
     try:
         sys.exit(main())
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("\nExiting from main...")
+        handle_keyboard_interrupt(ki)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

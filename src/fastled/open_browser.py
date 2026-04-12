@@ -6,6 +6,7 @@ import weakref
 from multiprocessing import Process
 from pathlib import Path
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.playwright.playwright_browser import open_with_playwright
 from fastled.server_flask import run_flask_in_thread
 
@@ -20,6 +21,8 @@ def cleanup_playwright_browser() -> None:
         if _playwright_browser_proxy:
             _playwright_browser_proxy.close()
             _playwright_browser_proxy = None
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
     except Exception:
         pass
 
@@ -46,6 +49,8 @@ def add_cleanup(proc: Process) -> None:
                 proc.join(timeout=1.0)
                 if proc.is_alive():
                     proc.kill()
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception:
                 pass
 
@@ -81,25 +86,29 @@ def find_free_port(start_port: int) -> int:
     raise ValueError("Could not find a free port")
 
 
-def wait_for_server(port: int, timeout: int = 10, enable_https: bool = True) -> None:
+def wait_for_server(port: int, timeout: int = 15, enable_https: bool = True) -> None:
     """Wait for the server to start."""
+    import httpx
     from httpx import get
 
     future_time = time.time() + timeout
     protocol = "https" if enable_https else "http"
+    hosts = ["localhost", "127.0.0.1"]
     while future_time > time.time():
-        try:
-            url = f"{protocol}://localhost:{port}"
-            verify = (
-                False if enable_https else True
-            )  # Only disable SSL verification for HTTPS
-            response = get(url, timeout=1, verify=verify)
-            # Any HTTP response means the server is up, even if
-            # it returns 500 (e.g., no index.html in served directory)
-            if response.status_code < 600:
-                return
-        except Exception:
-            continue
+        for host in hosts:
+            try:
+                url = f"{protocol}://{host}:{port}"
+                verify = (
+                    False if enable_https else True
+                )  # Only disable SSL verification for HTTPS
+                response = get(url, timeout=1, verify=verify)
+                # Any HTTP response means the server is up, even if
+                # it returns 500 (e.g., no index.html in served directory)
+                if response.status_code < 600:
+                    return
+            except httpx.HTTPError:
+                continue
+        time.sleep(0.1)
     raise TimeoutError("Could not connect to server")
 
 
@@ -109,6 +118,8 @@ def spawn_http_server(
     open_browser: bool = True,
     app: bool = False,
     enable_https: bool = True,
+    sketch_dir: Path | None = None,
+    fastled_path: Path | None = None,
 ) -> Process:
     if port is not None and not is_port_free(port):
         raise ValueError(f"Port {port} was specified but in use")
@@ -129,7 +140,15 @@ def spawn_http_server(
 
     proc = Process(
         target=run_flask_in_thread,
-        args=(port, fastled_js, certfile, keyfile),
+        args=(
+            port,
+            fastled_js,
+            certfile,
+            keyfile,
+            sketch_dir,
+            fastled_path,
+            None,
+        ),
         daemon=True,
     )
     add_cleanup(proc)

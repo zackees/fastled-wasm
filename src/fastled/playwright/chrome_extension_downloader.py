@@ -15,6 +15,8 @@ from pathlib import Path
 
 import httpx
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 
 class ChromeExtensionDownloader:
     """Downloads Chrome extensions from the Chrome Web Store."""
@@ -174,6 +176,9 @@ class ChromeExtensionDownloader:
             print(f"✅ Chrome extension downloaded and extracted: {extension_dir}")
             return extension_dir
 
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+            raise
         except Exception as e:
             warnings.warn(f"Failed to download Chrome extension {extension_id}: {e}")
             if extension_dir.exists():
@@ -193,6 +198,9 @@ def download_cpp_devtools_extension() -> Path | None:
     try:
         downloader = ChromeExtensionDownloader()
         return downloader.get_extension_path(extension_url, "cpp-devtools-support")
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
+        raise
     except Exception as e:
         warnings.warn(f"Failed to download C++ DevTools Support extension: {e}")
         return None

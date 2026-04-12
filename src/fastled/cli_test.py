@@ -1,6 +1,7 @@
 import sys
 
 from fastled.app import main as app_main
+from fastled.interrupts import handle_keyboard_interrupt
 
 if __name__ == "__main__":
     # Note that the entry point for the exe is in cli.py
@@ -8,13 +9,11 @@ if __name__ == "__main__":
         import os
 
         os.chdir("../fastled")
-        # sys.argv.append("--server")
-        # sys.argv.append("--local")
-        # sys.argv.append("--debug")
         sys.argv.append("examples/Corkscrew")
         sys.exit(app_main())
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("\nExiting from main...")
+        handle_keyboard_interrupt(ki)
         sys.exit(1)
     except Exception as e:
         print(f"Error: {e}")

@@ -1,0 +1,301 @@
+"""Standalone KeyboardInterrupt handling checker for Python files.
+
+Replaces flake8 + custom plugin with a two-phase approach:
+  Phase 1 (regex): Pre-scan for broad exception patterns, skip files with no matches.
+  Phase 2 (AST):  Run TryExceptVisitor on candidates only.
+
+Error Codes:
+    KBI001: Try-except catches Exception/BaseException without KeyboardInterrupt handler
+    KBI002: KeyboardInterrupt handler must call _thread.interrupt_main() or
+            handle_keyboard_interrupt(ki) or notify_main_thread()
+    KBI003: handle_keyboard_interrupt() called outside a KeyboardInterrupt handler
+            (e.g. in a try body or a non-KeyboardInterrupt except handler)
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import re
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+
+_BROAD_EXCEPT_RE = re.compile(
+    r"^\s*except\s*"
+    r"(?:"
+    r":|"
+    r"\(?.*\b(?:Exception|BaseException|KeyboardInterrupt)\b"
+    r")",
+    re.MULTILINE,
+)
+
+
+def has_broad_except(source: str) -> bool:
+    """Return True if *source* contains a line that looks like a broad except."""
+    return _BROAD_EXCEPT_RE.search(source) is not None
+
+
+@dataclass(frozen=True)
+class Violation:
+    line: int
+    col: int
+    code: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"{self.code} {self.message}"
+
+
+_NOQA_RE = re.compile(r"#\s*noqa\b(?::\s*([\w,\s]+))?")
+
+
+def _is_suppressed(source_lines: list[str], lineno: int, code: str) -> bool:
+    """Return True if *lineno* (1-based) has a ``# noqa`` comment covering *code*."""
+    if lineno < 1 or lineno > len(source_lines):
+        return False
+    line = source_lines[lineno - 1]
+    match = _NOQA_RE.search(line)
+    if match is None:
+        return False
+    codes = match.group(1)
+    if codes is None:
+        return True
+    return code in {c.strip() for c in codes.split(",")}
+
+
+def _load_baseline(path: str | None) -> set[str]:
+    """Load newline-delimited violation signatures from *path* if provided."""
+    if path is None:
+        return set()
+    baseline_path = Path(path)
+    try:
+        return {
+            line.strip()
+            for line in baseline_path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        }
+    except OSError:
+        return set()
+
+
+class TryExceptVisitor(ast.NodeVisitor):
+    """AST visitor to check try-except blocks for KeyboardInterrupt handling."""
+
+    def __init__(self, source_lines: list[str] | None = None) -> None:
+        self.violations: list[Violation] = []
+        self._source_lines: list[str] = source_lines or []
+
+    def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+        catches_broad_exception = False
+        has_keyboard_interrupt_handler = False
+        keyboard_interrupt_handlers: list[ast.ExceptHandler] = []
+
+        for handler in node.handlers:
+            if handler.type is None:
+                catches_broad_exception = True
+            elif isinstance(handler.type, ast.Name):
+                if handler.type.id in ("Exception", "BaseException"):
+                    catches_broad_exception = True
+                elif handler.type.id == "KeyboardInterrupt":
+                    has_keyboard_interrupt_handler = True
+                    keyboard_interrupt_handlers.append(handler)
+            elif isinstance(handler.type, ast.Tuple):
+                for exc_type in handler.type.elts:
+                    if isinstance(exc_type, ast.Name):
+                        if exc_type.id in ("Exception", "BaseException"):
+                            catches_broad_exception = True
+                        elif exc_type.id == "KeyboardInterrupt":
+                            has_keyboard_interrupt_handler = True
+                            keyboard_interrupt_handlers.append(handler)
+
+        if catches_broad_exception and not has_keyboard_interrupt_handler:
+            if not _is_suppressed(self._source_lines, node.lineno, "KBI001"):
+                self.violations.append(
+                    Violation(
+                        line=node.lineno,
+                        col=node.col_offset,
+                        code="KBI001",
+                        message=(
+                            "Try-except catches Exception/BaseException without KeyboardInterrupt handler. "
+                            "Add: except KeyboardInterrupt as ki: handle_keyboard_interrupt(ki)"
+                        ),
+                    )
+                )
+
+        for handler in keyboard_interrupt_handlers:
+            if not _handler_calls_interrupt_main(handler):
+                if not _is_suppressed(self._source_lines, handler.lineno, "KBI002"):
+                    self.violations.append(
+                        Violation(
+                            line=handler.lineno,
+                            col=handler.col_offset,
+                            code="KBI002",
+                            message=(
+                                "KeyboardInterrupt handler must call _thread.interrupt_main() "
+                                "or use handle_keyboard_interrupt(ki). "
+                                "Add: import _thread; _thread.interrupt_main()"
+                            ),
+                        )
+                    )
+
+        for call_node in _find_interrupt_handler_calls(node.body):
+            if not _is_suppressed(self._source_lines, call_node.lineno, "KBI003"):
+                self.violations.append(
+                    Violation(
+                        line=call_node.lineno,
+                        col=call_node.col_offset,
+                        code="KBI003",
+                        message=(
+                            "handle_keyboard_interrupt() called in try body, not in an except handler. "
+                            "Remove this call - it falsely signals an interrupt during normal execution."
+                        ),
+                    )
+                )
+
+        for handler in node.handlers:
+            if handler in keyboard_interrupt_handlers:
+                continue
+            for call_node in _find_interrupt_handler_calls(handler.body):
+                if not _is_suppressed(self._source_lines, call_node.lineno, "KBI003"):
+                    self.violations.append(
+                        Violation(
+                            line=call_node.lineno,
+                            col=call_node.col_offset,
+                            code="KBI003",
+                            message=(
+                                "handle_keyboard_interrupt() called in non-KeyboardInterrupt except handler. "
+                                "Remove this call - it falsely signals an interrupt during normal execution."
+                            ),
+                        )
+                    )
+
+        self.generic_visit(node)
+
+
+_INTERRUPT_HANDLER_NAMES = frozenset({"handle_keyboard_interrupt", "notify_main_thread"})
+
+
+def _find_interrupt_handler_calls(stmts: list[ast.stmt]) -> list[ast.Call]:
+    """Return calls to interrupt helper functions in *stmts*."""
+    calls: list[ast.Call] = []
+    _collect_calls(stmts, calls)
+    return calls
+
+
+def _collect_calls(nodes: Sequence[ast.AST], out: list[ast.Call]) -> None:
+    """Recursively collect interrupt-handler calls, skipping nested Try nodes."""
+    for node in nodes:
+        if isinstance(node, ast.Try):
+            continue
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _INTERRUPT_HANDLER_NAMES:
+                out.append(node)
+        _collect_calls(list(ast.iter_child_nodes(node)), out)
+
+
+def _handler_calls_interrupt_main(handler: ast.ExceptHandler) -> bool:
+    """Check if a KBI handler properly calls _thread.interrupt_main() or helper."""
+    for node in ast.walk(handler):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "_thread"
+                    and node.func.attr == "interrupt_main"
+                ):
+                    return True
+            if isinstance(node.func, ast.Name):
+                if node.func.id in _INTERRUPT_HANDLER_NAMES:
+                    return True
+    return False
+
+
+def check_file(path: str, source: str) -> list[Violation]:
+    """Parse *source* and return all KBI violations found."""
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError:
+        return []
+    visitor = TryExceptVisitor(source_lines=source.splitlines())
+    visitor.visit(tree)
+    return visitor.violations
+
+
+def collect_python_files(paths: list[str], excludes: list[str]) -> list[Path]:
+    """Walk *paths* and return all .py files, filtering out *excludes*."""
+    result: list[Path] = []
+    exclude_parts = [e.replace("\\", "/").strip("/") for e in excludes]
+
+    for path_str in paths:
+        path = Path(path_str)
+        if path.is_file() and path.suffix == ".py":
+            if not _is_excluded(path, exclude_parts):
+                result.append(path)
+        elif path.is_dir():
+            for py_file in path.rglob("*.py"):
+                if not _is_excluded(py_file, exclude_parts):
+                    result.append(py_file)
+    return result
+
+
+def _is_excluded(path: Path, exclude_parts: list[str]) -> bool:
+    """Return True if any component of *path* matches an exclude pattern."""
+    path_str = path.as_posix()
+    for exc in exclude_parts:
+        if exc in path_str:
+            return True
+    return False
+
+
+def find_candidates(files: list[Path]) -> list[tuple[Path, str]]:
+    """Read files and return those whose source matches the regex pre-filter."""
+    candidates: list[tuple[Path, str]] = []
+    for file_path in files:
+        try:
+            source = file_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if has_broad_except(source):
+            candidates.append((file_path, source))
+    return candidates
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Check Python files for proper KeyboardInterrupt handling.",
+    )
+    parser.add_argument("paths", nargs="+", help="Files or directories to check")
+    parser.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[],
+        help="Substrings to exclude from file paths",
+    )
+    parser.add_argument(
+        "--baseline",
+        help="Path to a file containing known violation signatures to ignore",
+    )
+    args = parser.parse_args(argv)
+
+    files = collect_python_files(args.paths, args.exclude)
+    candidates = find_candidates(files)
+    baseline = _load_baseline(args.baseline)
+
+    total_violations = 0
+    for path, source in candidates:
+        violations = check_file(str(path), source)
+        for violation in violations:
+            rendered = f"{path}:{violation.line}:{violation.col}: {violation}"
+            if rendered in baseline:
+                continue
+            print(rendered)
+            total_violations += 1
+
+    return 1 if total_violations > 0 else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

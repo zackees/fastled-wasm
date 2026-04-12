@@ -1,139 +1,310 @@
-# Migration Plan: Remove Docker/Server/Web, Native-Only
+# Plan: Remove Docker and Network Backends, Native-Only Toolchain
 
 ## Goal
 
-Remove all Docker, server, and web compilation infrastructure from fastled-wasm. The sole compilation path becomes native Emscripten via the `clang-tool-chain` package. Output remains WASM. Browser preview with file watching is preserved.
+Finish the migration to a single native Emscripten build path inside this repo.
 
-## Features Lost (acceptable)
+After this refactor:
 
-- Dwarf file stack decoding (can add back later)
-- Remote web compilation (fastled.onrender.com)
-- Docker-based compile server (`--server` mode)
-- Interactive Docker shell (`--interactive`)
-- Docker image management (`--update`, `--purge`)
+- There is no Docker build/runtime concept in `fastled-wasm`.
+- There is no network or remote compile backend in `fastled-wasm`.
+- Build invocation goes through a native toolchain API that can reuse hot state and automatically choose cold vs incremental behavior.
+- Debug symbol source resolution is hosted by this repo for the local Flask frontend server.
+- Tests are fast again and cover the native-only architecture.
 
----
+## Current State
 
-## Phase 1: Delete Dead Code (~8 files)
+The repo is only partially migrated.
 
-| File | Reason |
-|------|--------|
-| `src/fastled/docker_manager.py` | Docker API wrapper (~1,000 lines) |
-| `src/fastled/compile_server.py` | Docker server facade (~112 lines) |
-| `src/fastled/compile_server_impl.py` | Docker server implementation (~406 lines) |
-| `src/fastled/server_flask.py` | Flask server (in-container) |
-| `src/fastled/web_compile.py` | Remote web compilation client (~469 lines) |
-| `src/fastled/client_server.py` | Client-server communication loop |
-| `src/fastled/server_start.py` | Flask thread wrapper |
-| `src/fastled/live_client.py` | Uses client_server.py |
+What is already true:
 
----
+- CLI compilation already routes through native code in [src/fastled/app.py](./src/fastled/app.py) and [src/fastled/compile_native.py](./src/fastled/compile_native.py).
+- Native compilation already delegates to FastLED's `ci/wasm_build.py` when available in [src/fastled/toolchain/emscripten.py](./src/fastled/toolchain/emscripten.py).
+- Docker/server API exports are already gone from [src/fastled/__init__.py](./src/fastled/__init__.py).
 
-## Phase 2: Modify Core Files (~6 files)
+What is still stale or incomplete:
 
-### `app.py`
-- Remove `run_server()` function
-- Remove Docker/web/server/interactive mode branches
-- Keep native compile path as sole flow
-- Keep `--install` handling
-- Keep browser preview spawning
+- Docker assets and scripts still exist: [Dockerfile](./Dockerfile), [docker-compose.yml](./docker-compose.yml), [build_local_docker.py](./build_local_docker.py), [requirements.docker.txt](./requirements.docker.txt).
+- The test runner still assumes Docker in [test](./test).
+- CLI still carries deprecated `--local` in [src/fastled/parse_args.py](./src/fastled/parse_args.py).
+- Packaging still depends on Flask/livereload stack in [pyproject.toml](./pyproject.toml), and the local preview server is still implemented in [src/fastled/server_flask.py](./src/fastled/server_flask.py).
+- Docs and CI still advertise Docker/web compiler behavior in [README.md](./README.md) and `.github/workflows`.
+- Debug symbol resolution does not live in this repo yet. The logic exists today in:
+  - `~/dev/fastled-wasm-server/src/fastled_wasm_server/dwarf_utils.py`
+  - `~/dev/fastled-wasm-compiler/src/fastled_wasm_compiler/dwarf_path_to_file_path.py`
 
-### `parse_args.py`
-- Remove argument definitions for: `--docker`, `--web`, `--localhost`, `--server`, `--interactive`, `--update`, `--purge`, `--background-update`, `--no-platformio`, `--build`, `--no-auto-updates`, `--ram-disk-size`
-- Remove Docker detection/fallback logic
-- Remove `_try_start_server_or_get_url()` logic
-- Keep: `--init`, `--debug`, `--release`, `--quick`, `--just-compile`, `--no-https`, `--app`, `--profile`, `--native`, `--fastled-path`
+## Target Architecture
 
-### `args.py`
-- Remove fields: `web`, `interactive`, `server`, `localhost`, `update`, `background_update`, `build`, `purge`, `auto_update`, `no_platformio`
-- Keep fields: `directory`, `native`, `debug`, `quick`, `release`, `profile`, `fastled_path`, `enable_https`, `app`, `just_compile`
+### 1. Native-only build service
 
-### `settings.py`
-- Remove: `CONTAINER_NAME`, `DEFAULT_CONTAINER_NAME`, `IMAGE_NAME`, `AUTH_TOKEN`, `DOCKER_FILE`, `DEFAULT_URL`
-- Keep: `SERVER_PORT` (if still used for local preview)
+Introduce a stable build interface, separate from CLI concerns.
 
-### `__init__.py`
-- Remove: `CompileServer` references, `Docker` class, `Api.spawn_server()`, `Api.server()`, `Api.web_compile()`
-- Keep: `Api.project_init()`, basic exports
+Proposed module shape:
 
-### `open_browser.py`
-- Verify if Flask is used for local preview HTTP server
-- If so, replace with `http.server` or similar lightweight alternative
-- Keep HTTPS certificate handling if still needed
+- `src/fastled/build_service.py`
+- `src/fastled/build_types.py`
 
----
+Proposed API:
 
-## Phase 3: Dependencies (`pyproject.toml`)
+- `BuildRequest`
+  - `sketch_dir: Path`
+  - `build_mode: BuildMode`
+  - `profile: bool`
+  - `fastled_path: Path | None`
+  - `force_clean: bool = False`
+- `BuildResult`
+  - wraps current compile result plus metadata
+  - `strategy: Literal["cold", "incremental"]`
+  - `output_dir: Path`
+  - `artifacts: dict[str, Path]`
+- `BuildService`
+  - `build(request: BuildRequest) -> BuildResult`
+  - `detect_strategy(request: BuildRequest) -> Literal["cold", "incremental"]`
+  - `purge(...)`
 
-### Remove
-- `docker>=7.1.0`
-- `filelock>=3.16.1`
-- `appdirs>=1.4.4`
-- `rapidfuzz>=3.10.1`
-- `progress>=1.6`
-- `Flask>=3.0.0`
-- `flask-cors>=4.0.0`
-- `livereload`
-- `websockify>=0.13.0`
+Rules:
 
-### Add
-- `clang-tool-chain` (hard dependency)
+- The service decides cold vs incremental automatically.
+- CLI and tests do not know the detection details.
+- The service owns toolchain reuse and artifact discovery.
+- Watch mode uses the same service instead of directly calling `compile_native()`.
 
-### Keep
-- `httpx>=0.28.1`
-- `watchdog>=6.0.0`
-- `watchfiles>=1.0.5`
-- `playwright>=1.40.0`
-- `fasteners>=0.20`
-- `cryptography>=41.0.0`
-- `disklru>=2.0.4`
+### 2. Toolchain layering
 
----
+Keep `EmscriptenToolchain` focused on compilation mechanics.
 
-## Phase 4: Tests
+Responsibilities after refactor:
 
-### Delete (~12 Docker-dependent test files)
-- `tests/unit/test_compile_server.py`
-- `tests/unit/test_server_and_client_seperatly.py`
-- `tests/unit/test_no_platformio_compile.py`
-- `tests/unit/test_cli_no_platformio.py`
-- `tests/unit/test_docker_linux_on_windows.py`
-- `tests/unit/test_flask_headers.py`
-- `tests/unit/test_https_server.py`
-- `tests/unit/test_http_server.py`
-- `tests/unit/test_session_compile.py`
-- `tests/integration/test_libcompile.py`
-- `tests/integration/test_build_examples.py`
-- `tests/integration/test_examples.py`
+- `BuildService`: orchestration, strategy detection, toolchain instance reuse, artifact indexing.
+- `EmscriptenToolchain`: execute compile/link/build-system delegation.
+- CLI: parse args, call service, manage browser/watch loop.
 
-### Modify (~3-4 files)
-- `tests/unit/test_api.py` — Remove Docker/server API tests, keep `project_init` tests
-- `tests/unit/test_manual_api_invocation.py` — Remove web/docker API tests
-- `tests/unit/test_cli.py` — Remove tests for deleted flags
+### 3. Local debug symbol resolution service
 
-### Keep as-is
-- `test_banner_string.py`, `test_bad_ino.py`, `test_version.py`, `test_filechanger.py`
-- `test_string_diff.py`, `test_string_diff_comprehensive.py`
-- `test_sketch_partial_match.py`, `test_select_sketch_directory.py`
-- `test_emscripten_platform_neutral.py`, `test_header_dump.py`
+Keep local Flask preview, but move debug source resolution into this repo so the browser debugger can resolve source files without the old server package.
 
-### Cleanup
-- `src/fastled/test/` subpackage — Remove `can_run_local_docker_tests()` and Docker helper utilities
+Proposed module shape:
 
----
+- `src/fastled/debug_symbols.py`
+- `src/fastled/debug_routes.py`
 
-## Phase 5: Cleanup
+Minimum responsibilities:
 
-- Remove any dangling imports referencing deleted files
-- Verify `compile_native.py` and `toolchain/emscripten.py` still work standalone
-- Run `bash lint` and `bash test` to confirm clean state
-- Bump version
+- Resolve DWARF-mapped request paths back to real source files.
+- Read config from FastLED's `build_flags.toml` when available.
+- Handle Windows Git Bash path normalization.
+- Reject traversal and invalid paths.
+- Serve source contents for browser debugging through the local Flask server.
 
----
+This replaces the dependency on:
 
-## Open Items
+- `fastled-wasm-server` for `/dwarfsource`
+- `fastled-wasm-compiler` for path resolution logic
 
-1. **`open_browser.py` Flask dependency** — Needs investigation. If Flask is used for local preview, replace with lightweight alternative.
-2. **`--native` flag** — Now the only mode. Keep as no-op for backwards compat or remove?
-3. **`--emsdk-headers` flag** — Still useful for native compilation or Docker-only?
-4. **`src/fastled/test/` subpackage** — Has Docker helper utilities that need cleanup.
+## Workstreams
+
+### Workstream 1: Formalize native build API
+
+Files to change:
+
+- [src/fastled/compile_native.py](./src/fastled/compile_native.py)
+- [src/fastled/toolchain/emscripten.py](./src/fastled/toolchain/emscripten.py)
+- [src/fastled/app.py](./src/fastled/app.py)
+
+Tasks:
+
+- Extract orchestration out of `compile_native.py` into `BuildService`.
+- Make incremental behavior explicit through result metadata instead of hidden toolchain reuse.
+- Add artifact discovery for:
+  - `fastled.js`
+  - `fastled.wasm`
+  - `fastled.wasm.dwarf` when debug
+  - symbol map if present
+  - frontend assets directory
+- Preserve current FastLED repo delegation to `ci/wasm_build.py`.
+- Add a clean detection path:
+  - cold build when build outputs or toolchain state are absent
+  - incremental when prior build state exists and mode/toolchain match
+  - forced cold when `purge` or explicit clean requested
+
+Implementation note:
+
+- The actual incremental compilation remains owned by upstream FastLED build caches.
+- Our service should detect and report strategy, not try to reimplement Meson/Ninja invalidation.
+
+### Workstream 2: Migrate debug symbol resolution into this repo
+
+Source material to port:
+
+- `~/dev/fastled-wasm-server/src/fastled_wasm_server/dwarf_utils.py`
+- `~/dev/fastled-wasm-compiler/src/fastled_wasm_compiler/dwarf_path_to_file_path.py`
+
+Tasks:
+
+- Create a single canonical resolver in this repo.
+- Prefer the compiler version's environment-aware behavior, but remove stale package coupling and debug prints.
+- Support:
+  - `fastledsource`
+  - `sketchsource`
+  - `dwarfsource`
+  - EMSDK source mapping when debug info points there
+- Add Flask routes for:
+  - `POST /dwarfsource`
+  - any future metadata endpoint needed by the frontend debugger
+- Ensure the local server can serve source text from:
+  - the sketch directory
+  - the FastLED repo in use
+  - EMSDK headers/sources when present
+
+Acceptance criteria:
+
+- `fastled --debug --app` still supports browser DWARF debugging.
+- No dependency on `fastled-wasm-server` or `fastled-wasm-compiler` remains for source resolution.
+
+### Workstream 3: Remove Docker and network leftovers
+
+Delete:
+
+- [Dockerfile](./Dockerfile)
+- [docker-compose.yml](./docker-compose.yml)
+- [build_local_docker.py](./build_local_docker.py)
+- [requirements.docker.txt](./requirements.docker.txt)
+
+Update:
+
+- [install](./install)
+- [test](./test)
+- [README.md](./README.md)
+- [.github/workflows/build_multi_docker_image.yml](./.github/workflows/build_multi_docker_image.yml)
+- [.github/workflows/template_build_docker_image.yml](./.github/workflows/template_build_docker_image.yml)
+
+Likely additional cleanup:
+
+- remove old Docker badges and release references from docs
+- remove dead `DEFAULT_URL`/remote wording where no longer used
+- remove comments mentioning `--server`, `--web`, `--local`, or public compiler fallback
+
+### Workstream 4: Tighten CLI and public API
+
+Files to change:
+
+- [src/fastled/parse_args.py](./src/fastled/parse_args.py)
+- [src/fastled/args.py](./src/fastled/args.py)
+- [src/fastled/__init__.py](./src/fastled/__init__.py)
+
+Tasks:
+
+- Remove deprecated `--local`.
+- Keep the user-facing behavior simple: native build is the only build mode.
+- Consider whether `--just-compile`, `--debug`, `--quick`, `--release`, `--purge`, `--app`, `--no-https`, `--fastled-path` stay as-is.
+- Export the new build service from the package if public API support is desired.
+
+### Workstream 5: Keep or simplify Flask server
+
+Files to change:
+
+- [src/fastled/server_flask.py](./src/fastled/server_flask.py)
+- [src/fastled/open_browser.py](./src/fastled/open_browser.py)
+- [pyproject.toml](./pyproject.toml)
+
+Decision:
+
+- Keep Flask if it is the easiest place to host the local debugger endpoints and HTTPS behavior.
+- Remove `livereload`; it is no longer needed because rebuild/watch happens in Python already.
+
+Tasks:
+
+- Strip Flask server down to static file serving plus debug endpoints.
+- Preserve headers needed for browser isolation and microphone tests.
+- Keep HTTPS support for local secure contexts.
+- Rename internals if needed so this is clearly a local preview/debug server, not a compile server.
+
+## Test Plan
+
+### Remove slow or stale backend assumptions
+
+Delete or rewrite anything that encodes Docker as a prerequisite.
+
+Immediate changes:
+
+- Rewrite [test](./test) so it no longer serializes around shared Docker state and no longer rebuilds images.
+- Remove workflow steps that invoke deleted Docker flags.
+- Update Windows CI currently invoking `--web` in [.github/workflows/test_win.yml](./.github/workflows/test_win.yml).
+- Update executable test currently invoking `--local` in [.github/workflows/test_build_exe.yml](./.github/workflows/test_build_exe.yml).
+
+### Add native-only unit coverage
+
+New tests to add:
+
+- `tests/unit/test_build_service.py`
+  - cold build detection
+  - incremental detection
+  - toolchain reuse behavior
+  - artifact discovery for debug/quick/release
+- `tests/unit/test_debug_symbols.py`
+  - prefix pruning
+  - Windows path normalization
+  - traversal rejection
+  - nonexistent path handling
+  - FastLED/sketch/EMSDK path mapping
+- `tests/unit/test_debug_routes.py`
+  - `POST /dwarfsource` returns file contents
+  - invalid requests return correct errors
+- `tests/unit/test_parse_args.py`
+  - no `--local`
+  - native-only defaults remain correct
+
+### Update existing tests
+
+Files to update:
+
+- [tests/unit/test_cli.py](./tests/unit/test_cli.py)
+- [tests/unit/test_api.py](./tests/unit/test_api.py)
+- [tests/unit/test_post_migration.py](./tests/unit/test_post_migration.py)
+- [tests/integration/test_microphone_https.py](./tests/integration/test_microphone_https.py)
+- [tests/integration/test_animartrix_e2e.py](./tests/integration/test_animartrix_e2e.py)
+- [tests/integration/test_playwright_integration.py](./tests/integration/test_playwright_integration.py)
+
+Specific additions:
+
+- Assert the local server still serves correct MIME/security headers.
+- Add an integration test that debug mode produces and exposes the expected debug artifacts.
+- Add a local `/dwarfsource` integration test against the Flask server.
+
+### Coverage target for migrated debug logic
+
+Before deleting external dependencies, port the equivalent cases from:
+
+- `~/dev/fastled-wasm-compiler/tests/unit/test_source_resolver.py`
+- `~/dev/fastled-wasm-server/tests/test_api_client.py`
+
+## Proposed Execution Order
+
+1. Add the new build service abstraction without changing user-facing behavior.
+2. Migrate DWARF/source-resolution logic into this repo.
+3. Add Flask debug endpoints and tests.
+4. Switch `compile_native.py` and watch mode to the new build service.
+5. Remove Docker/network flags, scripts, docs, and CI references.
+6. Simplify dependencies and remove `livereload`.
+7. Run fast unit suite, then targeted integration suite, then full CI.
+
+## Acceptance Criteria
+
+- `fastled` compiles only through native Emscripten.
+- No code, tests, docs, or workflows refer to Docker/web/server compile backends.
+- Local preview/debug server still supports HTTPS and microphone-related browser requirements.
+- `fastled --debug` still supports browser source resolution through local endpoints.
+- Unit tests run without Docker and without network backends.
+- CI no longer builds Docker images or exercises removed flags.
+
+## Risks
+
+- The biggest functional risk is debug symbol/source resolution, not compilation.
+- The upstream FastLED build system controls the real incremental cache behavior, so our service must not drift from its artifact layout.
+- Windows path handling for DWARF sources is easy to break and must be explicitly tested.
+- If Flask is removed too aggressively, we can regress HTTPS headers or debugger endpoints; keep it until a smaller replacement fully covers those needs.
+
+## Notes for Implementation
+
+- Existing `PLAN.md` content assumes more removal has already happened than is actually true; this rewrite should be treated as the current source of truth.
+- The old "compile server" is already gone from the main package; the remaining work is mostly local server cleanup, new native API surfacing, debug service migration, and repo-wide stale-reference removal.

@@ -7,6 +7,8 @@ the viewport accordingly without using internal polling loops.
 
 from typing import Any
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 
 class ResizeTracker:
     """Tracks browser window resize events and adjusts viewport accordingly."""
@@ -44,6 +46,8 @@ class ResizeTracker:
                 }
                 """
             )
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception:
             return None
 
@@ -120,6 +124,8 @@ class ResizeTracker:
                     else:
                         print("[PYTHON] Could not get updated window info")
 
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             return e
 

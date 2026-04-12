@@ -1,6 +1,5 @@
 """File system watcher implementation using watchdog"""
 
-import _thread
 import hashlib
 import os
 import queue
@@ -16,6 +15,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.api import BaseObserver
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.settings import FILE_CHANGED_DEBOUNCE_SECONDS
 
 _WATCHER_TIMEOUT = 0.1
@@ -47,6 +47,9 @@ class MyEventHandler(FileSystemEventHandler):
         try:
             with open(filepath, "rb") as f:
                 return hashlib.md5(f.read()).hexdigest()
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+            raise
         except Exception:  # pylint: disable=broad-except
             return ""
 
@@ -120,11 +123,9 @@ class FileChangedNotifier(threading.Thread):
         try:
             while not self.stopped:
                 time.sleep(0.1)
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as ki:
             print("File watcher stopped by user.")
-            import _thread
-
-            _thread.interrupt_main()
+            handle_keyboard_interrupt(ki)
         finally:
             self.stop()
 
@@ -151,8 +152,8 @@ class FileChangedNotifier(threading.Thread):
 
             self.last_notification[filepath] = current_time
             return filepath
-        except KeyboardInterrupt:
-            raise
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except queue.Empty:
             return None
 
@@ -188,7 +189,8 @@ def _process_wrapper(root: Path, excluded_patterns: list[str], queue: Queue):
                     changed_files = watcher.get_all_changes()
                     for file in changed_files:
                         queue.put(file)
-                except KeyboardInterrupt:
+                except KeyboardInterrupt as ki:
+                    handle_keyboard_interrupt(ki)
                     break
             watcher.stop()
 
@@ -281,9 +283,8 @@ class DebouncedFileWatcherProcess(threading.Thread):
                     self._out_queue.put(batch)
 
                 time.sleep(0.1)
-        except KeyboardInterrupt:
-            _thread.interrupt_main()
-            raise
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
 
     def get_all_changes(self, timeout: float | None = None) -> list[str]:
         """

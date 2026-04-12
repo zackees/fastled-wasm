@@ -4,6 +4,8 @@ from multiprocessing import Process
 from pathlib import Path
 
 from .__version__ import __version__
+from .build_service import BuildService
+from .build_types import BuildRequest, BuildResult
 from .site.build import build
 from .types import BuildMode, CompileResult
 
@@ -66,6 +68,9 @@ class Test:
 
 __all__ = [
     "Api",
+    "BuildRequest",
+    "BuildResult",
+    "BuildService",
     "Test",
     "CompileResult",
     "BuildMode",

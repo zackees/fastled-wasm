@@ -19,5 +19,7 @@ echo Running isort src tests compiler
 isort --profile black src tests compiler
 echo Running pyright src tests compiler
 uv run pyright src compiler tests
+echo Running keyboard interrupt checker src tests compiler
+uv run python ci/lint_python/keyboard_interrupt_checker.py src tests compiler
 echo Linting complete!
 exit 0

@@ -6,6 +6,8 @@ import time
 from queue import Empty, Queue
 from threading import Thread
 
+from fastled.interrupts import handle_keyboard_interrupt
+
 _WHITE_SPACE = {" ", "\n", "\r"}  # Including Enter key as whitespace
 
 
@@ -113,5 +115,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
         print("Keyboard interrupt detected.")

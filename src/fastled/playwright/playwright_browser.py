@@ -14,6 +14,7 @@ import warnings
 from pathlib import Path
 from typing import Any
 
+from fastled.interrupts import handle_keyboard_interrupt
 from fastled.playwright.resize_tracking import ResizeTracker
 
 # Set custom Playwright browser installation path
@@ -93,6 +94,9 @@ class PlaywrightBrowser:
             else:
                 print("[PYTHON] Warning: C++ DevTools Support extension not available")
                 self.enable_extensions = False
+        except KeyboardInterrupt as ki:
+            print("\nClosing Playwright browser...")
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             print(f"[PYTHON] Warning: Failed to setup Chrome extensions: {e}")
             self.enable_extensions = False
@@ -121,6 +125,8 @@ class PlaywrightBrowser:
                 )
                 return None
 
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             print(f"[PYTHON] Could not detect device scale factor: {e}")
             return None
@@ -237,6 +243,8 @@ class PlaywrightBrowser:
                 print(
                     f"[PYTHON] Verified browser device pixel ratio: {device_pixel_ratio}"
                 )
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 print(f"[PYTHON] Could not verify device pixel ratio: {e}")
 
@@ -268,6 +276,8 @@ class PlaywrightBrowser:
                             "[PYTHON] ⚠️  C++ DevTools Support extension may not be fully loaded"
                         )
 
+                except KeyboardInterrupt as ki:
+                    handle_keyboard_interrupt(ki)
                 except Exception as e:
                     print(f"[PYTHON] Could not verify extension status: {e}")
 
@@ -338,6 +348,8 @@ class PlaywrightBrowser:
                             browser_state_indicates_closed = self.browser.is_closed()
                         elif self.context and hasattr(self.context, "closed"):
                             browser_state_indicates_closed = self.context.closed
+                    except KeyboardInterrupt as ki:
+                        handle_keyboard_interrupt(ki)
                     except Exception:
                         # If we can't check the state, don't assume it's closed
                         warnings.warn(
@@ -364,6 +376,8 @@ class PlaywrightBrowser:
                         # Add a small delay to prevent tight error loops
                         await asyncio.sleep(1.0)
 
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 error_message = str(e)
                 warnings.warn(
@@ -381,6 +395,8 @@ class PlaywrightBrowser:
             try:
                 while not self.context.closed:
                     await asyncio.sleep(1)
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception:
                 pass
         elif self.browser:
@@ -388,6 +404,8 @@ class PlaywrightBrowser:
                 # Wait for the browser to be closed
                 while not self.browser.is_closed():
                     await asyncio.sleep(1)
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception:
                 pass
 
@@ -421,6 +439,8 @@ class PlaywrightBrowser:
                     else:
                         # For async context managers, use __aexit__
                         await self.playwright.__aexit__(None, None, None)
+                except KeyboardInterrupt as ki:
+                    handle_keyboard_interrupt(ki)
                 except Exception as stop_error:
                     print(
                         f"[PYTHON] Warning: Could not properly stop playwright: {stop_error}"
@@ -429,16 +449,16 @@ class PlaywrightBrowser:
                     try:
                         if hasattr(self.playwright, "__aexit__"):
                             await self.playwright.__aexit__(None, None, None)
+                    except KeyboardInterrupt as ki:
+                        handle_keyboard_interrupt(ki)
                     except Exception:
                         pass  # Ignore secondary cleanup failures
                 finally:
                     self.playwright = None
-        except KeyboardInterrupt:
+        except KeyboardInterrupt as ki:
             print("[PYTHON] Keyboard interrupt detected, closing Playwright browser")
             self._should_exit.set()
-            import _thread
-
-            _thread.interrupt_main()
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             print(f"[PYTHON] Error closing Playwright browser: {e}")
             self._should_exit.set()
@@ -467,6 +487,8 @@ def run_playwright_browser(
             print("Playwright browser opened. Press Ctrl+C to close.")
             await browser.wait_for_close()
 
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             # If we get an error that suggests browsers aren't installed, try to install them
             if "executable doesn't exist" in str(e) or "Browser not found" in str(e):
@@ -487,19 +509,20 @@ def run_playwright_browser(
                     raise e
             else:
                 raise e
-        except KeyboardInterrupt:
-            print("\nClosing Playwright browser...")
         finally:
             if browser is not None:
                 try:
                     await browser.close()
+                except KeyboardInterrupt as ki:
+                    handle_keyboard_interrupt(ki)
                 except Exception as e:
                     print(f"Warning: Failed to close Playwright browser: {e}")
 
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("\nPlaywright browser closed.")
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         print(f"Playwright browser failed: {e}. Falling back to default browser.")
         import webbrowser
@@ -545,6 +568,9 @@ class PlaywrightBrowserProxy:
 
             atexit.register(self.close)
 
+        except KeyboardInterrupt as ki:
+            print("\nClosing Playwright browser...")
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             warnings.warn(
                 f"Failed to start Playwright browser: {e}. Falling back to default browser."
@@ -576,11 +602,9 @@ class PlaywrightBrowserProxy:
                     # Force exit the entire program
                     os._exit(0)
 
-            except KeyboardInterrupt:
+            except KeyboardInterrupt as ki:
                 print("[MAIN] Browser monitor interrupted by user")
-                import _thread
-
-                _thread.interrupt_main()
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 print(f"[MAIN] Error monitoring browser process: {e}")
 
@@ -628,6 +652,8 @@ def run_playwright_browser_persistent(
             while not browser._should_exit.is_set():
                 await asyncio.sleep(0.1)
 
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
         except Exception as e:
             # If we get an error that suggests browsers aren't installed, try to install them
             if "executable doesn't exist" in str(e) or "Browser not found" in str(e):
@@ -653,19 +679,20 @@ def run_playwright_browser_persistent(
                     raise e
             else:
                 raise e
-        except KeyboardInterrupt:
-            print("\nClosing Playwright browser...")
         finally:
             if browser is not None:
                 try:
                     await browser.close()
+                except KeyboardInterrupt as ki:
+                    handle_keyboard_interrupt(ki)
                 except Exception as e:
                     print(f"Warning: Failed to close Playwright browser: {e}")
 
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as ki:
         print("\nPlaywright browser closed.")
+        handle_keyboard_interrupt(ki)
     except Exception as e:
         print(f"Playwright browser failed: {e}")
 
@@ -758,6 +785,8 @@ def install_playwright_browsers() -> bool:
                     )
                 else:
                     print("⚠️  C++ DevTools Support extension download failed")
+            except KeyboardInterrupt as ki:
+                handle_keyboard_interrupt(ki)
             except Exception as e:
                 print(f"⚠️  Failed to setup C++ DevTools Support extension: {e}")
 
@@ -768,6 +797,9 @@ def install_playwright_browsers() -> bool:
             )
             return False
 
+    except KeyboardInterrupt as ki:
+        handle_keyboard_interrupt(ki)
+        raise
     except Exception as e:
         print(f"❌ Error installing Playwright browsers: {e}")
         return False

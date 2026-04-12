@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-import pytest
+import pytest  # type: ignore[reportMissingImports]
 
 from fastled.app import purge_cache
 from fastled.args import Args

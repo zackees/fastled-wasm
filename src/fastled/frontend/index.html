@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>FastLED</title>
+
+    <link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+    <!-- Menu Bar -->
+    <div id="menu-bar">
+        <div class="menu-item">
+            <span class="menu-label">File</span>
+            <div class="menu-dropdown">
+                <div class="menu-dropdown-item" data-action="save">Save</div>
+            </div>
+        </div>
+        <div class="menu-item">
+            <span class="menu-label">Settings</span>
+            <div class="menu-dropdown">
+                <div class="menu-dropdown-item has-submenu">
+                    <span class="submenu-label">gfx mode</span>
+                    <div class="submenu-dropdown">
+                        <div class="menu-dropdown-item" data-value="gfx-simple">tile</div>
+                        <div class="menu-dropdown-item" data-value="gfx-bloom">bloom</div>
+                    </div>
+                </div>
+                <div class="menu-dropdown-item" data-value="toggle-auto-bloom">
+                    <input type="checkbox" id="auto-bloom-toggle" checked>
+                    <label for="auto-bloom-toggle">Auto Bloom</label>
+                </div>
+                <div class="menu-dropdown-item" data-value="video-settings">Video Settings</div>
+            </div>
+        </div>
+        <div class="menu-item">
+            <span class="menu-label">Tools</span>
+            <div class="menu-dropdown">
+                <div class="menu-dropdown-item" data-value="ui-events">UI Events</div>
+                <div class="menu-dropdown-item" data-action="video-mapper">FastLED Video Mapper</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Row 1: Title (always full width) -->
+    <h1>FastLED</h1>
+
+    <!-- Row 2: Responsive Grid (1×N, 2×N, 3×N) -->
+    <div id="main-container">
+        <div id="content-grid">
+            <div id="canvas-container">
+                <canvas id="myCanvas" width="16" height="16"></canvas>
+                <div id="canvas-label">stdout</div>
+                <!-- Video Recording Button -->
+                <button id="record-btn" class="record-button" title="Start/Stop Recording">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <circle class="record-icon" cx="12" cy="12" r="8"/>
+                        <rect class="stop-icon" x="8" y="8" width="8" height="8" style="display: none;"/>
+                    </svg>
+                </button>
+                <!-- JSON Inspector Button - Removed, now in gear menu -->
+            </div>
+            <div id="ui-controls"></div>
+            <div id="ui-controls-2" style="display: none;"></div>
+            <!-- FastLED Async Controls -->
+            <div id="fastled-async-controls" style="margin-top: 10px; padding: 10px; border: 1px solid #333; border-radius: 5px; background: rgba(0,0,0,0.1);">
+                <div style="margin-bottom: 5px; font-weight: bold; color: #fff;">FastLED Async Controls:</div>
+                <button id="start-btn" style="margin-right: 5px; padding: 5px 10px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">Start</button>
+                <button id="stop-btn" style="margin-right: 5px; padding: 5px 10px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">Stop</button>
+                <button id="toggle-btn" style="margin-right: 10px; padding: 5px 10px; background: #2196F3; color: white; border: none; border-radius: 3px; cursor: pointer;">Toggle</button>
+                <span id="fps-display" style="color: #fff; font-family: monospace;">FPS: --</span>
+                <div id="error-display" style="color: #ff6b6b; margin-top: 5px; font-size: 12px;"></div>
+            </div>
+        </div>
+        
+        <div id="container"></div>
+        <div class="popup-overlay" id="popup-overlay"></div>
+        <div class="popup" id="output-popup">
+            <pre id="output">stdout:</pre>
+        </div>
+
+        <!-- Video Settings Popup -->
+        <div class="popup-overlay" id="video-settings-overlay"></div>
+        <div class="popup video-settings-popup" id="video-settings-popup">
+            <h3>Video Recording Settings</h3>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <label for="video-codec">Video Codec:</label>
+                    <select id="video-codec">
+                        <optgroup label="⚡ Fast Encoding (Real-time Performance)">
+                            <option value="video/mp4;codecs=avc1.42E01E" selected>H.264 Baseline (MP4) - Fastest</option>
+                            <option value="video/mp4;codecs=h264">H.264 (MP4) - Very Fast</option>
+                            <option value="video/webm;codecs=vp8">VP8 (WebM) - Fast</option>
+                        </optgroup>
+                        <optgroup label="⚖️ Balanced (Speed vs Quality)">
+                            <option value="video/webm;codecs=vp9">VP9 (WebM) - Good Compression</option>
+                            <option value="video/mp4;codecs=h264,aac">H.264+AAC (MP4) - Compatible</option>
+                            <option value="video/webm">WebM (Auto)</option>
+                        </optgroup>
+                        <optgroup label="🎯 High Quality (Slower Encoding)">
+                            <option value="video/webm;codecs=av1">AV1 (WebM) - Best Compression</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label for="video-bitrate">Video Bitrate (Mbps):</label>
+                    <input type="number" id="video-bitrate" min="1" max="50" value="8" step="0.5">
+                    <span class="bitrate-display">8 Mbps</span>
+                </div>
+
+                <div class="setting-group">
+                    <label for="audio-codec">Audio Codec:</label>
+                    <select id="audio-codec">
+                        <option value="aac" selected>AAC (MP4 Compatible & Fast)</option>
+                        <option value="opus">Opus (WebM High Quality)</option>
+                        <option value="vorbis">Vorbis (Open Source)</option>
+                        <option value="mp3">MP3 (Legacy)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group">
+                    <label for="audio-bitrate">Audio Bitrate (kbps):</label>
+                    <input type="number" id="audio-bitrate" min="32" max="320" value="128" step="16">
+                    <span class="bitrate-display">128 kbps</span>
+                </div>
+
+                <div class="setting-group">
+                    <label for="video-fps">Frame Rate (FPS):</label>
+                    <select id="video-fps">
+                        <option value="60" selected>60 FPS</option>
+                        <option value="30">30 FPS</option>
+                        <option value="24">24 FPS</option>
+                        <option value="25">25 FPS</option>
+                        <option value="50">50 FPS</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="popup-buttons">
+                <button id="video-settings-apply" class="btn-apply">Apply</button>
+                <button id="video-settings-cancel" class="btn-cancel">Cancel</button>
+                <button id="video-settings-reset" class="btn-reset">Reset to Defaults</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main application entry point — Vite bundles this -->
+    <script type="module" src="./app.ts"></script>
+
+</body>
+
+<!-- JSON Inspector Popup -->
+<div class="inspector-popup-overlay" id="inspector-popup-overlay"></div>
+<div class="inspector-popup" id="json-inspector-popup">
+    <div class="inspector-header">
+        <span class="inspector-title">JSON UI Inspector</span>
+        <button class="inspector-close" id="inspector-close-btn">&times;</button>
+    </div>
+    <div class="inspector-content">
+        <div class="inspector-controls">
+            <button id="inspector-clear">Clear</button>
+            <button id="inspector-pause">Pause</button>
+            <span class="event-counter">Events: <span id="event-count">0</span></span>
+        </div>
+        <div class="inspector-log" id="inspector-log"></div>
+    </div>
+</div>
+
+</html>
