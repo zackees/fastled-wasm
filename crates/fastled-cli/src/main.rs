@@ -6,6 +6,7 @@ mod archive;
 mod build;
 mod keyboard;
 mod project;
+mod server;
 mod viewer;
 mod watcher;
 

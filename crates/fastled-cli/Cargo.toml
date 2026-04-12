@@ -25,6 +25,9 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 strsim = { workspace = true }
 crossterm = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
 tempfile = "3"
 
 [package.metadata.binstall]
