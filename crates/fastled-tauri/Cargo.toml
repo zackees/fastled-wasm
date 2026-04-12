@@ -12,6 +12,11 @@ description = "FastLED WASM viewer (Tauri webview)"
 name = "fastled-viewer"
 path = "src/main.rs"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/fastled-viewer-{ target }{ archive-suffix }"
+bin-dir = "fastled-viewer{ binary-ext }"
+pkg-fmt = "zip"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -54,5 +54,21 @@ if [[ -f rust-toolchain.toml ]]; then
   CHANNEL=$(grep 'channel' rust-toolchain.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
   echo "Installing Rust toolchain: $CHANNEL"
   rustup toolchain install "$CHANNEL" --profile minimal -c clippy -c rustfmt --no-self-update
-  cargo check --workspace
+fi
+
+# ── cargo-binstall: install pre-built Rust binaries ───────────────────────────
+# Install cargo-binstall if not present, then fetch pre-built CLI and viewer
+# binaries instead of compiling from source.
+
+if ! command -v cargo-binstall &> /dev/null; then
+  echo "Installing cargo-binstall..."
+  curl -L --proto '=https' --tlsv1.2 -sSf \
+    https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh \
+    | bash 2>/dev/null || echo "  cargo-binstall install failed (non-fatal)"
+fi
+
+if command -v cargo-binstall &> /dev/null; then
+  echo "Fetching pre-built binaries via cargo-binstall..."
+  cargo binstall fastled-cli --no-confirm 2>/dev/null || echo "  fastled-cli: no pre-built binary available (will compile from source when needed)"
+  cargo binstall fastled-tauri --no-confirm 2>/dev/null || echo "  fastled-tauri: no pre-built binary available (will compile from source when needed)"
 fi
