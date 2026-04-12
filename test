@@ -9,4 +9,17 @@ fi
 
 . ./activate
 
+# Ensure the rustup-managed toolchain bin is first in PATH so cargo uses the
+# toolchain declared in rust-toolchain.toml rather than any system-installed
+# (e.g. Chocolatey) Rust binaries.
+CARGO_HOME="${CARGO_HOME:-$USERPROFILE/.cargo}"
+if [ -z "$CARGO_HOME" ] && [ -n "$HOME" ]; then
+  CARGO_HOME="$HOME/.cargo"
+fi
+if [ -d "$CARGO_HOME/bin" ]; then
+  export PATH="$(cygpath -u "$CARGO_HOME/bin"):$PATH"
+fi
+
+cargo test --workspace
+
 pytest -x -v -s --durations=0 tests/unit "$@"

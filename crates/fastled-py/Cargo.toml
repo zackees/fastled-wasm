@@ -1,0 +1,16 @@
+[package]
+name = "fastled-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "PyO3 bridge for FastLED WASM CLI"
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+pyo3 = { workspace = true }

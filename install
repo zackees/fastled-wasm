@@ -1,35 +1,303 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# ///
+from __future__ import annotations
 
-# Check if UV is not found
-if ! command -v uv &> /dev/null; then
-  # If Darwin (macOS), use brew to install UV
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    brew install uv
-  else
-    # If it's Windows, use pip to install UV, else use pip3
-    if [[ "$OSTYPE" == "msys" ]]; then
-      pip install uv
-    else
-      pip3 install uv
-    fi
-  fi
-fi
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from contextlib import contextmanager
+from pathlib import Path
 
-uv venv --python 3.11 --seed
-uv pip install -e .
+import tomllib
 
-uv run pip install -r requirements.testing.txt
+ROOT = Path(__file__).resolve().parent
+TOOLCHAIN_FILE = ROOT / "rust-toolchain.toml"
+LOCK_TIMEOUT_SECONDS = 15 * 60
+LOCK_POLL_SECONDS = 0.2
 
 
-# If activate exists, delete it
-if [[ -f activate ]]; then
-  rm activate
-fi
+def cargo_home() -> Path:
+    if os.environ.get("CARGO_HOME"):
+        return Path(os.environ["CARGO_HOME"]).expanduser()
+    return Path.home() / ".cargo"
 
-# If Windows, then symlink .venv/Scripts/activate to .venv/bin/activate
-if [[ "$OSTYPE" == "msys" ]]; then
-  ln -s .venv/Scripts/activate ./activate
-else
-  ln -s .venv/bin/activate ./activate
-fi
+
+def rustup_home() -> Path:
+    if os.environ.get("RUSTUP_HOME"):
+        return Path(os.environ["RUSTUP_HOME"]).expanduser()
+    return Path.home() / ".rustup"
+
+
+def cargo_bin_dir() -> Path:
+    return cargo_home() / "bin"
+
+
+def rustup_exe_name() -> str:
+    return "rustup.exe" if os.name == "nt" else "rustup"
+
+
+def homes_are_overridden() -> bool:
+    return "CARGO_HOME" in os.environ or "RUSTUP_HOME" in os.environ
+
+
+def rustup_executable() -> str | None:
+    candidate = cargo_bin_dir() / rustup_exe_name()
+    if candidate.exists():
+        return str(candidate)
+    if homes_are_overridden():
+        return None
+    return shutil.which("rustup")
+
+
+def prepend_cargo_bin_to_path() -> None:
+    bin_dir = cargo_bin_dir()
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    normalized_bin = os.path.normcase(os.path.normpath(str(bin_dir)))
+    normalized_parts = {
+        os.path.normcase(os.path.normpath(part)) for part in path_parts if part
+    }
+    if normalized_bin not in normalized_parts:
+        os.environ["PATH"] = str(bin_dir) + (
+            os.pathsep + current_path if current_path else ""
+        )
+
+
+def rustup_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["RUSTUP_INIT_SKIP_PATH_CHECK"] = "yes"
+    env["CARGO_HOME"] = str(cargo_home())
+    env["RUSTUP_HOME"] = str(rustup_home())
+    return env
+
+
+def host_target_triple() -> str:
+    system = platform.system()
+    machine = platform.machine().lower()
+
+    arch = {
+        "amd64": "x86_64",
+        "x86_64": "x86_64",
+        "arm64": "aarch64",
+        "aarch64": "aarch64",
+    }.get(machine)
+    if arch is None:
+        raise RuntimeError(f"unsupported architecture: {machine}")
+
+    if system == "Windows":
+        return f"{arch}-pc-windows-msvc"
+    if system == "Linux":
+        return f"{arch}-unknown-linux-gnu"
+    if system == "Darwin":
+        return f"{arch}-apple-darwin"
+    raise RuntimeError(f"unsupported platform: {system}")
+
+
+def rustup_init_url() -> str:
+    suffix = ".exe" if os.name == "nt" else ""
+    return f"https://static.rust-lang.org/rustup/dist/{host_target_triple()}/rustup-init{suffix}"
+
+
+def load_toolchain_spec() -> dict[str, object]:
+    with TOOLCHAIN_FILE.open("rb") as handle:
+        data = tomllib.load(handle)
+    toolchain = data.get("toolchain")
+    if not isinstance(toolchain, dict):
+        raise RuntimeError(f"missing [toolchain] in {TOOLCHAIN_FILE}")
+
+    channel = toolchain.get("channel")
+    profile = toolchain.get("profile", "minimal")
+    components = toolchain.get("components", [])
+    targets = toolchain.get("targets", [])
+
+    if not isinstance(channel, str) or not channel:
+        raise RuntimeError(f"missing toolchain.channel in {TOOLCHAIN_FILE}")
+    if not isinstance(profile, str):
+        raise RuntimeError(f"toolchain.profile must be a string in {TOOLCHAIN_FILE}")
+    if not isinstance(components, list) or not all(
+        isinstance(item, str) for item in components
+    ):
+        raise RuntimeError(
+            f"toolchain.components must be a list of strings in {TOOLCHAIN_FILE}"
+        )
+    if not isinstance(targets, list) or not all(
+        isinstance(item, str) for item in targets
+    ):
+        raise RuntimeError(
+            f"toolchain.targets must be a list of strings in {TOOLCHAIN_FILE}"
+        )
+
+    return {
+        "channel": channel,
+        "profile": profile,
+        "components": components,
+        "targets": targets,
+    }
+
+
+@contextmanager
+def file_lock(name: str):
+    lock_root = rustup_home() / "tmp" / "fastled-wasm-locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_root / f"{name}.lock"
+    deadline = time.time() + LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, f"pid={os.getpid()}\ntime={time.time()}\n".encode("utf-8"))
+            finally:
+                os.close(fd)
+            break
+        except FileExistsError:
+            if time.time() >= deadline:
+                raise TimeoutError(f"timed out waiting for lock {lock_path}")
+            time.sleep(LOCK_POLL_SECONDS)
+    try:
+        yield
+    finally:
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def download(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urllib.request.urlopen(url) as response, destination.open("wb") as handle:
+        shutil.copyfileobj(response, handle)
+
+
+def bootstrap_rustup() -> None:
+    if rustup_executable():
+        prepend_cargo_bin_to_path()
+        return
+
+    with file_lock("rustup-bootstrap"):
+        if rustup_executable():
+            prepend_cargo_bin_to_path()
+            return
+
+        suffix = ".exe" if os.name == "nt" else ""
+        temp_dir = Path(tempfile.mkdtemp(prefix="fastled-wasm-rustup-init-"))
+        temp_path = temp_dir / f"rustup-init{suffix}"
+        download(rustup_init_url(), temp_path)
+        try:
+            if os.name != "nt":
+                temp_path.chmod(0o755)
+            subprocess.run(
+                [
+                    str(temp_path),
+                    "-y",
+                    "--profile",
+                    "minimal",
+                    "--default-toolchain",
+                    "none",
+                    "--default-host",
+                    host_target_triple(),
+                    "--no-modify-path",
+                ],
+                check=True,
+                env=rustup_env(),
+            )
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    prepend_cargo_bin_to_path()
+
+
+def ensure_rust_toolchain() -> int:
+    bootstrap_rustup()
+    spec = load_toolchain_spec()
+    rustup = rustup_executable()
+    if not rustup:
+        raise RuntimeError("rustup bootstrap completed but rustup is still unavailable")
+
+    cmd = [
+        rustup,
+        "toolchain",
+        "install",
+        str(spec["channel"]),
+        "--profile",
+        str(spec["profile"]),
+        "--no-self-update",
+    ]
+    for component in spec["components"]:
+        cmd.extend(["-c", str(component)])
+    for target in spec["targets"]:
+        cmd.extend(["-t", str(target)])
+
+    lock_name = f"toolchain-{str(spec['channel']).replace('/', '-').replace(':', '-')}"
+    with file_lock(lock_name):
+        return subprocess.run(cmd, check=False, env=rustup_env()).returncode
+
+
+def install_python() -> int:
+    """Install the Python package and its dependencies."""
+    uv = shutil.which("uv")
+    if uv is None:
+        if platform.system() == "Darwin":
+            subprocess.run(["brew", "install", "uv"], check=False)
+        elif os.name == "nt":
+            subprocess.run(["pip", "install", "uv"], check=False)
+        else:
+            subprocess.run(["pip3", "install", "uv"], check=False)
+        uv = shutil.which("uv")
+
+    if uv is None:
+        print("ERROR: uv not found and could not be installed", file=sys.stderr)
+        return 1
+
+    if (
+        subprocess.run(
+            [uv, "venv", "--python", "3.11", "--seed"], check=False
+        ).returncode
+        != 0
+    ):
+        return 1
+    if subprocess.run([uv, "pip", "install", "-e", "."], check=False).returncode != 0:
+        return 1
+    if (
+        subprocess.run(
+            [uv, "run", "pip", "install", "-r", "requirements.testing.txt"], check=False
+        ).returncode
+        != 0
+    ):
+        return 1
+
+    # Manage the activate symlink
+    activate = ROOT / "activate"
+    if activate.exists() or activate.is_symlink():
+        activate.unlink()
+
+    if os.name == "nt":
+        target = ROOT / ".venv" / "Scripts" / "activate"
+    else:
+        target = ROOT / ".venv" / "bin" / "activate"
+
+    try:
+        activate.symlink_to(target)
+    except OSError:
+        pass  # Symlink creation is best-effort
+
+    return 0
+
+
+def main() -> int:
+    if install_python() != 0:
+        return 1
+    if ensure_rust_toolchain() != 0:
+        return 1
+    prepend_cargo_bin_to_path()
+    return subprocess.run(["cargo", "check", "--workspace"], check=False).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

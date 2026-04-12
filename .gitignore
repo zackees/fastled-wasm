@@ -153,3 +153,8 @@ dist/
 logs
 vscode-plugin
 .loop
+
+# Rust build artifacts
+/target/
+/.cargo/
+/.rustup/

@@ -22,7 +22,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-
 _BROAD_EXCEPT_RE = re.compile(
     r"^\s*except\s*"
     r"(?:"
@@ -175,7 +174,9 @@ class TryExceptVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-_INTERRUPT_HANDLER_NAMES = frozenset({"handle_keyboard_interrupt", "notify_main_thread"})
+_INTERRUPT_HANDLER_NAMES = frozenset(
+    {"handle_keyboard_interrupt", "notify_main_thread"}
+)
 
 
 def _find_interrupt_handler_calls(stmts: list[ast.stmt]) -> list[ast.Call]:
