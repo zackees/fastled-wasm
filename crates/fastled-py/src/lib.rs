@@ -1,4 +1,69 @@
 use pyo3::prelude::*;
+use std::path::PathBuf;
+use std::process::Command;
+
+// ---------------------------------------------------------------------------
+// Internal: Tauri viewer discovery (mirrors viewer.rs in fastled-cli)
+// ---------------------------------------------------------------------------
+
+#[cfg(windows)]
+const VIEWER_EXE: &str = "fastled-viewer.exe";
+#[cfg(not(windows))]
+const VIEWER_EXE: &str = "fastled-viewer";
+
+fn find_tauri_viewer_path() -> Option<PathBuf> {
+    // 1. Sibling of the running shared library / executable.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(VIEWER_EXE);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // 2. Walk up from the current executable looking for a Cargo workspace root,
+    //    then check target/debug and target/release.
+    if let Some(root) = find_workspace_root_py() {
+        for profile in &["debug", "release"] {
+            let candidate = root.join("target").join(profile).join(VIEWER_EXE);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // 3. PATH lookup.
+    let on_path = Command::new(VIEWER_EXE)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if on_path {
+        return Some(PathBuf::from(VIEWER_EXE));
+    }
+
+    None
+}
+
+fn find_workspace_root_py() -> Option<PathBuf> {
+    let start = std::env::current_exe().ok()?;
+    let mut dir = start.parent()?.to_path_buf();
+    for _ in 0..10 {
+        if dir.join("Cargo.toml").is_file() {
+            return Some(dir.clone());
+        }
+        match dir.parent() {
+            Some(p) => dir = p.to_path_buf(),
+            None => break,
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// PyO3 functions
+// ---------------------------------------------------------------------------
 
 /// Return the native module version.
 #[pyfunction]
@@ -60,6 +125,22 @@ fn build_available() -> bool {
     true
 }
 
+/// Return whether the native Tauri viewer binary (`fastled-viewer`) can be
+/// found alongside the CLI, in the Cargo target directory, or on PATH.
+///
+/// Python callers can use this to decide whether to prefer the native viewer
+/// over the legacy Flask + Playwright browser experience.
+///
+/// ```python
+/// from fastled._native import viewer_available
+/// if viewer_available():
+///     print("native viewer ready")
+/// ```
+#[pyfunction]
+fn viewer_available() -> bool {
+    find_tauri_viewer_path().is_some()
+}
+
 /// FastLED native extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -68,5 +149,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(archive_available, m)?)?;
     m.add_function(wrap_pyfunction!(project_available, m)?)?;
     m.add_function(wrap_pyfunction!(build_available, m)?)?;
+    m.add_function(wrap_pyfunction!(viewer_available, m)?)?;
     Ok(())
 }
