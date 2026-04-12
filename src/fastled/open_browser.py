@@ -1,5 +1,7 @@
 import atexit
 import random
+import shutil
+import subprocess
 import sys
 import time
 import weakref
@@ -9,6 +11,69 @@ from pathlib import Path
 from fastled.interrupts import handle_keyboard_interrupt
 from fastled.playwright.playwright_browser import open_with_playwright
 from fastled.server_flask import run_flask_in_thread
+
+
+def _find_tauri_viewer() -> Path | None:
+    """Locate the fastled-viewer (Tauri) binary.
+
+    Search order mirrors crates/fastled-cli/src/viewer.rs:
+    1. Same directory as the running Python executable.
+    2. target/debug/ and target/release/ relative to the project workspace.
+    3. PATH lookup.
+    """
+    exe_name = "fastled-viewer.exe" if sys.platform == "win32" else "fastled-viewer"
+
+    # 1. Sibling of the running interpreter / entry-point script.
+    exe_path = Path(sys.executable).resolve()
+    candidate = exe_path.parent / exe_name
+    if candidate.is_file():
+        return candidate
+
+    # 2. Walk up to find a Cargo workspace root and check target dirs.
+    search_start = Path(__file__).resolve().parent  # src/fastled/
+    current = search_start
+    for _ in range(10):
+        cargo_toml = current / "Cargo.toml"
+        if cargo_toml.is_file():
+            for profile in ("debug", "release"):
+                candidate = current / "target" / profile / exe_name
+                if candidate.is_file():
+                    return candidate
+            # Also check platform-specific target dir (e.g. target/x86_64-pc-windows-msvc/...)
+            target_dir = current / "target"
+            if target_dir.is_dir():
+                for arch_dir in target_dir.iterdir():
+                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
+                        for profile in ("debug", "release"):
+                            candidate = arch_dir / profile / exe_name
+                            if candidate.is_file():
+                                return candidate
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+
+    # 3. PATH lookup.
+    found = shutil.which(exe_name)
+    if found:
+        return Path(found)
+
+    return None
+
+
+def _launch_tauri_viewer(frontend_dir: Path) -> subprocess.Popen | None:
+    """Try to launch the Tauri viewer. Returns the process or None on failure."""
+    viewer = _find_tauri_viewer()
+    if viewer is None:
+        return None
+    try:
+        proc = subprocess.Popen(
+            [str(viewer), "--frontend-dir", str(frontend_dir)],
+        )
+        return proc
+    except Exception:
+        return None
 
 # Global reference to keep Playwright browser alive
 _playwright_browser_proxy = None
@@ -158,26 +223,25 @@ def spawn_http_server(
     if open_browser:
         protocol = "https" if enable_https else "http"
         url = f"{protocol}://localhost:{port}"
-        should_use_playwright = app
 
-        if should_use_playwright:
-            if app:
-                # For --app mode, try to install browsers if needed
+        if app:
+            # --app mode: try Tauri viewer first, fall back to Playwright
+            tauri_proc = _launch_tauri_viewer(fastled_js)
+            if tauri_proc is not None:
+                print("Opening FastLED sketch in Tauri viewer")
+            else:
+                # Fall back to Playwright
+                print("Tauri viewer not found, falling back to Playwright browser")
                 from fastled.playwright.playwright_browser import (
                     install_playwright_browsers,
                 )
 
                 install_playwright_browsers()
-
-            print(f"Opening FastLED sketch in Playwright browser: {url}")
-            print(
-                "Auto-resize enabled: Browser window will automatically adjust to content size"
-            )
-            print("C++ DevTools Support extension will be loaded for DWARF debugging")
-            global _playwright_browser_proxy
-            _playwright_browser_proxy = open_with_playwright(
-                url, enable_extensions=True
-            )
+                print(f"Opening FastLED sketch in Playwright browser: {url}")
+                global _playwright_browser_proxy
+                _playwright_browser_proxy = open_with_playwright(
+                    url, enable_extensions=True
+                )
         else:
             print(f"Opening browser to {url}")
             import webbrowser
