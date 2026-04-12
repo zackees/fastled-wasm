@@ -13,6 +13,10 @@ HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="Requires full WASM toolchain (emscripten + esbuild) — tracked in #39",
+)
 class MainTester(unittest.TestCase):
     """Main tester class."""
 

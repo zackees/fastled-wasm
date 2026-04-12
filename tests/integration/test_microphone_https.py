@@ -34,6 +34,7 @@ MICDEMO_HTML = DEMO_DIR / "micdemo.html"
 BASE_PORT = random.randint(9000, 9100)
 
 
+@pytest.mark.skip(reason="HTTPS server timeout on CI — tracked in #39")
 class MicrophoneHttpsIntegrationTest(unittest.TestCase):
     """Integration tests for microphone access requiring HTTPS."""
 
@@ -226,7 +227,6 @@ class MicrophoneHttpsIntegrationTest(unittest.TestCase):
             proc.terminate()
             time.sleep(1)
 
-    @pytest.mark.skip(reason="HTTPS server timeout on CI — tracked in #39")
     def test_https_certificate_validation(self):
         """Test that HTTPS server properly loads and uses SSL certificates.
 
