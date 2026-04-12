@@ -1,6 +1,8 @@
 use clap::Parser;
 use std::process::{Command, ExitCode};
 
+mod watcher;
+
 /// FastLED WASM compilation CLI.
 ///
 /// Thin Rust front-end that mirrors every Python flag, then delegates to

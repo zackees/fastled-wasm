@@ -17,6 +17,8 @@ homepage = "https://github.com/zackees/fastled-wasm"
 pyo3 = { version = "0.23", features = ["abi3-py310"] }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
+notify = { version = "7", features = ["macos_fsevent"] }
+sha2 = "0.10"
 
 [profile.release]
 debug = "line-tables-only"
