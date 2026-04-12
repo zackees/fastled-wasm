@@ -19,7 +19,7 @@ fi
 uv venv --python 3.11 --seed
 uv pip install -e .
 
-uv run pip install -r requirements.testing.txt
+uv pip install -r requirements.testing.txt
 
 
 # If activate exists, delete it
