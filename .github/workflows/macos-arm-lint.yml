@@ -1,0 +1,12 @@
+name: macOS ARM Lint
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_lint.yml
+    with:
+      runs-on: macos-15

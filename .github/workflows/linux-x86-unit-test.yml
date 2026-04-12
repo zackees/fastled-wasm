@@ -1,0 +1,12 @@
+name: Linux x86 Unit Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_unit-test.yml
+    with:
+      runs-on: ubuntu-24.04

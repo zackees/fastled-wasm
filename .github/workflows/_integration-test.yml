@@ -1,0 +1,61 @@
+name: Integration Test
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        required: true
+        type: string
+
+jobs:
+  integration-test:
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: sccache
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Set Rust toolchain
+        run: |
+          CHANNEL=$(grep 'channel' rust-toolchain.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          echo "RUSTUP_TOOLCHAIN=$CHANNEL" >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fastled-${{ inputs.runs-on }}
+          cache-targets: false
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install
+        run: ./install
+
+      - name: Integration Tests
+        run: uv run pytest -x -v -s tests/integration
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-logs-integration-test-${{ inputs.runs-on }}
+          path: logs/*
+          if-no-files-found: warn

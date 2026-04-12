@@ -1,0 +1,13 @@
+name: Windows ARM Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/_build.yml
+    with:
+      runs-on: windows-2025
+      maturin-target: aarch64-pc-windows-msvc
