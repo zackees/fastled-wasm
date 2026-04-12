@@ -64,6 +64,7 @@ jobs:
       - name: Build wheel
         run: |
           if [ -n "${{ inputs.maturin-target }}" ]; then
+            export PYO3_CROSS_PYTHON_VERSION=3.11
             uv run maturin build --release --target "${{ inputs.maturin-target }}"
           else
             uv run maturin build --release
