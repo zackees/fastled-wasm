@@ -1,0 +1,16 @@
+[package]
+name = "fastled-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "FastLED WASM compilation CLI"
+
+[[bin]]
+name = "fastled"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }

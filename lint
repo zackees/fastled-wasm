@@ -1,22 +1,26 @@
 #!/bin/bash
 set -e
 
-# if venv doesn't exist, invoke ./install
-if [ ! -d ".venv" ]; then
-    echo "No venv present, so installing..."
-    ./install
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Rust linting (skip if cargo not available)
+if command -v cargo &> /dev/null; then
+  echo Running cargo fmt check
+  "$SCRIPT_DIR/_cargo" fmt --all --check
+  echo Running cargo clippy
+  "$SCRIPT_DIR/_cargo" clippy --workspace --all-targets -- -D warnings
+else
+  echo "WARNING: cargo not found, skipping Rust linting"
 fi
 
-. ./activate
-
 echo Running ruff src compiler
-ruff check --fix src compiler
+uv run ruff check --fix src compiler
 echo Running ruff tests compiler
-ruff check --fix tests compiler
+uv run ruff check --fix tests compiler
 echo Running black src tests compiler
-black src tests compiler
+uv run black src tests compiler
 echo Running isort src tests compiler
-isort --profile black src tests compiler
+uv run isort --profile black src tests compiler
 echo Running pyright src tests compiler
 uv run pyright src compiler tests
 echo Running keyboard interrupt checker src tests compiler

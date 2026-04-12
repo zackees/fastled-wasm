@@ -1,0 +1,33 @@
+#!/bin/bash
+# Trampoline: ensure the correct Rust toolchain is used.
+# On Windows, Chocolatey may install a GNU-based Rust that conflicts with
+# the MSVC toolchain required by this project. This script:
+# 1. Puts the rustup-managed toolchain bin FIRST in PATH
+# 2. Sets CARGO_BUILD_TARGET to force MSVC on Windows
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Find rustup
+RUSTUP="$(command -v rustup 2>/dev/null || true)"
+if [ -z "$RUSTUP" ]; then
+  exec cargo "$@"
+fi
+
+# Get the toolchain's bin directory and prepend it to PATH
+TOOLCHAIN_BIN="$($RUSTUP run "$(grep channel "$SCRIPT_DIR/rust-toolchain.toml" 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/')" rustc --print sysroot 2>/dev/null)/bin"
+if [ -d "$TOOLCHAIN_BIN" ]; then
+  export PATH="$TOOLCHAIN_BIN:$PATH"
+fi
+
+# On Windows, force MSVC target to prevent GNU toolchain contamination
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ARCH="$(uname -m)"
+    if [ "$ARCH" = "x86_64" ]; then
+      export CARGO_BUILD_TARGET="x86_64-pc-windows-msvc"
+    else
+      export CARGO_BUILD_TARGET="aarch64-pc-windows-msvc"
+    fi
+    ;;
+esac
+
+exec cargo "$@"

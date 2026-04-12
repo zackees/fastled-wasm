@@ -2,11 +2,13 @@
 
 set -euo pipefail
 
-if [ ! -d ".venv" ]; then
-    echo "No venv present, so installing..."
-    ./install
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Rust tests (skip if cargo not available)
+if command -v cargo &> /dev/null; then
+  "$SCRIPT_DIR/_cargo" test --workspace
+else
+  echo "WARNING: cargo not found, skipping Rust tests"
 fi
 
-. ./activate
-
-pytest -x -v -s --durations=0 tests/unit "$@"
+uv run pytest -x -v -s --durations=0 tests/unit "$@"

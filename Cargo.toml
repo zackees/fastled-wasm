@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fastled-cli",
+    "crates/fastled-py",
+]
+
+[workspace.package]
+version = "2.0.6"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/zackees/fastled-wasm"
+homepage = "https://github.com/zackees/fastled-wasm"
+
+[workspace.dependencies]
+pyo3 = { version = "0.23", features = ["abi3-py310"] }
+clap = { version = "4", features = ["derive"] }
+thiserror = "2"
+
+[profile.release]
+debug = "line-tables-only"
+split-debuginfo = "packed"
+strip = "none"
