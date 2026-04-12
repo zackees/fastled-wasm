@@ -1,15 +1,12 @@
 import atexit
-import random
 import shutil
 import subprocess
 import sys
 import time
 import weakref
-from multiprocessing import Process
 from pathlib import Path
 
 from fastled.interrupts import handle_keyboard_interrupt
-from fastled.server_flask import run_flask_in_thread
 
 
 def _find_tauri_viewer() -> Path | None:
@@ -77,24 +74,62 @@ def _launch_tauri_viewer(frontend_dir: Path) -> subprocess.Popen | None:
         return None
 
 
-DEFAULT_PORT = 8089  # different than live version.
-PYTHON_EXE = sys.executable
+def _find_fastled_cli() -> Path | None:
+    """Locate the fastled CLI binary (Rust)."""
+    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
+
+    # 1. Sibling of the running interpreter.
+    exe_path = Path(sys.executable).resolve()
+    candidate = exe_path.parent / exe_name
+    if candidate.is_file():
+        return candidate
+
+    # 2. Walk up to find a Cargo workspace root and check target dirs.
+    search_start = Path(__file__).resolve().parent
+    current = search_start
+    for _ in range(10):
+        cargo_toml = current / "Cargo.toml"
+        if cargo_toml.is_file():
+            for profile in ("debug", "release"):
+                candidate = current / "target" / profile / exe_name
+                if candidate.is_file():
+                    return candidate
+            target_dir = current / "target"
+            if target_dir.is_dir():
+                for arch_dir in target_dir.iterdir():
+                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
+                        for profile in ("debug", "release"):
+                            candidate = arch_dir / profile / exe_name
+                            if candidate.is_file():
+                                return candidate
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+
+    # 3. PATH lookup.
+    found = shutil.which(exe_name)
+    if found:
+        return Path(found)
+
+    return None
+
 
 # Use a weak reference set to track processes without preventing garbage collection
-_WEAK_CLEANUP_SET = weakref.WeakSet()
+_WEAK_CLEANUP_SET: weakref.WeakSet = weakref.WeakSet()
 
 
-def add_cleanup(proc: Process) -> None:
+def add_cleanup(proc: subprocess.Popen) -> None:
     """Add a process to the cleanup list using weak references"""
     _WEAK_CLEANUP_SET.add(proc)
 
-    # Register a cleanup function that checks if the process is still alive
     def cleanup_if_alive():
-        if proc.is_alive():
+        if proc.poll() is None:
             try:
                 proc.terminate()
-                proc.join(timeout=1.0)
-                if proc.is_alive():
+                proc.wait(timeout=1.0)
+                if proc.poll() is None:
                     proc.kill()
             except KeyboardInterrupt as ki:
                 handle_keyboard_interrupt(ki)
@@ -104,53 +139,17 @@ def add_cleanup(proc: Process) -> None:
     atexit.register(cleanup_if_alive)
 
 
-def is_port_free(port: int) -> bool:
-    """Check if a port is free"""
+def wait_for_server(port: int, timeout: int = 15) -> None:
+    """Wait for the HTTP server to start."""
     import httpx
-
-    try:
-        # Try HTTPS first, then fall back to HTTP
-        try:
-            response = httpx.get(f"https://localhost:{port}", timeout=1, verify=False)
-            response.raise_for_status()
-            return False
-        except (httpx.HTTPError, httpx.ConnectError):
-            response = httpx.get(f"http://localhost:{port}", timeout=1)
-            response.raise_for_status()
-            return False
-    except (httpx.HTTPError, httpx.ConnectError):
-        return True
-
-
-def find_free_port(start_port: int) -> int:
-    """Find a free port starting at start_port"""
-    for port in range(start_port, start_port + 100, 2):
-        if is_port_free(port):
-            print(f"Found free port: {port}")
-            return port
-        else:
-            print(f"Port {port} is in use, finding next")
-    raise ValueError("Could not find a free port")
-
-
-def wait_for_server(port: int, timeout: int = 15, enable_https: bool = True) -> None:
-    """Wait for the server to start."""
-    import httpx
-    from httpx import get
 
     future_time = time.time() + timeout
-    protocol = "https" if enable_https else "http"
     hosts = ["localhost", "127.0.0.1"]
     while future_time > time.time():
         for host in hosts:
             try:
-                url = f"{protocol}://{host}:{port}"
-                verify = (
-                    False if enable_https else True
-                )  # Only disable SSL verification for HTTPS
-                response = get(url, timeout=1, verify=verify)
-                # Any HTTP response means the server is up, even if
-                # it returns 500 (e.g., no index.html in served directory)
+                url = f"http://{host}:{port}"
+                response = httpx.get(url, timeout=1)
                 if response.status_code < 600:
                     return
             except httpx.HTTPError:
@@ -163,51 +162,52 @@ def spawn_http_server(
     fastled_js: Path,
     port: int | None = None,
     open_browser: bool = True,
-    app: bool = False,  # Deprecated, ignored — Tauri viewer is always tried first
+    app: bool = False,
     enable_https: bool = True,
     sketch_dir: Path | None = None,
     fastled_path: Path | None = None,
-) -> Process:
-    del app  # Unused — kept for backward compatibility
-    if port is not None and not is_port_free(port):
-        raise ValueError(f"Port {port} was specified but in use")
-    if port is None:
-        offset = random.randint(0, 100)
-        port = find_free_port(DEFAULT_PORT + offset)
+) -> subprocess.Popen:
+    """Spawn the Rust CLI HTTP server as a subprocess.
 
-    # Get SSL certificate paths from the fastled assets directory if HTTPS is enabled
-    certfile: Path | None = None
-    keyfile: Path | None = None
+    This replaces the old Flask-based server.  The Rust binary's
+    ``--serve-dir`` flag starts a native HTTP server.
+    """
+    del app, enable_https, sketch_dir, fastled_path  # handled by Rust
 
-    if enable_https:
-        import fastled
+    cli = _find_fastled_cli()
+    if cli is None:
+        raise RuntimeError("Could not find the fastled CLI binary")
 
-        assets_dir = Path(fastled.__file__).parent / "assets"
-        certfile = assets_dir / "localhost.pem"
-        keyfile = assets_dir / "localhost-key.pem"
+    cmd = [str(cli), "--serve-dir", str(fastled_js)]
 
-    proc = Process(
-        target=run_flask_in_thread,
-        args=(
-            port,
-            fastled_js,
-            certfile,
-            keyfile,
-            sketch_dir,
-            fastled_path,
-            None,
-        ),
-        daemon=True,
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     add_cleanup(proc)
-    proc.start()
 
-    wait_for_server(port, enable_https=enable_https)
+    # Parse the port from server output (e.g. "Serving <dir> at http://127.0.0.1:12345")
+    import re
+
+    actual_port = port
+    if proc.stdout:
+        for _ in range(50):  # read up to 50 lines looking for the URL
+            line = proc.stdout.readline().decode("utf-8", errors="replace")
+            if not line:
+                break
+            m = re.search(r"http://[\d.]+:(\d+)", line)
+            if m:
+                actual_port = int(m.group(1))
+                break
+
+    if actual_port is None:
+        # Fallback: wait a bit and hope the server is up
+        time.sleep(1.0)
+    else:
+        wait_for_server(actual_port, timeout=15)
+
     if open_browser:
-        protocol = "https" if enable_https else "http"
-        url = f"{protocol}://localhost:{port}"
-
-        # Try Tauri viewer first (native webview), fall back to system browser.
+        if actual_port:
+            url = f"http://localhost:{actual_port}"
+        else:
+            url = "http://localhost:8089"
         tauri_proc = _launch_tauri_viewer(fastled_js)
         if tauri_proc is not None:
             print("Opening FastLED sketch in Tauri viewer")
@@ -215,30 +215,6 @@ def spawn_http_server(
             print(f"Opening browser to {url}")
             import webbrowser
 
-            webbrowser.open(
-                url=url,
-                new=1,
-                autoraise=True,
-            )
+            webbrowser.open(url=url, new=1, autoraise=True)
+
     return proc
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Open a browser to the fastled_js directory"
-    )
-    parser.add_argument(
-        "fastled_js", type=Path, help="Path to the fastled_js directory"
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=DEFAULT_PORT,
-        help=f"Port to run the server on (default: {DEFAULT_PORT})",
-    )
-    args = parser.parse_args()
-
-    proc = spawn_http_server(args.fastled_js, args.port, open_browser=True)
-    proc.join()

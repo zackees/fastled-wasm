@@ -8,10 +8,6 @@
 //! * Debounce rapid bursts: accumulate events for `debounce_ms` milliseconds
 //!   after the last activity before emitting a single batch.
 
-// This module is a library component not yet wired into the CLI entry point.
-// Suppress dead-code lints for the public API until Phase 2e integration.
-#![allow(dead_code)]
-
 use std::{
     collections::HashMap,
     fs,
@@ -125,6 +121,7 @@ impl FileWatcher {
     }
 
     /// Override the ignored path segments (replaces the defaults).
+    #[allow(dead_code)]
     pub fn with_ignored_segments(mut self, segments: Vec<String>) -> Self {
         self.ignored_segments = segments;
         self
