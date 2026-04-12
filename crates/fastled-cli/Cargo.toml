@@ -27,4 +27,9 @@ strsim = { workspace = true }
 crossterm = { workspace = true }
 tempfile = "3"
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
+bin-dir = "fastled{ binary-ext }"
+pkg-fmt = "zip"
+
 [dev-dependencies]
