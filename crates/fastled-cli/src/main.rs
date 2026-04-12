@@ -1,10 +1,12 @@
 use clap::Parser;
+use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 mod archive;
 mod build;
 mod keyboard;
 mod project;
+mod viewer;
 mod watcher;
 
 /// FastLED WASM compilation CLI.
@@ -45,6 +47,11 @@ struct Cli {
     /// Use Playwright app-like browser experience (downloads browsers if needed).
     #[arg(long)]
     app: bool,
+
+    /// Force the legacy Flask + browser viewer even when the native Tauri
+    /// viewer is available.  Has no effect unless `--app` is also passed.
+    #[arg(long)]
+    legacy_browser: bool,
 
     /// Install the FastLED development environment with VSCode configuration.
     #[arg(long)]
@@ -128,9 +135,23 @@ fn find_python() -> String {
     "python3".to_string()
 }
 
+/// Decide whether to use the native Tauri viewer for this invocation.
+///
+/// Returns `true` when:
+/// * `--app` was requested, AND
+/// * `--legacy-browser` was NOT passed, AND
+/// * the `fastled-viewer` binary can be found.
+fn should_use_tauri_viewer(cli: &Cli) -> bool {
+    cli.app && !cli.legacy_browser && viewer::viewer_available()
+}
+
 /// Convert the parsed `Cli` struct back into the argv that the Python CLI
 /// expects, so we can pass it through verbatim.
-fn rebuild_python_args(cli: &Cli) -> Vec<String> {
+///
+/// When `tauri_viewer` is `true` the Python process is asked only to compile
+/// (via `--just-compile`); the Rust caller will subsequently launch the Tauri
+/// viewer instead of delegating browser launching to Python.
+fn rebuild_python_args(cli: &Cli, tauri_viewer: bool) -> Vec<String> {
     let mut args: Vec<String> = Vec::new();
 
     if let Some(dir) = &cli.directory {
@@ -147,13 +168,15 @@ fn rebuild_python_args(cli: &Cli) -> Vec<String> {
             args.push(init_val.clone());
         }
     }
-    if cli.just_compile {
+    // When Tauri viewer is handling display, tell Python to only compile.
+    if cli.just_compile || tauri_viewer {
         args.push("--just-compile".to_string());
     }
     if cli.profile {
         args.push("--profile".to_string());
     }
-    if cli.app {
+    // Pass --app through only when we are NOT taking over with the Tauri viewer.
+    if cli.app && !tauri_viewer {
         args.push("--app".to_string());
     }
     if cli.install {
@@ -199,25 +222,89 @@ fn rebuild_python_args(cli: &Cli) -> Vec<String> {
     args
 }
 
+/// Derive the expected build output directory from CLI arguments.
+///
+/// Mirrors `BuildRequest::output_dir()` in `build.rs`: the Python CLI always
+/// writes compiled artefacts to `<sketch_dir>/fastled_js`.
+fn output_dir_from_cli(cli: &Cli) -> Option<PathBuf> {
+    cli.directory
+        .as_ref()
+        .map(|d| PathBuf::from(d).join("fastled_js"))
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
+    let use_tauri = should_use_tauri_viewer(&cli);
+
+    if use_tauri {
+        eprintln!("fastled: native Tauri viewer detected — compiling then launching viewer");
+    }
+
     let python = find_python();
-    let py_args = rebuild_python_args(&cli);
+    let py_args = rebuild_python_args(&cli, use_tauri);
 
     let status = Command::new(&python)
         .args(["-m", "fastled.app"])
         .args(&py_args)
         .status();
 
-    match status {
+    let exit_code = match status {
         Ok(s) => {
             let code = s.code().unwrap_or(1);
             ExitCode::from(code as u8)
         }
         Err(e) => {
             eprintln!("fastled: failed to launch `{python} -m fastled.app`: {e}");
-            ExitCode::FAILURE
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // If we are driving the Tauri viewer and the Python compile step succeeded,
+    // launch the native viewer pointing at the build output directory.
+    if use_tauri && exit_code == ExitCode::SUCCESS {
+        if let Some(out_dir) = output_dir_from_cli(&cli) {
+            match viewer::launch_tauri_viewer(&out_dir) {
+                Ok(mut child) => {
+                    // Wait for the viewer to exit so the terminal session stays
+                    // alive until the user closes the window.
+                    let viewer_status = child.wait();
+                    match viewer_status {
+                        Ok(s) => {
+                            let code = s.code().unwrap_or(1);
+                            return ExitCode::from(code as u8);
+                        }
+                        Err(e) => {
+                            eprintln!("fastled: error waiting for viewer: {e}");
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("fastled: failed to launch Tauri viewer: {e}");
+                    eprintln!("fastled: falling back to legacy Flask browser");
+                    // Re-run Python without --just-compile to use Flask fallback.
+                    let fallback_args = rebuild_python_args(&cli, false);
+                    let fallback_status = Command::new(&python)
+                        .args(["-m", "fastled.app"])
+                        .args(&fallback_args)
+                        .status();
+                    return match fallback_status {
+                        Ok(s) => ExitCode::from(s.code().unwrap_or(1) as u8),
+                        Err(e2) => {
+                            eprintln!(
+                                "fastled: fallback also failed to launch `{python} -m fastled.app`: {e2}"
+                            );
+                            ExitCode::FAILURE
+                        }
+                    };
+                }
+            }
+        } else {
+            eprintln!("fastled: --app with Tauri viewer requires a sketch directory argument");
+            return ExitCode::FAILURE;
         }
     }
+
+    exit_code
 }
