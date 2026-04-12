@@ -24,7 +24,7 @@ dependencies = [
     "clang-tool-chain>=1.2.6",
     "rapidfuzz",
     "progress",
-    "zcmds_win32",
+    "zcmds_win32; sys_platform == 'win32'",
     "zccache>=1.1.20",
 ]
 

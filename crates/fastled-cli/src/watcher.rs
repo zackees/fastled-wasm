@@ -342,9 +342,11 @@ mod tests {
     #[test]
     fn test_watcher_detects_file_change() {
         let dir = temp_dir();
-        let file = dir.path().join("sketch.ino");
+        // Canonicalize to resolve symlinks (e.g. /var -> /private/var on macOS).
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let file = canonical_dir.join("sketch.ino");
 
-        let mut watcher = FileWatcher::new(dir.path().to_path_buf(), DEFAULT_DEBOUNCE_MS).unwrap();
+        let mut watcher = FileWatcher::new(canonical_dir.clone(), DEFAULT_DEBOUNCE_MS).unwrap();
         let rx = watcher.start();
 
         // Give the watcher time to initialise before touching files.
