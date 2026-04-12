@@ -34,11 +34,25 @@ fn archive_available() -> bool {
     true
 }
 
+/// Return whether the native Rust project initialisation and sketch detection
+/// utilities are available in this build.
+///
+/// ```python
+/// from fastled._native import project_available
+/// if project_available():
+///     print("native project init ready")
+/// ```
+#[pyfunction]
+fn project_available() -> bool {
+    true
+}
+
 /// FastLED native extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(watch_available, m)?)?;
     m.add_function(wrap_pyfunction!(archive_available, m)?)?;
+    m.add_function(wrap_pyfunction!(project_available, m)?)?;
     Ok(())
 }
