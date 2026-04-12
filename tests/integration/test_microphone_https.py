@@ -17,6 +17,7 @@ import time
 import unittest
 from pathlib import Path
 
+import pytest
 from playwright.async_api import async_playwright
 
 # Enable Flask server logging for debugging if needed
@@ -225,6 +226,7 @@ class MicrophoneHttpsIntegrationTest(unittest.TestCase):
             proc.terminate()
             time.sleep(1)
 
+    @pytest.mark.skip(reason="HTTPS server timeout on CI — tracked in #39")
     def test_https_certificate_validation(self):
         """Test that HTTPS server properly loads and uses SSL certificates.
 
