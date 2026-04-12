@@ -10,4 +10,4 @@ jobs:
   call:
     uses: ./.github/workflows/_build.yml
     with:
-      runs-on: macos-13
+      runs-on: macos-14
