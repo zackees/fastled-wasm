@@ -233,8 +233,71 @@ fn output_dir_from_cli(cli: &Cli) -> Option<PathBuf> {
         .map(|d| PathBuf::from(d).join("fastled_js"))
 }
 
+/// Serve a directory using the built-in Rust HTTP server.
+///
+/// This replaces the Flask-based `--serve-dir` implementation with a native
+/// Rust server, eliminating the Python/Flask dependency for this code path.
+fn serve_directory(dir: &str, cli: &Cli) -> ExitCode {
+    let path = PathBuf::from(dir);
+    if !path.is_dir() {
+        eprintln!("fastled: --serve-dir path does not exist: {dir}");
+        return ExitCode::FAILURE;
+    }
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async {
+        let addr = match server::start_server(path.clone(), 0).await {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("fastled: failed to start server: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+        let url = format!("http://{addr}");
+        println!("Serving {dir} at {url}");
+        println!("Press Ctrl+C to stop...");
+
+        // Open the Tauri viewer or fall back to system browser.
+        if viewer::viewer_available() && !cli.no_https {
+            if let Err(e) = viewer::launch_tauri_viewer(&path) {
+                eprintln!("fastled: Tauri viewer failed: {e}, opening system browser");
+                open_browser(&url);
+            }
+        } else {
+            open_browser(&url);
+        }
+
+        // Wait for Ctrl+C.
+        tokio::signal::ctrl_c().await.ok();
+        println!("\nShutting down...");
+        ExitCode::SUCCESS
+    })
+}
+
+/// Open a URL in the default system browser.
+fn open_browser(url: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("cmd").args(["/c", "start", url]).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("open").arg(url).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("xdg-open").arg(url).spawn();
+    }
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
+
+    // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
+    if let Some(ref serve_dir) = cli.serve_dir {
+        return serve_directory(serve_dir, &cli);
+    }
 
     let use_tauri = should_use_tauri_viewer(&cli);
 

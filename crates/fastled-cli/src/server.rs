@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Server module is being wired in incrementally.
-
 //! Embedded HTTP/HTTPS static file server.
 //!
 //! Serves compiled FastLED output (JS, WASM, HTML) with the correct
@@ -177,4 +175,145 @@ pub async fn start_server(serve_dir: PathBuf, port: u16) -> anyhow::Result<Socke
     });
 
     Ok(addr)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Helper: create a temp dir, start the server, return (addr, dir).
+    async fn setup_server() -> (SocketAddr, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let addr = start_server(dir.path().to_path_buf(), 0).await.unwrap();
+        // Give the server a moment to bind.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        (addr, dir)
+    }
+
+    #[tokio::test]
+    async fn test_loading_page_when_no_index_html() {
+        let (addr, _dir) = setup_server().await;
+        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert!(
+            body.contains("Compiling..."),
+            "expected loading page, got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_serves_index_html_when_present() {
+        let (addr, dir) = setup_server().await;
+        fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
+        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert!(
+            body.contains("OK"),
+            "expected index.html content, got: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_serves_js_with_correct_mime() {
+        let (addr, dir) = setup_server().await;
+        fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
+        let resp = reqwest::get(format!("http://{addr}/app.js")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
+    }
+
+    #[tokio::test]
+    async fn test_serves_wasm_with_correct_mime() {
+        let (addr, dir) = setup_server().await;
+        fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
+        let resp = reqwest::get(format!("http://{addr}/fastled.wasm"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
+    }
+
+    #[tokio::test]
+    async fn test_coop_coep_headers() {
+        let (addr, _dir) = setup_server().await;
+        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        let coep = resp
+            .headers()
+            .get("cross-origin-embedder-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let coop = resp
+            .headers()
+            .get("cross-origin-opener-policy")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(coep, "credentialless");
+        assert_eq!(coop, "same-origin");
+    }
+
+    #[tokio::test]
+    async fn test_404_for_missing_file() {
+        let (addr, _dir) = setup_server().await;
+        let resp = reqwest::get(format!("http://{addr}/nonexistent.js"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn test_build_status_json_served() {
+        let (addr, dir) = setup_server().await;
+        // Initially no build-status.json -> 404
+        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404);
+
+        // Write status file -> 200
+        fs::write(
+            dir.path().join("build-status.json"),
+            r#"{"status":"compiling","message":"Building..."}"#,
+        )
+        .unwrap();
+        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("compiling"));
+    }
+
+    #[tokio::test]
+    async fn test_directory_traversal_blocked() {
+        let (addr, dir) = setup_server().await;
+        // Create a file outside the serve dir
+        let parent = dir.path().parent().unwrap();
+        fs::write(parent.join("secret.txt"), "top secret").unwrap();
+        let resp = reqwest::get(format!("http://{addr}/../secret.txt"))
+            .await
+            .unwrap();
+        // Should not serve files outside the serve dir
+        assert_ne!(resp.status(), 200);
+    }
 }
