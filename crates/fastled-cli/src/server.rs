@@ -238,7 +238,7 @@ mod tests {
     #[tokio::test]
     async fn test_serves_wasm_with_correct_mime() {
         let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("fastled.wasm"), &[0x00, 0x61, 0x73, 0x6d]).unwrap();
+        fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
         let resp = reqwest::get(format!("http://{addr}/fastled.wasm"))
             .await
             .unwrap();
