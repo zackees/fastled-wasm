@@ -2,6 +2,8 @@ use clap::Parser;
 use std::process::{Command, ExitCode};
 
 mod archive;
+mod build;
+mod keyboard;
 mod project;
 mod watcher;
 
