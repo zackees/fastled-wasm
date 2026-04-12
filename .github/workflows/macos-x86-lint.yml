@@ -2,6 +2,7 @@ name: macOS x86 Lint
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
