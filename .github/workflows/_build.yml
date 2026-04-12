@@ -50,22 +50,30 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Install (native)
-        if: inputs.maturin-target == ''
+      - name: Install
         run: ./install
 
-      - name: Install (cross-compile)
+      - name: Add cross-compile target
         if: inputs.maturin-target != ''
-        run: |
-          uv venv --python 3.11 --seed
-          uv pip install "maturin>=1.7,<2"
-          rustup target add "${{ inputs.maturin-target }}"
+        run: rustup target add "${{ inputs.maturin-target }}"
 
       - name: Build wheel
         run: |
           if [ -n "${{ inputs.maturin-target }}" ]; then
-            export PYO3_CROSS_PYTHON_VERSION=3.11
-            uv run maturin build --release --target "${{ inputs.maturin-target }}"
+            # Generate import lib stub for cross-compilation.
+            # PyO3 abi3-py310 expects python310.lib but generate-import-lib
+            # creates python3.lib; copy to satisfy the linker.
+            BUILD_DIR="target/${{ inputs.maturin-target }}/release/build"
+            uv run maturin build --release --target "${{ inputs.maturin-target }}" || {
+              echo "First build failed — patching import lib name..."
+              for d in "$BUILD_DIR"/pyo3-ffi-*/out/lib; do
+                if [ -f "$d/python3.lib" ] && [ ! -f "$d/python310.lib" ]; then
+                  cp "$d/python3.lib" "$d/python310.lib"
+                  echo "Copied python3.lib -> python310.lib in $d"
+                fi
+              done
+              uv run maturin build --release --target "${{ inputs.maturin-target }}"
+            }
           else
             uv run maturin build --release
           fi
