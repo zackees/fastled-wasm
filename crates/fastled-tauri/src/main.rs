@@ -46,11 +46,7 @@ fn main() {
                 };
                 let file_path = serve_dir.join(relative);
 
-                let mime = match file_path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                {
+                let mime = match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
                     "html" => "text/html",
                     "js" => "application/javascript",
                     "wasm" => "application/wasm",
