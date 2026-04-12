@@ -21,10 +21,24 @@ fn watch_available() -> bool {
     true
 }
 
+/// Return whether the native Rust archive download and extraction utilities
+/// are available in this build.
+///
+/// ```python
+/// from fastled._native import archive_available
+/// if archive_available():
+///     print("native archive support ready")
+/// ```
+#[pyfunction]
+fn archive_available() -> bool {
+    true
+}
+
 /// FastLED native extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(watch_available, m)?)?;
+    m.add_function(wrap_pyfunction!(archive_available, m)?)?;
     Ok(())
 }
