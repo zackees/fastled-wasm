@@ -31,15 +31,10 @@ jobs:
 
       - uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Set Rust toolchain
-        run: |
-          CHANNEL=$(grep 'channel' rust-toolchain.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-          echo "RUSTUP_TOOLCHAIN=$CHANNEL" >> "$GITHUB_ENV"
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: zackees/setup-soldr@v0
         with:
-          shared-key: fastled-${{ inputs.runs-on }}
-          cache-targets: false
+          cache: true
+          cache-key-suffix: integration-test-${{ inputs.runs-on }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
