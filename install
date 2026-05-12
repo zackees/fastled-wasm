@@ -24,15 +24,27 @@ uv pip install -r requirements.testing.txt
 
 
 # If activate exists, delete it
-if [[ -f activate ]]; then
-  rm activate
+if [[ -f activate || -L activate ]]; then
+  rm -f activate
 fi
 
-# If Windows, then symlink .venv/Scripts/activate to .venv/bin/activate
+# Create a top-level ./activate pointer for developer convenience. On
+# Windows, ln -s requires create-symlink privilege which CI runners (and
+# many dev machines) lack — current windows-2025 images fail here even for
+# git-bash. Fall back to plain copy, then to a no-op with a warning. Not
+# fatal: ./activate is only used interactively.
 if [[ "$OSTYPE" == "msys" ]]; then
-  ln -s .venv/Scripts/activate ./activate
+  ACTIVATE_SRC=".venv/Scripts/activate"
 else
-  ln -s .venv/bin/activate ./activate
+  ACTIVATE_SRC=".venv/bin/activate"
+fi
+
+if [[ -f "$ACTIVATE_SRC" ]]; then
+  ln -s "$ACTIVATE_SRC" ./activate 2>/dev/null \
+    || cp "$ACTIVATE_SRC" ./activate 2>/dev/null \
+    || echo "Warning: could not create ./activate (activate manually with: source $ACTIVATE_SRC)"
+else
+  echo "Warning: $ACTIVATE_SRC not found; skipping ./activate symlink"
 fi
 
 # ── Rust toolchain bootstrap ────────────────────────────────────────────────
