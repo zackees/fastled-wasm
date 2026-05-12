@@ -34,7 +34,10 @@ jobs:
       - uses: zackees/setup-soldr@v0
         with:
           cache: true
-          cache-key-suffix: integration-test-${{ inputs.runs-on }}
+          # Include github.workflow because some callers (e.g. Windows
+          # x86/ARM) currently share the same runs-on. Without this they
+          # collide on the same cache key and one job fails to save.
+          cache-key-suffix: integration-test-${{ inputs.runs-on }}-${{ github.workflow }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
