@@ -31,15 +31,13 @@ jobs:
 
       - uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Set Rust toolchain
-        run: |
-          CHANNEL=$(grep 'channel' rust-toolchain.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-          echo "RUSTUP_TOOLCHAIN=$CHANNEL" >> "$GITHUB_ENV"
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: zackees/setup-soldr@v0
         with:
-          shared-key: fastled-${{ inputs.runs-on }}
-          cache-targets: false
+          cache: true
+          # Include github.workflow because some callers (e.g. Windows
+          # x86/ARM) currently share the same runs-on. Without this they
+          # collide on the same cache key and one job fails to save.
+          cache-key-suffix: unit-test-${{ inputs.runs-on }}-${{ github.workflow }}
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'

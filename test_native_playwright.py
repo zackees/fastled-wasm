@@ -11,6 +11,12 @@ import sys
 import time
 from pathlib import Path
 
+# Windows console defaults to cp1252, which can't encode emoji that FastLED
+# prints to console (🔧, ✅, etc.). Reconfigure stdout/stderr to UTF-8 so the
+# relevant-message dump near the end of main() doesn't UnicodeEncodeError.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+
 FASTLED_JS = Path.home() / "dev" / "fastled7" / "examples" / "Blink" / "fastled_js"
 
 # Inline server script - runs in its own subprocess
@@ -59,8 +65,11 @@ from pathlib import Path
 port = int(sys.argv[1])
 url = f"http://localhost:{port}/"
 
+# Only redirect PLAYWRIGHT_BROWSERS_PATH if the dir actually contains a
+# Chromium install. The dir can exist with only user-data/ in it, in which
+# case Playwright searches an empty location and fails to launch.
 browsers_path = Path.home() / ".fastled" / "playwright"
-if browsers_path.exists():
+if browsers_path.exists() and any(browsers_path.glob("chromium*")):
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_path)
 
 from playwright.sync_api import sync_playwright
