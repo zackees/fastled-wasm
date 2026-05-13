@@ -3,10 +3,29 @@ from pathlib import Path
 
 _MAX_FILES_SEARCH_LIMIT = 10000
 
+try:
+    from fastled._native import (
+        find_sketch_by_partial_name as _native_find_sketch_by_partial_name,
+    )
+    from fastled._native import (
+        find_sketch_directories as _native_find_sketch_directories,
+    )
+    from fastled._native import looks_like_fastled_repo as _native_looks_like_fastled_repo
+    from fastled._native import (
+        looks_like_sketch_directory as _native_looks_like_sketch_directory,
+    )
+except ImportError:
+    _native_find_sketch_by_partial_name = None
+    _native_find_sketch_directories = None
+    _native_looks_like_fastled_repo = None
+    _native_looks_like_sketch_directory = None
+
 
 def find_sketch_directories(directory: Path | None = None) -> list[Path]:
     if directory is None:
         directory = Path(".")
+    if _native_find_sketch_directories is not None:
+        return [Path(p) for p in _native_find_sketch_directories(str(directory))]
     file_count = 0
     sketch_directories: list[Path] = []
     # search all the paths one level deep
@@ -51,6 +70,9 @@ def find_sketch_directories(directory: Path | None = None) -> list[Path]:
     return sketch_directories
 
 
+_ORIGINAL_FIND_SKETCH_DIRECTORIES = find_sketch_directories
+
+
 def get_sketch_files(directory: Path) -> list[Path]:
     file_count = 0
     files: list[Path] = []
@@ -80,6 +102,8 @@ def get_sketch_files(directory: Path) -> list[Path]:
 
 
 def looks_like_fastled_repo(directory: Path = Path(".")) -> bool:
+    if _native_looks_like_fastled_repo is not None:
+        return bool(_native_looks_like_fastled_repo(str(directory)))
     libprops = directory / "library.properties"
     if not libprops.exists():
         return False
@@ -94,6 +118,8 @@ def _lots_and_lots_of_files(directory: Path) -> bool:
 def looks_like_sketch_directory(directory: Path | str | None, quick=False) -> bool:
     if directory is None:
         return False
+    if _native_looks_like_sketch_directory is not None:
+        return bool(_native_looks_like_sketch_directory(str(directory), quick))
     directory = Path(directory)
     if looks_like_fastled_repo(directory):
         print("Directory looks like the FastLED repo")
@@ -137,6 +163,12 @@ def find_sketch_by_partial_name(
     """
     if search_dir is None:
         search_dir = Path(".")
+
+    if (
+        _native_find_sketch_by_partial_name is not None
+        and find_sketch_directories is _ORIGINAL_FIND_SKETCH_DIRECTORIES
+    ):
+        return Path(_native_find_sketch_by_partial_name(partial_name, str(search_dir)))
 
     # First, find all sketch directories
     sketch_directories = find_sketch_directories(search_dir)

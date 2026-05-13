@@ -1,24 +1,14 @@
 //! Build orchestration for WASM compilation.
 //!
-//! Ports the high-level build request / result abstraction from
-//! `build_types.py` and `build_service.py` to Rust.
-//!
-//! The actual WASM compilation remains in Python.  [`run_build`] delegates
-//! to `python -m fastled.app --just-compile` as a subprocess, keeping the
-//! Rust layer as a thin orchestration shell.
-//!
-//! This module is included as a library component; the CLI main loop will
-//! integrate it in a later phase for captured-output builds.
+//! The Rust CLI now drives the Python build service in-process through PyO3
+//! instead of shelling out through `python -m fastled.app`.
 
-// The CLI currently uses `run_python_compile()` in main.rs (inherited stdio).
-// This module provides a captured-output alternative for future use.
-#![allow(dead_code)]
-
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyModule};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,22 +23,18 @@ pub enum BuildMode {
 }
 
 impl BuildMode {
-    /// Return the CLI flag string that the Python CLI expects.
-    pub fn as_flag(&self) -> &'static str {
-        match self {
-            BuildMode::Quick => "--quick",
-            BuildMode::Debug => "--debug",
-            BuildMode::Release => "--release",
-        }
-    }
-
-    /// Return a human-readable label.
-    pub fn label(&self) -> &'static str {
+    /// Return the Python enum member name.
+    pub fn py_member_name(&self) -> &'static str {
         match self {
             BuildMode::Quick => "QUICK",
             BuildMode::Debug => "DEBUG",
             BuildMode::Release => "RELEASE",
         }
+    }
+
+    /// Return a human-readable label.
+    pub fn label(&self) -> &'static str {
+        self.py_member_name()
     }
 }
 
@@ -80,71 +66,194 @@ impl BuildRequest {
     }
 }
 
-/// Mirrors `BuildResult` from `build_types.py`.
+/// Mirrors the useful fields returned from `build_types.BuildResult`.
 #[derive(Debug)]
 pub struct BuildResult {
     /// Whether the compilation succeeded.
     pub success: bool,
     /// Directory that received the compiled artefacts.
     pub output_dir: PathBuf,
-    /// Wall-clock seconds spent in the Python subprocess.
+    /// Wall-clock seconds spent inside the in-process Python build call.
     pub duration_secs: f64,
-    /// Combined stdout + stderr from the Python subprocess.
+    /// Python-side sketch compilation time.
+    pub sketch_time_secs: f64,
+    /// Strategy selected by the build service (`cold` or `incremental`).
+    pub strategy: String,
+    /// Final summary line from the Python build result.
     pub output: String,
 }
 
 // ---------------------------------------------------------------------------
-// Subprocess helper
+// Python bridge helpers
 // ---------------------------------------------------------------------------
 
-/// Locate a Python executable.
-///
-/// Priority order (mirrors `find_python` in `main.rs`):
-/// 1. `VIRTUAL_ENV/Scripts/python.exe` (Windows) or `VIRTUAL_ENV/bin/python`
-/// 2. `python` on PATH
-/// 3. `python3` on PATH
-fn find_python() -> String {
-    if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-        #[cfg(windows)]
-        let candidate = format!("{}/Scripts/python.exe", venv);
-        #[cfg(not(windows))]
-        let candidate = format!("{}/bin/python", venv);
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+}
 
-        if std::path::Path::new(&candidate).exists() {
-            return candidate;
-        }
+fn workspace_python_source() -> Option<PathBuf> {
+    let src_dir = workspace_root().join("src");
+    src_dir.is_dir().then_some(src_dir)
+}
+
+fn py_path(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
+    let pathlib = PyModule::import(py, "pathlib")?;
+    let cls = pathlib.getattr("Path")?;
+    Ok(cls
+        .call1((path.to_string_lossy().as_ref(),))?
+        .into_any()
+        .unbind())
+}
+
+fn py_fspath(value: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
+    let py = value.py();
+    let os = PyModule::import(py, "os")?;
+    let fspath = os.getattr("fspath")?;
+    let path_value = fspath.call1((value,))?;
+    let path_str: String = path_value.extract()?;
+    Ok(PathBuf::from(path_str))
+}
+
+fn ensure_workspace_src_on_sys_path(py: Python<'_>) -> PyResult<()> {
+    let Some(src_dir) = workspace_python_source() else {
+        return Ok(());
+    };
+    let src_text = src_dir.to_string_lossy().into_owned();
+    let sys = PyModule::import(py, "sys")?;
+    let sys_path = sys.getattr("path")?;
+    let contains: bool = sys_path
+        .call_method1("__contains__", (src_text.as_str(),))?
+        .extract()?;
+    if !contains {
+        sys_path.call_method1("insert", (0, src_text.as_str()))?;
     }
+    Ok(())
+}
 
-    if Command::new("python")
+fn run_build_embedded(request: &BuildRequest) -> Result<BuildResult> {
+    let start = Instant::now();
+    Python::with_gil(|py| -> Result<BuildResult> {
+        ensure_workspace_src_on_sys_path(py)
+            .context("failed to add workspace Python sources to sys.path")?;
+
+        let build_service_mod = PyModule::import(py, "fastled.build_service")
+            .context("import fastled.build_service")?;
+        let build_types_mod =
+            PyModule::import(py, "fastled.build_types").context("import fastled.build_types")?;
+        let types_mod = PyModule::import(py, "fastled.types").context("import fastled.types")?;
+
+        let build_mode = types_mod
+            .getattr("BuildMode")
+            .context("BuildMode enum missing")?
+            .getattr(request.build_mode.py_member_name())
+            .with_context(|| {
+                format!("BuildMode.{} missing", request.build_mode.py_member_name())
+            })?;
+
+        let request_kwargs = PyDict::new(py);
+        request_kwargs
+            .set_item("sketch_dir", py_path(py, &request.sketch_dir)?)
+            .context("set sketch_dir")?;
+        request_kwargs
+            .set_item("build_mode", &build_mode)
+            .context("set build_mode")?;
+        request_kwargs
+            .set_item("profile", request.profile)
+            .context("set profile")?;
+        match &request.fastled_path {
+            Some(path) => request_kwargs
+                .set_item("fastled_path", py_path(py, path)?)
+                .context("set fastled_path")?,
+            None => request_kwargs
+                .set_item("fastled_path", py.None())
+                .context("set fastled_path none")?,
+        }
+        request_kwargs
+            .set_item("force_clean", request.force_clean)
+            .context("set force_clean")?;
+
+        let build_request = build_types_mod
+            .getattr("BuildRequest")
+            .context("BuildRequest class missing")?
+            .call((), Some(&request_kwargs))
+            .context("construct BuildRequest")?;
+
+        let service = build_service_mod
+            .getattr("BuildService")
+            .context("BuildService class missing")?
+            .call0()
+            .context("construct BuildService")?;
+
+        let result = service
+            .call_method1("build", (build_request,))
+            .context("BuildService.build failed")?;
+
+        let success: bool = result
+            .getattr("success")
+            .context("missing build result success")?
+            .extract()
+            .context("extract build success")?;
+        let output: String = result
+            .getattr("stdout")
+            .context("missing build result stdout")?
+            .extract()
+            .context("extract build stdout")?;
+        let strategy: String = result
+            .getattr("strategy")
+            .context("missing build strategy")?
+            .extract()
+            .context("extract build strategy")?;
+        let sketch_time_secs: f64 = result
+            .getattr("sketch_time")
+            .context("missing sketch_time")?
+            .extract()
+            .context("extract sketch_time")?;
+        let output_dir = py_fspath(&result.getattr("output_dir").context("missing output_dir")?)
+            .context("extract output_dir")?;
+
+        Ok(BuildResult {
+            success,
+            output_dir,
+            duration_secs: start.elapsed().as_secs_f64(),
+            sketch_time_secs,
+            strategy,
+            output,
+        })
+    })
+}
+
+fn run_build_subprocess(request: &BuildRequest, reason: &str) -> Result<BuildResult> {
+    use std::process::Command;
+
+    let python = if Command::new("python")
         .args(["--version"])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
-        return "python".to_string();
-    }
+        "python"
+    } else {
+        "python3"
+    };
 
-    "python3".to_string()
-}
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/// Run a WASM build by calling the Python CLI as a subprocess.
-///
-/// Delegates to `python -m fastled.app --just-compile <sketch_dir> [flags]`.
-/// The actual Emscripten / WASM compilation stays entirely in Python; this
-/// function only constructs the command, measures elapsed time, and wraps the
-/// result.
-pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
-    let python = find_python();
     let output_dir = request.output_dir();
-
-    let mut cmd = Command::new(&python);
+    let mut cmd = Command::new(python);
     cmd.args(["-m", "fastled.app", "--just-compile"]);
     cmd.arg(&request.sketch_dir);
-    cmd.arg(request.build_mode.as_flag());
+
+    match request.build_mode {
+        BuildMode::Quick => {}
+        BuildMode::Debug => {
+            cmd.arg("--debug");
+        }
+        BuildMode::Release => {
+            cmd.arg("--release");
+        }
+    }
 
     if request.profile {
         cmd.arg("--profile");
@@ -153,7 +262,11 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
         cmd.arg("--fastled-path");
         cmd.arg(fp);
     }
+    if request.force_clean {
+        cmd.arg("--purge");
+    }
 
+    eprintln!("fastled: falling back to subprocess build path: {reason}");
     let start = Instant::now();
     let output = cmd
         .output()
@@ -174,8 +287,23 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
         success: output.status.success(),
         output_dir,
         duration_secs,
+        sketch_time_secs: duration_secs,
+        strategy: "unknown".to_string(),
         output: combined,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Run a WASM build through the Python build service without the legacy
+/// `fastled.app` CLI trampoline.
+pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
+    match run_build_embedded(request) {
+        Ok(result) => Ok(result),
+        Err(err) => run_build_subprocess(request, &format!("{err:#}")),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -185,17 +313,16 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     // ------------------------------------------------------------------
     // BuildMode
     // ------------------------------------------------------------------
 
     #[test]
-    fn test_build_mode_flags() {
-        assert_eq!(BuildMode::Quick.as_flag(), "--quick");
-        assert_eq!(BuildMode::Debug.as_flag(), "--debug");
-        assert_eq!(BuildMode::Release.as_flag(), "--release");
+    fn test_build_mode_member_names() {
+        assert_eq!(BuildMode::Quick.py_member_name(), "QUICK");
+        assert_eq!(BuildMode::Debug.py_member_name(), "DEBUG");
+        assert_eq!(BuildMode::Release.py_member_name(), "RELEASE");
     }
 
     #[test]
@@ -273,6 +400,13 @@ mod tests {
         assert_eq!(req.build_mode, BuildMode::Release);
     }
 
+    #[test]
+    fn test_workspace_python_source_points_at_repo_src() {
+        let src_dir = workspace_python_source().expect("workspace src dir");
+        assert!(src_dir.ends_with("src"));
+        assert!(src_dir.is_dir());
+    }
+
     // ------------------------------------------------------------------
     // BuildResult
     // ------------------------------------------------------------------
@@ -283,11 +417,15 @@ mod tests {
             success: true,
             output_dir: PathBuf::from("/tmp/my_sketch/fastled_js"),
             duration_secs: 2.5,
+            sketch_time_secs: 1.75,
+            strategy: "cold".to_string(),
             output: "Build OK".to_string(),
         };
 
         assert!(result.success);
         assert_eq!(result.duration_secs, 2.5);
+        assert_eq!(result.sketch_time_secs, 1.75);
+        assert_eq!(result.strategy, "cold");
         assert_eq!(result.output, "Build OK");
     }
 }

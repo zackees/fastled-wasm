@@ -7,11 +7,20 @@ import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 from fastled.build_types import BuildRequest, BuildResult, BuildStrategy
 from fastled.interrupts import handle_keyboard_interrupt
 from fastled.types import BuildMode, CompileResult
+
+try:
+    from fastled._native import NativeBuildService as _NativeBuildService
+except ImportError:
+    _NativeBuildService = None
+
+
+def _toolchain_key(fastled_path: Path | None) -> str | None:
+    return str(fastled_path.resolve()) if fastled_path else None
 
 
 class _CompilerToolchain(Protocol):
@@ -31,7 +40,7 @@ class _BuildState:
     fastled_path: str | None
 
 
-class BuildService:
+class _PythonBuildService:
     def __init__(self) -> None:
         self._toolchains: dict[str | None, _CompilerToolchain] = {}
         self._states: dict[Path, _BuildState] = {}
@@ -39,8 +48,7 @@ class BuildService:
     def register_toolchain(
         self, fastled_path: Path | None, toolchain: _CompilerToolchain
     ) -> None:
-        key = str(fastled_path.resolve()) if fastled_path else None
-        self._toolchains[key] = toolchain
+        self._toolchains[_toolchain_key(fastled_path)] = toolchain
 
     def build(self, request: BuildRequest) -> BuildResult:
         from fastled.toolchain.emscripten import EmscriptenToolchain
@@ -51,9 +59,7 @@ class BuildService:
         if request.force_clean and output_dir.exists():
             shutil.rmtree(output_dir, ignore_errors=True)
 
-        toolchain_key = (
-            str(request.fastled_path.resolve()) if request.fastled_path else None
-        )
+        toolchain_key = _toolchain_key(request.fastled_path)
         toolchain = self._toolchains.get(toolchain_key)
         if toolchain is None:
             toolchain = EmscriptenToolchain(fastled_path=request.fastled_path)
@@ -142,9 +148,7 @@ class BuildService:
         if previous is None:
             return "cold"
 
-        current_fastled_path = (
-            str(request.fastled_path.resolve()) if request.fastled_path else None
-        )
+        current_fastled_path = _toolchain_key(request.fastled_path)
         if previous.fastled_path != current_fastled_path:
             return "cold"
         if previous.build_mode != request.build_mode.value:
@@ -207,12 +211,10 @@ class BuildService:
     @staticmethod
     def _zip_output(output_dir: Path) -> bytes:
         zip_buffer = io.BytesIO()
-        zip_start = time.time()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             for file_path in output_dir.rglob("*"):
                 if file_path.is_file():
                     zf.write(file_path, file_path.relative_to(output_dir))
-        _ = time.time() - zip_start
         return zip_buffer.getvalue()
 
     @staticmethod
@@ -231,3 +233,99 @@ class BuildService:
         if "frontend_assets" not in artifacts and output_dir.exists():
             artifacts["frontend_assets"] = output_dir
         return artifacts
+
+
+class BuildService:
+    def __init__(self) -> None:
+        self._native = _NativeBuildService() if _NativeBuildService is not None else None
+        self._toolchains: dict[str | None, _CompilerToolchain] = {}
+        self._fallback = None if self._native is not None else _PythonBuildService()
+
+    def register_toolchain(
+        self, fastled_path: Path | None, toolchain: _CompilerToolchain
+    ) -> None:
+        if self._native is None:
+            assert self._fallback is not None
+            self._fallback.register_toolchain(fastled_path, toolchain)
+            return
+
+        key = _toolchain_key(fastled_path)
+        self._toolchains[key] = toolchain
+        self._native.register_toolchain(toolchain, key)
+
+    def build(self, request: BuildRequest) -> BuildResult:
+        if self._native is None:
+            assert self._fallback is not None
+            return self._fallback.build(request)
+
+        self._ensure_toolchain(request.fastled_path)
+
+        try:
+            payload = self._native.build(
+                str(request.sketch_dir),
+                request.build_mode.value,
+                request.build_mode,
+                request.profile,
+                _toolchain_key(request.fastled_path),
+                request.force_clean,
+            )
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+            raise
+
+        compile_result = CompileResult(
+            success=bool(payload["success"]),
+            stdout=str(payload["stdout"]),
+            hash_value=cast(str | None, payload["hash_value"]),
+            zip_bytes=bytes(payload["zip_bytes"]),
+            zip_time=float(payload["zip_time"]),
+            libfastled_time=float(payload["libfastled_time"]),
+            sketch_time=float(payload["sketch_time"]),
+            response_processing_time=float(payload["response_processing_time"]),
+        )
+
+        artifacts = {
+            name: Path(path_str)
+            for name, path_str in cast(dict[str, str], payload["artifacts"]).items()
+        }
+
+        return BuildResult(
+            compile_result=compile_result,
+            strategy=cast(BuildStrategy, payload["strategy"]),
+            output_dir=Path(str(payload["output_dir"])),
+            artifacts=artifacts,
+        )
+
+    def detect_strategy(self, request: BuildRequest) -> BuildStrategy:
+        if self._native is None:
+            assert self._fallback is not None
+            return self._fallback.detect_strategy(request)
+
+        return cast(
+            BuildStrategy,
+            self._native.detect_strategy(
+                str(request.sketch_dir),
+                request.build_mode.value,
+                request.profile,
+                _toolchain_key(request.fastled_path),
+                request.force_clean,
+            ),
+        )
+
+    def purge(self, sketch_dir: Path) -> None:
+        if self._native is None:
+            assert self._fallback is not None
+            self._fallback.purge(sketch_dir)
+            return
+        self._native.purge(str(sketch_dir))
+
+    def _ensure_toolchain(self, fastled_path: Path | None) -> None:
+        key = _toolchain_key(fastled_path)
+        if key in self._toolchains:
+            return
+
+        from fastled.toolchain.emscripten import EmscriptenToolchain
+
+        self.register_toolchain(
+            fastled_path, EmscriptenToolchain(fastled_path=fastled_path)
+        )

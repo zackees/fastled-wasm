@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -24,31 +25,37 @@ def _exe_name() -> str:
     return "fastled.exe" if sys.platform == "win32" else "fastled"
 
 
+def _find_workspace_root() -> Path | None:
+    current = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (current / "Cargo.toml").is_file():
+            return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
 def find_rust_fastled_cli() -> Path | None:
     """Return the path to the Rust ``fastled`` binary, or ``None``."""
     exe = _exe_name()
 
     # 1. Workspace target/ tree (dev / editable).
-    current = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (current / "Cargo.toml").is_file():
-            for profile in ("release", "debug"):
-                candidate = current / "target" / profile / exe
-                if candidate.is_file():
-                    return candidate
-            target_dir = current / "target"
-            if target_dir.is_dir():
-                for arch_dir in target_dir.iterdir():
-                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
-                        for profile in ("release", "debug"):
-                            candidate = arch_dir / profile / exe
-                            if candidate.is_file():
-                                return candidate
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
+    workspace_root = _find_workspace_root()
+    if workspace_root is not None:
+        for profile in ("release", "debug"):
+            candidate = workspace_root / "target" / profile / exe
+            if candidate.is_file():
+                return candidate
+        target_dir = workspace_root / "target"
+        if target_dir.is_dir():
+            for arch_dir in target_dir.iterdir():
+                if arch_dir.is_dir() and not arch_dir.name.startswith("."):
+                    for profile in ("release", "debug"):
+                        candidate = arch_dir / profile / exe
+                        if candidate.is_file():
+                            return candidate
 
     # 2. cargo-binstall install location.
     cargo_home = os.environ.get("CARGO_HOME")
@@ -68,3 +75,21 @@ def find_rust_fastled_cli() -> Path | None:
     if found:
         return Path(found)
     return None
+
+
+def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
+    """Run the Rust FastLED CLI and return its exit code."""
+    args = list(argv or [])
+    cli = find_rust_fastled_cli()
+    if cli is not None:
+        return subprocess.run([str(cli), *args], check=False).returncode
+
+    workspace_root = _find_workspace_root()
+    if workspace_root is not None:
+        return subprocess.run(
+            ["cargo", "run", "--quiet", "--bin", "fastled", "--", *args],
+            check=False,
+            cwd=workspace_root,
+        ).returncode
+
+    raise RuntimeError("Could not locate the Rust fastled CLI binary.")

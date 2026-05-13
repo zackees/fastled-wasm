@@ -1,34 +1,22 @@
 """Tests for post-migration cleanup: dead code removal, stale exports, and bug fixes."""
 
 import ast
-import inspect
 import unittest
 from pathlib import Path
 
 SRC_DIR = Path(__file__).parent.parent.parent / "src" / "fastled"
 
 
-class TestAppFlagPassedToNativeCompile(unittest.TestCase):
-    """Bug 1: --app flag must be accepted and forwarded by run_native_compile."""
+class TestPythonEntrypointsDelegateToRust(unittest.TestCase):
+    """User-facing Python entry points should forward to the native Rust CLI."""
 
-    def test_run_native_compile_accepts_app_param(self) -> None:
-        from fastled.compile_native import run_native_compile
+    def test_cli_main_uses_rust_launcher(self) -> None:
+        source = (SRC_DIR / "cli.py").read_text()
+        self.assertIn("invoke_rust_fastled_cli", source)
 
-        sig = inspect.signature(run_native_compile)
-        self.assertIn(
-            "app",
-            sig.parameters,
-            "run_native_compile must accept an 'app' parameter",
-        )
-
-    def test_app_main_passes_app_to_run_native_compile(self) -> None:
-        """Verify app.py passes args.app in the run_native_compile() call."""
+    def test_app_main_uses_rust_launcher(self) -> None:
         source = (SRC_DIR / "app.py").read_text()
-        self.assertIn(
-            "app=",
-            source,
-            "app.py should pass app= keyword to run_native_compile",
-        )
+        self.assertIn("invoke_rust_fastled_cli", source)
 
 
 class TestNoDeadCodeModules(unittest.TestCase):
