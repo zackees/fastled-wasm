@@ -165,13 +165,21 @@ def activate() -> None:
     )
 
 
-def _apply_sccache(env: dict[str, str]) -> dict[str, str]:
-    """Set RUSTC_WRAPPER=sccache when sccache is available."""
+def _apply_rustc_wrapper(env: dict[str, str]) -> dict[str, str]:
+    """Set RUSTC_WRAPPER to zccache when available, falling back to sccache.
+
+    The project uses zccache (via soldr) for compile caching. Prefer it; fall
+    back to sccache for environments where only that is installed. Bare cargo
+    invocations that consume this env still benefit from the cache even though
+    most callers in this repo now route through ``soldr cargo`` directly.
+    """
     if env.get("RUSTC_WRAPPER"):
         return env
-    sccache = shutil.which("sccache", path=env.get("PATH"))
-    if sccache:
-        env["RUSTC_WRAPPER"] = sccache
+    for tool in ("zccache", "sccache"):
+        found = shutil.which(tool, path=env.get("PATH"))
+        if found:
+            env["RUSTC_WRAPPER"] = found
+            return env
     return env
 
 
@@ -185,7 +193,7 @@ def clean_env() -> dict[str, str]:
         env.pop("VIRTUAL_ENV", None)
         env.setdefault("PYTHONUTF8", "1")
     env.setdefault("RUSTUP_TOOLCHAIN", toolchain_name())
-    env = _apply_sccache(env)
+    env = _apply_rustc_wrapper(env)
     return env
 
 
