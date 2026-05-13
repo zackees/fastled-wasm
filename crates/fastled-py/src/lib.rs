@@ -1,5 +1,6 @@
 use fastled_cli::install;
 use fastled_cli::project;
+use fastled_cli::{PromptChoice, SketchSelection};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyModule};
@@ -865,6 +866,55 @@ fn find_sketch_by_partial_name(partial_name: &str, search_dir: Option<&str>) -> 
         .map_err(|err| PyValueError::new_err(err.to_string()))
 }
 
+fn selection_payload(selection: SketchSelection) -> (String, Option<String>, Vec<String>) {
+    match selection {
+        SketchSelection::Selected(value) => ("selected".to_string(), Some(value), Vec::new()),
+        SketchSelection::Prompt(options) => ("prompt".to_string(), None, options),
+        SketchSelection::None => ("none".to_string(), None, Vec::new()),
+    }
+}
+
+fn prompt_choice_payload(choice: PromptChoice) -> (String, Option<String>, Vec<String>) {
+    match choice {
+        PromptChoice::Selected(value) => ("selected".to_string(), Some(value), Vec::new()),
+        PromptChoice::Narrowed(options) => ("narrowed".to_string(), None, options),
+        PromptChoice::Retry => ("retry".to_string(), None, Vec::new()),
+    }
+}
+
+#[pyfunction]
+fn prepare_sketch_selection(
+    sketch_directories: Vec<String>,
+    cwd_is_fastled: bool,
+    is_followup: bool,
+) -> (String, Option<String>, Vec<String>) {
+    let paths = sketch_directories.into_iter().map(PathBuf::from).collect();
+    selection_payload(fastled_cli::prepare_sketch_selection(
+        paths,
+        cwd_is_fastled,
+        is_followup,
+    ))
+}
+
+#[pyfunction(signature = (input, options, default_index=0))]
+fn resolve_prompt_choice(
+    input: &str,
+    options: Vec<String>,
+    default_index: usize,
+) -> PyResult<(String, Option<String>, Vec<String>)> {
+    if options.is_empty() {
+        return Err(PyValueError::new_err("options must not be empty"));
+    }
+    if default_index >= options.len() {
+        return Err(PyValueError::new_err("default_index out of range"));
+    }
+    Ok(prompt_choice_payload(fastled_cli::resolve_prompt_choice(
+        input,
+        &options,
+        default_index,
+    )))
+}
+
 #[pyfunction(signature = (path=None))]
 fn looks_like_fastled_repo(path: Option<&str>) -> PyResult<bool> {
     let directory = path.map(PathBuf::from).unwrap_or(std::env::current_dir()?);
@@ -974,6 +1024,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(project_available, m)?)?;
     m.add_function(wrap_pyfunction!(find_sketch_directories, m)?)?;
     m.add_function(wrap_pyfunction!(find_sketch_by_partial_name, m)?)?;
+    m.add_function(wrap_pyfunction!(prepare_sketch_selection, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_prompt_choice, m)?)?;
     m.add_function(wrap_pyfunction!(looks_like_fastled_repo, m)?)?;
     m.add_function(wrap_pyfunction!(looks_like_sketch_directory, m)?)?;
     m.add_function(wrap_pyfunction!(find_fastled_repo_upwards, m)?)?;

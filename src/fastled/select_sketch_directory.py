@@ -1,9 +1,34 @@
 from pathlib import Path
 from typing import Callable, TypeVar, Union
 
-from fastled.string_diff import string_diff
+from fastled._native import prepare_sketch_selection as _native_prepare_sketch_selection
+from fastled._native import resolve_prompt_choice as _native_resolve_prompt_choice
 
 T = TypeVar("T")
+
+
+def _find_matching_option(
+    options: list[T], option_to_str: Callable[[T], str], selected: str
+) -> T | None:
+    selected_lower = selected.lower()
+    for option in options:
+        if option_to_str(option).lower() == selected_lower:
+            return option
+    return None
+
+
+def _filter_options_by_labels(
+    options: list[T], option_to_str: Callable[[T], str], labels: list[str]
+) -> list[T]:
+    remaining = list(options)
+    narrowed: list[T] = []
+    for label in labels:
+        match = _find_matching_option(remaining, option_to_str, label)
+        if match is None:
+            continue
+        narrowed.append(match)
+        remaining.remove(match)
+    return narrowed
 
 
 def _disambiguate_user_choice(
@@ -15,14 +40,8 @@ def _disambiguate_user_choice(
     """
     Present multiple options to the user with a default selection.
 
-    Args:
-        options: List of options to choose from
-        option_to_str: Function to convert option to display string
-        prompt: Prompt message to show user
-        default_index: Index of the default option (0-based)
-
-    Returns:
-        Selected option or None if cancelled
+    Matching and narrowing are delegated to the native Rust implementation;
+    Python only preserves the compatibility prompt surface for existing callers.
     """
     if not options:
         return None
@@ -30,131 +49,88 @@ def _disambiguate_user_choice(
     if len(options) == 1:
         return options[0]
 
-    # Ensure default_index is valid
-    if default_index < 0 or default_index >= len(options):
-        default_index = 0
+    current_options = list(options)
+    current_prompt = prompt
+    current_default = default_index
 
-    print(f"\n{prompt}")
-    for i, option in enumerate(options):
-        option_str = option_to_str(option)
-        if i == default_index:
-            print(f"  [{i+1}]: [{option_str}]")  # Default option shown in brackets
-        else:
-            print(f"  [{i+1}]: {option_str}")
+    while True:
+        if current_default < 0 or current_default >= len(current_options):
+            current_default = 0
 
-    default_option_str = option_to_str(options[default_index])
-    user_input = input(
-        f"\nEnter number or name (default: [{default_option_str}]): "
-    ).strip()
+        print(f"\n{current_prompt}")
+        for i, option in enumerate(current_options):
+            option_str = option_to_str(option)
+            if i == current_default:
+                print(f"  [{i + 1}]: [{option_str}]")
+            else:
+                print(f"  [{i + 1}]: {option_str}")
 
-    # Handle empty input - select default
-    if not user_input:
-        return options[default_index]
+        default_option_str = option_to_str(current_options[current_default])
+        user_input = input(
+            f"\nEnter number or name (default: [{default_option_str}]): "
+        ).strip()
 
-    # Try to parse as number
-    try:
-        index = int(user_input) - 1
-        if 0 <= index < len(options):
-            return options[index]
-    except ValueError:
-        pass
-
-    # Try to match by name (case insensitive)
-    user_input_lower = user_input.lower()
-    for option in options:
-        option_str = option_to_str(option).lower()
-        if option_str == user_input_lower:
-            return option
-
-    # Try partial match
-    matches = []
-    for option in options:
-        option_str = option_to_str(option)
-        if user_input_lower in option_str.lower():
-            matches.append(option)
-
-    if len(matches) == 1:
-        return matches[0]
-    elif len(matches) > 1:
-        # Recursive disambiguation with the filtered matches
-        return _disambiguate_user_choice(
-            matches,
-            option_to_str,
-            f"Multiple partial matches for '{user_input}':",
-            0,  # Reset default to first match
+        option_labels = [option_to_str(option) for option in current_options]
+        status, selected, narrowed = _native_resolve_prompt_choice(
+            user_input,
+            option_labels,
+            current_default,
         )
 
-    # Try fuzzy matching as fallback
-    # For better fuzzy matching on paths, extract just the last component (basename)
-    # to avoid the "examples/" prefix interfering with matching
-    from pathlib import Path as PathLib
+        if status == "selected" and selected is not None:
+            return _find_matching_option(current_options, option_to_str, selected)
 
-    option_basenames = []
-    for option in options:
-        option_str = option_to_str(option)
-        # Extract basename for fuzzy matching
-        basename = (
-            PathLib(option_str).name
-            if "/" in option_str or "\\" in option_str
-            else option_str
-        )
-        option_basenames.append(basename)
-
-    fuzzy_results = string_diff(user_input, option_basenames)
-
-    if fuzzy_results:
-        # Map fuzzy results back to original options
-        fuzzy_matches = []
-        for _, matched_basename in fuzzy_results:
-            for i, basename in enumerate(option_basenames):
-                if basename == matched_basename:
-                    fuzzy_matches.append(options[i])
-                    break
-
-        if len(fuzzy_matches) == 1:
-            return fuzzy_matches[0]
-        elif len(fuzzy_matches) > 1:
-            # Recursive disambiguation with fuzzy matches
-            return _disambiguate_user_choice(
-                fuzzy_matches,
+        if status == "narrowed":
+            narrowed_options = _filter_options_by_labels(
+                current_options,
                 option_to_str,
-                f"Multiple fuzzy matches for '{user_input}':",
-                0,
+                list(narrowed),
             )
+            if not narrowed_options:
+                print(f"No match found for '{user_input}'. Please try again.")
+                continue
 
-    # No match found
-    print(f"No match found for '{user_input}'. Please try again.")
-    return _disambiguate_user_choice(options, option_to_str, prompt, default_index)
+            user_input_lower = user_input.lower()
+            is_partial = (
+                sum(
+                    1
+                    for label in option_labels
+                    if user_input_lower in label.lower()
+                )
+                > 1
+            )
+            current_prompt = (
+                f"Multiple partial matches for '{user_input}':"
+                if is_partial
+                else f"Multiple fuzzy matches for '{user_input}':"
+            )
+            current_options = narrowed_options
+            current_default = 0
+            continue
+
+        print(f"No match found for '{user_input}'. Please try again.")
 
 
 def select_sketch_directory(
     sketch_directories: list[Path], cwd_is_fastled: bool, is_followup: bool = False
 ) -> str | None:
-    if cwd_is_fastled:
-        exclude = ["src", "dev", "tests"]
-        for ex in exclude:
-            p = Path(ex)
-            if p in sketch_directories:
-                sketch_directories.remove(p)
+    status, selected, options = _native_prepare_sketch_selection(
+        [str(path) for path in sketch_directories],
+        cwd_is_fastled,
+        is_followup,
+    )
 
-    if len(sketch_directories) == 1:
-        print(f"\nUsing sketch directory: {sketch_directories[0]}")
-        return str(sketch_directories[0])
-    elif len(sketch_directories) > 1:
-        # First scan with >4 directories: return None (too many to auto-select)
-        if not is_followup and len(sketch_directories) > 4:
-            return None
+    if status == "selected" and selected is not None:
+        print(f"\nUsing sketch directory: {selected}")
+        return str(selected)
 
-        # Prompt user to disambiguate
-        result = _disambiguate_user_choice(
-            sketch_directories,
-            option_to_str=lambda x: str(x),
-            prompt="Multiple Directories found, choose one:",
-            default_index=0,
-        )
+    if status != "prompt":
+        return None
 
-        if result is None:
-            return None
-
-        return str(result)
-    return None
+    result = _disambiguate_user_choice(
+        [Path(option) for option in options],
+        option_to_str=lambda path: str(path),
+        prompt="Multiple Directories found, choose one:",
+        default_index=0,
+    )
+    return str(result) if result is not None else None
