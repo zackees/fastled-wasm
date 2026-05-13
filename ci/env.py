@@ -166,20 +166,18 @@ def activate() -> None:
 
 
 def _apply_rustc_wrapper(env: dict[str, str]) -> dict[str, str]:
-    """Set RUSTC_WRAPPER to zccache when available, falling back to sccache.
+    """Set RUSTC_WRAPPER to zccache when available.
 
-    The project uses zccache (via soldr) for compile caching. Prefer it; fall
-    back to sccache for environments where only that is installed. Bare cargo
-    invocations that consume this env still benefit from the cache even though
-    most callers in this repo now route through ``soldr cargo`` directly.
+    The project uses zccache (via soldr) for compile caching. Bare cargo
+    invocations that consume this env still benefit from the cache even
+    though most callers in this repo route through ``soldr cargo`` directly
+    (which manages the wrapper itself).
     """
     if env.get("RUSTC_WRAPPER"):
         return env
-    for tool in ("zccache", "sccache"):
-        found = shutil.which(tool, path=env.get("PATH"))
-        if found:
-            env["RUSTC_WRAPPER"] = found
-            return env
+    found = shutil.which("zccache", path=env.get("PATH"))
+    if found:
+        env["RUSTC_WRAPPER"] = found
     return env
 
 
