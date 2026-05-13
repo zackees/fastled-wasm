@@ -18,6 +18,15 @@ fi
 
 uv venv --python 3.11 --seed
 uv pip install "maturin>=1.7,<2"
+
+# Ensure the maturin data dir exists before invoking maturin. The
+# `[tool.maturin] data = "wheel-data"` config points here; maturin treats a
+# missing path as an error during `pep517 build-wheel`. The cargo-build step
+# later in this script will populate `wheel-data/scripts/` with the Rust
+# fastled binary so subsequent `./build-wheel` invocations bundle it; an
+# empty dir is fine for the editable-install path that pip is about to run.
+mkdir -p wheel-data/scripts
+
 uv pip install -e .
 
 uv pip install -r requirements.testing.txt
