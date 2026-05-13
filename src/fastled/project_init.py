@@ -1,108 +1,120 @@
-import io
 import json
-import re
+import os
 import shutil
-import tempfile
-import zipfile
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import httpx
-
 from fastled.interrupts import handle_keyboard_interrupt
-from fastled.spinner import Spinner
 
 DEFAULT_EXAMPLE = "wasm"
 
-GITHUB_REPO = "FastLED/FastLED"
-GITHUB_RELEASES_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-
-# Sentinel value meaning "use the latest release"
-REF_LATEST_RELEASE = "latest_release"
-
 
 @dataclass
-class DownloadResult:
-    """Result of downloading the FastLED repo from GitHub."""
-
-    content: bytes | None = None
-    error: Exception | None = None
-
-    @property
-    def ok(self) -> bool:
-        return self.content is not None
+class _CachedRepo:
+    root: Path
+    ref_name: str
 
 
-def _is_commit_sha(ref: str) -> bool:
-    """Check if ref looks like a git commit SHA (7-40 hex chars)."""
-    return bool(re.match(r"^[0-9a-fA-F]{7,40}$", ref))
+def _find_rust_fastled_cli() -> Path | None:
+    """Locate the **Rust** fastled CLI binary, not the Python entry-point shim.
+
+    The Python `[project.scripts] fastled = ...` console-script sits in the
+    same directory as the interpreter and shadows the Rust binary in step 1
+    of the open_browser lookup. We need the Rust one, so search the workspace
+    target/ tree first, then PATH.
+    """
+    import shutil
+    import sys
+
+    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
+
+    # Walk up to find a Cargo.toml workspace root and check target dirs.
+    current = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (current / "Cargo.toml").is_file():
+            for profile in ("release", "debug"):
+                candidate = current / "target" / profile / exe_name
+                if candidate.is_file():
+                    return candidate
+            target_dir = current / "target"
+            if target_dir.is_dir():
+                for arch_dir in target_dir.iterdir():
+                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
+                        for profile in ("release", "debug"):
+                            candidate = arch_dir / profile / exe_name
+                            if candidate.is_file():
+                                return candidate
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+
+    found = shutil.which(exe_name)
+    if found:
+        return Path(found)
+    return None
 
 
-def _get_latest_release_tag() -> str | None:
-    """Fetch the latest release tag from GitHub API. Returns None on failure."""
-    try:
-        response = httpx.get(
-            GITHUB_RELEASES_API,
-            follow_redirects=True,
-            timeout=10,
-            headers={"Accept": "application/vnd.github.v3+json"},
+def _ensure_repo_via_rust(ref: str | None) -> Path:
+    """Invoke the Rust binary's hidden ``--internal-ensure-fastled-repo`` flag
+    to materialise the FastLED repo locally and return the path.
+
+    The Rust side owns the actual GitHub download. Python never performs the
+    HTTP request itself.
+    """
+    cli = _find_rust_fastled_cli()
+    if cli is None:
+        raise RuntimeError(
+            "Could not locate the fastled CLI binary; cannot fetch FastLED repo."
         )
-        response.raise_for_status()
-        return response.json()["tag_name"]
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-    except Exception:
-        return None
 
+    cmd: list[str] = [str(cli), "--internal-ensure-fastled-repo"]
+    if ref is not None:
+        cmd.append(ref)
 
-def _build_archive_url(ref: str) -> str:
-    """Build the GitHub archive URL for a given ref.
-
-    Args:
-        ref: A branch name, tag name, or commit SHA.
-    """
-    base = f"https://github.com/{GITHUB_REPO}/archive"
-    if _is_commit_sha(ref):
-        return f"{base}/{ref}.zip"
-    # Could be a branch or tag — GitHub resolves both via this URL pattern
-    return f"{base}/refs/heads/{ref}.zip"
-
-
-def _build_tag_archive_url(tag: str) -> str:
-    """Build the GitHub archive URL for a specific tag."""
-    return f"https://github.com/{GITHUB_REPO}/archive/refs/tags/{tag}.zip"
-
-
-def _resolve_ref(ref: str | None) -> tuple[str, str]:
-    """Resolve a ref string into (display_name, archive_url).
-
-    Returns:
-        Tuple of (ref_display_name, archive_url).
-        ref_display_name is the resolved ref (e.g. "3.9.12" for latest release).
-    """
-    if ref is None or ref == REF_LATEST_RELEASE:
-        tag = _get_latest_release_tag()
-        if tag:
-            return tag, _build_tag_archive_url(tag)
-        # Fallback to master if we can't get latest release
-        print("Warning: Could not fetch latest release, falling back to master")
-        return "master", _build_archive_url("master")
-
-    if _is_commit_sha(ref):
-        return ref, _build_archive_url(ref)
-
-    # Try as a tag first, fall back to branch
-    tag_url = _build_tag_archive_url(ref)
     try:
-        resp = httpx.head(tag_url, follow_redirects=True, timeout=10)
-        if resp.status_code == 200:
-            return ref, tag_url
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except KeyboardInterrupt as ki:
         handle_keyboard_interrupt(ki)
-    except Exception:
-        pass
+        raise
 
-    return ref, _build_archive_url(ref)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise RuntimeError(
+            f"fastled --internal-ensure-fastled-repo failed (exit {result.returncode})"
+        )
+
+    repo_path_str = result.stdout.strip().splitlines()[-1] if result.stdout else ""
+    repo_path = Path(repo_path_str)
+    if not repo_path.is_dir():
+        raise RuntimeError(
+            f"Rust binary returned non-existent repo path: {repo_path_str!r}"
+        )
+    return repo_path
+
+
+def _get_local_fastled_repo(ref: str | None) -> _CachedRepo:
+    """Return a path to the locally-cached FastLED repo (and the resolved ref).
+
+    Prefers ``FASTLED_LOCAL_REPO_DIR`` set by the Rust CLI's --init pre-step.
+    Falls back to invoking the Rust binary directly so direct Python API
+    consumers (Api.project_init, Api.get_examples) still work without httpx.
+    """
+    env_path = os.environ.get("FASTLED_LOCAL_REPO_DIR")
+    if env_path:
+        candidate = Path(env_path)
+        if candidate.is_dir():
+            return _CachedRepo(
+                root=candidate,
+                ref_name=candidate.name.replace("fastled-", "", 1) or "master",
+            )
+
+    repo_root = _ensure_repo_via_rust(ref)
+    ref_name = repo_root.name.replace("fastled-", "", 1) or (ref or "master")
+    return _CachedRepo(root=repo_root, ref_name=ref_name)
 
 
 # --- fastled.json persistence ---
@@ -158,7 +170,7 @@ def _find_fastled_repo_via_library_json(start: Path) -> Path | None:
     return None
 
 
-# --- Core download ---
+# --- Core lookup helpers ---
 
 
 def _find_example_in_repo(repo_root: Path, example: str) -> Path | None:
@@ -170,47 +182,15 @@ def _find_example_in_repo(repo_root: Path, example: str) -> Path | None:
     examples_dir = repo_root / "examples"
     if not examples_dir.exists():
         return None
-    # Direct match: examples/{example}/
     direct = examples_dir / example
     if direct.exists() and direct.is_dir():
         return direct
-    # Nested match: examples/*/{example}/
     for subdir in examples_dir.iterdir():
         if subdir.is_dir():
             nested = subdir / example
             if nested.exists() and nested.is_dir():
                 return nested
     return None
-
-
-def _download_fastled_repo(ref: str | None = None) -> tuple[DownloadResult, str]:
-    """Download the FastLED repo zip from GitHub.
-
-    Args:
-        ref: Git ref to download. None means latest release.
-
-    Returns:
-        Tuple of (DownloadResult, resolved_ref_name).
-    """
-    ref_name, url = _resolve_ref(ref)
-    try:
-        response = httpx.get(url, follow_redirects=True, timeout=60)
-        response.raise_for_status()
-        return DownloadResult(content=response.content), ref_name
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
-    except Exception as e:
-        return DownloadResult(error=e), ref_name
-
-
-def _find_repo_root(tmp_dir: Path) -> Path:
-    """Find the extracted FastLED repo root directory."""
-    # Try common patterns: FastLED-master, FastLED-3.9.12, FastLED-<sha>, etc.
-    dirs = [d for d in tmp_dir.iterdir() if d.is_dir() and d.name.startswith("FastLED")]
-    if dirs:
-        return dirs[0]
-    raise FileNotFoundError("Failed to find FastLED directory in downloaded archive")
 
 
 def _collect_examples_from_dir(examples_dir: Path) -> list[str]:
@@ -224,7 +204,6 @@ def _collect_examples_from_dir(examples_dir: Path) -> list[str]:
             if ino_files:
                 found.append(entry.name)
             else:
-                # Check nested directories (e.g., examples/Fx/FxSdCard/)
                 for nested in entry.iterdir():
                     if nested.is_dir() and list(nested.glob("*.ino")):
                         found.append(nested.name)
@@ -237,28 +216,13 @@ def get_examples(ref: str | None = None) -> list[str]:
     Args:
         ref: Git ref to use. None means latest release.
     """
-    # If we're inside the FastLED repo, use local examples
     local_repo = _find_fastled_repo_via_library_json(Path.cwd())
     if local_repo is not None:
         print(f"Using local FastLED repo at {local_repo}")
         return _collect_examples_from_dir(local_repo / "examples")
 
-    print("Fetching examples from FastLED GitHub repo...")
-    with Spinner("Downloading FastLED repo..."):
-        result, _ = _download_fastled_repo(ref)
-    if not result.ok:
-        assert result.error is not None
-        raise result.error
-
-    assert result.content is not None
-    tmp_dir = Path(tempfile.mkdtemp(prefix="fastled_examples_"))
-    try:
-        with zipfile.ZipFile(io.BytesIO(result.content)) as zf:
-            zf.extractall(tmp_dir)
-        repo_root = _find_repo_root(tmp_dir)
-        return _collect_examples_from_dir(repo_root / "examples")
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    cached = _get_local_fastled_repo(ref)
+    return _collect_examples_from_dir(cached.root / "examples")
 
 
 def _prompt_for_example(ref: str | None = None) -> str:
@@ -266,7 +230,6 @@ def _prompt_for_example(ref: str | None = None) -> str:
 
     examples = get_examples(ref=ref)
 
-    # Find default example index (prefer DEFAULT_EXAMPLE if it exists)
     default_index = 0
     if DEFAULT_EXAMPLE in examples:
         default_index = examples.index(DEFAULT_EXAMPLE)
@@ -279,34 +242,24 @@ def _prompt_for_example(ref: str | None = None) -> str:
     )
 
     if result is None:
-        # Fallback to DEFAULT_EXAMPLE if user cancelled
         return DEFAULT_EXAMPLE
 
     return result
 
 
 def project_init(
-    example: str | None = "PROMPT",  # prompt for example
+    example: str | None = "PROMPT",
     outputdir: Path | None = None,
     ref: str | None = None,
 ) -> Path:
-    """Initialize a new FastLED project by downloading the example from GitHub.
-
-    Args:
-        example: Example name, "PROMPT" to prompt user, or None for default.
-        outputdir: Output directory (defaults to "fastled").
-        ref: Git ref to download. None means latest release. Use "master" for
-             master branch, a branch name, or a commit SHA.
-    """
+    """Initialize a new FastLED project from a Rust-cached repo copy."""
     outputdir = Path(outputdir) if outputdir is not None else Path("fastled")
     outputdir.mkdir(exist_ok=True, parents=True)
 
-    # Check if we're inside the FastLED repo — use local files instead
     local_repo = _find_fastled_repo_via_library_json(Path.cwd())
     if local_repo is not None:
         return _init_from_local_repo(local_repo, example, outputdir)
 
-    # Check for saved ref in fastled.json (in the output directory or cwd)
     if ref is None:
         saved_ref = _read_fastled_json(Path.cwd()) or _read_fastled_json(outputdir)
         if saved_ref is not None:
@@ -327,39 +280,23 @@ def project_init(
 
     ref_display = ref if ref else "latest release"
     print(
-        f"Initializing project with example '{example}' from GitHub repo ({ref_display})"
+        f"Initializing project with example '{example}' from FastLED repo ({ref_display})"
     )
 
-    with Spinner(f"Downloading FastLED repo for '{example}'..."):
-        result, resolved_ref = _download_fastled_repo(ref)
+    cached = _get_local_fastled_repo(ref)
+    repo_root = cached.root
+    resolved_ref = cached.ref_name
 
-    print()  # New line after spinner
+    example_src = _find_example_in_repo(repo_root, example)
+    if example_src is None:
+        raise FileNotFoundError(f"Example '{example}' not found in FastLED repo")
 
-    if not result.ok:
-        assert result.error is not None
-        raise result.error
-
-    assert result.content is not None
-    tmp_dir = Path(tempfile.mkdtemp(prefix="fastled_init_"))
-    try:
-        with zipfile.ZipFile(io.BytesIO(result.content)) as zf:
-            zf.extractall(tmp_dir)
-
-        repo_root = _find_repo_root(tmp_dir)
-
-        example_src = _find_example_in_repo(repo_root, example)
-        if example_src is None:
-            raise FileNotFoundError(f"Example '{example}' not found in FastLED repo")
-
-        dest = outputdir / example
-        dest.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(example_src, dest, dirs_exist_ok=True)
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+    dest = outputdir / example
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(example_src, dest, dirs_exist_ok=True)
 
     out = outputdir / example
 
-    # Save fastled.json for non-default refs
     if ref is not None:
         _write_fastled_json(out, resolved_ref)
         print(f"Saved ref '{resolved_ref}' to {out / 'fastled.json'}")

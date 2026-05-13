@@ -1,101 +1,34 @@
 from __future__ import annotations
 
 import hashlib
-import platform
+import os
 import shutil
-import stat
 import subprocess
-import sys
-import tarfile
 from pathlib import Path
 
-import fasteners
-import httpx
-
-ESBUILD_VERSION = "0.28.0"
-INSTALL_ROOT = Path.home() / ".fastled" / "toolchains" / "esbuild"
-ARCHIVE_CACHE_DIR = Path.home() / ".fastled" / "toolchains" / "archives"
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
 
 
-def _platform_arch() -> tuple[str, str]:
-    if sys.platform == "win32":
-        plat = "win32"
-    elif sys.platform == "darwin":
-        plat = "darwin"
-    else:
-        plat = "linux"
+def _resolve_esbuild() -> Path:
+    """Return the path to the esbuild binary.
 
-    machine = platform.machine().lower()
-    if machine in ("x86_64", "amd64"):
-        arch = "x64"
-    elif machine in ("arm64", "aarch64"):
-        arch = "arm64"
-    else:
-        raise RuntimeError(f"Unsupported architecture for esbuild: {machine}")
-    return plat, arch
-
-
-def _package_name(platform: str, arch: str) -> str:
-    return f"@esbuild/{platform}-{arch}"
-
-
-def _tarball_url(platform: str, arch: str) -> str:
-    package_name = _package_name(platform, arch)
-    package_tail = package_name.split("/", 1)[1]
-    return f"https://registry.npmjs.org/{package_name}/-/{package_tail}-{ESBUILD_VERSION}.tgz"
-
-
-def install_esbuild(force: bool = False) -> Path:
-    platform, arch = _platform_arch()
-    install_dir = INSTALL_ROOT / platform / arch / ESBUILD_VERSION
-    install_dir.mkdir(parents=True, exist_ok=True)
-    lock = fasteners.InterProcessLock(str(install_dir / ".install.lock"))
-
-    with lock:
-        exe_name = "esbuild.exe" if platform == "win32" else "esbuild"
-        esbuild_path = install_dir / exe_name
-        done_file = install_dir / "done.txt"
-        if done_file.exists() and esbuild_path.exists() and not force:
-            return esbuild_path
-
-        ARCHIVE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        archive_path = (
-            ARCHIVE_CACHE_DIR / f"esbuild-{platform}-{arch}-{ESBUILD_VERSION}.tgz"
-        )
-        if force and archive_path.exists():
-            archive_path.unlink()
-
-        if not archive_path.exists():
-            response = httpx.get(
-                _tarball_url(platform, arch), follow_redirects=True, timeout=120
-            )
-            response.raise_for_status()
-            archive_path.write_bytes(response.content)
-
-        if esbuild_path.exists():
-            esbuild_path.unlink()
-
-        with tarfile.open(archive_path, mode="r:gz") as tf:
-            member_name = (
-                f"package/{exe_name}" if platform == "win32" else "package/bin/esbuild"
-            )
-            member = tf.getmember(member_name)
-            extracted = tf.extractfile(member)
-            if extracted is None:
-                raise RuntimeError(
-                    f"Could not extract {member_name} from {archive_path}"
-                )
-            esbuild_path.write_bytes(extracted.read())
-
-        if platform != "win32":
-            current_mode = esbuild_path.stat().st_mode
-            esbuild_path.chmod(
-                current_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-            )
-
-        done_file.write_text("ok\n", encoding="utf-8")
-        return esbuild_path
+    The Rust CLI installs esbuild via ``crates/fastled-cli/src/install.rs``
+    and exports the path through ``FASTLED_ESBUILD_PATH``. If that env var
+    is missing (e.g. Python invoked directly without the Rust pre-step), the
+    function falls back to the binary on ``PATH``.
+    """
+    env_path = os.environ.get("FASTLED_ESBUILD_PATH")
+    if env_path:
+        candidate = Path(env_path)
+        if candidate.is_file():
+            return candidate
+    located = shutil.which("esbuild")
+    if located:
+        return Path(located)
+    raise RuntimeError(
+        "esbuild binary not available. Ensure FASTLED_ESBUILD_PATH is set by "
+        "the Rust CLI or that esbuild is on PATH."
+    )
 
 
 def _copy_tree(src: Path, dst: Path) -> None:
@@ -129,7 +62,7 @@ def _compute_dir_hash(directory: Path) -> str:
 
 
 def _run_esbuild(source_dir: Path, args: list[str]) -> None:
-    esbuild = install_esbuild()
+    esbuild = _resolve_esbuild()
     result = subprocess.run(
         [
             str(esbuild),

@@ -5,6 +5,7 @@ use std::process::{Command, ExitCode, Stdio};
 
 mod archive;
 mod build;
+mod install;
 mod keyboard;
 mod project;
 mod server;
@@ -162,6 +163,28 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     if !sketch_dir.is_dir() {
         eprintln!("fastled: sketch directory does not exist: {dir}");
         return ExitCode::FAILURE;
+    }
+
+    // Ensure the emscripten + esbuild toolchains are installed before invoking
+    // Python. The env vars below let the Python compile path skip its own
+    // download logic and consume the Rust-installed directories.
+    match install::ensure_emscripten_installed() {
+        Ok(install_dir) => {
+            std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
+        }
+        Err(e) => {
+            eprintln!("fastled: emscripten toolchain install failed: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    }
+    match install::ensure_esbuild_installed() {
+        Ok(esbuild_path) => {
+            std::env::set_var("FASTLED_ESBUILD_PATH", &esbuild_path);
+        }
+        Err(e) => {
+            eprintln!("fastled: esbuild install failed: {e:#}");
+            return ExitCode::FAILURE;
+        }
     }
 
     let output_dir = sketch_dir.join("fastled_js");
@@ -367,6 +390,19 @@ struct Cli {
     #[arg(long)]
     purge: bool,
 
+    /// Internal plumbing flag: ensure the FastLED repo for the given ref
+    /// (defaults to latest release) is downloaded and extracted, print the
+    /// local path to stdout, and exit. Used by the Python `Api.project_init`
+    /// path so the Python side never has to do an HTTP download.
+    #[arg(long, value_name = "REF", num_args = 0..=1, default_missing_value = "__latest__", hide = true)]
+    internal_ensure_fastled_repo: Option<String>,
+
+    /// Internal plumbing flag: download a Chrome Web Store extension (by ID)
+    /// into ``~/.fastled/chrome-extensions/<NAME>/``, print the path to
+    /// stdout, and exit. Used by the Python playwright helpers.
+    #[arg(long, value_names = ["EXTENSION_ID", "NAME"], num_args = 2, hide = true)]
+    internal_ensure_chrome_extension: Vec<String>,
+
     // Build mode (mutually exclusive).
     /// Build in debug mode.
     #[arg(long, conflicts_with_all = ["quick", "release"])]
@@ -558,6 +594,47 @@ fn open_browser(url: &str) {
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
+    // Hidden plumbing for the Python side: download the FastLED repo and
+    // print the local path. No further work.
+    if let Some(ref ref_str) = cli.internal_ensure_fastled_repo {
+        let ref_opt = if ref_str == "__latest__" {
+            None
+        } else {
+            Some(ref_str.as_str())
+        };
+        return match install::ensure_fastled_repo(ref_opt) {
+            Ok(path) => {
+                println!("{}", path.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("fastled: failed to fetch FastLED repo: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    // Hidden plumbing: download a Chrome Web Store extension and print its
+    // local install path. Used by the Python playwright helpers.
+    if !cli.internal_ensure_chrome_extension.is_empty() {
+        if cli.internal_ensure_chrome_extension.len() != 2 {
+            eprintln!("fastled: --internal-ensure-chrome-extension requires EXTENSION_ID NAME");
+            return ExitCode::FAILURE;
+        }
+        let extension_id = &cli.internal_ensure_chrome_extension[0];
+        let name = &cli.internal_ensure_chrome_extension[1];
+        return match install::ensure_chrome_extension(extension_id, name) {
+            Ok(path) => {
+                println!("{}", path.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("fastled: failed to fetch Chrome extension: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
     if let Some(ref serve_dir) = cli.serve_dir {
         return serve_directory(serve_dir, &cli);
@@ -581,6 +658,26 @@ fn main() -> ExitCode {
                 ViewerMode::Browser
             };
             return compile_and_serve(dir, &cli, mode);
+        }
+    }
+
+    // For --init: pre-download the FastLED repo with Rust so the Python side
+    // doesn't need httpx. Set FASTLED_LOCAL_REPO_DIR for the subprocess.
+    if cli.init.is_some() {
+        // Resolve ref precedence: --latest > --commit > --branch > default.
+        let ref_opt: Option<&str> = if cli.latest {
+            None
+        } else {
+            cli.commit.as_deref().or(cli.branch.as_deref())
+        };
+        match install::ensure_fastled_repo(ref_opt) {
+            Ok(repo_dir) => {
+                std::env::set_var("FASTLED_LOCAL_REPO_DIR", &repo_dir);
+            }
+            Err(e) => {
+                eprintln!("fastled: failed to fetch FastLED repo: {e:#}");
+                return ExitCode::FAILURE;
+            }
         }
     }
 
