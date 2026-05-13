@@ -139,25 +139,6 @@ def add_cleanup(proc: subprocess.Popen) -> None:
     atexit.register(cleanup_if_alive)
 
 
-def wait_for_server(port: int, timeout: int = 15) -> None:
-    """Wait for the HTTP server to start."""
-    import httpx
-
-    future_time = time.time() + timeout
-    hosts = ["localhost", "127.0.0.1"]
-    while future_time > time.time():
-        for host in hosts:
-            try:
-                url = f"http://{host}:{port}"
-                response = httpx.get(url, timeout=1)
-                if response.status_code < 600:
-                    return
-            except httpx.HTTPError:
-                continue
-        time.sleep(0.1)
-    raise TimeoutError("Could not connect to server")
-
-
 def spawn_http_server(
     fastled_js: Path,
     port: int | None = None,
@@ -198,10 +179,10 @@ def spawn_http_server(
                 break
 
     if actual_port is None:
-        # Fallback: wait a bit and hope the server is up
+        # The Rust CLI prints its listening URL once the socket is bound, so the
+        # URL parse above already gates "server is up". Only the fallback path
+        # (URL line not seen yet) needs a small grace period.
         time.sleep(1.0)
-    else:
-        wait_for_server(actual_port, timeout=15)
 
     if open_browser:
         if actual_port:
