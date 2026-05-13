@@ -171,6 +171,20 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
+            // FastLED's meson cross-file calls `clang-tool-chain-emcc` /
+            // `-em++` / `-emar`. Those wrappers (from the `clang-tool-chain`
+            // PyPI package) look up emscripten under
+            // `$CLANG_TOOL_CHAIN_DOWNLOAD_PATH/emscripten/<plat>/<arch>/<ver>`.
+            // install_dir here is `<root>/emscripten/<plat>/<arch>/<ver>`,
+            // so walk four parents up to the toolchains root and export it.
+            if let Some(root) = install_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+            {
+                std::env::set_var("CLANG_TOOL_CHAIN_DOWNLOAD_PATH", root);
+            }
         }
         Err(e) => {
             eprintln!("fastled: emscripten toolchain install failed: {e:#}");
