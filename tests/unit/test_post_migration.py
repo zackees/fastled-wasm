@@ -19,6 +19,26 @@ class TestPythonEntrypointsDelegateToRust(unittest.TestCase):
         self.assertIn("invoke_rust_fastled_cli", source)
 
 
+class TestNativeAppOrchestration(unittest.TestCase):
+    """App-layer compatibility modules should prefer native Rust behavior."""
+
+    def test_select_sketch_directory_uses_native_resolver(self) -> None:
+        source = (SRC_DIR / "select_sketch_directory.py").read_text()
+        self.assertIn("_native_prepare_sketch_selection", source)
+        self.assertIn("_native_resolve_prompt_choice", source)
+        self.assertNotIn("from fastled.string_diff import string_diff", source)
+
+    def test_build_service_has_no_python_fallback_service(self) -> None:
+        source = (SRC_DIR / "build_service.py").read_text()
+        self.assertIn("from fastled._native import NativeBuildService", source)
+        self.assertNotIn("class _PythonBuildService", source)
+        self.assertNotIn("if self._native is None", source)
+
+    def test_types_do_not_import_legacy_args_at_runtime(self) -> None:
+        source = (SRC_DIR / "types.py").read_text()
+        self.assertNotIn("from fastled.args import Args", source)
+
+
 class TestNoDeadCodeModules(unittest.TestCase):
     """Bug 2: Dead code files left over from the backend cleanup must be removed."""
 

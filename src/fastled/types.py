@@ -1,9 +1,13 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
-from fastled.args import Args
 from fastled.print_filter import PrintFilterDefault
+
+
+class _BuildModeArgs(Protocol):
+    debug: bool
+    release: bool
 
 
 @dataclass
@@ -43,7 +47,7 @@ class BuildMode(Enum):
             raise ValueError(f"BUILD_MODE must be one of {valid_modes}, got {mode_str}")
 
     @staticmethod
-    def from_args(args: Args) -> "BuildMode":
+    def from_args(args: _BuildModeArgs) -> "BuildMode":
         if args.debug:
             return BuildMode.DEBUG
         elif args.release:

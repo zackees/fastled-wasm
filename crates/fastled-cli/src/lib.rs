@@ -528,10 +528,18 @@ fn detect_local_fastled_path() -> Option<String> {
     project::find_fastled_repo_upwards(&cwd, 10).map(|path| canonical_display_path(&path))
 }
 
-enum PromptChoice {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromptChoice {
     Selected(String),
     Narrowed(Vec<String>),
     Retry,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SketchSelection {
+    Selected(String),
+    Prompt(Vec<String>),
+    None,
 }
 
 fn option_basename(option: &str) -> &str {
@@ -561,7 +569,11 @@ fn fuzzy_match_options(input: &str, options: &[String]) -> Vec<String> {
     results
 }
 
-fn resolve_prompt_choice(input: &str, options: &[String], default_index: usize) -> PromptChoice {
+pub fn resolve_prompt_choice(
+    input: &str,
+    options: &[String],
+    default_index: usize,
+) -> PromptChoice {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return PromptChoice::Selected(options[default_index].clone());
@@ -597,6 +609,31 @@ fn resolve_prompt_choice(input: &str, options: &[String], default_index: usize) 
         1 => PromptChoice::Selected(fuzzy_matches[0].clone()),
         n if n > 1 => PromptChoice::Narrowed(fuzzy_matches),
         _ => PromptChoice::Retry,
+    }
+}
+
+pub fn prepare_sketch_selection(
+    mut sketch_directories: Vec<PathBuf>,
+    cwd_is_fastled: bool,
+    is_followup: bool,
+) -> SketchSelection {
+    if cwd_is_fastled {
+        sketch_directories.retain(|path| {
+            let text = path.to_string_lossy().replace('\\', "/");
+            !matches!(text.as_str(), "src" | "dev" | "tests")
+        });
+    }
+
+    match sketch_directories.len() {
+        0 => SketchSelection::None,
+        1 => SketchSelection::Selected(display_path(&sketch_directories[0])),
+        _ if !is_followup && sketch_directories.len() > 4 => SketchSelection::None,
+        _ => SketchSelection::Prompt(
+            sketch_directories
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect(),
+        ),
     }
 }
 
@@ -1268,5 +1305,48 @@ mod tests {
             }
             _ => panic!("expected fuzzy selection"),
         }
+    }
+
+    #[test]
+    fn prepare_sketch_selection_auto_selects_single_directory() {
+        let result = prepare_sketch_selection(vec![PathBuf::from("sketch1")], false, false);
+        assert_eq!(result, SketchSelection::Selected("sketch1".to_string()));
+    }
+
+    #[test]
+    fn prepare_sketch_selection_defers_large_first_scan() {
+        let sketches = (0..5)
+            .map(|index| PathBuf::from(format!("sketch{index}")))
+            .collect();
+        let result = prepare_sketch_selection(sketches, false, false);
+        assert_eq!(result, SketchSelection::None);
+    }
+
+    #[test]
+    fn prepare_sketch_selection_prompts_large_followup_scan() {
+        let sketches: Vec<PathBuf> = (0..5)
+            .map(|index| PathBuf::from(format!("sketch{index}")))
+            .collect();
+        let result = prepare_sketch_selection(sketches, false, true);
+        assert_eq!(
+            result,
+            SketchSelection::Prompt(
+                (0..5)
+                    .map(|index| format!("sketch{index}"))
+                    .collect::<Vec<_>>()
+            )
+        );
+    }
+
+    #[test]
+    fn prepare_sketch_selection_filters_fastled_repo_dirs() {
+        let sketches = vec![
+            PathBuf::from("src"),
+            PathBuf::from("dev"),
+            PathBuf::from("tests"),
+            PathBuf::from("examples"),
+        ];
+        let result = prepare_sketch_selection(sketches, true, false);
+        assert_eq!(result, SketchSelection::Selected("examples".to_string()));
     }
 }
