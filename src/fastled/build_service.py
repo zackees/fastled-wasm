@@ -3,11 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, cast
 
+from fastled._native import NativeBuildService as _NativeBuildService
 from fastled.build_types import BuildRequest, BuildResult, BuildStrategy
 from fastled.interrupts import handle_keyboard_interrupt
 from fastled.types import BuildMode, CompileResult
-
-from fastled._native import NativeBuildService as _NativeBuildService
 
 
 def _toolchain_key(fastled_path: Path | None) -> str | None:

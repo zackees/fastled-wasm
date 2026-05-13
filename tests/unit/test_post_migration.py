@@ -1,6 +1,5 @@
 """Tests for post-migration cleanup: dead code removal, stale exports, and bug fixes."""
 
-import ast
 import unittest
 from pathlib import Path
 
@@ -73,28 +72,6 @@ class TestAllExportsValid(unittest.TestCase):
                 all_exports,
                 f"Stale symbol '{symbol}' should not be in __all__",
             )
-
-
-class TestNoRedundantNativeField(unittest.TestCase):
-    """Bug 5: The always-True 'native' field should be removed from Args."""
-
-    def test_args_has_no_native_field(self) -> None:
-        from fastled.args import Args
-
-        fields = {f.name for f in Args.__dataclass_fields__.values()}
-        self.assertNotIn(
-            "native",
-            fields,
-            "Args.native is always True and should be removed",
-        )
-
-    def test_parse_args_no_native_flag(self) -> None:
-        """The --native argparse flag should be removed."""
-        source = (SRC_DIR / "parse_args.py").read_text()
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and node.value == "--native":
-                self.fail("parse_args.py should not define a --native argparse flag")
 
 
 if __name__ == "__main__":

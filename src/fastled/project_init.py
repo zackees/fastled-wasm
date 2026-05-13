@@ -1,36 +1,17 @@
-import json
 import os
-import shutil
-import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastled._rust_cli import find_rust_fastled_cli as _find_rust_fastled_cli
+from fastled._native import collect_examples as _native_collect_examples
+from fastled._native import ensure_fastled_repo as _native_ensure_fastled_repo
+from fastled._native import (
+    find_fastled_repo_upwards as _native_find_fastled_repo_upwards,
+)
+from fastled._native import init_example_from_repo as _native_init_example_from_repo
+from fastled._native import read_fastled_json_ref as _native_read_fastled_json_ref
 from fastled.interrupts import handle_keyboard_interrupt
 
 DEFAULT_EXAMPLE = "wasm"
-
-try:
-    from fastled._native import collect_examples as _native_collect_examples
-    from fastled._native import find_example_in_repo as _native_find_example_in_repo
-    from fastled._native import (
-        ensure_fastled_repo as _native_ensure_fastled_repo,
-    )
-    from fastled._native import (
-        find_fastled_repo_upwards as _native_find_fastled_repo_upwards,
-    )
-    from fastled._native import (
-        init_example_from_repo as _native_init_example_from_repo,
-    )
-    from fastled._native import read_fastled_json_ref as _native_read_fastled_json_ref
-except ImportError:
-    _native_collect_examples = None
-    _native_find_example_in_repo = None
-    _native_ensure_fastled_repo = None
-    _native_find_fastled_repo_upwards = None
-    _native_init_example_from_repo = None
-    _native_read_fastled_json_ref = None
 
 
 @dataclass
@@ -40,47 +21,16 @@ class _CachedRepo:
 
 
 def _ensure_repo_via_rust(ref: str | None) -> Path:
-    """Invoke the Rust binary's hidden ``--internal-ensure-fastled-repo`` flag
-    to materialise the FastLED repo locally and return the path.
+    """Materialise the FastLED repo locally via the native Rust extension and
+    return the path.
 
     The Rust side owns the actual GitHub download. Python never performs the
     HTTP request itself.
     """
-    if _native_ensure_fastled_repo is not None:
-        repo_path = Path(_native_ensure_fastled_repo(ref))
-        if not repo_path.is_dir():
-            raise RuntimeError(
-                f"Rust extension returned non-existent repo path: {str(repo_path)!r}"
-            )
-        return repo_path
-
-    cli = _find_rust_fastled_cli()
-    if cli is None:
-        raise RuntimeError(
-            "Could not locate the fastled CLI binary; cannot fetch FastLED repo."
-        )
-
-    cmd: list[str] = [str(cli), "--internal-ensure-fastled-repo"]
-    if ref is not None:
-        cmd.append(ref)
-
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-        raise
-
-    if result.returncode != 0:
-        sys.stderr.write(result.stderr)
-        raise RuntimeError(
-            f"fastled --internal-ensure-fastled-repo failed (exit {result.returncode})"
-        )
-
-    repo_path_str = result.stdout.strip().splitlines()[-1] if result.stdout else ""
-    repo_path = Path(repo_path_str)
+    repo_path = Path(_native_ensure_fastled_repo(ref))
     if not repo_path.is_dir():
         raise RuntimeError(
-            f"Rust binary returned non-existent repo path: {repo_path_str!r}"
+            f"Rust extension returned non-existent repo path: {str(repo_path)!r}"
         )
     return repo_path
 
@@ -89,8 +39,8 @@ def _get_local_fastled_repo(ref: str | None) -> _CachedRepo:
     """Return a path to the locally-cached FastLED repo (and the resolved ref).
 
     Prefers ``FASTLED_LOCAL_REPO_DIR`` set by the Rust CLI's --init pre-step.
-    Falls back to invoking the Rust binary directly so direct Python API
-    consumers (Api.project_init, Api.get_examples) still work without httpx.
+    Falls back to invoking the native Rust helper directly so direct Python API
+    consumers (Api.project_init, Api.get_examples) still work.
     """
     env_path = os.environ.get("FASTLED_LOCAL_REPO_DIR")
     if env_path:
@@ -111,30 +61,7 @@ def _get_local_fastled_repo(ref: str | None) -> _CachedRepo:
 
 def _read_fastled_json(directory: Path) -> str | None:
     """Read the 'ref' field from fastled.json in the given directory."""
-    if _native_read_fastled_json_ref is not None:
-        return _native_read_fastled_json_ref(str(directory))
-
-    fpath = directory / "fastled.json"
-    if not fpath.exists():
-        return None
-    try:
-        data = json.loads(fpath.read_text(encoding="utf-8"))
-        return data.get("ref")
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def _write_fastled_json(directory: Path, ref: str) -> None:
-    """Write fastled.json with the given ref."""
-    fpath = directory / "fastled.json"
-    data: dict[str, str] = {}
-    if fpath.exists():
-        try:
-            data = json.loads(fpath.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            pass
-    data["ref"] = ref
-    fpath.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return _native_read_fastled_json_ref(str(directory))
 
 
 # --- FastLED repo detection ---
@@ -145,73 +72,16 @@ def _find_fastled_repo_via_library_json(start: Path) -> Path | None:
 
     Returns the repo root directory, or None.
     """
-    if _native_find_fastled_repo_upwards is not None:
-        found = _native_find_fastled_repo_upwards(str(start), 10)
-        if found:
-            return Path(found)
-
-    current = start.resolve()
-    for _ in range(10):  # limit depth
-        lib_json = current / "library.json"
-        if lib_json.exists():
-            try:
-                data = json.loads(lib_json.read_text(encoding="utf-8"))
-                if data.get("name") == "FastLED":
-                    return current
-            except (json.JSONDecodeError, OSError):
-                pass
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
+    found = _native_find_fastled_repo_upwards(str(start), 10)
+    return Path(found) if found else None
 
 
 # --- Core lookup helpers ---
 
 
-def _find_example_in_repo(repo_root: Path, example: str) -> Path | None:
-    """Search for an example directory in the FastLED repo.
-
-    Handles both flat layout (examples/FxSdCard/) and nested layout
-    (examples/Fx/FxSdCard/).
-    """
-    if _native_find_example_in_repo is not None:
-        found = _native_find_example_in_repo(str(repo_root), example)
-        return Path(found) if found else None
-
-    examples_dir = repo_root / "examples"
-    if not examples_dir.exists():
-        return None
-    direct = examples_dir / example
-    if direct.exists() and direct.is_dir():
-        return direct
-    for subdir in examples_dir.iterdir():
-        if subdir.is_dir():
-            nested = subdir / example
-            if nested.exists() and nested.is_dir():
-                return nested
-    return None
-
-
 def _collect_examples_from_dir(examples_dir: Path) -> list[str]:
     """Collect example names from an examples directory."""
-    if _native_collect_examples is not None:
-        return list(_native_collect_examples(str(examples_dir)))
-
-    if not examples_dir.exists():
-        return []
-    found: list[str] = []
-    for entry in examples_dir.iterdir():
-        if entry.is_dir():
-            ino_files = list(entry.glob("*.ino"))
-            if ino_files:
-                found.append(entry.name)
-            else:
-                for nested in entry.iterdir():
-                    if nested.is_dir() and list(nested.glob("*.ino")):
-                        found.append(nested.name)
-    return sorted(found)
+    return list(_native_collect_examples(str(examples_dir)))
 
 
 def get_examples(ref: str | None = None) -> list[str]:
@@ -349,25 +219,11 @@ def _init_example_from_repo(
     outputdir: Path,
     resolved_ref: str | None,
 ) -> Path:
-    if _native_init_example_from_repo is not None:
-        return Path(
-            _native_init_example_from_repo(
-                str(repo_root), example, str(outputdir), resolved_ref
-            )
+    return Path(
+        _native_init_example_from_repo(
+            str(repo_root), example, str(outputdir), resolved_ref
         )
-
-    example_src = _find_example_in_repo(repo_root, example)
-    if example_src is None:
-        raise FileNotFoundError(f"Example '{example}' not found in FastLED repo")
-
-    dest = outputdir / example
-    dest.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(example_src, dest, dirs_exist_ok=True)
-
-    if resolved_ref is not None:
-        _write_fastled_json(dest, resolved_ref)
-
-    return dest
+    )
 
 
 def unit_test() -> None:

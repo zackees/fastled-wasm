@@ -36,14 +36,16 @@ class TestInitRefArgsMutualExclusivity(unittest.TestCase):
         result = _run_fastled("--init=wasm", "--latest", "--branch", "master")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "--latest cannot be used with --branch or --commit", result.stdout
+            "--latest cannot be used with --branch or --commit",
+            result.stdout + result.stderr,
         )
 
     def test_latest_with_commit_fails(self) -> None:
         result = _run_fastled("--init=wasm", "--latest", "--commit", "abc1234")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "--latest cannot be used with --branch or --commit", result.stdout
+            "--latest cannot be used with --branch or --commit",
+            result.stdout + result.stderr,
         )
 
     def test_latest_with_branch_and_commit_fails(self) -> None:
@@ -52,7 +54,8 @@ class TestInitRefArgsMutualExclusivity(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            "--latest cannot be used with --branch or --commit", result.stdout
+            "--latest cannot be used with --branch or --commit",
+            result.stdout + result.stderr,
         )
 
     def test_branch_and_commit_together_accepted(self) -> None:

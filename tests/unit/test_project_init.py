@@ -45,9 +45,7 @@ class ProjectInitTester(unittest.TestCase):
                 resolved_ref="master",
             )
             self.assertEqual(out, result)
-            mock_native.assert_called_once_with(
-                "repo", "Blink", tmpdir, "master"
-            )
+            mock_native.assert_called_once_with("repo", "Blink", tmpdir, "master")
 
 
 if __name__ == "__main__":
