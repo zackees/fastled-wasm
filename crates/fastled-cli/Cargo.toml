@@ -8,6 +8,10 @@ repository.workspace = true
 homepage.workspace = true
 description = "FastLED WASM compilation CLI"
 
+[lib]
+name = "fastled_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "fastled"
 path = "src/main.rs"

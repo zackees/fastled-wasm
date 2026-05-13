@@ -18,6 +18,15 @@ fi
 
 uv venv --python 3.11 --seed
 uv pip install "maturin>=1.7,<2"
+
+# Ensure the maturin data dir exists before invoking maturin. The
+# `[tool.maturin] data = "wheel-data"` config points here; maturin treats a
+# missing path as an error during `pep517 build-wheel`. The cargo-build step
+# later in this script will populate `wheel-data/scripts/` with the Rust
+# fastled binary so subsequent `./build-wheel` invocations bundle it; an
+# empty dir is fine for the editable-install path that pip is about to run.
+mkdir -p wheel-data/scripts
+
 uv pip install -e .
 
 uv pip install -r requirements.testing.txt
@@ -106,4 +115,45 @@ if [[ "$FASTLED_CLI_BINSTALLED" -eq 0 ]]; then
   echo "Building fastled CLI from source..."
   "$(dirname "$0")/_cargo" build --release --bin fastled \
     || { echo "Error: cargo build --bin fastled failed"; exit 1; }
+fi
+
+# Locate the just-built (or binstalled) Rust binary and stage it where
+# downstream tooling will find it. Editable installs (`uv pip install -e .`)
+# don't extract the maturin `data` dir to the venv's Scripts/, so we mimic
+# the wheel-install layout manually:
+#   * `.venv/Scripts/fastled[.exe]` (or `.venv/bin/fastled`) — so PATH lookup
+#     resolves the Rust binary for callers like `build_site.py` that shell
+#     out to plain `fastled`.
+#   * `wheel-data/scripts/fastled[.exe]` — so a subsequent `./build-wheel`
+#     produces a wheel that bundles the binary.
+if [[ "$OSTYPE" == "msys" ]]; then
+  EXE_NAME="fastled.exe"
+  VENV_BIN_DIR=".venv/Scripts"
+else
+  EXE_NAME="fastled"
+  VENV_BIN_DIR=".venv/bin"
+fi
+
+BIN_SRC=""
+# Discover where the binary landed. `_cargo` sets CARGO_BUILD_TARGET on
+# Windows, so the bin is under target/<triple>/release/; on other platforms
+# (and when binstall provided it) check the usual locations.
+for CANDIDATE in \
+    "target/x86_64-pc-windows-msvc/release/${EXE_NAME}" \
+    "target/aarch64-pc-windows-msvc/release/${EXE_NAME}" \
+    "target/release/${EXE_NAME}" \
+    "${CARGO_BIN}/${EXE_NAME}"; do
+  if [[ -f "$CANDIDATE" ]]; then
+    BIN_SRC="$CANDIDATE"
+    break
+  fi
+done
+
+if [[ -n "$BIN_SRC" ]]; then
+  mkdir -p "$VENV_BIN_DIR" wheel-data/scripts
+  cp -f "$BIN_SRC" "$VENV_BIN_DIR/$EXE_NAME"
+  cp -f "$BIN_SRC" "wheel-data/scripts/$EXE_NAME"
+  echo "Staged $BIN_SRC -> $VENV_BIN_DIR/$EXE_NAME (and wheel-data/scripts/)"
+else
+  echo "Warning: Rust fastled binary not found; PATH lookups for 'fastled' will miss" >&2
 fi
