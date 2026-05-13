@@ -28,7 +28,6 @@ flate2 = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-ctcb-manifest = "0.4.1"
 dirs = "5"
 strsim = "0.11"
 crossterm = "0.28"

@@ -10,9 +10,91 @@ use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
-use ctcb_manifest::{PartRef, PlatformManifest};
+use serde::Deserialize;
+use std::collections::BTreeMap;
 
 use crate::archive;
+
+// ---------------------------------------------------------------------------
+// Manifest schema
+// ---------------------------------------------------------------------------
+//
+// The clang-tool-chain-bins emscripten manifest is served in two different
+// shapes depending on platform. Linux/macOS nests version entries under a
+// `versions` key:
+//
+//     { "latest": "4.0.21",
+//       "versions": { "4.0.21": { "href": "...", "sha256": "...", "parts": [...] }, ... } }
+//
+// Windows inlines version entries at the top level alongside `latest`:
+//
+//     { "latest": "4.0.19",
+//       "4.0.19": { "href": "...", "sha256": "...", "parts": [...] } }
+//
+// Our `PlatformManifest` accepts both via a custom Deserialize.
+
+#[derive(Debug, Deserialize)]
+struct PartRef {
+    href: String,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VersionInfo {
+    href: String,
+    sha256: String,
+    parts: Option<Vec<PartRef>>,
+}
+
+#[derive(Debug)]
+struct PlatformManifest {
+    latest: String,
+    versions: BTreeMap<String, VersionInfo>,
+}
+
+impl<'de> Deserialize<'de> for PlatformManifest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw: serde_json::Value = Deserialize::deserialize(deserializer)?;
+        let obj = raw
+            .as_object()
+            .ok_or_else(|| serde::de::Error::custom("expected JSON object at manifest root"))?;
+
+        let latest = obj
+            .get("latest")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| serde::de::Error::custom("missing 'latest' key"))?
+            .to_string();
+
+        let mut versions = BTreeMap::new();
+
+        // Prefer the nested-`versions` shape (Linux / macOS manifests) when
+        // present. Fall back to top-level inline entries (Windows).
+        if let Some(serde_json::Value::Object(versions_obj)) = obj.get("versions") {
+            for (key, value) in versions_obj {
+                let info: VersionInfo = serde_json::from_value(value.clone()).map_err(|e| {
+                    serde::de::Error::custom(format!(
+                        "bad version entry '{key}' (nested versions): {e}"
+                    ))
+                })?;
+                versions.insert(key.clone(), info);
+            }
+        } else {
+            for (key, value) in obj {
+                if key == "latest" {
+                    continue;
+                }
+                let info: VersionInfo = serde_json::from_value(value.clone()).map_err(|e| {
+                    serde::de::Error::custom(format!(
+                        "bad version entry '{key}' (inline versions): {e}"
+                    ))
+                })?;
+                versions.insert(key.clone(), info);
+            }
+        }
+
+        Ok(PlatformManifest { latest, versions })
+    }
+}
 
 const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
     "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
