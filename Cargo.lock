@@ -717,30 +717,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctcb-core"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6d666d682b69add1b1bea317cb3184018f21a0ff95f3a9d1b44887bd5b01961"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "ctcb-manifest"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97c47fc9cd2017787aad53c7a11fb8529291cadb369dc15ad041eb81fbc06221"
-dependencies = [
- "anyhow",
- "ctcb-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ctor"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1059,7 +1035,6 @@ dependencies = [
  "axum",
  "clap",
  "crossterm",
- "ctcb-manifest",
  "dirs 5.0.1",
  "flate2",
  "notify",

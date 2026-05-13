@@ -34,7 +34,6 @@ tokio = { workspace = true }
 axum = { workspace = true }
 tower-http = { workspace = true }
 tokio-stream = { workspace = true }
-ctcb-manifest = { workspace = true }
 dirs = { workspace = true }
 tempfile = "3"
 

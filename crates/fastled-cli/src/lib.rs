@@ -171,6 +171,20 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
+            // FastLED's meson cross-file calls `clang-tool-chain-emcc` /
+            // `-em++` / `-emar`. Those wrappers (from the `clang-tool-chain`
+            // PyPI package) look up emscripten under
+            // `$CLANG_TOOL_CHAIN_DOWNLOAD_PATH/emscripten/<plat>/<arch>/<ver>`.
+            // install_dir here is `<root>/emscripten/<plat>/<arch>/<ver>`,
+            // so walk four parents up to the toolchains root and export it.
+            if let Some(root) = install_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+                .and_then(|p| p.parent())
+            {
+                std::env::set_var("CLANG_TOOL_CHAIN_DOWNLOAD_PATH", root);
+            }
         }
         Err(e) => {
             eprintln!("fastled: emscripten toolchain install failed: {e:#}");
@@ -678,6 +692,33 @@ pub fn run() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("fastled: failed to fetch FastLED repo: {e:#}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+
+    // If we're about to delegate a compile to Python (`--just-compile <dir>`)
+    // ensure the emscripten + esbuild toolchains are installed first and
+    // export the paths through env vars — matches what compile_and_serve()
+    // does for the non-just-compile path. Without this, Python's emscripten
+    // toolchain lookup falls through to "not found" on a fresh CI runner.
+    let needs_compile_toolchain = cli.directory.is_some() && cli.init.is_none() && !cli.install;
+    if needs_compile_toolchain {
+        match install::ensure_emscripten_installed() {
+            Ok(install_dir) => {
+                std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
+            }
+            Err(e) => {
+                eprintln!("fastled: emscripten toolchain install failed: {e:#}");
+                return ExitCode::FAILURE;
+            }
+        }
+        match install::ensure_esbuild_installed() {
+            Ok(esbuild_path) => {
+                std::env::set_var("FASTLED_ESBUILD_PATH", &esbuild_path);
+            }
+            Err(e) => {
+                eprintln!("fastled: esbuild install failed: {e:#}");
                 return ExitCode::FAILURE;
             }
         }
