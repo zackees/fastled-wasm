@@ -216,8 +216,7 @@ fn esbuild_platform_arch() -> Result<(&'static str, &'static str)> {
 /// `~/.fastled/toolchains/esbuild/{platform}/{arch}/{version}/`.
 /// Returns the path to the executable.
 ///
-/// Layout matches the previous Python implementation
-/// (`src/fastled/frontend_esbuild.py`).
+/// Used by `crates/fastled-cli/src/frontend.rs` to bundle frontend assets.
 pub fn ensure_esbuild_installed() -> Result<PathBuf> {
     let (platform, arch) = esbuild_platform_arch()?;
     let version = ESBUILD_VERSION;

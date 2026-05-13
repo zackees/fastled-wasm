@@ -3,10 +3,12 @@
 //! The Rust CLI now drives the Python build service in-process through PyO3
 //! instead of shelling out through `python -m fastled.app`.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
@@ -100,22 +102,16 @@ fn workspace_python_source() -> Option<PathBuf> {
     src_dir.is_dir().then_some(src_dir)
 }
 
-fn py_path(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
-    let pathlib = PyModule::import(py, "pathlib")?;
-    let cls = pathlib.getattr("Path")?;
-    Ok(cls
-        .call1((path.to_string_lossy().as_ref(),))?
-        .into_any()
-        .unbind())
+fn normalize_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn py_fspath(value: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
-    let py = value.py();
-    let os = PyModule::import(py, "os")?;
-    let fspath = os.getattr("fspath")?;
-    let path_value = fspath.call1((value,))?;
-    let path_str: String = path_value.extract()?;
-    Ok(PathBuf::from(path_str))
+/// Canonicalize a sketch/`fastled_path` so the toolchain key registered with
+/// `NativeBuildService.register_toolchain` matches the key passed into
+/// `NativeBuildService.build` — mirrors `_toolchain_key` in
+/// `src/fastled/build_service.py`.
+fn toolchain_key(fastled_path: Option<&Path>) -> Option<String> {
+    fastled_path.map(|p| normalize_path(p).to_string_lossy().into_owned())
 }
 
 fn ensure_workspace_src_on_sys_path(py: Python<'_>) -> PyResult<()> {
@@ -140,13 +136,11 @@ fn run_build_embedded(request: &BuildRequest) -> Result<BuildResult> {
         ensure_workspace_src_on_sys_path(py)
             .context("failed to add workspace Python sources to sys.path")?;
 
-        let build_service_mod = PyModule::import(py, "fastled.build_service")
-            .context("import fastled.build_service")?;
-        let build_types_mod =
-            PyModule::import(py, "fastled.build_types").context("import fastled.build_types")?;
+        let native_mod =
+            PyModule::import(py, "fastled._native").context("import fastled._native")?;
         let types_mod = PyModule::import(py, "fastled.types").context("import fastled.types")?;
 
-        let build_mode = types_mod
+        let build_mode_obj = types_mod
             .getattr("BuildMode")
             .context("BuildMode enum missing")?
             .getattr(request.build_mode.py_member_name())
@@ -154,66 +148,102 @@ fn run_build_embedded(request: &BuildRequest) -> Result<BuildResult> {
                 format!("BuildMode.{} missing", request.build_mode.py_member_name())
             })?;
 
-        let request_kwargs = PyDict::new(py);
-        request_kwargs
-            .set_item("sketch_dir", py_path(py, &request.sketch_dir)?)
-            .context("set sketch_dir")?;
-        request_kwargs
-            .set_item("build_mode", &build_mode)
-            .context("set build_mode")?;
-        request_kwargs
-            .set_item("profile", request.profile)
-            .context("set profile")?;
-        match &request.fastled_path {
-            Some(path) => request_kwargs
-                .set_item("fastled_path", py_path(py, path)?)
-                .context("set fastled_path")?,
-            None => request_kwargs
-                .set_item("fastled_path", py.None())
-                .context("set fastled_path none")?,
-        }
-        request_kwargs
-            .set_item("force_clean", request.force_clean)
-            .context("set force_clean")?;
-
-        let build_request = build_types_mod
-            .getattr("BuildRequest")
-            .context("BuildRequest class missing")?
-            .call((), Some(&request_kwargs))
-            .context("construct BuildRequest")?;
-
-        let service = build_service_mod
-            .getattr("BuildService")
-            .context("BuildService class missing")?
+        let service = native_mod
+            .getattr("NativeBuildService")
+            .context("NativeBuildService class missing")?
             .call0()
-            .context("construct BuildService")?;
+            .context("construct NativeBuildService")?;
 
-        let result = service
-            .call_method1("build", (build_request,))
-            .context("BuildService.build failed")?;
+        // Register the Emscripten toolchain inline (still Python-owned).
+        let toolchain_mod = PyModule::import(py, "fastled.toolchain.emscripten")
+            .context("import fastled.toolchain.emscripten")?;
+        let toolchain_kwargs = PyDict::new(py);
+        match &request.fastled_path {
+            Some(path) => toolchain_kwargs
+                .set_item("fastled_path", path.to_string_lossy().as_ref())
+                .context("set toolchain fastled_path")?,
+            None => toolchain_kwargs
+                .set_item("fastled_path", py.None())
+                .context("set toolchain fastled_path none")?,
+        }
+        let toolchain = toolchain_mod
+            .getattr("EmscriptenToolchain")
+            .context("EmscriptenToolchain class missing")?
+            .call((), Some(&toolchain_kwargs))
+            .context("construct EmscriptenToolchain")?;
 
-        let success: bool = result
-            .getattr("success")
+        let key = toolchain_key(request.fastled_path.as_deref());
+        service
+            .call_method1("register_toolchain", (toolchain, key.clone()))
+            .context("register_toolchain")?;
+
+        let sketch_dir_str = request.sketch_dir.to_string_lossy().into_owned();
+        let build_mode_str = request.build_mode.py_member_name();
+
+        let build_call = service.call_method1(
+            "build",
+            (
+                sketch_dir_str.as_str(),
+                build_mode_str,
+                build_mode_obj,
+                request.profile,
+                key.clone(),
+                request.force_clean,
+            ),
+        );
+
+        let result = match build_call {
+            Ok(r) => r,
+            Err(err) => {
+                if err.is_instance_of::<PyKeyboardInterrupt>(py) {
+                    // Mirror the Python wrapper: route through
+                    // fastled.interrupts.handle_keyboard_interrupt so a
+                    // worker-thread Ctrl+C wakes the main thread.
+                    if let Ok(interrupts) = PyModule::import(py, "fastled.interrupts") {
+                        if let Ok(handler) = interrupts.getattr("handle_keyboard_interrupt") {
+                            let _ = handler.call1((err.clone_ref(py),));
+                        }
+                    }
+                }
+                return Err(err).context("NativeBuildService.build failed");
+            }
+        };
+
+        let result_dict = result
+            .downcast_into::<PyDict>()
+            .map_err(|e| anyhow::anyhow!("NativeBuildService.build returned non-dict: {e}"))?;
+
+        let success: bool = result_dict
+            .get_item("success")
             .context("missing build result success")?
+            .ok_or_else(|| anyhow::anyhow!("missing build result success"))?
             .extract()
             .context("extract build success")?;
-        let output: String = result
-            .getattr("stdout")
+        let output: String = result_dict
+            .get_item("stdout")
             .context("missing build result stdout")?
+            .ok_or_else(|| anyhow::anyhow!("missing build result stdout"))?
             .extract()
             .context("extract build stdout")?;
-        let strategy: String = result
-            .getattr("strategy")
+        let strategy: String = result_dict
+            .get_item("strategy")
             .context("missing build strategy")?
+            .ok_or_else(|| anyhow::anyhow!("missing build strategy"))?
             .extract()
             .context("extract build strategy")?;
-        let sketch_time_secs: f64 = result
-            .getattr("sketch_time")
+        let sketch_time_secs: f64 = result_dict
+            .get_item("sketch_time")
             .context("missing sketch_time")?
+            .ok_or_else(|| anyhow::anyhow!("missing sketch_time"))?
             .extract()
             .context("extract sketch_time")?;
-        let output_dir = py_fspath(&result.getattr("output_dir").context("missing output_dir")?)
+        let output_dir_str: String = result_dict
+            .get_item("output_dir")
+            .context("missing output_dir")?
+            .ok_or_else(|| anyhow::anyhow!("missing output_dir"))?
+            .extract()
             .context("extract output_dir")?;
+        let output_dir = PathBuf::from(output_dir_str);
 
         Ok(BuildResult {
             success,
@@ -405,6 +435,20 @@ mod tests {
         let src_dir = workspace_python_source().expect("workspace src dir");
         assert!(src_dir.ends_with("src"));
         assert!(src_dir.is_dir());
+    }
+
+    #[test]
+    fn test_toolchain_key_is_none_when_unset() {
+        assert_eq!(toolchain_key(None), None);
+    }
+
+    #[test]
+    fn test_toolchain_key_returns_some_when_set() {
+        // The canonicalize call may fail for nonexistent paths and fall back
+        // to the input path, which is fine for this test.
+        let p = PathBuf::from("/tmp/fastled-test-keypath-does-not-exist");
+        let key = toolchain_key(Some(&p));
+        assert!(key.is_some());
     }
 
     // ------------------------------------------------------------------

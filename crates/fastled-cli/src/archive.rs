@@ -1,6 +1,5 @@
 //! Archive download, verification, and extraction utilities.
 //!
-//! Ports the core logic from `emscripten_archive.py` and `frontend_esbuild.py`:
 //! * HTTP(S) download with streaming
 //! * SHA-256 file verification
 //! * `.tar.zst` extraction (used for the emscripten toolchain)

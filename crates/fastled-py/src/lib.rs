@@ -1,5 +1,7 @@
+use fastled_cli::frontend;
 use fastled_cli::install;
 use fastled_cli::project;
+use fastled_cli::viewer;
 use fastled_cli::{PromptChoice, SketchSelection};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -9,68 +11,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::Instant;
 use zip::write::SimpleFileOptions;
-
-// ---------------------------------------------------------------------------
-// Internal: Tauri viewer discovery (mirrors viewer.rs in fastled-cli)
-// ---------------------------------------------------------------------------
-
-#[cfg(windows)]
-const VIEWER_EXE: &str = "fastled-viewer.exe";
-#[cfg(not(windows))]
-const VIEWER_EXE: &str = "fastled-viewer";
-
-fn find_tauri_viewer_path() -> Option<PathBuf> {
-    // 1. Sibling of the running shared library / executable.
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join(VIEWER_EXE);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    // 2. Walk up from the current executable looking for a Cargo workspace root,
-    //    then check target/debug and target/release.
-    if let Some(root) = find_workspace_root_py() {
-        for profile in &["debug", "release"] {
-            let candidate = root.join("target").join(profile).join(VIEWER_EXE);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    // 3. PATH lookup.
-    let on_path = Command::new(VIEWER_EXE)
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if on_path {
-        return Some(PathBuf::from(VIEWER_EXE));
-    }
-
-    None
-}
-
-fn find_workspace_root_py() -> Option<PathBuf> {
-    let start = std::env::current_exe().ok()?;
-    let mut dir = start.parent()?.to_path_buf();
-    for _ in 0..10 {
-        if dir.join("Cargo.toml").is_file() {
-            return Some(dir.clone());
-        }
-        match dir.parent() {
-            Some(p) => dir = p.to_path_buf(),
-            None => break,
-        }
-    }
-    None
-}
 
 // ---------------------------------------------------------------------------
 // Internal: Native BuildService
@@ -605,6 +547,7 @@ impl NativeBuildService {
     }
 
     #[pyo3(signature = (sketch_dir, build_mode, build_mode_obj, profile=false, fastled_path=None, force_clean=false))]
+    #[allow(clippy::too_many_arguments)]
     fn build(
         &mut self,
         py: Python<'_>,
@@ -783,6 +726,7 @@ impl NativeBuildService {
         py_fspath(py, &js_file)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_payload(
         py: Python<'_>,
         success: bool,
@@ -997,7 +941,16 @@ fn build_available() -> bool {
 /// found alongside the CLI, in the Cargo target directory, or on PATH.
 #[pyfunction]
 fn viewer_available() -> bool {
-    find_tauri_viewer_path().is_some()
+    viewer::find_tauri_viewer().is_some()
+}
+
+/// Locate the `fastled-viewer` (Tauri) binary.  Returns `None` if not found.
+///
+/// Delegates to `fastled_cli::viewer::find_tauri_viewer` so the Python shim no
+/// longer duplicates the discovery logic.
+#[pyfunction]
+fn find_fastled_viewer() -> Option<String> {
+    viewer::find_tauri_viewer().map(|p| p.to_string_lossy().into_owned())
 }
 
 #[pyfunction]
@@ -1012,6 +965,19 @@ fn string_diff(
     ignore_case: bool,
 ) -> Vec<(f64, String)> {
     string_diff_impl(input_string, &string_list, ignore_case)
+}
+
+/// Build the FastLED frontend (if stale) and copy it into ``output_dir``.
+///
+/// Mirrors ``src/fastled/frontend_esbuild.py::copy_frontend_to_output`` so the
+/// Python shim can delegate without re-implementing the bundling logic.
+#[pyfunction]
+#[pyo3(signature = (output_dir, source_dir=None))]
+fn copy_frontend_to_output(output_dir: &str, source_dir: Option<&str>) -> PyResult<()> {
+    let out = PathBuf::from(output_dir);
+    let src = source_dir.map(PathBuf::from);
+    frontend::copy_frontend_to_output(&out, src.as_deref())
+        .map_err(|e| PyRuntimeError::new_err(format!("{e:#}")))
 }
 
 /// FastLED native extension module.
@@ -1037,8 +1003,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(init_example_from_repo, m)?)?;
     m.add_function(wrap_pyfunction!(build_available, m)?)?;
     m.add_function(wrap_pyfunction!(viewer_available, m)?)?;
+    m.add_function(wrap_pyfunction!(find_fastled_viewer, m)?)?;
     m.add_function(wrap_pyfunction!(is_in_order_match, m)?)?;
     m.add_function(wrap_pyfunction!(string_diff, m)?)?;
+    m.add_function(wrap_pyfunction!(copy_frontend_to_output, m)?)?;
     Ok(())
 }
 

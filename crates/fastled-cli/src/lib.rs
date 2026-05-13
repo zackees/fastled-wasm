@@ -7,11 +7,12 @@ use std::process::{Command, ExitCode};
 
 mod archive;
 mod build;
+pub mod frontend;
 pub mod install;
 mod keyboard;
 pub mod project;
 mod server;
-mod viewer;
+pub mod viewer;
 mod watcher;
 
 const DEFAULT_EXAMPLE: &str = "wasm";
