@@ -5,6 +5,7 @@ use std::process::{Command, ExitCode, Stdio};
 
 mod archive;
 mod build;
+mod install;
 mod keyboard;
 mod project;
 mod server;
@@ -162,6 +163,19 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     if !sketch_dir.is_dir() {
         eprintln!("fastled: sketch directory does not exist: {dir}");
         return ExitCode::FAILURE;
+    }
+
+    // Ensure the emscripten toolchain is installed before invoking Python.
+    // Sets FASTLED_EMSCRIPTEN_DIR so the Python compile path skips its own
+    // download logic and uses the Rust-installed directory.
+    match install::ensure_emscripten_installed() {
+        Ok(install_dir) => {
+            std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
+        }
+        Err(e) => {
+            eprintln!("fastled: emscripten toolchain install failed: {e:#}");
+            return ExitCode::FAILURE;
+        }
     }
 
     let output_dir = sketch_dir.join("fastled_js");

@@ -7,10 +7,6 @@
 //! * `.zip` extraction (general-purpose)
 //! * Writing the `.emscripten` config file after installation
 
-// This module is library code — not yet wired into the CLI entry point.
-// Suppress dead-code lints until a later integration phase.
-#![allow(dead_code)]
-
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
