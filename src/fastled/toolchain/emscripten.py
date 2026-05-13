@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastled.interrupts import handle_keyboard_interrupt
-from fastled.toolchain.emscripten_archive import install_emscripten_from_archive
 from fastled.types import BuildMode
 
 _clang_tool_chain_emscripten_dir_cache: Path | None | str = "UNSET"
@@ -45,20 +44,24 @@ def _resolve_example_name(
 
 
 def _get_clang_tool_chain_emscripten_dir() -> Path | None:
-    """Get the clang-tool-chain Emscripten installation directory (cached)."""
+    """Resolve the Emscripten installation directory (cached).
+
+    Source of truth: ``FASTLED_EMSCRIPTEN_DIR`` set by the Rust CLI before
+    invoking Python — Rust owns the actual download/install via ``install.rs``.
+    Falls back to a directory search under ``CLANG_TOOL_CHAIN_DOWNLOAD_PATH``
+    (or ``~/.clang-tool-chain``) so an existing Python-installed toolchain is
+    still picked up when Python is invoked without the Rust pre-step.
+    """
     global _clang_tool_chain_emscripten_dir_cache
     if _clang_tool_chain_emscripten_dir_cache != "UNSET":
         return _clang_tool_chain_emscripten_dir_cache  # type: ignore[return-value]
 
-    try:
-        internal_dir = install_emscripten_from_archive()
-        if (internal_dir / "emscripten" / "emcc.py").exists():
-            _clang_tool_chain_emscripten_dir_cache = internal_dir
-            return internal_dir
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-    except Exception:
-        pass
+    rust_install = os.environ.get("FASTLED_EMSCRIPTEN_DIR")
+    if rust_install:
+        candidate = Path(rust_install)
+        if (candidate / "emscripten" / "emcc.py").exists():
+            _clang_tool_chain_emscripten_dir_cache = candidate
+            return candidate
 
     env_path = os.environ.get("CLANG_TOOL_CHAIN_DOWNLOAD_PATH")
     base_dir = Path(env_path) if env_path else Path.home() / ".clang-tool-chain"
@@ -87,69 +90,15 @@ def _get_clang_tool_chain_emscripten_dir() -> Path | None:
     return None
 
 
-def _get_platform_arch() -> tuple[str, str]:
-    """Get the current platform and architecture strings for clang-tool-chain."""
-    import struct
-
-    if sys.platform == "win32":
-        plat = "win"
-    elif sys.platform == "darwin":
-        plat = "darwin"
-    else:
-        plat = "linux"
-
-    # Detect architecture from pointer size and platform hints
-    is_64bit = struct.calcsize("P") * 8 == 64
-    _uname = getattr(os, "uname", None)
-    if _uname is not None:
-        machine = _uname().machine.lower()
-    elif is_64bit:
-        machine = "amd64"
-    else:
-        machine = "x86"
-
-    if machine in ("x86_64", "amd64"):
-        arch = "x86_64"
-    elif machine in ("arm64", "aarch64"):
-        arch = "arm64"
-    else:
-        arch = machine
-
-    return plat, arch
-
-
 def ensure_clang_tool_chain_emscripten() -> Path | None:
-    """Ensure clang-tool-chain Emscripten is installed."""
-    existing_dir = _get_clang_tool_chain_emscripten_dir()
-    if existing_dir:
-        return existing_dir
+    """Return the resolved Emscripten installation directory.
 
-    try:
-        import inspect
-
-        from clang_tool_chain.installers.emscripten import (  # type: ignore[import-not-found]
-            ensure_emscripten_available,
-            get_emscripten_install_dir,
-        )
-
-        sig = inspect.signature(ensure_emscripten_available)
-        num_params = len(sig.parameters)
-        if num_params == 0:
-            ensure_emscripten_available()  # type: ignore[call-arg]
-            return get_emscripten_install_dir()  # type: ignore[call-arg]
-        elif num_params == 2:
-            plat, arch = _get_platform_arch()
-            ensure_emscripten_available(plat, arch)  # type: ignore[call-arg]
-            return get_emscripten_install_dir(plat, arch)  # type: ignore[call-arg]
-        else:
-            return None
-    except ImportError:
-        return None
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-    except Exception as e:
-        print(f"Warning: Failed to ensure clang-tool-chain Emscripten: {e}")
-        return None
+    Install is now driven by the Rust CLI (`crates/fastled-cli/src/install.rs`)
+    which sets ``FASTLED_EMSCRIPTEN_DIR`` before invoking Python. This function
+    is kept for backward compatibility with callers that just want the
+    resolved directory; the actual download has moved out of Python.
+    """
+    return _get_clang_tool_chain_emscripten_dir()
 
 
 def _setup_emscripten_env(env: dict[str, str]) -> None:

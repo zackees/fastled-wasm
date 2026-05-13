@@ -14,7 +14,6 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "httpx>=0.28.1",
     "fasteners>=0.20",
-    "clang-tool-chain>=1.2.6",
     "zcmds_win32; sys_platform == 'win32'",
 ]
 
