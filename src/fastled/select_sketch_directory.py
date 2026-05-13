@@ -92,11 +92,7 @@ def _disambiguate_user_choice(
 
             user_input_lower = user_input.lower()
             is_partial = (
-                sum(
-                    1
-                    for label in option_labels
-                    if user_input_lower in label.lower()
-                )
+                sum(1 for label in option_labels if user_input_lower in label.lower())
                 > 1
             )
             current_prompt = (

@@ -25,9 +25,9 @@ const VIEWER_EXE: &str = "fastled-viewer";
 ///
 /// Search order:
 /// 1. Same directory as the currently running executable.
-/// 2. `target/debug/` relative to the workspace root (detected via the
-///    executable path heuristic or `CARGO_MANIFEST_DIR`).
-/// 3. `target/release/` via the same heuristic.
+/// 2. `target/debug/` and `target/release/` relative to the workspace root
+///    (detected via the executable path heuristic or `CARGO_MANIFEST_DIR`).
+/// 3. `target/<arch-triple>/{debug,release}/` for cross-compiled builds.
 /// 4. `PATH` — `which`-style lookup via [`Command::new`].
 ///
 /// Returns `None` if the binary cannot be found.
@@ -43,8 +43,8 @@ pub fn find_tauri_viewer() -> Option<PathBuf> {
     }
 
     // 2. Walk up from the current executable to find a Cargo workspace root
-    //    (directory that contains a `Cargo.toml` with `[workspace]`), then
-    //    check `target/debug` and `target/release`.
+    //    (directory that contains a `Cargo.toml`), then check `target/debug`
+    //    and `target/release`.
     if let Some(workspace_root) = find_workspace_root() {
         for profile in &["debug", "release"] {
             let candidate = workspace_root.join("target").join(profile).join(VIEWER_EXE);
@@ -52,14 +52,43 @@ pub fn find_tauri_viewer() -> Option<PathBuf> {
                 return Some(candidate);
             }
         }
+
+        // 3. Scan `target/<arch-triple>/{debug,release}/` for cross-compiled
+        //    artifacts (e.g. `target/x86_64-pc-windows-msvc/release/`).
+        let target_dir = workspace_root.join("target");
+        if let Some(candidate) = find_viewer_in_arch_dirs(&target_dir) {
+            return Some(candidate);
+        }
     }
 
-    // 3. Fall back to PATH lookup.
+    // 4. Fall back to PATH lookup.
     if is_on_path(VIEWER_EXE) {
         // Return just the bare name so the OS resolves it through PATH.
         return Some(PathBuf::from(VIEWER_EXE));
     }
 
+    None
+}
+
+/// Scan ``<target_dir>/<arch-triple>/{debug,release}/`` for the viewer binary.
+/// Skips dotfiles and non-directory entries.
+fn find_viewer_in_arch_dirs(target_dir: &std::path::Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(target_dir).ok()?;
+    for entry in entries.flatten() {
+        let arch_dir = entry.path();
+        if !arch_dir.is_dir() {
+            continue;
+        }
+        if entry.file_name().to_string_lossy().starts_with('.') {
+            continue;
+        }
+        for profile in &["debug", "release"] {
+            let candidate = arch_dir.join(profile).join(VIEWER_EXE);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
     None
 }
 
@@ -134,6 +163,8 @@ fn is_on_path(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_viewer_available_does_not_panic() {
@@ -155,5 +186,47 @@ mod tests {
     #[test]
     fn test_find_workspace_root_does_not_panic() {
         let _ = find_workspace_root();
+    }
+
+    #[test]
+    fn test_find_viewer_in_arch_dirs_finds_binary() {
+        // Set up a fake target tree:
+        //   <tmp>/target/x86_64-pc-windows-msvc/release/fastled-viewer[.exe]
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("target");
+        let arch_dir = target.join("x86_64-pc-windows-msvc").join("release");
+        fs::create_dir_all(&arch_dir).expect("mkdir arch_dir");
+        let viewer_path = arch_dir.join(VIEWER_EXE);
+        fs::write(&viewer_path, b"fake binary").expect("write fake viewer");
+
+        let found = find_viewer_in_arch_dirs(&target).expect("expected to find viewer");
+        assert_eq!(found, viewer_path);
+    }
+
+    #[test]
+    fn test_find_viewer_in_arch_dirs_skips_dotfiles() {
+        // A hidden `.cache` dir should not be scanned.
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("target");
+        let hidden = target.join(".cache").join("debug");
+        fs::create_dir_all(&hidden).expect("mkdir hidden");
+        fs::write(hidden.join(VIEWER_EXE), b"fake").expect("write fake");
+
+        assert!(find_viewer_in_arch_dirs(&target).is_none());
+    }
+
+    #[test]
+    fn test_find_viewer_in_arch_dirs_returns_none_for_empty_tree() {
+        let tmp = TempDir::new().expect("tempdir");
+        let target = tmp.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target");
+        assert!(find_viewer_in_arch_dirs(&target).is_none());
+    }
+
+    #[test]
+    fn test_find_viewer_in_arch_dirs_missing_target() {
+        let tmp = TempDir::new().expect("tempdir");
+        let missing = tmp.path().join("does-not-exist");
+        assert!(find_viewer_in_arch_dirs(&missing).is_none());
     }
 }

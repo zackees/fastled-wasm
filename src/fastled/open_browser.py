@@ -1,120 +1,12 @@
 import atexit
-import shutil
 import subprocess
-import sys
 import time
 import weakref
 from pathlib import Path
 
+from fastled._native import find_fastled_viewer
+from fastled._rust_cli import find_rust_fastled_cli
 from fastled.interrupts import handle_keyboard_interrupt
-
-
-def _find_tauri_viewer() -> Path | None:
-    """Locate the fastled-viewer (Tauri) binary.
-
-    Search order mirrors crates/fastled-cli/src/viewer.rs:
-    1. Same directory as the running Python executable.
-    2. target/debug/ and target/release/ relative to the project workspace.
-    3. PATH lookup.
-    """
-    exe_name = "fastled-viewer.exe" if sys.platform == "win32" else "fastled-viewer"
-
-    # 1. Sibling of the running interpreter / entry-point script.
-    exe_path = Path(sys.executable).resolve()
-    candidate = exe_path.parent / exe_name
-    if candidate.is_file():
-        return candidate
-
-    # 2. Walk up to find a Cargo workspace root and check target dirs.
-    search_start = Path(__file__).resolve().parent  # src/fastled/
-    current = search_start
-    for _ in range(10):
-        cargo_toml = current / "Cargo.toml"
-        if cargo_toml.is_file():
-            for profile in ("debug", "release"):
-                candidate = current / "target" / profile / exe_name
-                if candidate.is_file():
-                    return candidate
-            # Also check platform-specific target dir (e.g. target/x86_64-pc-windows-msvc/...)
-            target_dir = current / "target"
-            if target_dir.is_dir():
-                for arch_dir in target_dir.iterdir():
-                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
-                        for profile in ("debug", "release"):
-                            candidate = arch_dir / profile / exe_name
-                            if candidate.is_file():
-                                return candidate
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    # 3. PATH lookup.
-    found = shutil.which(exe_name)
-    if found:
-        return Path(found)
-
-    return None
-
-
-def _launch_tauri_viewer(frontend_dir: Path) -> subprocess.Popen | None:
-    """Try to launch the Tauri viewer. Returns the process or None on failure."""
-    viewer = _find_tauri_viewer()
-    if viewer is None:
-        return None
-    try:
-        proc = subprocess.Popen(
-            [str(viewer), "--frontend-dir", str(frontend_dir)],
-        )
-        return proc
-    except KeyboardInterrupt as ki:
-        handle_keyboard_interrupt(ki)
-    except Exception:
-        return None
-
-
-def _find_fastled_cli() -> Path | None:
-    """Locate the fastled CLI binary (Rust)."""
-    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
-
-    # 1. Sibling of the running interpreter.
-    exe_path = Path(sys.executable).resolve()
-    candidate = exe_path.parent / exe_name
-    if candidate.is_file():
-        return candidate
-
-    # 2. Walk up to find a Cargo workspace root and check target dirs.
-    search_start = Path(__file__).resolve().parent
-    current = search_start
-    for _ in range(10):
-        cargo_toml = current / "Cargo.toml"
-        if cargo_toml.is_file():
-            for profile in ("debug", "release"):
-                candidate = current / "target" / profile / exe_name
-                if candidate.is_file():
-                    return candidate
-            target_dir = current / "target"
-            if target_dir.is_dir():
-                for arch_dir in target_dir.iterdir():
-                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
-                        for profile in ("debug", "release"):
-                            candidate = arch_dir / profile / exe_name
-                            if candidate.is_file():
-                                return candidate
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    # 3. PATH lookup.
-    found = shutil.which(exe_name)
-    if found:
-        return Path(found)
-
-    return None
-
 
 # Use a weak reference set to track processes without preventing garbage collection
 _WEAK_CLEANUP_SET: weakref.WeakSet = weakref.WeakSet()
@@ -150,12 +42,13 @@ def spawn_http_server(
 ) -> subprocess.Popen:
     """Spawn the Rust CLI HTTP server as a subprocess.
 
-    This replaces the old Flask-based server.  The Rust binary's
-    ``--serve-dir`` flag starts a native HTTP server.
+    The Rust binary's ``--serve-dir`` flag starts a native HTTP server and
+    auto-launches the Tauri viewer when the ``fastled-viewer`` binary is
+    available, so no Python-side viewer spawn is required.
     """
     del app, enable_https, sketch_dir, fastled_path  # handled by Rust
 
-    cli = _find_fastled_cli()
+    cli = find_rust_fastled_cli()
     if cli is None:
         raise RuntimeError("Could not find the fastled CLI binary")
 
@@ -189,13 +82,15 @@ def spawn_http_server(
             url = f"http://localhost:{actual_port}"
         else:
             url = "http://localhost:8089"
-        tauri_proc = _launch_tauri_viewer(fastled_js)
-        if tauri_proc is not None:
-            print("Opening FastLED sketch in Tauri viewer")
-        else:
+
+        # The Rust CLI auto-launches the viewer; only fall back to the system
+        # browser when no viewer binary is present.
+        if find_fastled_viewer() is None:
             print(f"Opening browser to {url}")
             import webbrowser
 
             webbrowser.open(url=url, new=1, autoraise=True)
+        else:
+            print("FastLED viewer will be launched by the Rust CLI")
 
     return proc
