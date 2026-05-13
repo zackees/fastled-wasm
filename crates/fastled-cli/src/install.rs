@@ -17,6 +17,8 @@ use crate::archive;
 const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
     "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
 
+const ESBUILD_VERSION: &str = "0.28.0";
+
 fn fastled_root() -> Result<PathBuf> {
     let home = dirs::home_dir().context("cannot resolve home directory")?;
     Ok(home.join(".fastled"))
@@ -172,4 +174,91 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     archive::write_emscripten_config(&install_dir, "node")?;
 
     Ok(install_dir)
+}
+
+// ---------------------------------------------------------------------------
+// esbuild
+// ---------------------------------------------------------------------------
+
+/// npm package platform-arch strings differ from the emscripten ones.
+fn esbuild_platform_arch() -> Result<(&'static str, &'static str)> {
+    let platform = if cfg!(target_os = "windows") {
+        "win32"
+    } else if cfg!(target_os = "macos") {
+        "darwin"
+    } else {
+        "linux"
+    };
+    let arch = if cfg!(target_arch = "x86_64") {
+        "x64"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        anyhow::bail!(
+            "unsupported architecture for esbuild: {}",
+            std::env::consts::ARCH
+        );
+    };
+    Ok((platform, arch))
+}
+
+/// Ensure the esbuild binary is installed at
+/// `~/.fastled/toolchains/esbuild/{platform}/{arch}/{version}/`.
+/// Returns the path to the executable.
+///
+/// Layout matches the previous Python implementation
+/// (`src/fastled/frontend_esbuild.py`).
+pub fn ensure_esbuild_installed() -> Result<PathBuf> {
+    let (platform, arch) = esbuild_platform_arch()?;
+    let version = ESBUILD_VERSION;
+    let root = fastled_root()?;
+    let install_dir = root
+        .join("toolchains")
+        .join("esbuild")
+        .join(platform)
+        .join(arch)
+        .join(version);
+    let exe_name = if cfg!(target_os = "windows") {
+        "esbuild.exe"
+    } else {
+        "esbuild"
+    };
+    let esbuild_path = install_dir.join(exe_name);
+    let done_file = install_dir.join("done.txt");
+    if done_file.exists() && esbuild_path.exists() {
+        return Ok(esbuild_path);
+    }
+    fs::create_dir_all(&install_dir)?;
+
+    let archive_cache = root.join("toolchains").join("archives");
+    fs::create_dir_all(&archive_cache)?;
+    let archive_path = archive_cache.join(format!("esbuild-{platform}-{arch}-{version}.tgz"));
+    if !archive_path.exists() {
+        let url = format!(
+            "https://registry.npmjs.org/@esbuild/{platform}-{arch}/-/{platform}-{arch}-{version}.tgz"
+        );
+        archive::download(&url, &archive_path)?;
+    }
+
+    let member = if cfg!(target_os = "windows") {
+        format!("package/{exe_name}")
+    } else {
+        "package/bin/esbuild".to_string()
+    };
+
+    if esbuild_path.exists() {
+        let _ = fs::remove_file(&esbuild_path);
+    }
+    archive::extract_member_from_tgz(&archive_path, &member, &esbuild_path)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&esbuild_path)?.permissions();
+        perms.set_mode(perms.mode() | 0o111);
+        fs::set_permissions(&esbuild_path, perms)?;
+    }
+
+    fs::write(&done_file, "ok\n")?;
+    Ok(esbuild_path)
 }

@@ -187,6 +187,47 @@ pub fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Single-file extraction from a gzipped tar (.tgz)
+// ---------------------------------------------------------------------------
+
+/// Extract a single member from a `.tgz` archive into `dest`.
+///
+/// Used to pluck the esbuild binary out of an npm-style tarball (`package/...`
+/// layout) without unpacking the whole archive.
+///
+/// # Errors
+/// Returns an error if the archive cannot be read or if `member` is not
+/// present in the archive.
+pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Result<()> {
+    let file = File::open(archive)
+        .with_context(|| format!("cannot open archive {}", archive.display()))?;
+    let gz = flate2::read::GzDecoder::new(BufReader::new(file));
+    let mut tar_archive = tar::Archive::new(gz);
+
+    for entry in tar_archive
+        .entries()
+        .with_context(|| format!("cannot iterate entries of {}", archive.display()))?
+    {
+        let mut entry = entry.with_context(|| format!("bad entry in {}", archive.display()))?;
+        let path = entry
+            .path()
+            .with_context(|| format!("bad entry path in {}", archive.display()))?;
+        if path.to_string_lossy() == member {
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("cannot create parent {}", parent.display()))?;
+            }
+            let mut out =
+                File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
+            std::io::copy(&mut entry, &mut out)
+                .with_context(|| format!("cannot write {}", dest.display()))?;
+            return Ok(());
+        }
+    }
+    anyhow::bail!("member {member} not found in {}", archive.display());
+}
+
+// ---------------------------------------------------------------------------
 // .emscripten config generation
 // ---------------------------------------------------------------------------
 

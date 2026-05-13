@@ -165,15 +165,24 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    // Ensure the emscripten toolchain is installed before invoking Python.
-    // Sets FASTLED_EMSCRIPTEN_DIR so the Python compile path skips its own
-    // download logic and uses the Rust-installed directory.
+    // Ensure the emscripten + esbuild toolchains are installed before invoking
+    // Python. The env vars below let the Python compile path skip its own
+    // download logic and consume the Rust-installed directories.
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
         }
         Err(e) => {
             eprintln!("fastled: emscripten toolchain install failed: {e:#}");
+            return ExitCode::FAILURE;
+        }
+    }
+    match install::ensure_esbuild_installed() {
+        Ok(esbuild_path) => {
+            std::env::set_var("FASTLED_ESBUILD_PATH", &esbuild_path);
+        }
+        Err(e) => {
+            eprintln!("fastled: esbuild install failed: {e:#}");
             return ExitCode::FAILURE;
         }
     }
