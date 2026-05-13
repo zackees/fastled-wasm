@@ -254,6 +254,21 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     fs::create_dir_all(&staging)?;
     archive::extract_tar_zst(&archive_path, &staging)?;
 
+    // Restore execute bits on Unix — some tar implementations (and the
+    // umask of the extracting process) strip the +x bit from binaries
+    // under bin/, emscripten/, and libexec/. emcc.py then hits
+    // PermissionError when it tries to exec clang. Mirror the
+    // belt-and-suspenders chmod from the previous Python implementation.
+    #[cfg(unix)]
+    {
+        for subdir in ["bin", "emscripten", "libexec"] {
+            let dir = staging.join(subdir);
+            if dir.is_dir() {
+                add_executable_bits_recursive(&dir)?;
+            }
+        }
+    }
+
     fs::write(staging.join("done.txt"), "ok\n")?;
 
     if install_dir.exists() {
@@ -264,6 +279,29 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     archive::write_emscripten_config(&install_dir, "node")?;
 
     Ok(install_dir)
+}
+
+/// Recursively chmod every file under `dir` to include +x for user / group /
+/// other (no-op on Windows). Used right after emscripten extraction so the
+/// shipped binaries (clang, wasm-ld, etc.) are actually executable.
+#[cfg(unix)]
+fn add_executable_bits_recursive(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for entry in fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            add_executable_bits_recursive(&path)?;
+        } else if file_type.is_file() {
+            let mode = entry.metadata()?.permissions().mode();
+            let new_mode = mode | 0o111;
+            if new_mode != mode {
+                fs::set_permissions(&path, fs::Permissions::from_mode(new_mode))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
