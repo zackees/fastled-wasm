@@ -31,6 +31,8 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.9
 
       - uses: zackees/setup-soldr@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           cache: true
           # Include github.workflow because some callers (e.g. Windows
