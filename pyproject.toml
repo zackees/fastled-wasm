@@ -12,6 +12,12 @@ keywords = ["template-python-cmd"]
 license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
+    # Build-system dependencies for the FastLED C++ → WASM compile.
+    # `meson` configures the build; `ninja` is meson's backend. Both ship
+    # standalone executables when pip-installed, which the toolchain
+    # invokes via subprocess from `src/fastled/toolchain/internal_wasm_build.py`.
+    "meson>=1.4",
+    "ninja>=1.11",
     "zcmds_win32; sys_platform == 'win32'",
 ]
 
