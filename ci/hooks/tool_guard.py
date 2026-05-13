@@ -12,7 +12,7 @@ Blocks invocations that bypass soldr/zccache:
 * ``uv run <rust-tool>``. Bypasses soldr's toolchain selection.
 
 Exit code 0 always; denial signalled via JSON payload on stdout so the
-Claude Code harness reports the reason inline.
+agent harness reports the reason inline.
 """
 
 from __future__ import annotations
