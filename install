@@ -79,8 +79,31 @@ if ! command -v cargo-binstall &> /dev/null; then
     | bash 2>/dev/null || echo "  cargo-binstall install failed (non-fatal)"
 fi
 
+FASTLED_CLI_BINSTALLED=0
+FASTLED_TAURI_BINSTALLED=0
 if command -v cargo-binstall &> /dev/null; then
   echo "Fetching pre-built binaries via cargo-binstall..."
-  cargo binstall fastled-cli --no-confirm 2>/dev/null || echo "  fastled-cli: no pre-built binary available (will compile from source when needed)"
-  cargo binstall fastled-tauri --no-confirm 2>/dev/null || echo "  fastled-tauri: no pre-built binary available (will compile from source when needed)"
+  if cargo binstall fastled-cli --no-confirm 2>/dev/null; then
+    FASTLED_CLI_BINSTALLED=1
+  else
+    echo "  fastled-cli: no pre-built binary available (will compile from source)"
+  fi
+  if cargo binstall fastled-tauri --no-confirm 2>/dev/null; then
+    FASTLED_TAURI_BINSTALLED=1
+  else
+    echo "  fastled-tauri: no pre-built binary available (will compile from source)"
+  fi
+fi
+
+# Ensure the Rust `fastled` CLI binary is materialised somewhere our Python
+# helpers (src/fastled/_rust_cli.py) can find it. The Python `[project.scripts]`
+# entry-point shim collides with the Rust binary's name on PATH, so the helper
+# explicitly looks in target/{release,debug}/ and $CARGO_HOME/bin. If
+# cargo-binstall didn't supply a pre-built copy, build from source so unit
+# tests and the deploy workflow can subprocess the binary for the internal
+# auto-install plumbing flags (--internal-ensure-fastled-repo, etc.).
+if [[ "$FASTLED_CLI_BINSTALLED" -eq 0 ]]; then
+  echo "Building fastled CLI from source..."
+  "$(dirname "$0")/_cargo" build --release --bin fastled \
+    || { echo "Error: cargo build --bin fastled failed"; exit 1; }
 fi
