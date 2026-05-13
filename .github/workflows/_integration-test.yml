@@ -15,8 +15,6 @@ jobs:
       run:
         shell: bash
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: sccache
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +26,6 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - uses: mozilla-actions/sccache-action@v0.0.9
 
       - uses: zackees/setup-soldr@v0
         env:
