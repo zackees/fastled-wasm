@@ -13,7 +13,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 // ---------------------------------------------------------------------------
 // Sketch detection
@@ -49,6 +49,20 @@ pub fn is_sketch_dir(dir: &Path) -> bool {
     }
 
     false
+}
+
+/// Return `true` when `directory` looks like a sketch directory using the
+/// Python-side semantics.
+pub fn looks_like_sketch_directory(directory: &Path, quick: bool) -> bool {
+    if !directory.is_dir() || is_fastled_repo(directory) {
+        return false;
+    }
+
+    if !quick && sketch_file_count_exceeds_limit(directory, 100) {
+        return false;
+    }
+
+    is_sketch_dir(directory)
 }
 
 /// Find sketch directories inside `root`.
@@ -94,7 +108,7 @@ pub fn find_sketches(root: &Path) -> Vec<PathBuf> {
         if name.eq_ignore_ascii_case("examples") {
             // Recurse into examples/ up to three levels deep.
             _search_examples(&path, root, &mut results, &mut count, 0, 3);
-        } else if is_sketch_dir(&path) {
+        } else if looks_like_sketch_directory(&path, true) {
             if let Ok(rel) = path.strip_prefix(root) {
                 results.push(rel.to_path_buf());
             }
@@ -141,7 +155,7 @@ fn _search_examples(
             return;
         }
 
-        if is_sketch_dir(&path) {
+        if looks_like_sketch_directory(&path, true) {
             if let Ok(rel) = path.strip_prefix(root) {
                 results.push(rel.to_path_buf());
             }
@@ -150,6 +164,45 @@ fn _search_examples(
             _search_examples(&path, root, results, count, depth + 1, max_depth);
         }
     }
+}
+
+fn sketch_file_count_exceeds_limit(directory: &Path, limit: usize) -> bool {
+    let mut count = 0usize;
+    count_sketch_files(directory, limit, &mut count)
+}
+
+fn count_sketch_files(directory: &Path, limit: usize, count: &mut usize) -> bool {
+    let entries = match fs::read_dir(directory) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+
+        if path.is_dir() {
+            if name.starts_with('.') || name.contains("fastled_js") {
+                continue;
+            }
+            if count_sketch_files(&path, limit, count) {
+                return true;
+            }
+            continue;
+        }
+
+        if name.starts_with('.') || name.contains("platformio.ini") {
+            continue;
+        }
+
+        *count += 1;
+        if *count > limit {
+            return true;
+        }
+    }
+
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +251,137 @@ pub fn is_fastled_repo(path: &Path) -> bool {
     }
 
     false
+}
+
+/// Walk upwards from `start` and return the first directory that looks like a
+/// FastLED repository.
+pub fn find_fastled_repo_upwards(start: &Path, max_depth: usize) -> Option<PathBuf> {
+    let mut current = start.canonicalize().unwrap_or_else(|_| start.to_path_buf());
+
+    for _ in 0..=max_depth {
+        if is_fastled_repo(&current) {
+            return Some(current);
+        }
+
+        let parent = current.parent()?.to_path_buf();
+        if parent == current {
+            break;
+        }
+        current = parent;
+    }
+
+    None
+}
+
+/// Collect available example names from a FastLED `examples/` directory.
+pub fn collect_examples(examples_dir: &Path) -> Vec<String> {
+    if !examples_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let mut found = Vec::new();
+    let entries = match fs::read_dir(examples_dir) {
+        Ok(e) => e,
+        Err(_) => return found,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        if contains_ino_files(&path) {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                found.push(name.to_owned());
+            }
+            continue;
+        }
+
+        let nested_entries = match fs::read_dir(&path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for nested in nested_entries.flatten() {
+            let nested_path = nested.path();
+            if !nested_path.is_dir() || !contains_ino_files(&nested_path) {
+                continue;
+            }
+            if let Some(name) = nested_path.file_name().and_then(|n| n.to_str()) {
+                found.push(name.to_owned());
+            }
+        }
+    }
+
+    found.sort();
+    found
+}
+
+/// Read the `ref` field from `fastled.json` in `directory`.
+pub fn read_fastled_json_ref(directory: &Path) -> Option<String> {
+    let fpath = directory.join("fastled.json");
+    let txt = fs::read_to_string(fpath).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&txt).ok()?;
+    value.get("ref")?.as_str().map(str::to_owned)
+}
+
+/// Derive the resolved FastLED ref name from a cached repo directory.
+///
+/// `install::ensure_fastled_repo()` materializes repos under names like
+/// `~/.fastled/cache/fastled-3.9.12/`, so we can recover the effective ref
+/// from the leaf directory name for user-facing messages and `fastled.json`.
+pub fn cached_repo_ref_name(repo_root: &Path) -> String {
+    repo_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.strip_prefix("fastled-").unwrap_or(name))
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| "master".to_owned())
+}
+
+/// Write `fastled.json` with the provided `ref_name`, preserving any existing
+/// keys when the file already contains valid JSON.
+pub fn write_fastled_json_ref(directory: &Path, ref_name: &str) -> Result<()> {
+    let fpath = directory.join("fastled.json");
+    let mut data = if fpath.is_file() {
+        fs::read_to_string(&fpath)
+            .ok()
+            .and_then(|txt| {
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&txt).ok()
+            })
+            .unwrap_or_default()
+    } else {
+        serde_json::Map::new()
+    };
+
+    data.insert(
+        "ref".to_owned(),
+        serde_json::Value::String(ref_name.to_owned()),
+    );
+
+    let mut json = serde_json::to_string_pretty(&serde_json::Value::Object(data))
+        .context("serialize fastled.json")?;
+    json.push('\n');
+    fs::write(&fpath, json).with_context(|| format!("write {}", fpath.display()))?;
+    Ok(())
+}
+
+fn contains_ino_files(directory: &Path) -> bool {
+    let entries = match fs::read_dir(directory) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+
+    entries.flatten().any(|entry| {
+        entry.path().is_file()
+            && entry
+                .path()
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("ino"))
+                .unwrap_or(false)
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -325,6 +509,35 @@ pub fn init_example(example_name: &str, dest: &Path, branch: Option<&str>) -> Re
     Ok(out_path)
 }
 
+/// Copy `example_name` from an already-materialized FastLED repo into
+/// `output_dir/example_name`, optionally persisting `ref_name` in
+/// `fastled.json`.
+pub fn init_example_from_repo(
+    repo_root: &Path,
+    example_name: &str,
+    output_dir: &Path,
+    ref_name: Option<&str>,
+) -> Result<PathBuf> {
+    let example_src = find_example_in_repo(repo_root, example_name).with_context(|| {
+        format!(
+            "example '{example_name}' not found in FastLED repo {}",
+            repo_root.display()
+        )
+    })?;
+
+    fs::create_dir_all(output_dir)
+        .with_context(|| format!("cannot create output directory {}", output_dir.display()))?;
+    let out_path = output_dir.join(example_name);
+    copy_dir_all(&example_src, &out_path)
+        .with_context(|| format!("failed to copy example to {}", out_path.display()))?;
+
+    if let Some(ref_name) = ref_name {
+        write_fastled_json_ref(&out_path, ref_name)?;
+    }
+
+    Ok(out_path)
+}
+
 /// Find the FastLED repo root inside an extracted archive directory.
 ///
 /// The zip produces a top-level directory like `FastLED-master` or
@@ -354,7 +567,7 @@ fn find_archive_repo_root(extract_dir: &Path) -> Result<PathBuf> {
 /// Handles both layouts:
 /// * `examples/{name}/`        — flat
 /// * `examples/*/{name}/`      — one level of nesting (e.g. `examples/Fx/`)
-fn find_example_in_repo(repo_root: &Path, name: &str) -> Option<PathBuf> {
+pub fn find_example_in_repo(repo_root: &Path, name: &str) -> Option<PathBuf> {
     let examples_dir = repo_root.join("examples");
     if !examples_dir.is_dir() {
         return None;
@@ -455,6 +668,100 @@ pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Vec<String> {
         .collect()
 }
 
+/// Find a sketch directory by partial name match using the Python-side rules.
+///
+/// Returns a path relative to `search_dir`, mirroring `find_sketches`.
+pub fn find_sketch_by_partial_name(partial_name: &str, search_dir: &Path) -> Result<PathBuf> {
+    let sketch_directories = find_sketches(search_dir);
+    let partial_name_normalized = partial_name.replace('\\', "/").to_lowercase();
+    let partial_chars: std::collections::HashSet<char> = partial_name_normalized.chars().collect();
+
+    let similarity = |candidate: &Path| -> f64 {
+        if partial_chars.is_empty() {
+            return 0.0;
+        }
+
+        let candidate_normalized = candidate
+            .to_string_lossy()
+            .replace('\\', "/")
+            .to_lowercase();
+        let candidate_chars: std::collections::HashSet<char> =
+            candidate_normalized.chars().collect();
+        let matching_chars = partial_chars.intersection(&candidate_chars).count();
+        matching_chars as f64 / partial_chars.len() as f64
+    };
+
+    let matches: Vec<PathBuf> = sketch_directories
+        .iter()
+        .filter_map(|sketch_dir| {
+            let sketch_str_normalized = sketch_dir
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_lowercase();
+            (sketch_str_normalized.contains(&partial_name_normalized)
+                && similarity(sketch_dir) >= 0.5)
+                .then_some(sketch_dir.clone())
+        })
+        .collect();
+
+    if matches.is_empty() {
+        let all_low_similarity = sketch_directories
+            .iter()
+            .all(|sketch_dir| similarity(sketch_dir) <= 0.5);
+
+        if all_low_similarity && !sketch_directories.is_empty() {
+            let sketches_str = sketch_directories
+                .iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("\n  ");
+            bail!(
+                "'{}' does not look like any of the available sketches.\n\nAvailable sketches:\n  {}",
+                partial_name,
+                sketches_str
+            );
+        }
+
+        bail!("No sketch directory found matching '{}'", partial_name);
+    }
+
+    if matches.len() == 1 {
+        return Ok(matches[0].clone());
+    }
+
+    let exact_matches: Vec<PathBuf> = matches
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.eq_ignore_ascii_case(&partial_name_normalized))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+
+    if exact_matches.len() == 1 {
+        return Ok(exact_matches[0].clone());
+    }
+
+    let ambiguous_matches = if exact_matches.is_empty() {
+        matches
+    } else {
+        exact_matches
+    };
+    let matches_str = ambiguous_matches
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n  ");
+    bail!(
+        "Multiple sketch directories found matching '{}':\n  {}",
+        partial_name,
+        matches_str
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
@@ -512,6 +819,28 @@ mod tests {
     fn test_is_sketch_dir_nonexistent() {
         let dir = temp_dir();
         assert!(!is_sketch_dir(&dir.path().join("does_not_exist")));
+    }
+
+    #[test]
+    fn test_looks_like_sketch_directory_rejects_fastled_repo() {
+        let dir = temp_dir();
+        let root = dir.path();
+        fs::write(root.join("library.properties"), b"name=FastLED\n").unwrap();
+        fs::write(root.join("demo.ino"), b"void setup() {}").unwrap();
+        assert!(!looks_like_sketch_directory(root, false));
+    }
+
+    #[test]
+    fn test_looks_like_sketch_directory_rejects_large_non_quick_tree() {
+        let dir = temp_dir();
+        let sketch = dir.path().join("BigSketch");
+        fs::create_dir(&sketch).unwrap();
+        fs::write(sketch.join("BigSketch.ino"), b"void setup() {}").unwrap();
+        for i in 0..101 {
+            fs::write(sketch.join(format!("file{i}.txt")), b"x").unwrap();
+        }
+        assert!(!looks_like_sketch_directory(&sketch, false));
+        assert!(looks_like_sketch_directory(&sketch, true));
     }
 
     // ------------------------------------------------------------------
@@ -636,6 +965,86 @@ mod tests {
         assert!(!is_fastled_repo(root));
     }
 
+    #[test]
+    fn test_find_fastled_repo_upwards() {
+        let dir = temp_dir();
+        let root = dir.path().join("FastLED");
+        let nested = root.join("examples").join("Blink");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join("library.properties"), b"name=FastLED\n").unwrap();
+
+        let found = find_fastled_repo_upwards(&nested, 10);
+        let found = found.unwrap();
+        assert_eq!(found.file_name().and_then(|n| n.to_str()), Some("FastLED"));
+        assert!(found.ends_with("FastLED"));
+    }
+
+    #[test]
+    fn test_collect_examples_handles_flat_and_nested_layouts() {
+        let dir = temp_dir();
+        let examples = dir.path().join("examples");
+        let flat = examples.join("Blink");
+        let nested = examples.join("Fx").join("FxWave");
+        fs::create_dir_all(&flat).unwrap();
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(flat.join("Blink.ino"), b"void setup() {}").unwrap();
+        fs::write(nested.join("FxWave.ino"), b"void setup() {}").unwrap();
+
+        let found = collect_examples(&examples);
+        assert_eq!(found, vec!["Blink".to_owned(), "FxWave".to_owned()]);
+    }
+
+    #[test]
+    fn test_read_and_write_fastled_json_ref() {
+        let dir = temp_dir();
+        write_fastled_json_ref(dir.path(), "master").unwrap();
+        assert_eq!(read_fastled_json_ref(dir.path()).as_deref(), Some("master"));
+    }
+
+    #[test]
+    fn test_cached_repo_ref_name_strips_fastled_prefix() {
+        let path = Path::new("/tmp/fastled-3.9.12");
+        assert_eq!(cached_repo_ref_name(path), "3.9.12");
+    }
+
+    #[test]
+    fn test_cached_repo_ref_name_falls_back_when_name_missing() {
+        let path = Path::new("");
+        assert_eq!(cached_repo_ref_name(path), "master");
+    }
+
+    #[test]
+    fn test_write_fastled_json_ref_preserves_other_fields() {
+        let dir = temp_dir();
+        fs::write(
+            dir.path().join("fastled.json"),
+            "{\n  \"name\": \"demo\"\n}\n",
+        )
+        .unwrap();
+
+        write_fastled_json_ref(dir.path(), "3.9.12").unwrap();
+
+        let txt = fs::read_to_string(dir.path().join("fastled.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&txt).unwrap();
+        assert_eq!(value.get("name").and_then(|v| v.as_str()), Some("demo"));
+        assert_eq!(value.get("ref").and_then(|v| v.as_str()), Some("3.9.12"));
+    }
+
+    #[test]
+    fn test_init_example_from_repo_copies_example_and_writes_ref() {
+        let dir = temp_dir();
+        let repo_root = dir.path().join("FastLED");
+        let example = repo_root.join("examples").join("Blink");
+        let out_root = dir.path().join("out");
+        fs::create_dir_all(&example).unwrap();
+        fs::write(example.join("Blink.ino"), b"void setup() {}").unwrap();
+
+        let out = init_example_from_repo(&repo_root, "Blink", &out_root, Some("master")).unwrap();
+
+        assert!(out.join("Blink.ino").is_file());
+        assert_eq!(read_fastled_json_ref(&out).as_deref(), Some("master"));
+    }
+
     // ------------------------------------------------------------------
     // best_sketch_match (fuzzy matching)
     // ------------------------------------------------------------------
@@ -681,5 +1090,70 @@ mod tests {
             matches.contains(&"Blink".to_owned()),
             "case-insensitive match: {matches:?}"
         );
+    }
+
+    #[test]
+    fn test_find_sketch_by_partial_name_returns_unique_match() {
+        let dir = temp_dir();
+        let root = dir.path();
+        let sketch = root.join("examples").join("FxWave2d");
+        fs::create_dir_all(&sketch).unwrap();
+        fs::write(sketch.join("FxWave2d.ino"), b"void setup() {}").unwrap();
+
+        let matched = find_sketch_by_partial_name("FxWave2d", root).unwrap();
+        assert_eq!(matched, PathBuf::from("examples").join("FxWave2d"));
+    }
+
+    #[test]
+    fn test_find_sketch_by_partial_name_prefers_exact_leaf_match() {
+        let dir = temp_dir();
+        let root = dir.path();
+        for name in ["sketch", "sketch1", "sketch2"] {
+            let path = root.join("examples").join(name);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join(format!("{name}.ino")), b"void setup() {}").unwrap();
+        }
+
+        let matched = find_sketch_by_partial_name("sketch", root).unwrap();
+        assert_eq!(matched, PathBuf::from("examples").join("sketch"));
+    }
+
+    #[test]
+    fn test_find_sketch_by_partial_name_reports_low_similarity_options() {
+        let dir = temp_dir();
+        let root = dir.path();
+        for name in ["path/to/sketch", "examples/MyProject"] {
+            let path = root.join(name);
+            fs::create_dir_all(&path).unwrap();
+            let file_name = path.file_name().and_then(|value| value.to_str()).unwrap();
+            fs::write(path.join(format!("{file_name}.ino")), b"void setup() {}").unwrap();
+        }
+
+        let err = find_sketch_by_partial_name("blah", root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("does not look like any of the available sketches"));
+        assert!(err.contains("Available sketches:"));
+        assert!(err.contains("sketch"));
+        assert!(err.contains("MyProject"));
+    }
+
+    #[test]
+    fn test_find_sketch_by_partial_name_reports_ambiguous_matches() {
+        let dir = temp_dir();
+        let root = dir.path();
+        for name in ["examples/sketch1", "examples/sketch2"] {
+            let path = root.join(name);
+            fs::create_dir_all(&path).unwrap();
+            let file_name = path.file_name().and_then(|value| value.to_str()).unwrap();
+            fs::write(path.join(format!("{file_name}.ino")), b"void setup() {}").unwrap();
+        }
+
+        let err = find_sketch_by_partial_name("sketch", root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Multiple sketch directories found matching 'sketch'"));
+        assert!(err.contains("sketch1"));
+        assert!(err.contains("sketch2"));
     }
 }

@@ -140,6 +140,14 @@ class TestFindSketchByPartialName(unittest.TestCase):
         result = find_sketch_by_partial_name("sketch")
         self.assertEqual(Path("examples/sketch123"), result)
 
+    @patch("fastled.sketch._native_find_sketch_by_partial_name")
+    def test_prefers_native_extension_when_available(self, mock_native):
+        """Normal runtime should delegate partial matching to the Rust extension."""
+        mock_native.return_value = "examples/FxWave2d"
+        result = find_sketch_by_partial_name("FxWave2d", Path("demo"))
+        self.assertEqual(Path("examples/FxWave2d"), result)
+        mock_native.assert_called_once_with("FxWave2d", "demo")
+
 
 if __name__ == "__main__":
     unittest.main()

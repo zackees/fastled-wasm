@@ -8,93 +8,13 @@
 use std::fs;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
-use std::collections::BTreeMap;
+use ctcb_manifest::{PartRef, PlatformManifest};
+use serde_json::{json, Value};
 
 use crate::archive;
-
-// ---------------------------------------------------------------------------
-// Manifest schema
-// ---------------------------------------------------------------------------
-//
-// The clang-tool-chain-bins emscripten manifest is served in two different
-// shapes depending on platform. Linux/macOS nests version entries under a
-// `versions` key:
-//
-//     { "latest": "4.0.21",
-//       "versions": { "4.0.21": { "href": "...", "sha256": "...", "parts": [...] }, ... } }
-//
-// Windows inlines version entries at the top level alongside `latest`:
-//
-//     { "latest": "4.0.19",
-//       "4.0.19": { "href": "...", "sha256": "...", "parts": [...] } }
-//
-// Our `PlatformManifest` accepts both via a custom Deserialize.
-
-#[derive(Debug, Deserialize)]
-struct PartRef {
-    href: String,
-    sha256: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct VersionInfo {
-    href: String,
-    sha256: String,
-    parts: Option<Vec<PartRef>>,
-}
-
-#[derive(Debug)]
-struct PlatformManifest {
-    latest: String,
-    versions: BTreeMap<String, VersionInfo>,
-}
-
-impl<'de> Deserialize<'de> for PlatformManifest {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw: serde_json::Value = Deserialize::deserialize(deserializer)?;
-        let obj = raw
-            .as_object()
-            .ok_or_else(|| serde::de::Error::custom("expected JSON object at manifest root"))?;
-
-        let latest = obj
-            .get("latest")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| serde::de::Error::custom("missing 'latest' key"))?
-            .to_string();
-
-        let mut versions = BTreeMap::new();
-
-        // Prefer the nested-`versions` shape (Linux / macOS manifests) when
-        // present. Fall back to top-level inline entries (Windows).
-        if let Some(serde_json::Value::Object(versions_obj)) = obj.get("versions") {
-            for (key, value) in versions_obj {
-                let info: VersionInfo = serde_json::from_value(value.clone()).map_err(|e| {
-                    serde::de::Error::custom(format!(
-                        "bad version entry '{key}' (nested versions): {e}"
-                    ))
-                })?;
-                versions.insert(key.clone(), info);
-            }
-        } else {
-            for (key, value) in obj {
-                if key == "latest" {
-                    continue;
-                }
-                let info: VersionInfo = serde_json::from_value(value.clone()).map_err(|e| {
-                    serde::de::Error::custom(format!(
-                        "bad version entry '{key}' (inline versions): {e}"
-                    ))
-                })?;
-                versions.insert(key.clone(), info);
-            }
-        }
-
-        Ok(PlatformManifest { latest, versions })
-    }
-}
 
 const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
     "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
@@ -254,21 +174,6 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     fs::create_dir_all(&staging)?;
     archive::extract_tar_zst(&archive_path, &staging)?;
 
-    // Restore execute bits on Unix — some tar implementations (and the
-    // umask of the extracting process) strip the +x bit from binaries
-    // under bin/, emscripten/, and libexec/. emcc.py then hits
-    // PermissionError when it tries to exec clang. Mirror the
-    // belt-and-suspenders chmod from the previous Python implementation.
-    #[cfg(unix)]
-    {
-        for subdir in ["bin", "emscripten", "libexec"] {
-            let dir = staging.join(subdir);
-            if dir.is_dir() {
-                add_executable_bits_recursive(&dir)?;
-            }
-        }
-    }
-
     fs::write(staging.join("done.txt"), "ok\n")?;
 
     if install_dir.exists() {
@@ -279,29 +184,6 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     archive::write_emscripten_config(&install_dir, "node")?;
 
     Ok(install_dir)
-}
-
-/// Recursively chmod every file under `dir` to include +x for user / group /
-/// other (no-op on Windows). Used right after emscripten extraction so the
-/// shipped binaries (clang, wasm-ld, etc.) are actually executable.
-#[cfg(unix)]
-fn add_executable_bits_recursive(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    for entry in fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            add_executable_bits_recursive(&path)?;
-        } else if file_type.is_file() {
-            let mode = entry.metadata()?.permissions().mode();
-            let new_mode = mode | 0o111;
-            if new_mode != mode {
-                fs::set_permissions(&path, fs::Permissions::from_mode(new_mode))?;
-            }
-        }
-    }
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -608,4 +490,692 @@ fn find_zip_start(bytes: &[u8]) -> Option<usize> {
         .windows(4)
         .position(|w| w == local)
         .or_else(|| bytes.windows(4).position(|w| w == end))
+}
+
+// ---------------------------------------------------------------------------
+// User-facing install flow
+// ---------------------------------------------------------------------------
+
+const DEFAULT_INSTALL_EXAMPLE: &str = "wasm";
+const AUTO_DEBUG_VSIX_URL: &str =
+    "https://github.com/zackees/vscode-auto-debug/releases/latest/download/auto-debug.vsix";
+
+#[derive(Clone, Copy, Debug)]
+pub struct InstallOptions {
+    pub dry_run: bool,
+    pub no_interactive: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct InstallOutcome {
+    pub launch_after: bool,
+}
+
+fn prompt_yes_no(prompt: &str, default: bool) -> Result<bool> {
+    let default_hint = if default { "[Y/n]" } else { "[y/N]" };
+    print!("{prompt} {default_hint} ");
+    std::io::stdout().flush().context("flush prompt")?;
+
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .context("read prompt response")?;
+    let trimmed = input.trim().to_ascii_lowercase();
+    if trimmed.is_empty() {
+        return Ok(default);
+    }
+    Ok(matches!(trimmed.as_str(), "y" | "yes"))
+}
+
+fn command_exists(command: &str) -> bool {
+    Command::new(command)
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn detect_supported_ide() -> Option<(&'static str, &'static str)> {
+    if command_exists("code") {
+        Some(("code", "VSCode"))
+    } else if command_exists("cursor") {
+        Some(("cursor", "Cursor"))
+    } else {
+        None
+    }
+}
+
+fn find_vscode_project_upward(max_levels: usize) -> Option<PathBuf> {
+    let mut current = std::env::current_dir().ok()?;
+    for _ in 0..max_levels {
+        let parent = current.parent()?.to_path_buf();
+        if parent == current {
+            break;
+        }
+        current = parent;
+        if current.join(".vscode").is_dir() {
+            return Some(current);
+        }
+    }
+    None
+}
+
+fn generate_vscode_project() -> Result<()> {
+    let vscode_dir = std::env::current_dir()
+        .context("current dir")?
+        .join(".vscode");
+    fs::create_dir_all(&vscode_dir).with_context(|| format!("create {}", vscode_dir.display()))?;
+    println!("Created .vscode directory at {}", vscode_dir.display());
+    Ok(())
+}
+
+fn validate_vscode_project(no_interactive: bool) -> Result<()> {
+    let current_dir = std::env::current_dir().context("current dir")?;
+    if current_dir.join(".vscode").is_dir() {
+        return Ok(());
+    }
+
+    if let Some(parent_path) = find_vscode_project_upward(5) {
+        if no_interactive {
+            bail!(
+                "No .vscode directory found in current directory.\nFound .vscode in parent: {}\nIn non-interactive mode, cannot change directory.\nPlease cd there and run the command again.",
+                parent_path.display()
+            );
+        }
+        let use_parent = prompt_yes_no(
+            &format!(
+                "Found a .vscode project in {}. Install there?",
+                parent_path.display()
+            ),
+            true,
+        )?;
+        if use_parent {
+            std::env::set_current_dir(&parent_path)
+                .with_context(|| format!("cd {}", parent_path.display()))?;
+            return Ok(());
+        }
+    }
+
+    if detect_supported_ide().is_none() {
+        bail!("No supported IDE found (VSCode or Cursor). Please install VSCode or Cursor first.");
+    }
+
+    if no_interactive {
+        bail!(
+            "No .vscode directory found in current directory or parent directories.\nIn non-interactive mode, cannot create a new project.\nPlease create a .vscode directory or run without --no-interactive."
+        );
+    }
+
+    println!("No .vscode directory found in current directory or parent directories.");
+    if prompt_yes_no(
+        "Would you like to generate a VSCode project with FastLED configuration?",
+        true,
+    )? {
+        generate_vscode_project()?;
+        return Ok(());
+    }
+
+    bail!("installation cancelled");
+}
+
+fn detect_fastled_project() -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let library_json = cwd.join("library.json");
+    let Ok(text) = fs::read_to_string(library_json) else {
+        return false;
+    };
+    serde_json::from_str::<Value>(&text)
+        .ok()
+        .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
+        .map(|name| name == "FastLED")
+        .unwrap_or(false)
+}
+
+fn is_fastled_repository() -> bool {
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    let required_markers = [
+        cwd.join("src").join("FastLED.h"),
+        cwd.join("examples").join("Blink").join("Blink.ino"),
+        cwd.join("ci").join("ci-compile.py"),
+        cwd.join("src").join("platforms"),
+        cwd.join("library.json"),
+    ];
+    if required_markers.iter().any(|path| !path.exists()) {
+        return false;
+    }
+
+    let Ok(text) = fs::read_to_string(cwd.join("library.json")) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    if value.get("name").and_then(Value::as_str) != Some("FastLED") {
+        return false;
+    }
+    if !value
+        .get("repository")
+        .and_then(|repo| repo.get("url"))
+        .and_then(Value::as_str)
+        .map(|url| url.contains("FastLED/FastLED"))
+        .unwrap_or(false)
+    {
+        return false;
+    }
+
+    let tests_dir = cwd.join("tests");
+    if !tests_dir.is_dir() {
+        return false;
+    }
+    fs::read_dir(tests_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.flatten())
+        .any(|entry| {
+            entry.path().is_file()
+                && entry.file_name().to_string_lossy().starts_with("test_")
+                && entry.path().extension().and_then(|ext| ext.to_str()) == Some("cpp")
+        })
+}
+
+fn check_existing_arduino_content() -> bool {
+    fn has_ino_file(dir: &Path) -> bool {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if has_ino_file(&path) {
+                    return true;
+                }
+                continue;
+            }
+            if path.extension().and_then(|ext| ext.to_str()) == Some("ino") {
+                return true;
+            }
+        }
+        false
+    }
+
+    let Ok(cwd) = std::env::current_dir() else {
+        return false;
+    };
+    cwd.join("examples").exists() || has_ino_file(&cwd)
+}
+
+fn read_json_file(path: &Path, default: Value) -> Value {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .unwrap_or(default)
+}
+
+fn write_json_file(path: &Path, value: &Value) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let mut text = serde_json::to_string_pretty(value).context("serialize JSON")?;
+    text.push('\n');
+    fs::write(path, text).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn update_launch_json_for_arduino() -> Result<()> {
+    let cwd = std::env::current_dir().context("current dir")?;
+    let launch_json_path = cwd.join(".vscode").join("launch.json");
+    let mut data = read_json_file(
+        &launch_json_path,
+        json!({"version": "0.2.0", "configurations": []}),
+    );
+
+    if !data.is_object() {
+        data = json!({"version": "0.2.0", "configurations": []});
+    }
+
+    let arduino_config = json!({
+        "name": "Auto Debug (Smart File Detection)",
+        "type": "auto-debug",
+        "request": "launch",
+        "map": {
+            "*.ino": "Arduino: Run .ino with FastLED",
+            "*.py": "Python: Current File (UV)"
+        }
+    });
+
+    let configs = data
+        .as_object_mut()
+        .expect("launch.json root object")
+        .entry("configurations")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !configs.is_array() {
+        *configs = Value::Array(Vec::new());
+    }
+    let configs_array = configs.as_array_mut().expect("configurations array");
+    let exists = configs_array.iter().any(|cfg| {
+        cfg.get("name").and_then(Value::as_str)
+            == arduino_config.get("name").and_then(Value::as_str)
+    });
+    if !exists {
+        configs_array.insert(0, arduino_config);
+    }
+
+    write_json_file(&launch_json_path, &data)?;
+    println!("Updated {}", launch_json_path.display());
+    Ok(())
+}
+
+fn generate_fastled_tasks() -> Result<()> {
+    let cwd = std::env::current_dir().context("current dir")?;
+    let tasks_json_path = cwd.join(".vscode").join("tasks.json");
+    let mut data = read_json_file(&tasks_json_path, json!({"version": "2.0.0", "tasks": []}));
+
+    if !data.is_object() {
+        data = json!({"version": "2.0.0", "tasks": []});
+    }
+
+    let fastled_tasks = vec![
+        json!({
+            "type": "shell",
+            "label": "Run FastLED (Debug)",
+            "command": "fastled",
+            "args": ["${file}", "--debug", "--app"],
+            "options": {"cwd": "${workspaceFolder}"},
+            "group": {"kind": "build", "isDefault": true},
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "detail": "Run FastLED with debug mode and app visualization",
+            "problemMatcher": []
+        }),
+        json!({
+            "type": "shell",
+            "label": "Run FastLED (Quick)",
+            "command": "fastled",
+            "args": ["${file}", "--quick"],
+            "options": {"cwd": "${workspaceFolder}"},
+            "group": "build",
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": true,
+                "panel": "new",
+                "showReuseMessage": false,
+                "clear": true
+            },
+            "detail": "Run FastLED with quick build mode",
+            "problemMatcher": []
+        }),
+    ];
+
+    let tasks = data
+        .as_object_mut()
+        .expect("tasks.json root object")
+        .entry("tasks")
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if !tasks.is_array() {
+        *tasks = Value::Array(Vec::new());
+    }
+    let tasks_array = tasks.as_array_mut().expect("tasks array");
+    let existing_labels: Vec<String> = tasks_array
+        .iter()
+        .filter_map(|task| task.get("label").and_then(Value::as_str).map(str::to_owned))
+        .collect();
+
+    for task in fastled_tasks {
+        let Some(label) = task.get("label").and_then(Value::as_str) else {
+            continue;
+        };
+        if !existing_labels.iter().any(|existing| existing == label) {
+            tasks_array.push(task);
+        }
+    }
+
+    write_json_file(&tasks_json_path, &data)?;
+    println!("Updated {}", tasks_json_path.display());
+    Ok(())
+}
+
+fn fastled_repository_settings() -> Value {
+    json!({
+        "terminal.integrated.defaultProfile.windows": "Git Bash",
+        "terminal.integrated.shellIntegration.enabled": false,
+        "terminal.integrated.profiles.windows": {
+            "Command Prompt": {"path": "C:\\Windows\\System32\\cmd.exe"},
+            "Git Bash": {
+                "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+                "args": ["--cd=."]
+            }
+        },
+        "files.eol": "\n",
+        "files.autoDetectEol": false,
+        "files.insertFinalNewline": true,
+        "files.trimFinalNewlines": true,
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "editor.detectIndentation": true,
+        "editor.formatOnSave": false,
+        "debug.defaultDebuggerType": "cppdbg",
+        "debug.toolBarLocation": "docked",
+        "debug.console.fontSize": 14,
+        "debug.console.lineHeight": 19,
+        "python.defaultInterpreterPath": "uv",
+        "python.debugger": "debugpy",
+        "[cpp]": {
+            "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+            "debug.defaultDebuggerType": "cppdbg"
+        },
+        "[c]": {
+            "editor.defaultFormatter": "ms-vscode.cpptools",
+            "debug.defaultDebuggerType": "cppdbg"
+        },
+        "[ino]": {
+            "editor.defaultFormatter": "ms-vscode.cpptools",
+            "debug.defaultDebuggerType": "cppdbg"
+        },
+        "clangd.arguments": [
+            "--compile-commands-dir=${workspaceFolder}",
+            "--clang-tidy",
+            "--header-insertion=never",
+            "--completion-style=detailed",
+            "--function-arg-placeholders=false",
+            "--background-index",
+            "--pch-storage=memory"
+        ],
+        "clangd.fallbackFlags": [
+            "-std=c++17",
+            "-I${workspaceFolder}/src",
+            "-I${workspaceFolder}/tests",
+            "-Wno-global-constructors"
+        ],
+        "C_Cpp.intelliSenseEngine": "disabled",
+        "C_Cpp.autocomplete": "disabled",
+        "C_Cpp.errorSquiggles": "disabled",
+        "C_Cpp.suggestSnippets": false,
+        "C_Cpp.intelliSenseEngineFallback": "disabled",
+        "C_Cpp.autocompleteAddParentheses": false,
+        "C_Cpp.formatting": "disabled",
+        "C_Cpp.vcpkg.enabled": false,
+        "C_Cpp.configurationWarnings": "disabled",
+        "C_Cpp.intelliSenseCachePath": "",
+        "C_Cpp.intelliSenseCacheSize": 0,
+        "C_Cpp.intelliSenseUpdateDelay": 0,
+        "C_Cpp.workspaceParsingPriority": "lowest",
+        "C_Cpp.disabled": true,
+        "files.associations": {
+            "*.ino": "cpp",
+            "*.h": "cpp",
+            "*.hpp": "cpp",
+            "*.cpp": "cpp",
+            "*.c": "c",
+            "*.inc": "cpp",
+            "*.tcc": "cpp",
+            "*.embeddedhtml": "html",
+            "compare": "cpp",
+            "type_traits": "cpp",
+            "cmath": "cpp",
+            "limits": "cpp",
+            "iostream": "cpp",
+            "random": "cpp",
+            "functional": "cpp",
+            "bit": "cpp",
+            "vector": "cpp",
+            "array": "cpp",
+            "string": "cpp",
+            "memory": "cpp",
+            "algorithm": "cpp",
+            "iterator": "cpp",
+            "utility": "cpp",
+            "optional": "cpp",
+            "variant": "cpp",
+            "numeric": "cpp",
+            "chrono": "cpp",
+            "thread": "cpp",
+            "mutex": "cpp",
+            "atomic": "cpp",
+            "future": "cpp",
+            "condition_variable": "cpp"
+        },
+        "java.enabled": false,
+        "java.jdt.ls.enabled": false,
+        "java.compile.nullAnalysis.mode": "disabled",
+        "java.configuration.checkProjectSettingsExclusions": false,
+        "java.import.gradle.enabled": false,
+        "java.import.maven.enabled": false,
+        "java.autobuild.enabled": false,
+        "java.maxConcurrentBuilds": 0,
+        "java.recommendations.enabled": false,
+        "java.help.showReleaseNotes": false,
+        "redhat.telemetry.enabled": false,
+        "java.project.sourcePaths": [],
+        "java.project.referencedLibraries": [],
+        "files.exclude": {
+            "**/.classpath": true,
+            "**/.project": true,
+            "**/.factorypath": true
+        },
+        "platformio.disableToolchainAutoInstaller": true,
+        "platformio-ide.autoRebuildAutocompleteIndex": false,
+        "platformio-ide.activateProjectOnTextEditorChange": false,
+        "platformio-ide.autoOpenPlatformIOIniFile": false,
+        "platformio-ide.autoPreloadEnvTasks": false,
+        "platformio-ide.autoCloseSerialMonitor": false,
+        "platformio-ide.disablePIOHomeStartup": true,
+        "extensions.ignoreRecommendations": true,
+        "editor.semanticTokenColorCustomizations": {
+            "rules": {
+                "class": "#4EC9B0",
+                "struct": "#4EC9B0",
+                "type": "#4EC9B0",
+                "enum": "#4EC9B0",
+                "enumMember": "#B5CEA8",
+                "typedef": "#4EC9B0",
+                "variable": "#FAFAFA",
+                "variable.local": "#FAFAFA",
+                "parameter": "#FF8C42",
+                "variable.parameter": "#FF8C42",
+                "property": "#D197D9",
+                "function": "#DCDCAA",
+                "method": "#DCDCAA",
+                "function.declaration": "#DCDCAA",
+                "method.declaration": "#DCDCAA",
+                "namespace": "#86C5F7",
+                "variable.readonly": {"foreground": "#B5CEA8", "fontStyle": "italic"},
+                "variable.defaultLibrary": "#B5CEA8",
+                "macro": "#E06C75",
+                "string": "#CE9178",
+                "number": "#B5CEA8",
+                "keyword": "#C586C0",
+                "keyword.storage": "#FF79C6",
+                "storageClass": "#FF79C6",
+                "type.builtin": "#569CD6",
+                "keyword.type": "#569CD6",
+                "comment": "#6A9955",
+                "comment.documentation": "#6A9955"
+            }
+        },
+        "editor.inlayHints.fontColor": "#808080",
+        "editor.inlayHints.background": "#3C3C3C20"
+    })
+}
+
+fn update_vscode_settings_for_fastled() -> Result<()> {
+    if !is_fastled_repository() {
+        return Ok(());
+    }
+
+    let cwd = std::env::current_dir().context("current dir")?;
+    let settings_json_path = cwd.join(".vscode").join("settings.json");
+    let mut data = read_json_file(&settings_json_path, json!({}));
+    if !data.is_object() {
+        data = json!({});
+    }
+
+    let settings = fastled_repository_settings();
+    let target = data.as_object_mut().expect("settings root object");
+    let source = settings.as_object().expect("settings object");
+    for (key, value) in source {
+        target.insert(key.clone(), value.clone());
+    }
+
+    write_json_file(&settings_json_path, &data)?;
+    println!(
+        "Updated {} with comprehensive FastLED development settings",
+        settings_json_path.display()
+    );
+    Ok(())
+}
+
+fn download_to_path(url: &str, dest: &Path) -> Result<()> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .context("build HTTP client")?;
+    let bytes = client
+        .get(url)
+        .send()
+        .with_context(|| format!("GET {url} failed"))?
+        .error_for_status()
+        .with_context(|| format!("download returned error for {url}"))?
+        .bytes()
+        .context("read response bytes")?;
+    fs::write(dest, &bytes).with_context(|| format!("write {}", dest.display()))?;
+    Ok(())
+}
+
+fn install_auto_debug_extension(dry_run: bool) -> Result<bool> {
+    if dry_run {
+        println!("[DRY-RUN]: Would download and install Auto Debug extension");
+        return Ok(true);
+    }
+
+    let Some((ide_command, ide_name)) = detect_supported_ide() else {
+        println!("Warning: no supported IDE found (VSCode or Cursor)");
+        return Ok(false);
+    };
+
+    let temp_dir = tempfile::tempdir().context("create temp dir for extension")?;
+    let vsix_path = temp_dir.path().join("auto-debug.vsix");
+    println!("Downloading Auto Debug extension...");
+    download_to_path(AUTO_DEBUG_VSIX_URL, &vsix_path)?;
+    println!("Installing extension in {ide_name}...");
+
+    let status = Command::new(ide_command)
+        .args(["--install-extension", &vsix_path.to_string_lossy()])
+        .status()
+        .with_context(|| format!("launch {ide_command} for extension install"))?;
+
+    if !status.success() {
+        println!("Warning: extension installer exited with {}", status);
+        return Ok(false);
+    }
+
+    println!("Auto Debug extension installed in {ide_name}");
+    Ok(true)
+}
+
+fn install_default_example() -> Result<bool> {
+    let output_dir = PathBuf::from("fastled");
+    let repo_root = ensure_fastled_repo(None)?;
+    let resolved_ref = crate::project::cached_repo_ref_name(&repo_root);
+    let out = crate::project::init_example_from_repo(
+        &repo_root,
+        DEFAULT_INSTALL_EXAMPLE,
+        &output_dir,
+        Some(resolved_ref.as_str()),
+    )?;
+    println!("Installed example at {}", out.display());
+    Ok(true)
+}
+
+pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
+    println!("Starting FastLED installation...");
+    validate_vscode_project(options.no_interactive)?;
+
+    let is_fastled_project = detect_fastled_project();
+    let is_repository = is_fastled_repository();
+    if is_fastled_project {
+        if is_repository {
+            println!("Detected FastLED repository - configuring full development environment");
+        } else {
+            println!("Detected external FastLED project - configuring Arduino environment");
+        }
+    } else {
+        println!("Detected standard project - configuring basic Arduino environment");
+    }
+
+    let should_install_extension = if options.no_interactive {
+        println!("Skipping Auto Debug extension installation in non-interactive mode");
+        false
+    } else if options.dry_run {
+        println!("[DRY-RUN]: Simulating Auto Debug extension installation...");
+        true
+    } else {
+        prompt_yes_no(
+            "Would you like to install the FastLED auto-debug extension?",
+            false,
+        )?
+    };
+
+    if should_install_extension && !install_auto_debug_extension(options.dry_run)? {
+        println!("Warning: Auto Debug extension installation failed, continuing...");
+    }
+
+    println!("\nConfiguring VSCode files...");
+    update_launch_json_for_arduino()?;
+    generate_fastled_tasks()?;
+
+    let mut launch_after = false;
+    if !check_existing_arduino_content() {
+        if options.no_interactive {
+            println!(
+                "No Arduino content found. In non-interactive mode, skipping example installation."
+            );
+        } else if prompt_yes_no(
+            &format!(
+                "No Arduino content found. Install the default '{}' example?",
+                DEFAULT_INSTALL_EXAMPLE
+            ),
+            true,
+        )? {
+            if options.dry_run {
+                println!(
+                    "[DRY-RUN]: Would initialize the default '{}' example",
+                    DEFAULT_INSTALL_EXAMPLE
+                );
+            } else {
+                launch_after = install_default_example()?;
+            }
+        }
+    } else {
+        println!("Existing Arduino content detected, skipping example installation");
+        launch_after = !options.dry_run;
+    }
+
+    if is_fastled_project {
+        if is_repository {
+            println!("\nSetting up FastLED development environment...");
+            update_vscode_settings_for_fastled()?;
+        } else {
+            println!("\nSkipping clangd settings - not in the FastLED repository");
+        }
+    }
+
+    if options.dry_run {
+        println!("\n[DRY-RUN]: Skipping auto-launch");
+        launch_after = false;
+    }
+
+    println!("\nFastLED installation completed successfully!");
+    Ok(InstallOutcome { launch_after })
 }

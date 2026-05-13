@@ -1,27 +1,16 @@
-"""
-Main entry point.
-"""
+"""Python compatibility shim that launches the native Rust CLI."""
 
 import multiprocessing
 import sys
 
-
-def run_app() -> int:
-    """Run the application."""
-    from fastled.app import main as app_main
-
-    return app_main()
+from fastled._rust_cli import invoke_rust_fastled_cli
 
 
 def main() -> int:
-    """Main entry point for the template_python_cmd package."""
-    # if "--debug" in sys.argv:
-    #     # Debug mode
-    #     os.environ["FLASK_SERVER_LOGGING"] = "1"
-    return run_app()
+    """Run the native Rust CLI with the current argv."""
+    return invoke_rust_fastled_cli(sys.argv[1:])
 
 
-# Cli entry point for the pyinstaller generated exe
 if __name__ == "__main__":
-    multiprocessing.freeze_support()  # needed by pyinstaller.
+    multiprocessing.freeze_support()
     sys.exit(main())

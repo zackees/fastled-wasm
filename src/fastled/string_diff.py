@@ -1,6 +1,13 @@
 from difflib import SequenceMatcher
 from pathlib import Path
 
+try:
+    from fastled._native import is_in_order_match as _native_is_in_order_match
+    from fastled._native import string_diff as _native_string_diff
+except ImportError:
+    _native_is_in_order_match = None
+    _native_string_diff = None
+
 
 def _token_sort_ratio(a: str, b: str) -> float:
     """Return a 0..100 similarity score after sorting whitespace-split tokens."""
@@ -31,6 +38,8 @@ def _filter_out_obvious_bad_choices(
 
 
 def is_in_order_match(input_str: str, other: str) -> bool:
+    if _native_is_in_order_match is not None:
+        return bool(_native_is_in_order_match(input_str, other))
     """
     Check if the input string is an in-order match for any string in the list.
     An in-order match means that the characters of the input string appear
@@ -58,6 +67,8 @@ def is_in_order_match(input_str: str, other: str) -> bool:
 def string_diff(
     input_string: str, string_list: list[str], ignore_case=True
 ) -> list[tuple[float, str]]:
+    if _native_string_diff is not None:
+        return list(_native_string_diff(input_string, string_list, ignore_case))
 
     def normalize(s: str) -> str:
         return s.lower() if ignore_case else s
