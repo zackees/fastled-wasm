@@ -159,3 +159,8 @@ vscode-plugin
 /target/
 /.cargo/
 /.rustup/
+
+# Maturin wheel data dir — populated by `./build-wheel` with the Rust
+# fastled binary before `maturin build`. Bundled into the wheel as
+# <pkg>-<ver>.data/scripts/.
+/wheel-data/

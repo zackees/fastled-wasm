@@ -1,20 +1,21 @@
-"""Locate the Rust ``fastled`` binary, NOT the Python entry-point shim.
+"""Locate the Rust ``fastled`` binary.
 
-The Python package registers ``fastled`` as a console-script in
-``[project.scripts]``, which lands at ``.venv/Scripts/fastled.exe`` (or
-``.venv/bin/fastled``) and shadows the Rust binary on ``PATH``. The Rust
-binary needs to be invoked for the internal plumbing flags
-(``--internal-ensure-fastled-repo`` etc.); the shim's argparse rejects them.
+In wheel-installed deployments the Rust binary is bundled directly into the
+venv's ``Scripts/`` / ``bin/`` directory via ``[tool.maturin] data`` (see
+``pyproject.toml``), so ``shutil.which(\"fastled\")`` returns it. In editable
+dev installs the Rust binary lives under ``target/`` from a local
+``cargo build --bin fastled``.
 
 Search order:
-    1. Workspace ``target/{release,debug}/fastled[.exe]`` (dev builds).
+    1. Workspace ``target/{release,debug}/fastled[.exe]`` (dev / editable).
     2. ``$CARGO_HOME/bin/fastled[.exe]`` (where ``cargo binstall`` installs).
-    3. PATH walk that skips Python venv / system-Python directories.
+    3. ``shutil.which(\"fastled\")`` (wheel install puts it on ``PATH``).
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -23,23 +24,11 @@ def _exe_name() -> str:
     return "fastled.exe" if sys.platform == "win32" else "fastled"
 
 
-def _looks_like_python_dir(dir_path: Path) -> bool:
-    """Return True if ``dir_path`` hosts a Python interpreter.
-
-    Used to filter out Python venv/install dirs from the PATH walk so that a
-    ``fastled`` console-script entry-point in the same directory does not
-    shadow the actual Rust binary.
-    """
-    if sys.platform == "win32":
-        return (dir_path / "python.exe").is_file()
-    return (dir_path / "python").is_file() or (dir_path / "python3").is_file()
-
-
 def find_rust_fastled_cli() -> Path | None:
     """Return the path to the Rust ``fastled`` binary, or ``None``."""
     exe = _exe_name()
 
-    # 1. Workspace target/ tree (dev builds).
+    # 1. Workspace target/ tree (dev / editable).
     current = Path(__file__).resolve().parent
     for _ in range(10):
         if (current / "Cargo.toml").is_file():
@@ -71,17 +60,11 @@ def find_rust_fastled_cli() -> Path | None:
     if candidate.is_file():
         return candidate
 
-    # 3. PATH walk, skipping Python interpreter dirs (which contain the
-    # Python entry-point shim that shadows the Rust binary).
-    for path_entry in os.environ.get("PATH", "").split(os.pathsep):
-        if not path_entry:
-            continue
-        path_dir = Path(path_entry)
-        candidate = path_dir / exe
-        if not candidate.is_file():
-            continue
-        if _looks_like_python_dir(path_dir):
-            continue
-        return candidate
-
+    # 3. Wheel install drops the Rust binary directly into the venv's
+    # Scripts/bin dir; there is no Python `fastled` entry-point shim
+    # competing for the name anymore (see pyproject.toml). Plain PATH lookup
+    # finds it.
+    found = shutil.which(exe)
+    if found:
+        return Path(found)
     return None

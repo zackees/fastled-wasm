@@ -20,6 +20,13 @@ manifest-path = "crates/fastled-py/Cargo.toml"
 module-name = "fastled._native"
 python-source = "src"
 features = ["pyo3/extension-module", "pyo3/abi3-py310"]
+# Pre-built Rust binaries get dropped into wheel-data/scripts/ by the
+# build-wheel helper before maturin runs. maturin packages this directory as
+# the wheel's <pkg>-<ver>.data/ tree; pip then extracts scripts/ to the
+# venv's Scripts/ (Windows) or bin/ (Unix) at install time, so end users get
+# the Rust `fastled` binary directly — no Python entry-point shim, no
+# cargo build at install time.
+data = "wheel-data"
 
 [tool.ruff]
 line-length = 200
@@ -50,6 +57,10 @@ ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 
 [project.scripts]
+# `fastled` is intentionally NOT a Python entry-point; the Rust binary is
+# bundled into the wheel via [tool.maturin] data (see above) and pip
+# installs it directly to the venv's Scripts/bin directory. The Python
+# aliases below are kept as thin shims for the rarely-used `python -m`
+# invocation paths.
 fastled-wasm = "fastled.cli:main"
 fled = "fastled.cli:main"
-fastled = "fastled.cli:main"

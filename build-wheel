@@ -1,0 +1,56 @@
+#!/bin/bash
+# Build a fastled wheel that bundles the Rust CLI binary as a wheel script.
+#
+# Maturin's pyo3-binding mode produces the `_native` extension module but
+# doesn't ship Rust [[bin]] targets in the wheel. We work around that by
+# compiling the binary first, dropping it into `wheel-data/scripts/`, and
+# letting maturin package that directory as the wheel's `.data/` tree (see
+# `[tool.maturin] data` in pyproject.toml). Pip extracts `data/scripts/*`
+# to the venv's Scripts/ (Windows) or bin/ (Unix) on install.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+# Platform-specific binary name and target directory.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
+  *)                    EXE_NAME="fastled" ;;
+esac
+
+echo "Compiling fastled CLI (release)..."
+"$SCRIPT_DIR/_cargo" build --release --bin fastled
+
+# Resolve where cargo wrote the binary. The _cargo wrapper sets
+# CARGO_BUILD_TARGET on Windows so the binary lands under a triple subdir.
+if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
+  BIN_SRC="$SCRIPT_DIR/target/${CARGO_BUILD_TARGET}/release/${EXE_NAME}"
+else
+  BIN_SRC="$SCRIPT_DIR/target/release/${EXE_NAME}"
+fi
+
+# Discover from _cargo's exported target on Windows even if not set in env.
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    ARCH="$(uname -m)"
+    if [[ "$ARCH" = "x86_64" ]]; then
+      TARGET_TRIPLE="x86_64-pc-windows-msvc"
+    else
+      TARGET_TRIPLE="aarch64-pc-windows-msvc"
+    fi
+    BIN_SRC="$SCRIPT_DIR/target/${TARGET_TRIPLE}/release/${EXE_NAME}"
+    ;;
+esac
+
+if [[ ! -f "$BIN_SRC" ]]; then
+  echo "Error: built binary not found at $BIN_SRC" >&2
+  exit 1
+fi
+
+WHEEL_DATA_DIR="$SCRIPT_DIR/wheel-data/scripts"
+mkdir -p "$WHEEL_DATA_DIR"
+cp -f "$BIN_SRC" "$WHEEL_DATA_DIR/$EXE_NAME"
+echo "Staged $BIN_SRC -> $WHEEL_DATA_DIR/$EXE_NAME"
+
+echo "Building wheel..."
+uv run maturin build --release "$@"

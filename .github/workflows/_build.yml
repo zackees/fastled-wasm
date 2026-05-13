@@ -55,6 +55,41 @@ jobs:
         if: inputs.maturin-target != ''
         run: rustup target add "${{ inputs.maturin-target }}"
 
+      - name: Build fastled CLI binary (for wheel bundling)
+        run: |
+          # Compile the Rust `fastled` CLI and stage it under wheel-data/scripts/
+          # so maturin packages it into <pkg>-<ver>.data/scripts/ in the wheel.
+          # See `build-wheel` and `[tool.maturin] data` in pyproject.toml.
+          if [ -n "${{ inputs.maturin-target }}" ]; then
+            ./_cargo build --release --bin fastled --target "${{ inputs.maturin-target }}"
+            case "${{ inputs.maturin-target }}" in
+              *windows*) EXE_NAME="fastled.exe" ;;
+              *)         EXE_NAME="fastled" ;;
+            esac
+            BIN_SRC="target/${{ inputs.maturin-target }}/release/${EXE_NAME}"
+          else
+            ./_cargo build --release --bin fastled
+            case "$(uname -s)" in
+              MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
+              *)                    EXE_NAME="fastled" ;;
+            esac
+            # _cargo forces an MSVC target on Windows even without --target.
+            if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled.exe" ]; then
+              ARCH="$(uname -m)"
+              if [ "$ARCH" = "x86_64" ]; then TRIPLE="x86_64-pc-windows-msvc"; else TRIPLE="aarch64-pc-windows-msvc"; fi
+              if [ -f "target/${TRIPLE}/release/${EXE_NAME}" ]; then
+                BIN_SRC="target/${TRIPLE}/release/${EXE_NAME}"
+              else
+                BIN_SRC="target/release/${EXE_NAME}"
+              fi
+            else
+              BIN_SRC="target/release/${EXE_NAME}"
+            fi
+          fi
+          mkdir -p wheel-data/scripts
+          cp -f "$BIN_SRC" "wheel-data/scripts/${EXE_NAME}"
+          ls -lh wheel-data/scripts/
+
       - name: Build wheel
         run: |
           if [ -n "${{ inputs.maturin-target }}" ]; then
