@@ -53,9 +53,29 @@ def _resolve_uv_run_tool(seg: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _strip_noncode(command: str) -> str:
+    """Remove heredocs, quoted strings, and command substitutions.
+
+    These regions contain prose that may include words like 'cargo build'
+    in PR bodies or documentation, but they are not invoked as commands.
+    """
+    out = re.sub(
+        r"<<-?\s*'?\"?(\w+)'?\"?[\s\S]*?(?:^|\n)\s*\1\s*(?=\n|$)",
+        " ",
+        command,
+        flags=re.MULTILINE,
+    )
+    out = re.sub(r"\$\([^()]*\)", " ", out)
+    out = re.sub(r"`[^`]*`", " ", out)
+    out = re.sub(r"'[^']*'", " ", out)
+    out = re.sub(r'"[^"]*"', " ", out)
+    return out
+
+
 def check_command(command: str) -> tuple[str, str] | None:
     """Return (tool, reason) if forbidden, otherwise None."""
-    segments = re.split(r"&&|\|\||;", command)
+    command = _strip_noncode(command)
+    segments = re.split(r"&&|\|\||;|\n", command)
 
     for seg in segments:
         seg = seg.strip()
