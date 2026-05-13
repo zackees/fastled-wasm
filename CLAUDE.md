@@ -18,9 +18,9 @@ This project uses **soldr** (build orchestrator) + **zccache** (compile cache). 
 - `soldr` wraps `cargo` and automatically uses `zccache` as `RUSTC_WRAPPER`.
 - CI installs soldr via `zackees/setup-soldr@v0` (see workflows). Local dev should match.
 
-**When you invoke cargo from an agent, prefer `soldr cargo …` over plain `cargo …`.** The `./_cargo` trampoline currently exec's plain `cargo` — that's a known gap (#76) and will be replaced. Until then, run cargo directly through soldr or you'll burn 10 minutes per build.
+**When you invoke any Rust tool from an agent, use `soldr cargo …`, `soldr rustfmt …`, etc.** Plain `cargo` / `rustc` / `rustfmt` are blocked by the PreToolUse hook (`ci/hooks/tool_guard.py`) — they bypass zccache and turn a 30-second incremental build into a 10-minute cold build. The legacy `./_cargo`, `./_rustc`, `./_rustfmt` trampolines were retired in #76; the hook explicitly rejects them too.
 
-If `soldr` is not on PATH, fall back to plain `cargo` but warn the user that builds will be slow.
+If `soldr` is not on PATH, install it with `uv tool install soldr` (or see `zackees/soldr` on GitHub).
 
 ## Tests are slow — pick a narrow set
 
