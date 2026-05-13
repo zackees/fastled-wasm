@@ -13,17 +13,17 @@ else
   echo "WARNING: cargo not found, skipping Rust linting"
 fi
 
-echo Running ruff src compiler
-uv run ruff check --fix src compiler
-echo Running ruff tests compiler
-uv run ruff check --fix tests compiler
-echo Running black src tests compiler
-uv run black src tests compiler
-echo Running isort src tests compiler
-uv run isort --profile black src tests compiler
-echo Running pyright src tests compiler
-uv run pyright src compiler tests
-echo Running keyboard interrupt checker src tests compiler
-uv run python ci/lint_python/keyboard_interrupt_checker.py src tests compiler
+echo Running ruff src
+uv run ruff check --fix src
+echo Running ruff tests
+uv run ruff check --fix tests
+echo Running black src tests
+uv run black src tests
+echo Running isort src tests
+uv run isort --profile black src tests
+echo Running pyright src tests
+uv run pyright src tests
+echo Running keyboard interrupt checker src tests
+uv run python ci/lint_python/keyboard_interrupt_checker.py src tests
 echo Linting complete!
 exit 0
