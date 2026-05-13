@@ -19,6 +19,10 @@ const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
 
 const ESBUILD_VERSION: &str = "0.28.0";
 
+const FASTLED_REPO: &str = "FastLED/FastLED";
+const FASTLED_LATEST_RELEASE_API: &str =
+    "https://api.github.com/repos/FastLED/FastLED/releases/latest";
+
 fn fastled_root() -> Result<PathBuf> {
     let home = dirs::home_dir().context("cannot resolve home directory")?;
     Ok(home.join(".fastled"))
@@ -261,4 +265,147 @@ pub fn ensure_esbuild_installed() -> Result<PathBuf> {
 
     fs::write(&done_file, "ok\n")?;
     Ok(esbuild_path)
+}
+
+// ---------------------------------------------------------------------------
+// FastLED repo download (used by --init)
+// ---------------------------------------------------------------------------
+
+fn is_commit_sha(ref_str: &str) -> bool {
+    let n = ref_str.len();
+    (7..=40).contains(&n) && ref_str.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Hit the GitHub API for the latest FastLED release tag.
+/// Returns `None` on any failure so callers can fall back to `master`.
+fn fetch_latest_release_tag() -> Option<String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .ok()?;
+    let resp = client
+        .get(FASTLED_LATEST_RELEASE_API)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "fastled-cli")
+        .send()
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let text = resp.text().ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("tag_name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+fn head_check(url: &str) -> bool {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build();
+    match client {
+        Ok(c) => c
+            .head(url)
+            .header("User-Agent", "fastled-cli")
+            .send()
+            .map(|r| r.status().is_success())
+            .unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+/// Resolve `ref` to `(display_name, archive_url)`. Mirrors
+/// `project_init._resolve_ref` in Python.
+fn resolve_fastled_ref(ref_opt: Option<&str>) -> (String, String) {
+    let archive_base = format!("https://github.com/{FASTLED_REPO}/archive");
+
+    match ref_opt {
+        None | Some("latest_release") => match fetch_latest_release_tag() {
+            Some(tag) => {
+                let url = format!("{archive_base}/refs/tags/{tag}.zip");
+                (tag, url)
+            }
+            None => {
+                eprintln!(
+                    "fastled: could not fetch latest FastLED release tag, falling back to master"
+                );
+                let url = format!("{archive_base}/refs/heads/master.zip");
+                ("master".to_string(), url)
+            }
+        },
+        Some(r) if is_commit_sha(r) => {
+            let url = format!("{archive_base}/{r}.zip");
+            (r.to_string(), url)
+        }
+        Some(r) => {
+            // Try as tag first, fall back to branch (mirrors Python).
+            let tag_url = format!("{archive_base}/refs/tags/{r}.zip");
+            if head_check(&tag_url) {
+                (r.to_string(), tag_url)
+            } else {
+                let branch_url = format!("{archive_base}/refs/heads/{r}.zip");
+                (r.to_string(), branch_url)
+            }
+        }
+    }
+}
+
+/// Locate the root of an extracted FastLED archive (e.g. `FastLED-master`,
+/// `FastLED-3.9.12`, `FastLED-<sha>`).
+fn find_fastled_extract_root(dir: &Path) -> Result<PathBuf> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() && entry.file_name().to_string_lossy().starts_with("FastLED")
+        {
+            return Ok(entry.path());
+        }
+    }
+    anyhow::bail!("no FastLED* directory found inside {}", dir.display())
+}
+
+/// Ensure the FastLED repo for `ref_opt` is downloaded and extracted under
+/// `~/.fastled/cache/fastled-{ref}/`. Returns the resolved local repo root.
+///
+/// Re-uses an existing extraction if `library.json` is already present, so
+/// repeated calls are cheap.
+pub fn ensure_fastled_repo(ref_opt: Option<&str>) -> Result<PathBuf> {
+    let (ref_name, url) = resolve_fastled_ref(ref_opt);
+    let root = fastled_root()?;
+    let cache_base = root.join("cache");
+    fs::create_dir_all(&cache_base)?;
+    let repo_dir = cache_base.join(format!("fastled-{ref_name}"));
+
+    if repo_dir.join("library.json").is_file() {
+        return Ok(repo_dir);
+    }
+
+    let archive_cache = cache_base.join("archives");
+    fs::create_dir_all(&archive_cache)?;
+    let archive_path = archive_cache.join(format!("FastLED-{ref_name}.zip"));
+    if !archive_path.exists() {
+        archive::download(&url, &archive_path)
+            .with_context(|| format!("download FastLED archive from {url}"))?;
+    }
+
+    // Extract to a staging dir so a partial extraction never poisons the final
+    // location.
+    let staging = cache_base.join(format!("fastled-{ref_name}.staging"));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    archive::extract_zip(&archive_path, &staging)?;
+
+    let extracted_root = find_fastled_extract_root(&staging)?;
+
+    if repo_dir.exists() {
+        fs::remove_dir_all(&repo_dir)?;
+    }
+    fs::rename(&extracted_root, &repo_dir)?;
+    fs::remove_dir_all(&staging).ok();
+
+    Ok(repo_dir)
 }
