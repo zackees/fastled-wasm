@@ -3,14 +3,19 @@ set -e
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# Rust linting (skip if cargo not available)
-if command -v cargo &> /dev/null; then
+# Rust linting goes through soldr so the zccache compile cache is hit.
+# Install soldr with: uv tool install soldr  (or see zackees/soldr).
+if command -v soldr &> /dev/null; then
   echo Running cargo fmt check
-  "$SCRIPT_DIR/_cargo" fmt --all --check
+  soldr cargo fmt --all --check
   echo Running cargo clippy
-  "$SCRIPT_DIR/_cargo" clippy --workspace --all-targets -- -D warnings
+  soldr cargo clippy --workspace --all-targets -- -D warnings
+elif command -v cargo &> /dev/null; then
+  echo "WARNING: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets -- -D warnings
 else
-  echo "WARNING: cargo not found, skipping Rust linting"
+  echo "WARNING: neither soldr nor cargo found; skipping Rust linting"
 fi
 
 echo Running ruff src

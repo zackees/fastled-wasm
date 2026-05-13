@@ -19,17 +19,23 @@ case "$(uname -s)" in
 esac
 
 echo "Compiling fastled CLI (release)..."
-"$SCRIPT_DIR/_cargo" build --release --bin fastled
+if command -v soldr &> /dev/null; then
+  soldr cargo build --release --bin fastled
+else
+  echo "Warning: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
+  cargo build --release --bin fastled
+fi
 
-# Resolve where cargo wrote the binary. The _cargo wrapper sets
-# CARGO_BUILD_TARGET on Windows so the binary lands under a triple subdir.
+# Resolve where cargo wrote the binary. cargo on Windows MSVC writes the
+# binary under a triple subdir.
 if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
   BIN_SRC="$SCRIPT_DIR/target/${CARGO_BUILD_TARGET}/release/${EXE_NAME}"
 else
   BIN_SRC="$SCRIPT_DIR/target/release/${EXE_NAME}"
 fi
 
-# Discover from _cargo's exported target on Windows even if not set in env.
+# On Windows the rustup default host triple is MSVC; the binary lands under
+# target/<triple>/release/ even when CARGO_BUILD_TARGET isn't set.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     ARCH="$(uname -m)"

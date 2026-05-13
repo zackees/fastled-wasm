@@ -113,8 +113,14 @@ fi
 # auto-install plumbing flags (--internal-ensure-fastled-repo, etc.).
 if [[ "$FASTLED_CLI_BINSTALLED" -eq 0 ]]; then
   echo "Building fastled CLI from source..."
-  "$(dirname "$0")/_cargo" build --release --bin fastled \
-    || { echo "Error: cargo build --bin fastled failed"; exit 1; }
+  if command -v soldr &> /dev/null; then
+    soldr cargo build --release --bin fastled \
+      || { echo "Error: soldr cargo build --bin fastled failed"; exit 1; }
+  else
+    echo "Warning: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
+    cargo build --release --bin fastled \
+      || { echo "Error: cargo build --bin fastled failed"; exit 1; }
+  fi
 fi
 
 # Locate the just-built (or binstalled) Rust binary and stage it where
@@ -135,9 +141,9 @@ else
 fi
 
 BIN_SRC=""
-# Discover where the binary landed. `_cargo` sets CARGO_BUILD_TARGET on
-# Windows, so the bin is under target/<triple>/release/; on other platforms
-# (and when binstall provided it) check the usual locations.
+# Discover where the binary landed. cargo on Windows MSVC writes under
+# target/<triple>/release/; on other platforms (and when binstall provided it)
+# check the usual locations.
 for CANDIDATE in \
     "target/x86_64-pc-windows-msvc/release/${EXE_NAME}" \
     "target/aarch64-pc-windows-msvc/release/${EXE_NAME}" \
