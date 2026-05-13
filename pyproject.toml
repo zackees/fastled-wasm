@@ -13,15 +13,9 @@ license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "httpx>=0.28.1",
-    "watchdog>=6.0.0",
-    "watchfiles>=1.0.5",
-    "disklru>=2.0.4",
     "fasteners>=0.20",
     "clang-tool-chain>=1.2.6",
-    "rapidfuzz",
-    "progress",
     "zcmds_win32; sys_platform == 'win32'",
-    "zccache>=1.1.20",
 ]
 
 [tool.maturin]

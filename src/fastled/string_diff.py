@@ -1,6 +1,12 @@
+from difflib import SequenceMatcher
 from pathlib import Path
 
-from rapidfuzz import fuzz
+
+def _token_sort_ratio(a: str, b: str) -> float:
+    """Return a 0..100 similarity score after sorting whitespace-split tokens."""
+    a_sorted = " ".join(sorted(a.split()))
+    b_sorted = " ".join(sorted(b.split()))
+    return SequenceMatcher(None, a_sorted, b_sorted).ratio() * 100.0
 
 
 def _filter_out_obvious_bad_choices(
@@ -207,7 +213,7 @@ def string_diff(
     # Calculate distances
     distances: list[float] = []
     for s in string_list:
-        dist = fuzz.token_sort_ratio(normalize(input_string), normalize(s))
+        dist = _token_sort_ratio(normalize(input_string), normalize(s))
         distances.append(1.0 / (dist + 1.0))
 
     # Handle case where no strings remain after filtering
@@ -219,7 +225,7 @@ def string_diff(
 
         distances = []
         for s in string_list:
-            dist = fuzz.token_sort_ratio(normalize(input_string), normalize(s))
+            dist = _token_sort_ratio(normalize(input_string), normalize(s))
             distances.append(1.0 / (dist + 1.0))
 
     min_distance = min(distances)
