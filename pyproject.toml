@@ -13,7 +13,6 @@ license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     "httpx>=0.28.1",
-    "fasteners>=0.20",
     "zcmds_win32; sys_platform == 'win32'",
 ]
 
