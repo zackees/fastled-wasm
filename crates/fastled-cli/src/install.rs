@@ -23,6 +23,10 @@ const FASTLED_REPO: &str = "FastLED/FastLED";
 const FASTLED_LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/FastLED/FastLED/releases/latest";
 
+const CHROME_CRX_URL: &str = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=114.0&acceptformat=crx2,crx3&x=id%3D{ID}%26uc";
+const CHROME_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36";
+
 fn fastled_root() -> Result<PathBuf> {
     let home = dirs::home_dir().context("cannot resolve home directory")?;
     Ok(home.join(".fastled"))
@@ -408,4 +412,80 @@ pub fn ensure_fastled_repo(ref_opt: Option<&str>) -> Result<PathBuf> {
     fs::remove_dir_all(&staging).ok();
 
     Ok(repo_dir)
+}
+
+// ---------------------------------------------------------------------------
+// Chrome extension (CRX) download
+// ---------------------------------------------------------------------------
+
+/// Download a CRX from the Chrome Web Store, strip the CRX header, extract
+/// the embedded ZIP into ``~/.fastled/chrome-extensions/{name}/``, and return
+/// the install path.
+///
+/// Reuses the cached extension if `manifest.json` already exists at the
+/// destination.
+pub fn ensure_chrome_extension(extension_id: &str, name: &str) -> Result<PathBuf> {
+    let root = fastled_root()?;
+    let install_dir = root.join("chrome-extensions").join(name);
+    if install_dir.join("manifest.json").is_file() {
+        return Ok(install_dir);
+    }
+    fs::create_dir_all(&install_dir)
+        .with_context(|| format!("create chrome extension dir {}", install_dir.display()))?;
+
+    let crx_url = CHROME_CRX_URL.replace("{ID}", extension_id);
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()
+        .context("failed to build HTTP client for CRX download")?;
+
+    let bytes = client
+        .get(&crx_url)
+        .header("User-Agent", CHROME_USER_AGENT)
+        .header("Referer", "https://chrome.google.com")
+        .send()
+        .with_context(|| format!("GET {crx_url} failed"))?
+        .error_for_status()
+        .with_context(|| format!("CRX download returned error for {crx_url}"))?
+        .bytes()
+        .context("read CRX body")?;
+
+    // CRX file starts with a header; find the embedded ZIP magic.
+    let buf: &[u8] = &bytes;
+    let zip_start = find_zip_start(buf)
+        .with_context(|| format!("no ZIP magic found in CRX for {extension_id}"))?;
+
+    // Write the ZIP portion to a temp file and extract.
+    let tmp_zip = tempfile::NamedTempFile::new().context("create temp zip for CRX extraction")?;
+    {
+        use std::io::Write;
+        let mut handle = tmp_zip.as_file();
+        handle
+            .write_all(&buf[zip_start..])
+            .context("write CRX zip portion")?;
+        handle.flush().ok();
+    }
+    archive::extract_zip(tmp_zip.path(), &install_dir)?;
+
+    if !install_dir.join("manifest.json").is_file() {
+        let _ = fs::remove_dir_all(&install_dir);
+        anyhow::bail!(
+            "extension extraction failed: manifest.json not found in {}",
+            install_dir.display()
+        );
+    }
+    Ok(install_dir)
+}
+
+fn find_zip_start(bytes: &[u8]) -> Option<usize> {
+    // PK\x03\x04 is a normal ZIP local file header; PK\x05\x06 is an empty
+    // central directory end-of-archive marker. Mirror the Python search.
+    let local = [0x50u8, 0x4B, 0x03, 0x04];
+    let end = [0x50u8, 0x4B, 0x05, 0x06];
+    bytes
+        .windows(4)
+        .position(|w| w == local)
+        .or_else(|| bytes.windows(4).position(|w| w == end))
 }

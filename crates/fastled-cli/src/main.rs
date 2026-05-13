@@ -397,6 +397,12 @@ struct Cli {
     #[arg(long, value_name = "REF", num_args = 0..=1, default_missing_value = "__latest__", hide = true)]
     internal_ensure_fastled_repo: Option<String>,
 
+    /// Internal plumbing flag: download a Chrome Web Store extension (by ID)
+    /// into ``~/.fastled/chrome-extensions/<NAME>/``, print the path to
+    /// stdout, and exit. Used by the Python playwright helpers.
+    #[arg(long, value_names = ["EXTENSION_ID", "NAME"], num_args = 2, hide = true)]
+    internal_ensure_chrome_extension: Vec<String>,
+
     // Build mode (mutually exclusive).
     /// Build in debug mode.
     #[arg(long, conflicts_with_all = ["quick", "release"])]
@@ -603,6 +609,27 @@ fn main() -> ExitCode {
             }
             Err(e) => {
                 eprintln!("fastled: failed to fetch FastLED repo: {e:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    // Hidden plumbing: download a Chrome Web Store extension and print its
+    // local install path. Used by the Python playwright helpers.
+    if !cli.internal_ensure_chrome_extension.is_empty() {
+        if cli.internal_ensure_chrome_extension.len() != 2 {
+            eprintln!("fastled: --internal-ensure-chrome-extension requires EXTENSION_ID NAME");
+            return ExitCode::FAILURE;
+        }
+        let extension_id = &cli.internal_ensure_chrome_extension[0];
+        let name = &cli.internal_ensure_chrome_extension[1];
+        return match install::ensure_chrome_extension(extension_id, name) {
+            Ok(path) => {
+                println!("{}", path.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("fastled: failed to fetch Chrome extension: {e:#}");
                 ExitCode::FAILURE
             }
         };

@@ -324,41 +324,26 @@ class EmscriptenToolchain:
     CACHE_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
     def _download_fastled(self, target_dir: Path) -> Path:
-        """Download FastLED library from GitHub master branch."""
-        import io
-        import zipfile
+        """Materialise the FastLED library at ``target_dir/repo``.
 
-        import httpx
+        Delegates the actual GitHub download to the Rust CLI's
+        ``--internal-ensure-fastled-repo`` flag (see
+        ``crates/fastled-cli/src/install.rs``) so the Python side no longer
+        needs httpx. The Rust binary caches under ``~/.fastled/cache/`` and
+        returns a path which we then copy into ``target_dir/repo`` (the
+        short-name move avoids Windows command-line length limits in
+        deeply-nested build paths).
+        """
+        from fastled.project_init import _ensure_repo_via_rust
 
-        print("Downloading FastLED library from GitHub master...")
-        response = httpx.get(
-            self.FASTLED_ARCHIVE_URL, follow_redirects=True, timeout=60
-        )
-        response.raise_for_status()
+        print("Materialising FastLED library via fastled CLI (master)...")
+        repo_root = _ensure_repo_via_rust("master")
 
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
-            zf.extractall(target_dir)
-
-        fastled_dir = target_dir / "FastLED-master"
-        if not fastled_dir.exists():
-            dirs = [
-                d
-                for d in target_dir.iterdir()
-                if d.is_dir() and d.name.startswith("FastLED")
-            ]
-            if dirs:
-                fastled_dir = dirs[0]
-            else:
-                raise FileNotFoundError("Failed to extract FastLED library")
-
-        # Rename to a shorter name to avoid Windows path length limits.
-        # The deeply nested build paths (e.g. .build/meson-wasm-quick/...)
-        # combined with long directory names cause emar command lines to
-        # exceed Windows' CreateProcess limit ([WinError 206]).
         short_dir = target_dir / "repo"
         if short_dir.exists():
             shutil.rmtree(short_dir, ignore_errors=True)
-        fastled_dir.rename(short_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(repo_root, short_dir, symlinks=True)
         return short_dir
 
     def _is_cache_fresh(self) -> bool:
