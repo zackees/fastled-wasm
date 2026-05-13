@@ -11,43 +11,11 @@ import sys
 import warnings
 from pathlib import Path
 
+from fastled._rust_cli import find_rust_fastled_cli as _find_rust_fastled_cli
 from fastled.interrupts import handle_keyboard_interrupt
 
 CPP_DEVTOOLS_EXTENSION_ID = "pdcpmagijalfljmkmjngeonclgbbannb"
 CPP_DEVTOOLS_EXTENSION_NAME = "cpp-devtools-support"
-
-
-def _find_rust_fastled_cli() -> Path | None:
-    """Locate the Rust fastled binary, preferring target/ over the venv shim."""
-    import shutil
-
-    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
-
-    current = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (current / "Cargo.toml").is_file():
-            for profile in ("release", "debug"):
-                candidate = current / "target" / profile / exe_name
-                if candidate.is_file():
-                    return candidate
-            target_dir = current / "target"
-            if target_dir.is_dir():
-                for arch_dir in target_dir.iterdir():
-                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
-                        for profile in ("release", "debug"):
-                            candidate = arch_dir / profile / exe_name
-                            if candidate.is_file():
-                                return candidate
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    found = shutil.which(exe_name)
-    if found:
-        return Path(found)
-    return None
 
 
 def download_cpp_devtools_extension() -> Path | None:

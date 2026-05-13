@@ -6,6 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from fastled._rust_cli import find_rust_fastled_cli as _find_rust_fastled_cli
 from fastled.interrupts import handle_keyboard_interrupt
 
 DEFAULT_EXAMPLE = "wasm"
@@ -15,47 +16,6 @@ DEFAULT_EXAMPLE = "wasm"
 class _CachedRepo:
     root: Path
     ref_name: str
-
-
-def _find_rust_fastled_cli() -> Path | None:
-    """Locate the **Rust** fastled CLI binary, not the Python entry-point shim.
-
-    The Python `[project.scripts] fastled = ...` console-script sits in the
-    same directory as the interpreter and shadows the Rust binary in step 1
-    of the open_browser lookup. We need the Rust one, so search the workspace
-    target/ tree first, then PATH.
-    """
-    import shutil
-    import sys
-
-    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
-
-    # Walk up to find a Cargo.toml workspace root and check target dirs.
-    current = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (current / "Cargo.toml").is_file():
-            for profile in ("release", "debug"):
-                candidate = current / "target" / profile / exe_name
-                if candidate.is_file():
-                    return candidate
-            target_dir = current / "target"
-            if target_dir.is_dir():
-                for arch_dir in target_dir.iterdir():
-                    if arch_dir.is_dir() and not arch_dir.name.startswith("."):
-                        for profile in ("release", "debug"):
-                            candidate = arch_dir / profile / exe_name
-                            if candidate.is_file():
-                                return candidate
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    found = shutil.which(exe_name)
-    if found:
-        return Path(found)
-    return None
 
 
 def _ensure_repo_via_rust(ref: str | None) -> Path:
