@@ -1,13 +1,27 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Protocol
+from typing import Protocol
 
 from fastled.print_filter import PrintFilterDefault
+
+CompileResultValue = bool | str | bytes | float | None
 
 
 class _BuildModeArgs(Protocol):
     debug: bool
     release: bool
+
+
+@dataclass
+class CompileResultSnapshot:
+    success: bool
+    stdout: str
+    hash_value: str | None
+    zip_bytes: bytes
+    zip_time: float
+    libfastled_time: float
+    sketch_time: float
+    response_processing_time: float
 
 
 @dataclass
@@ -24,8 +38,20 @@ class CompileResult:
     def __bool__(self) -> bool:
         return self.success
 
-    def to_dict(self) -> dict[str, Any]:
-        return self.__dict__.copy()
+    def to_dataclass(self) -> CompileResultSnapshot:
+        return CompileResultSnapshot(
+            success=self.success,
+            stdout=self.stdout,
+            hash_value=self.hash_value,
+            zip_bytes=self.zip_bytes,
+            zip_time=self.zip_time,
+            libfastled_time=self.libfastled_time,
+            sketch_time=self.sketch_time,
+            response_processing_time=self.response_processing_time,
+        )
+
+    def to_dict(self) -> dict[str, CompileResultValue]:
+        return asdict(self.to_dataclass())
 
     def __post_init__(self):
         # Filter the stdout.

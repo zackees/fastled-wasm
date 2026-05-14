@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastled._native import NativeBuildService as _NativeBuildService
-from fastled.build_types import BuildRequest, BuildResult, BuildStrategy
+from fastled.build_types import (
+    BuildRequest,
+    BuildResult,
+    BuildStrategy,
+    NativeBuildPayload,
+)
 from fastled.interrupts import handle_keyboard_interrupt
 from fastled.types import CompileResult
 
@@ -30,39 +35,37 @@ class BuildService:
 
     def build(self, request: BuildRequest) -> BuildResult:
         try:
-            payload = self._native.build(
-                str(request.sketch_dir),
-                request.build_mode.value,
-                request.build_mode,
-                request.profile,
-                _path_key(request.fastled_path),
-                request.force_clean,
+            payload = cast(
+                NativeBuildPayload,
+                self._native.build(
+                    str(request.sketch_dir),
+                    request.build_mode.value,
+                    request.build_mode,
+                    request.profile,
+                    _path_key(request.fastled_path),
+                    request.force_clean,
+                ),
             )
         except KeyboardInterrupt as ki:
             handle_keyboard_interrupt(ki)
             raise
 
         compile_result = CompileResult(
-            success=bool(payload["success"]),
-            stdout=str(payload["stdout"]),
-            hash_value=cast(str | None, payload["hash_value"]),
-            zip_bytes=bytes(payload["zip_bytes"]),
-            zip_time=float(payload["zip_time"]),
-            libfastled_time=float(payload["libfastled_time"]),
-            sketch_time=float(payload["sketch_time"]),
-            response_processing_time=float(payload["response_processing_time"]),
+            success=payload.success,
+            stdout=payload.stdout,
+            hash_value=payload.hash_value,
+            zip_bytes=payload.zip_bytes,
+            zip_time=payload.zip_time,
+            libfastled_time=payload.libfastled_time,
+            sketch_time=payload.sketch_time,
+            response_processing_time=payload.response_processing_time,
         )
-
-        artifacts = {
-            name: Path(path_str)
-            for name, path_str in cast(dict[str, str], payload["artifacts"]).items()
-        }
 
         return BuildResult(
             compile_result=compile_result,
-            strategy=cast(BuildStrategy, payload["strategy"]),
-            output_dir=Path(str(payload["output_dir"])),
-            artifacts=artifacts,
+            strategy=cast(BuildStrategy, payload.strategy),
+            output_dir=Path(payload.output_dir),
+            artifacts=payload.artifacts,
         )
 
     def detect_strategy(self, request: BuildRequest) -> BuildStrategy:

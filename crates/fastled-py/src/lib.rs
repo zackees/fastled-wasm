@@ -6,7 +6,7 @@ use fastled_cli::wasm_build;
 use fastled_cli::{PromptChoice, SketchSelection};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyModule};
+use pyo3::types::{PyBytes, PyModule};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
@@ -106,27 +106,46 @@ fn zip_output(output_dir: &Path) -> io::Result<Vec<u8>> {
     Ok(zip.finish()?.into_inner())
 }
 
-fn discover_artifacts(output_dir: &Path) -> HashMap<String, String> {
-    let mut artifacts = HashMap::new();
-    let candidates = [
-        ("js", output_dir.join("fastled.js")),
-        ("wasm", output_dir.join("fastled.wasm")),
-        ("dwarf", output_dir.join("fastled.wasm.dwarf")),
-        ("symbol_map", output_dir.join("fastled.js.symbols")),
-        ("frontend_assets", output_dir.join("assets")),
-    ];
-    for (name, path) in candidates {
-        if path.exists() {
-            artifacts.insert(name.to_string(), path.to_string_lossy().into_owned());
-        }
+#[derive(Default)]
+struct NativeBuildArtifacts {
+    js: Option<PathBuf>,
+    wasm: Option<PathBuf>,
+    dwarf: Option<PathBuf>,
+    symbol_map: Option<PathBuf>,
+    frontend_assets: Option<PathBuf>,
+}
+
+fn existing_path(path: PathBuf) -> Option<PathBuf> {
+    path.exists().then_some(path)
+}
+
+fn discover_artifacts(output_dir: &Path) -> NativeBuildArtifacts {
+    let frontend_assets = existing_path(output_dir.join("assets"))
+        .or_else(|| output_dir.exists().then_some(output_dir.to_path_buf()));
+
+    NativeBuildArtifacts {
+        js: existing_path(output_dir.join("fastled.js")),
+        wasm: existing_path(output_dir.join("fastled.wasm")),
+        dwarf: existing_path(output_dir.join("fastled.wasm.dwarf")),
+        symbol_map: existing_path(output_dir.join("fastled.js.symbols")),
+        frontend_assets,
     }
-    if !artifacts.contains_key("frontend_assets") && output_dir.exists() {
-        artifacts.insert(
-            "frontend_assets".to_string(),
-            output_dir.to_string_lossy().into_owned(),
-        );
+}
+
+fn python_path(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
+    let pathlib = PyModule::import(py, "pathlib")?;
+    let cls = pathlib.getattr("Path")?;
+    Ok(cls
+        .call1((path.to_string_lossy().as_ref(),))?
+        .into_any()
+        .unbind())
+}
+
+fn python_optional_path(py: Python<'_>, path: Option<&Path>) -> PyResult<Py<PyAny>> {
+    match path {
+        Some(path) => python_path(py, path),
+        None => Ok(py.None()),
     }
-    artifacts
 }
 
 // ---------------------------------------------------------------------------
@@ -540,7 +559,7 @@ impl NativeBuildService {
         profile: bool,
         fastled_path: Option<&str>,
         force_clean: bool,
-    ) -> PyResult<Py<PyDict>> {
+    ) -> PyResult<Py<PyAny>> {
         let _ = build_mode_obj;
         let sketch_dir = PathBuf::from(sketch_dir);
         let output_dir = sketch_dir.join("fastled_js");
@@ -703,26 +722,36 @@ impl NativeBuildService {
         sketch_time: f64,
         strategy: String,
         output_dir: &Path,
-    ) -> PyResult<Py<PyDict>> {
-        let payload = PyDict::new(py);
-        let artifacts = PyDict::new(py);
-        for (name, path) in discover_artifacts(output_dir) {
-            artifacts.set_item(name, path)?;
-        }
+    ) -> PyResult<Py<PyAny>> {
+        let build_types = PyModule::import(py, "fastled.build_types")?;
+        let artifacts_cls = build_types.getattr("BuildArtifacts")?;
+        let payload_cls = build_types.getattr("NativeBuildPayload")?;
 
-        payload.set_item("success", success)?;
-        payload.set_item("stdout", stdout)?;
-        payload.set_item("hash_value", py.None())?;
-        payload.set_item("zip_bytes", PyBytes::new(py, &zip_bytes))?;
-        payload.set_item("zip_time", zip_time)?;
-        payload.set_item("libfastled_time", 0.0)?;
-        payload.set_item("sketch_time", sketch_time)?;
-        payload.set_item("response_processing_time", 0.0)?;
-        payload.set_item("strategy", strategy)?;
-        payload.set_item("output_dir", output_dir.to_string_lossy().into_owned())?;
-        payload.set_item("artifacts", artifacts)?;
+        let artifact_paths = discover_artifacts(output_dir);
+        let artifacts = artifacts_cls.call1((
+            python_optional_path(py, artifact_paths.js.as_deref())?,
+            python_optional_path(py, artifact_paths.wasm.as_deref())?,
+            python_optional_path(py, artifact_paths.dwarf.as_deref())?,
+            python_optional_path(py, artifact_paths.symbol_map.as_deref())?,
+            python_optional_path(py, artifact_paths.frontend_assets.as_deref())?,
+        ))?;
 
-        Ok(payload.unbind())
+        Ok(payload_cls
+            .call1((
+                success,
+                stdout,
+                py.None(),
+                PyBytes::new(py, &zip_bytes),
+                zip_time,
+                0.0,
+                sketch_time,
+                0.0,
+                strategy,
+                python_path(py, output_dir)?,
+                artifacts,
+            ))?
+            .into_any()
+            .unbind())
     }
 }
 

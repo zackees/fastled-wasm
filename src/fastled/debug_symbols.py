@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -72,6 +73,30 @@ class DebugSymbolConfig:
         return roots
 
 
+@dataclass(frozen=True)
+class DwarfPrefixConfig:
+    fastled_prefix: str = DEFAULT_FASTLED_PREFIX
+    sketch_prefix: str = DEFAULT_SKETCH_PREFIX
+    dwarf_prefix: str = DEFAULT_DWARF_PREFIX
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "DwarfPrefixConfig":
+        data: Mapping[str, object] = value if isinstance(value, dict) else {}
+        return cls(
+            fastled_prefix=_string_value(
+                data.get("fastled_prefix"), DEFAULT_FASTLED_PREFIX
+            ),
+            sketch_prefix=_string_value(
+                data.get("sketch_prefix"), DEFAULT_SKETCH_PREFIX
+            ),
+            dwarf_prefix=_string_value(data.get("dwarf_prefix"), DEFAULT_DWARF_PREFIX),
+        )
+
+
+def _string_value(value: object, default: str) -> str:
+    return value if isinstance(value, str) else default
+
+
 def load_debug_symbol_config(
     sketch_dir: Path,
     fastled_dir: Path | None = None,
@@ -99,14 +124,14 @@ def load_debug_symbol_config(
 
         data = tomllib.load(handle)
 
-    dwarf = data.get("dwarf", {})
+    dwarf = DwarfPrefixConfig.from_mapping(data.get("dwarf"))
     return DebugSymbolConfig(
         sketch_dir=sketch_dir,
         fastled_dir=fastled_dir,
         emsdk_path=emsdk_path,
-        fastled_prefix=dwarf.get("fastled_prefix", DEFAULT_FASTLED_PREFIX),
-        sketch_prefix=dwarf.get("sketch_prefix", DEFAULT_SKETCH_PREFIX),
-        dwarf_prefix=dwarf.get("dwarf_prefix", DEFAULT_DWARF_PREFIX),
+        fastled_prefix=dwarf.fastled_prefix,
+        sketch_prefix=dwarf.sketch_prefix,
+        dwarf_prefix=dwarf.dwarf_prefix,
     )
 
 

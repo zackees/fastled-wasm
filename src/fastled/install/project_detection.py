@@ -2,7 +2,34 @@
 
 import json
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class LibraryJson:
+    name: str | None
+    repository_url: str
+
+    @classmethod
+    def from_file(cls, path: Path) -> "LibraryJson | None":
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        repository = data.get("repository")
+        repository_url = ""
+        if isinstance(repository, dict):
+            url = repository.get("url")
+            repository_url = url if isinstance(url, str) else ""
+        name = data.get("name")
+        return cls(
+            name=name if isinstance(name, str) else None,
+            repository_url=repository_url,
+        )
 
 
 def validate_vscode_project(no_interactive: bool = False) -> bool:
@@ -96,15 +123,8 @@ def generate_vscode_project() -> bool:
 def detect_fastled_project() -> bool:
     """Check if library.json contains FastLED."""
     library_json = Path.cwd() / "library.json"
-    if not library_json.exists():
-        return False
-
-    try:
-        with open(library_json, "r") as f:
-            data = json.load(f)
-            return data.get("name") == "FastLED"
-    except (json.JSONDecodeError, KeyError):
-        return False
+    metadata = LibraryJson.from_file(library_json)
+    return metadata is not None and metadata.name == "FastLED"
 
 
 def is_fastled_repository() -> bool:
@@ -128,15 +148,12 @@ def is_fastled_repository() -> bool:
         return False
 
     # Verify library.json has correct content
-    try:
-        with open(cwd / "library.json", "r") as f:
-            data = json.load(f)
-            if data.get("name") != "FastLED":
-                return False
-            repo_url = data.get("repository", {}).get("url", "")
-            if "FastLED/FastLED" not in repo_url:
-                return False
-    except (json.JSONDecodeError, KeyError, FileNotFoundError):
+    metadata = LibraryJson.from_file(cwd / "library.json")
+    if metadata is None:
+        return False
+    if metadata.name != "FastLED":
+        return False
+    if "FastLED/FastLED" not in metadata.repository_url:
         return False
 
     # Check for test files pattern

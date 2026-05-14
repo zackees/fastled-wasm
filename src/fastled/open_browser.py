@@ -10,7 +10,6 @@ import time
 import weakref
 from pathlib import Path
 
-from fastled._native import find_fastled_viewer
 from fastled._rust_cli import find_rust_fastled_cli
 from fastled.interrupts import handle_keyboard_interrupt
 
@@ -41,7 +40,6 @@ def spawn_http_server(
     fastled_js: Path,
     port: int | None = None,
     open_browser: bool = True,
-    app: bool = False,
     enable_https: bool = True,
     sketch_dir: Path | None = None,
     fastled_path: Path | None = None,
@@ -49,10 +47,9 @@ def spawn_http_server(
     """Spawn the Rust CLI HTTP server as a subprocess.
 
     The Rust binary's ``--serve-dir`` flag starts a native HTTP server and
-    auto-launches the Tauri viewer when the ``fastled-viewer`` binary is
-    available, so no Python-side viewer spawn is required.
+    auto-launches the Tauri viewer, so no Python-side viewer spawn is required.
     """
-    del app, enable_https, sketch_dir, fastled_path  # handled by Rust
+    del open_browser, enable_https, sketch_dir, fastled_path  # handled by Rust
 
     cli = find_rust_fastled_cli()
     if cli is None:
@@ -83,20 +80,6 @@ def spawn_http_server(
         # (URL line not seen yet) needs a small grace period.
         time.sleep(1.0)
 
-    if open_browser:
-        if actual_port:
-            url = f"http://localhost:{actual_port}"
-        else:
-            url = "http://localhost:8089"
-
-        # The Rust CLI auto-launches the viewer; only fall back to the system
-        # browser when no viewer binary is present.
-        if find_fastled_viewer() is None:
-            print(f"Opening browser to {url}")
-            import webbrowser
-
-            webbrowser.open(url=url, new=1, autoraise=True)
-        else:
-            print("FastLED viewer will be launched by the Rust CLI")
+    print("FastLED viewer will be launched by the Rust CLI")
 
     return proc

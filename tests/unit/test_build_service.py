@@ -1,6 +1,12 @@
 from pathlib import Path
+from typing import cast
 
-from fastled.build_types import BuildRequest
+from fastled.build_types import (
+    BuildArtifacts,
+    BuildRequest,
+    BuildStrategy,
+    NativeBuildPayload,
+)
 from fastled.types import BuildMode
 
 
@@ -42,7 +48,7 @@ class FakeNativeBuildService:
         profile: bool = False,
         fastled_path: str | None = None,
         force_clean: bool = False,
-    ) -> dict[str, object]:
+    ) -> NativeBuildPayload:
         del build_mode_obj
         strategy = self.detect_strategy(
             sketch_dir, build_mode, profile, fastled_path, force_clean
@@ -57,28 +63,26 @@ class FakeNativeBuildService:
         assets_dir.mkdir(exist_ok=True)
         (assets_dir / "main.js").write_text("asset")
         self.states[Path(sketch_dir).resolve()] = (build_mode, profile, fastled_path)
-        return {
-            "success": True,
-            "stdout": "Native Rust WASM build successful",
-            "hash_value": None,
-            "zip_bytes": b"zip",
-            "zip_time": 0.01,
-            "libfastled_time": 0.0,
-            "sketch_time": 0.02,
-            "response_processing_time": 0.0,
-            "strategy": strategy,
-            "output_dir": str(output_dir),
-            "artifacts": {
-                "js": str(output_dir / "fastled.js"),
-                "wasm": str(output_dir / "fastled.wasm"),
-                "frontend_assets": str(assets_dir),
-                **(
-                    {"dwarf": str(output_dir / "fastled.wasm.dwarf")}
-                    if build_mode == "DEBUG"
-                    else {}
-                ),
-            },
-        }
+        return NativeBuildPayload(
+            success=True,
+            stdout="Native Rust WASM build successful",
+            hash_value=None,
+            zip_bytes=b"zip",
+            zip_time=0.01,
+            libfastled_time=0.0,
+            sketch_time=0.02,
+            response_processing_time=0.0,
+            strategy=cast(BuildStrategy, strategy),
+            output_dir=output_dir,
+            artifacts=BuildArtifacts(
+                js=output_dir / "fastled.js",
+                wasm=output_dir / "fastled.wasm",
+                dwarf=(output_dir / "fastled.wasm.dwarf")
+                if build_mode == "DEBUG"
+                else None,
+                frontend_assets=assets_dir,
+            ),
+        )
 
     def purge(self, sketch_dir: str) -> None:
         self.states.pop(Path(sketch_dir).resolve(), None)
@@ -108,6 +112,10 @@ def test_build_service_starts_cold_then_turns_incremental(
     first = service.build(request)
     assert first.success is True
     assert first.strategy == "cold"
+    assert isinstance(first.artifacts, BuildArtifacts)
+    assert first.artifacts.js == sketch_dir / "fastled_js" / "fastled.js"
+    assert first.artifacts.wasm == sketch_dir / "fastled_js" / "fastled.wasm"
+    assert first.artifacts.frontend_assets == sketch_dir / "fastled_js" / "assets"
     assert first.artifacts["js"] == sketch_dir / "fastled_js" / "fastled.js"
     assert first.artifacts["wasm"] == sketch_dir / "fastled_js" / "fastled.wasm"
     assert first.artifacts["frontend_assets"] == sketch_dir / "fastled_js" / "assets"
