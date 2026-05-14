@@ -5,14 +5,14 @@ This file is read by Claude Code, Codex, and other coding agents that work on th
 ## Layout
 
 - Python package shim: `src/fastled/`
-- Rust workspace: `crates/fastled-cli`, `crates/fastled-py`, `crates/fastled-tauri`
-- Tests: `tests/unit/` (thin Python API smoke tests), `cargo test --workspace` (Rust)
+- Rust workspace: `crates/fastled-cli`
+- Tests: `tests/unit/` (thin Python API smoke tests), `soldr cargo test --workspace` (Rust)
 - CI workflows: `.github/workflows/_*.yml`
 - Dev scripts: `./install`, `./lint`, `./test`, `./build-wheel`, `./clean`
 
 ## Build Cache
 
-Use `soldr cargo ...`, `soldr rustfmt ...`, and related soldr-wrapped commands for Rust work. Plain `cargo`, `rustc`, and `rustfmt` bypass zccache and are blocked by `ci/hooks/tool_guard.py`.
+Use `soldr cargo ...`, `soldr rustfmt ...`, and related soldr-wrapped commands for Rust work. Plain `cargo`, `rustc`, `rustfmt`, and `rustup` bypass soldr and are blocked by `ci/hooks/tool_guard.py`.
 
 If `soldr` is not on PATH, install it with `uv tool install soldr`.
 
@@ -33,7 +33,7 @@ Do not pipe pytest through `| tail -N` if you want streaming output; it buffers 
 
 - The user-facing CLI is the Rust binary `fastled`/`fastled-rs` built from `crates/fastled-cli`.
 - Python `cli.py` and `app.py` are tiny shims that call `fastled._rust_cli.invoke_rust_fastled_cli`.
-- `fastled._native` is the PyO3 extension compiled from `crates/fastled-py/src/lib.rs`. It exposes the public Python API classes and functions directly from Rust.
+- The Python package intentionally does not ship a PyO3 extension; it bundles and launches the native Rust CLI.
 - The compile path is Rust-owned through `crates/fastled-cli/src/build.rs` and `crates/fastled-cli/src/wasm_build.rs`.
 - Python no longer owns build, toolchain, sketch selection, project init, install, server, debug-symbol, or frontend-bundling orchestration.
 
@@ -48,7 +48,7 @@ Do not pipe pytest through `| tail -N` if you want streaming output; it buffers 
 
 - The installed `fastled` CLI on PATH may be a Python compatibility shim or stale script; during migration the Rust CLI binary is named `fastled-rs[.exe]`.
 - Error messages from the Rust CLI go to stderr.
-- On Windows, if `_native.pyd` is locked after a PyO3 build, move it aside before copying the newly built extension into `src/fastled/`.
+- On Windows, stale generated binaries under `src/fastled/bin/` are build artifacts and should not be committed.
 
 ## Filing Issues / PRs
 

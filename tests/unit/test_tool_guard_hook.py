@@ -53,6 +53,52 @@ def test_hook_allows_soldr() -> None:
     assert output == ""
 
 
+def test_hook_blocks_rustup() -> None:
+    output = _run_hook(
+        {"tool_name": "Bash", "tool_input": {"command": "./rustup.exe show"}}
+    )
+    assert "permissionDecision" in output
+    assert "soldr cargo" in output
+
+
+def test_hook_blocks_absolute_rustup_path() -> None:
+    output = _run_hook(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": r"C:\Users\me\.cargo\bin\rustup.exe show"},
+        }
+    )
+    assert "permissionDecision" in output
+    assert "soldr cargo" in output
+
+
+def test_hook_blocks_uv_run_rustup() -> None:
+    output = _run_hook(
+        {"tool_name": "Bash", "tool_input": {"command": "uv run rustup show"}}
+    )
+    assert "permissionDecision" in output
+    assert "soldr cargo" in output
+
+
+def test_hook_blocks_nested_shell_rustup() -> None:
+    output = _run_hook(
+        {"tool_name": "Bash", "tool_input": {"command": 'bash -lc "rustup show"'}}
+    )
+    assert "permissionDecision" in output
+    assert "soldr cargo" in output
+
+
+def test_hook_blocks_nested_uv_run_rustup() -> None:
+    output = _run_hook(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": 'bash -lc "uv run rustup show"'},
+        }
+    )
+    assert "permissionDecision" in output
+    assert "soldr cargo" in output
+
+
 def test_hook_configs_use_cross_platform_wrapper() -> None:
     config_paths = [
         _ROOT / ".claude" / "settings.json",

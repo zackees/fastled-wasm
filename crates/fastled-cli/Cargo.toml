@@ -22,9 +22,9 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
-pyo3 = { workspace = true, features = ["auto-initialize"] }
 notify = { workspace = true }
 sha2 = { workspace = true }
+fs2 = { workspace = true }
 reqwest = { workspace = true }
 running-process-core = { workspace = true }
 zip = { workspace = true }
@@ -48,6 +48,7 @@ tauri = { workspace = true, optional = true }
 tempfile = "3"
 
 [build-dependencies]
+indexmap = { version = "1.9.3", features = ["std"] }
 tauri-build = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]

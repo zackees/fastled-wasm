@@ -4,7 +4,6 @@ import os
 import platform
 import shutil
 import subprocess
-import tomllib
 from pathlib import Path
 
 
@@ -18,30 +17,8 @@ def cargo_bin() -> Path:
     return cargo_home() / "bin"
 
 
-def rustup_home() -> Path:
-    if os.environ.get("RUSTUP_HOME"):
-        return Path(os.environ["RUSTUP_HOME"]).expanduser()
-    return Path.home() / ".rustup"
-
-
 def repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
-
-
-def toolchain_file() -> Path:
-    return repo_root() / "rust-toolchain.toml"
-
-
-def load_toolchain_channel() -> str:
-    with toolchain_file().open("rb") as handle:
-        data = tomllib.load(handle)
-    toolchain = data.get("toolchain")
-    if not isinstance(toolchain, dict):
-        raise RuntimeError(f"missing [toolchain] in {toolchain_file()}")
-    channel = toolchain.get("channel")
-    if not isinstance(channel, str) or not channel:
-        raise RuntimeError(f"missing toolchain.channel in {toolchain_file()}")
-    return channel
 
 
 def host_target_triple() -> str:
@@ -62,14 +39,6 @@ def host_target_triple() -> str:
     if system == "Darwin":
         return f"{arch}-apple-darwin"
     raise RuntimeError(f"unsupported platform: {system}")
-
-
-def toolchain_name() -> str:
-    return f"{load_toolchain_channel()}-{host_target_triple()}"
-
-
-def toolchain_bin() -> Path:
-    return rustup_home() / "toolchains" / toolchain_name() / "bin"
 
 
 def _find_vswhere() -> Path | None:
@@ -113,17 +82,7 @@ def _find_vsdevcmd() -> Path | None:
 
 def _windows_build_env() -> dict[str, str]:
     env = os.environ.copy()
-    toolchain_bin_dir = toolchain_bin()
-    if toolchain_bin_dir.is_dir():
-        env["PATH"] = str(toolchain_bin_dir) + os.pathsep + env.get("PATH", "")
-        cargo_exe = toolchain_bin_dir / "cargo.exe"
-        rustc_exe = toolchain_bin_dir / "rustc.exe"
-        if cargo_exe.is_file():
-            env["CARGO"] = str(cargo_exe)
-        if rustc_exe.is_file():
-            env["RUSTC"] = str(rustc_exe)
-        env["RUSTUP_TOOLCHAIN"] = toolchain_name()
-        env["CARGO_BUILD_TARGET"] = host_target_triple()
+    env.setdefault("CARGO_BUILD_TARGET", host_target_triple())
 
     vsdevcmd = _find_vsdevcmd()
     if vsdevcmd is None:
@@ -168,10 +127,9 @@ def activate() -> None:
 def _apply_rustc_wrapper(env: dict[str, str]) -> dict[str, str]:
     """Set RUSTC_WRAPPER to zccache when available.
 
-    The project uses zccache (via soldr) for compile caching. Bare cargo
-    invocations that consume this env still benefit from the cache even
-    though most callers in this repo route through ``soldr cargo`` directly
-    (which manages the wrapper itself).
+    The project uses zccache via soldr for compile caching. This helper only
+    preserves the wrapper for legacy Python callers that build a subprocess
+    environment; repository scripts must invoke Rust through ``soldr``.
     """
     if env.get("RUSTC_WRAPPER"):
         return env
@@ -190,7 +148,6 @@ def clean_env() -> dict[str, str]:
         env = env | _windows_build_env()
         env.pop("VIRTUAL_ENV", None)
         env.setdefault("PYTHONUTF8", "1")
-    env.setdefault("RUSTUP_TOOLCHAIN", toolchain_name())
     env = _apply_rustc_wrapper(env)
     return env
 

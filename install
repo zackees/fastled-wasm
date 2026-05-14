@@ -17,18 +17,7 @@ if ! command -v uv &> /dev/null; then
 fi
 
 uv venv --python 3.11 --seed
-uv pip install "maturin>=1.7,<2"
-
-# Ensure the maturin data dir exists before invoking maturin. The
-# `[tool.maturin] data = "wheel-data"` config points here; maturin treats a
-# missing path as an error during `pep517 build-wheel`. The cargo-build step
-# later in this script will populate `wheel-data/scripts/` with the Rust
-# fastled-rs binary so subsequent `./build-wheel` invocations bundle it; an
-# empty dir is fine for the editable-install path that pip is about to run.
-mkdir -p wheel-data/scripts
-
-uv pip install -e .
-
+uv pip install "build>=1" "setuptools>=69" "wheel>=0.43"
 uv pip install -r requirements.testing.txt
 
 
@@ -39,7 +28,7 @@ fi
 
 # Create a top-level ./activate pointer for developer convenience. On
 # Windows, ln -s requires create-symlink privilege which CI runners (and
-# many dev machines) lack — current windows-2025 images fail here even for
+# many dev machines) lack; current windows-2025 images fail here even for
 # git-bash. Fall back to plain copy, then to a no-op with a warning. Not
 # fatal: ./activate is only used interactively.
 if [[ "$OSTYPE" == "msys" ]]; then
@@ -56,30 +45,23 @@ else
   echo "Warning: $ACTIVATE_SRC not found; skipping ./activate symlink"
 fi
 
-# ── Rust toolchain bootstrap ────────────────────────────────────────────────
-# Install rustup if not present, then install the pinned toolchain.
-
 CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
+UV_TOOL_BIN="${UV_TOOL_BIN_DIR:-$HOME/.local/bin}"
+export PATH="$UV_TOOL_BIN:$CARGO_BIN:$PATH"
 
-# Prefer rustup-managed cargo over system packages (e.g. Chocolatey GNU Rust)
-export PATH="$CARGO_BIN:$PATH"
+# soldr bootstrap
+# All Rust builds in this repo go through soldr so toolchain selection and
+# zccache usage stay consistent.
 
-if ! command -v rustup &> /dev/null; then
-  echo "Installing rustup..."
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
-  export PATH="$CARGO_BIN:$PATH"
+if ! command -v soldr &> /dev/null; then
+  echo "Installing soldr..."
+  uv tool install soldr || { echo "Error: soldr install failed"; exit 1; }
+  export PATH="$UV_TOOL_BIN:$CARGO_BIN:$PATH"
 fi
 
-# Parse channel from rust-toolchain.toml
-if [[ -f rust-toolchain.toml ]]; then
-  CHANNEL=$(grep 'channel' rust-toolchain.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
-  echo "Installing Rust toolchain: $CHANNEL"
-  rustup toolchain install "$CHANNEL" --profile minimal -c clippy -c rustfmt --no-self-update
-fi
-
-# ── cargo-binstall: install pre-built Rust binaries ───────────────────────────
-# Install cargo-binstall if not present, then fetch pre-built CLI and viewer
-# binaries instead of compiling from source.
+# cargo-binstall: install pre-built Rust binaries
+# Install cargo-binstall if not present, then fetch the pre-built CLI binary
+# instead of compiling from source.
 
 if ! command -v cargo-binstall &> /dev/null; then
   echo "Installing cargo-binstall..."
@@ -89,18 +71,12 @@ if ! command -v cargo-binstall &> /dev/null; then
 fi
 
 FASTLED_CLI_BINSTALLED=0
-FASTLED_TAURI_BINSTALLED=0
 if command -v cargo-binstall &> /dev/null; then
   echo "Fetching pre-built binaries via cargo-binstall..."
-  if cargo binstall fastled-cli --no-confirm 2>/dev/null; then
+  if cargo-binstall fastled-cli --no-confirm 2>/dev/null; then
     FASTLED_CLI_BINSTALLED=1
   else
     echo "  fastled-cli: no pre-built binary available (will compile from source)"
-  fi
-  if cargo binstall fastled-tauri --no-confirm 2>/dev/null; then
-    FASTLED_TAURI_BINSTALLED=1
-  else
-    echo "  fastled-tauri: no pre-built binary available (will compile from source)"
   fi
 fi
 
@@ -117,19 +93,17 @@ if [[ "$FASTLED_CLI_BINSTALLED" -eq 0 ]]; then
     soldr cargo build --release --bin fastled-rs \
       || { echo "Error: soldr cargo build --bin fastled-rs failed"; exit 1; }
   else
-    echo "Warning: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
-    cargo build --release --bin fastled-rs \
-      || { echo "Error: cargo build --bin fastled-rs failed"; exit 1; }
+    echo "Error: soldr is required for Rust builds. Install with: uv tool install soldr" >&2
+    exit 1
   fi
 fi
 
 # Locate the just-built (or binstalled) Rust binary and stage it where
-# downstream tooling will find it. Editable installs (`uv pip install -e .`)
-# don't extract the maturin `data` dir to the venv's Scripts/, so we mimic
-# the wheel-install layout manually:
+# downstream tooling will find it. Editable installs do not copy package data
+# into the venv's Scripts/bin directory, so we stage both:
 #   * `.venv/Scripts/fastled-rs[.exe]` (or `.venv/bin/fastled-rs`) so the
 #     Python `fastled` compatibility shim can find the Rust binary.
-#   * `wheel-data/scripts/fastled-rs[.exe]` so a subsequent `./build-wheel`
+#   * `src/fastled/bin/fastled-rs[.exe]` so a subsequent `./build-wheel`
 #     produces a wheel that bundles the binary.
 if [[ "$OSTYPE" == "msys" ]]; then
   EXE_NAME="fastled-rs.exe"
@@ -155,10 +129,12 @@ for CANDIDATE in \
 done
 
 if [[ -n "$BIN_SRC" ]]; then
-  mkdir -p "$VENV_BIN_DIR" wheel-data/scripts
+  mkdir -p "$VENV_BIN_DIR" src/fastled/bin
   cp -f "$BIN_SRC" "$VENV_BIN_DIR/$EXE_NAME"
-  cp -f "$BIN_SRC" "wheel-data/scripts/$EXE_NAME"
-  echo "Staged $BIN_SRC -> $VENV_BIN_DIR/$EXE_NAME (and wheel-data/scripts/)"
+  cp -f "$BIN_SRC" "src/fastled/bin/$EXE_NAME"
+  echo "Staged $BIN_SRC -> $VENV_BIN_DIR/$EXE_NAME (and src/fastled/bin/)"
 else
   echo "Warning: Rust fastled-rs binary not found; Python fastled shims will fail" >&2
 fi
+
+uv pip install -e .

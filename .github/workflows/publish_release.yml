@@ -171,12 +171,32 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies for PyPI publishing
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: zackees/setup-soldr@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          cache: true
+          cache-key-suffix: publish-pypi
+
+      - name: Install system dependencies (Linux)
         run: |
-          pip install build twine
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install dependencies for PyPI publishing
+        run: ./install
+        shell: bash
 
       - name: Build distribution packages
-        run: python -m build
+        run: |
+          ./build-wheel
+          rm -rf src/fastled/bin
+          uv run python -m build --sdist --no-isolation
+        shell: bash
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

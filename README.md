@@ -105,24 +105,11 @@ Most simple Arduino sketches compile out of the box. Common functions like `digi
 
 The local preview server supports HTTPS using the bundled localhost certificate pair. HTTPS is required for browser features such as microphone access. See [HTTPS_SSL.md](HTTPS_SSL.md).
 
-## Python API
+## Python Package
 
-```python
-from pathlib import Path
-
-from fastled import Api, BuildMode, BuildRequest, BuildService
-
-service = BuildService()
-request = BuildRequest(
-    sketch_dir=Path("path/to/sketch"),
-    build_mode=BuildMode.QUICK,
-)
-result = service.build(request)
-print(result.success, result.strategy, result.output_dir)
-
-examples = Api.get_examples()
-print(examples)
-```
+The `fastled` Python package is a compatibility launcher for the native Rust
+CLI. Internal build, project discovery, and fuzzy matching behavior lives in
+Rust and is tested there.
 
 ## FAQs
 

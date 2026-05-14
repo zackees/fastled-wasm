@@ -6,13 +6,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # Rust tests go through soldr so the zccache compile cache is hit.
 # Install soldr with: uv tool install soldr  (or see zackees/soldr).
-if command -v soldr &> /dev/null; then
-  soldr cargo test --workspace
-elif command -v cargo &> /dev/null; then
-  echo "WARNING: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
-  cargo test --workspace
-else
-  echo "WARNING: neither soldr nor cargo found; skipping Rust tests"
+if ! command -v soldr &> /dev/null; then
+  echo "Error: soldr is required for Rust tests. Install with: uv tool install soldr" >&2
+  exit 1
 fi
+soldr cargo test --workspace
 
 uv run pytest -x -v -s --durations=0 tests/unit "$@"

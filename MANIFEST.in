@@ -1,5 +1,11 @@
 include pyproject.toml
+include setup.py
+include Cargo.toml
+include Cargo.lock
+include rust-toolchain.toml
 include requirements.testing.txt
 include src/fastled/assets/localhost.pem
 include src/fastled/assets/localhost-key.pem
 recursive-include src/fastled/frontend *.ts *.js *.css *.html *.json *.d.ts *.h *.ttf *.map
+recursive-include crates/fastled-cli *.rs *.toml *.json *.ico *.png *.html
+prune src/fastled/bin
