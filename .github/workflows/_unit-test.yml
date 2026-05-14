@@ -30,6 +30,9 @@ jobs:
       - uses: zackees/setup-soldr@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          INPUT_CACHE_KEY_SUFFIX: unit-test-${{ inputs.runs-on }}-${{ github.workflow }}
+          INPUT_LINKER: platform-default
+          INPUT_TOOLCHAIN_FILE: rust-toolchain.toml
         with:
           cache: true
           linker: platform-default

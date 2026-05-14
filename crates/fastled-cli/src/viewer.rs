@@ -352,7 +352,7 @@ pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProce
 
     #[cfg(windows)]
     {
-        return spawn_hidden_viewer(&binary, frontend_dir);
+        spawn_hidden_viewer(&binary, frontend_dir)
     }
 
     #[cfg(not(windows))]

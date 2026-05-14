@@ -183,6 +183,9 @@ jobs:
       - uses: zackees/setup-soldr@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          INPUT_CACHE_KEY_SUFFIX: publish-pypi
+          INPUT_LINKER: platform-default
+          INPUT_TOOLCHAIN_FILE: rust-toolchain.toml
         with:
           cache: true
           cache-key-suffix: publish-pypi

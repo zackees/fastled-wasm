@@ -1,4 +1,3 @@
-use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -15,7 +14,7 @@ struct InternalViewerArgs {
 fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
     let mut args = std::env::args_os().skip(1);
     let first = args.next()?;
-    if first != OsString::from("--internal-viewer") {
+    if first != "--internal-viewer" {
         return None;
     }
 
@@ -31,12 +30,12 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
     };
 
     while let Some(arg) = args.next() {
-        if arg == OsString::from("--viewer-title") {
+        if arg == "--viewer-title" {
             let Some(value) = args.next() else {
                 return Some(Err("--viewer-title requires a value".to_string()));
             };
             parsed.title = value.to_string_lossy().into_owned();
-        } else if arg == OsString::from("--viewer-width") {
+        } else if arg == "--viewer-width" {
             let Some(value) = args.next() else {
                 return Some(Err("--viewer-width requires a value".to_string()));
             };
@@ -45,7 +44,7 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
                 Ok(width) => width,
                 Err(_) => return Some(Err("--viewer-width must be an integer".to_string())),
             };
-        } else if arg == OsString::from("--viewer-height") {
+        } else if arg == "--viewer-height" {
             let Some(value) = args.next() else {
                 return Some(Err("--viewer-height requires a value".to_string()));
             };

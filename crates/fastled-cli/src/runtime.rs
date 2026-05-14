@@ -541,6 +541,7 @@ fn lock_runtime_root(run_root: &Path) -> Result<File> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("cannot open {}", lock_path.display()))?;
     file.lock_exclusive()
@@ -617,16 +618,19 @@ fn is_runnable_update_file(path: &Path) -> bool {
     }
     #[cfg(not(windows))]
     {
-        path.extension().is_none()
+        path.file_name()
+            .and_then(OsStr::to_str)
+            .is_some_and(|name| {
+                FASTLED_EXE_NAMES
+                    .iter()
+                    .any(|candidate| candidate.eq_ignore_ascii_case(name))
+                    || version_from_name(name).is_some()
+            })
     }
 }
 
 fn version_from_path_name(path: &Path) -> Option<(String, ParsedVersion)> {
-    let name = if path.is_file() {
-        path.file_stem()?.to_string_lossy()
-    } else {
-        path.file_name()?.to_string_lossy()
-    };
+    let name = path.file_name()?.to_string_lossy();
     version_from_name(&name)
 }
 
