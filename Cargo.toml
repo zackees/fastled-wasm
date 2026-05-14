@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/fastled-cli",
     "crates/fastled-py",
-    "crates/fastled-tauri",
 ]
 
 [workspace.package]
@@ -39,6 +38,9 @@ axum = "0.8"
 tower-http = { version = "0.6", features = ["fs", "cors", "set-header"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 toml = "0.8"
+tauri = { version = "2", features = ["devtools"] }
+tauri-build = { version = "2", features = [] }
+windows-sys = "0.61"
 
 [profile.release]
 debug = "line-tables-only"
