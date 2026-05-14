@@ -21,6 +21,7 @@ thiserror = "2"
 notify = { version = "7", features = ["macos_fsevent"] }
 sha2 = "0.10"
 reqwest = { version = "0.12", features = ["blocking"] }
+running-process-core = "3.1.0"
 zip = "2"
 tar = "0.4"
 zstd = "0.13"

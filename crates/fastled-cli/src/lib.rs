@@ -268,10 +268,13 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         let url = format!("http://{addr}");
         println!("Serving at {url}");
 
-        if let Err(e) = viewer::launch_tauri_viewer(&output_dir) {
-            eprintln!("fastled: Tauri viewer failed: {e:#}");
-            return ExitCode::FAILURE;
-        }
+        let _viewer = match viewer::launch_tauri_viewer(&output_dir) {
+            Ok(process) => process,
+            Err(e) => {
+                eprintln!("fastled: Tauri viewer failed: {e:#}");
+                return ExitCode::FAILURE;
+            }
+        };
 
         // --- Initial compilation ------------------------------------------------
         send_sse(
@@ -926,10 +929,13 @@ fn serve_directory(dir: &str) -> ExitCode {
         println!("Serving {dir} at {url}");
         println!("Press Ctrl+C to stop...");
 
-        if let Err(e) = viewer::launch_tauri_viewer(&path) {
-            eprintln!("fastled: Tauri viewer failed: {e:#}");
-            return ExitCode::FAILURE;
-        }
+        let _viewer = match viewer::launch_tauri_viewer(&path) {
+            Ok(process) => process,
+            Err(e) => {
+                eprintln!("fastled: Tauri viewer failed: {e:#}");
+                return ExitCode::FAILURE;
+            }
+        };
 
         // Wait for Ctrl+C.
         tokio::signal::ctrl_c().await.ok();

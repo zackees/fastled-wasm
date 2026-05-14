@@ -3,10 +3,11 @@
 //! Provides [`find_tauri_viewer`] to locate the `fastled-viewer` binary and
 //! [`launch_tauri_viewer`] to spawn it against a compiled output directory.
 
-use std::path::PathBuf;
-use std::process::{Child, Command};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
+use running_process_core::{ContainedChild, ContainedProcessGroup};
 
 // ---------------------------------------------------------------------------
 // Binary name (platform-aware)
@@ -102,25 +103,60 @@ pub fn viewer_available() -> bool {
 // Launch
 // ---------------------------------------------------------------------------
 
+#[cfg(windows)]
+const VIEWER_CREATION_FLAGS: u32 = 0x0000_0008 | 0x0000_0200; // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+pub struct ViewerProcess {
+    _group: ContainedProcessGroup,
+    child: ContainedChild,
+}
+
+impl ViewerProcess {
+    pub fn pid(&self) -> u32 {
+        self.child.child.id()
+    }
+}
+
+fn viewer_command(binary: &Path, frontend_dir: &Path) -> Command {
+    let mut command = Command::new(binary);
+    command
+        .arg("--frontend-dir")
+        .arg(frontend_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(VIEWER_CREATION_FLAGS);
+    }
+
+    command
+}
+
 /// Spawn the Tauri viewer, pointing it at `frontend_dir`.
 ///
-/// The viewer is launched as a **detached child process** — the caller is not
-/// expected to `wait()` on it; FastLED will keep running (serving files, etc.)
-/// alongside the viewer window.
+/// The viewer is launched without inheriting or creating a terminal window, but
+/// it remains contained by this process. Keep the returned [`ViewerProcess`]
+/// alive while FastLED is serving; if FastLED exits or is killed, the
+/// viewer/WebView2 process tree is torn down too.
 ///
-/// Returns the [`Child`] handle so the caller can optionally monitor the
-/// process lifetime.
-pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<Child> {
+/// Returns a process handle whose lifetime controls the viewer lifetime.
+pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProcess> {
     let binary = find_tauri_viewer()
         .context("fastled-viewer binary not found; cannot launch Tauri viewer")?;
 
-    let child = Command::new(&binary)
-        .arg("--frontend-dir")
-        .arg(frontend_dir)
-        .spawn()
+    let group = ContainedProcessGroup::new().context("failed to create viewer process group")?;
+    let mut command = viewer_command(&binary, frontend_dir);
+    let child = group
+        .spawn(&mut command)
         .with_context(|| format!("failed to spawn fastled-viewer from '{}'", binary.display()))?;
 
-    Ok(child)
+    Ok(ViewerProcess {
+        _group: group,
+        child,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -228,5 +264,12 @@ mod tests {
         let tmp = TempDir::new().expect("tempdir");
         let missing = tmp.path().join("does-not-exist");
         assert!(find_viewer_in_arch_dirs(&missing).is_none());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_viewer_uses_detached_process_creation_flags() {
+        assert_eq!(VIEWER_CREATION_FLAGS & 0x0000_0008, 0x0000_0008);
+        assert_eq!(VIEWER_CREATION_FLAGS & 0x0000_0200, 0x0000_0200);
     }
 }
