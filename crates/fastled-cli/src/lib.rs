@@ -945,7 +945,7 @@ fn serve_directory(dir: &str) -> ExitCode {
     })
 }
 
-/// Library entry point invoked by the `fastled-rs` binary.
+/// Library entry point invoked by the `fastled` binary.
 pub fn run() -> ExitCode {
     let mut cli = Cli::parse();
 

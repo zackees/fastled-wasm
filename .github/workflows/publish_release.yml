@@ -87,12 +87,12 @@ jobs:
     - name: Build executable
       shell: bash
       run: |
-        soldr cargo build --release --bin fastled-rs
+        soldr cargo build --release --bin fastled
         mkdir -p dist
         if [[ "$RUNNER_OS" == "Windows" ]]; then
-          cp target/release/fastled-rs.exe dist/fastled.exe
+          cp target/release/fastled.exe dist/fastled.exe
         else
-          cp target/release/fastled-rs dist/fastled
+          cp target/release/fastled dist/fastled
           chmod +x dist/fastled
         fi
 

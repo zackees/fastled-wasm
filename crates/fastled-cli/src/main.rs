@@ -86,7 +86,7 @@ fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
 
     #[cfg(not(feature = "viewer"))]
     {
-        eprintln!("fastled: this fastled-rs binary was built without viewer support");
+        eprintln!("fastled: this fastled binary was built without viewer support");
         ExitCode::FAILURE
     }
 }

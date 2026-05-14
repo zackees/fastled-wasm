@@ -1,6 +1,6 @@
 //! Tauri viewer launch utilities.
 //!
-//! The viewer is hosted by this same `fastled-rs` executable. The normal CLI
+//! The viewer is hosted by this same `fastled` executable. The normal CLI
 //! process self-spawns with a hidden `--internal-viewer` flag so packaging only
 //! needs one binary while the Tauri event loop still runs in its own process.
 
@@ -18,9 +18,9 @@ use running_process_core::{ContainedChild, ContainedProcessGroup};
 // ---------------------------------------------------------------------------
 
 #[cfg(windows)]
-const FASTLED_EXE_NAMES: &[&str] = &["fastled-rs.exe", "fastled.exe"];
+const FASTLED_EXE_NAMES: &[&str] = &["fastled.exe"];
 #[cfg(not(windows))]
-const FASTLED_EXE_NAMES: &[&str] = &["fastled-rs", "fastled"];
+const FASTLED_EXE_NAMES: &[&str] = &["fastled"];
 
 // ---------------------------------------------------------------------------
 // Discovery
@@ -29,7 +29,7 @@ const FASTLED_EXE_NAMES: &[&str] = &["fastled-rs", "fastled"];
 /// Search for the FastLED CLI binary that can host the Tauri viewer.
 ///
 /// Search order:
-/// 1. The currently running executable, when it is already `fastled-rs`.
+/// 1. The currently running executable, when it is already `fastled`.
 /// 2. Same directory as the currently running executable.
 /// 3. `target/debug/` and `target/release/` relative to the workspace root
 ///    (detected via the executable path heuristic or `CARGO_MANIFEST_DIR`).
@@ -45,7 +45,7 @@ pub fn find_tauri_viewer() -> Option<PathBuf> {
         }
 
         // 2. Sibling of the running executable. This covers wheel installs
-        // where Python lives in the same Scripts/bin directory as fastled-rs.
+        // where Python lives next to the bundled native fastled binary.
         if let Some(dir) = exe.parent() {
             for name in FASTLED_EXE_NAMES {
                 let candidate = dir.join(name);
@@ -348,7 +348,7 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
 /// Returns a process handle whose lifetime controls the viewer lifetime.
 pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProcess> {
     let binary =
-        find_tauri_viewer().context("fastled-rs binary not found; cannot launch Tauri viewer")?;
+        find_tauri_viewer().context("fastled binary not found; cannot launch Tauri viewer")?;
 
     #[cfg(windows)]
     {
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn test_find_viewer_in_arch_dirs_finds_binary() {
         // Set up a fake target tree:
-        //   <tmp>/target/x86_64-pc-windows-msvc/release/fastled-rs[.exe]
+        //   <tmp>/target/x86_64-pc-windows-msvc/release/fastled[.exe]
         let tmp = TempDir::new().expect("tempdir");
         let target = tmp.path().join("target");
         let arch_dir = target.join("x86_64-pc-windows-msvc").join("release");

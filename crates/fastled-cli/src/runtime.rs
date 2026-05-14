@@ -31,9 +31,9 @@ const STALE_RUN_SECONDS: u64 = 14 * 24 * 60 * 60;
 const STALE_UPDATE_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 #[cfg(windows)]
-const FASTLED_EXE_NAMES: &[&str] = &["fastled-rs.exe", "fastled.exe"];
+const FASTLED_EXE_NAMES: &[&str] = &["fastled.exe"];
 #[cfg(not(windows))]
-const FASTLED_EXE_NAMES: &[&str] = &["fastled-rs", "fastled"];
+const FASTLED_EXE_NAMES: &[&str] = &["fastled"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ParsedVersion(Vec<u64>);

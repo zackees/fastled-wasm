@@ -376,7 +376,7 @@ fn compute_source_file_hash(fastled_dir: &Path) -> Result<String> {
 fn write_native_cross_file(fastled_dir: &Path, tools: &ToolPaths) -> Result<PathBuf> {
     let path = fastled_dir
         .join(".build")
-        .join("fastled-rs-wasm-cross-file.ini");
+        .join("fastled-wasm-cross-file.ini");
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -821,7 +821,7 @@ fn resolve_fastled_dir(request: &BuildRequest) -> Result<(PathBuf, Option<PathBu
     if short_dir == repo {
         return Ok((repo, None));
     }
-    let marker = short_dir.join(".fastled-rs-source");
+    let marker = short_dir.join(".fastled-source");
     let source_key = repo.to_string_lossy().into_owned();
     if short_dir.join("library.json").is_file()
         && fs::read_to_string(&marker).unwrap_or_default() == source_key

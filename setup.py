@@ -11,14 +11,14 @@ from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
 
 ROOT = Path(__file__).resolve().parent
 PACKAGE_BIN_DIR = ROOT / "src" / "fastled" / "bin"
-EXE_NAME = "fastled-rs.exe" if sys.platform == "win32" else "fastled-rs"
+EXE_NAME = "fastled.exe" if sys.platform == "win32" else "fastled"
 
 
 def _cargo_command() -> list[str]:
     soldr = shutil.which("soldr")
     if soldr:
         return [soldr, "cargo"]
-    raise RuntimeError("soldr was not found; cannot build bundled fastled-rs")
+    raise RuntimeError("soldr was not found; cannot build bundled fastled")
 
 
 def _candidate_binaries() -> list[Path]:
@@ -60,15 +60,15 @@ def ensure_bundled_fastled_binary() -> None:
         return
 
     if not (ROOT / "Cargo.toml").is_file():
-        raise RuntimeError("Cargo.toml was not found; cannot build bundled fastled-rs")
+        raise RuntimeError("Cargo.toml was not found; cannot build bundled fastled")
 
-    command = [*_cargo_command(), "build", "--release", "--bin", "fastled-rs"]
+    command = [*_cargo_command(), "build", "--release", "--bin", "fastled"]
     target = os.environ.get("FASTLED_RUST_TARGET")
     if target:
         command.extend(["--target", target])
     subprocess.check_call(command, cwd=ROOT)
     if not _copy_first_available_binary():
-        raise RuntimeError("built fastled-rs binary was not found")
+        raise RuntimeError("built fastled binary was not found")
 
 
 class BinaryDistribution(Distribution):
