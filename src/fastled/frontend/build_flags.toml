@@ -8,7 +8,6 @@
 # Key Features:
 # - Single source of truth for all compiler flags, defines, and build settings
 # - Supports fallback loading from FastLED source tree
-# - Dynamic DWARF source resolution with ~1 second reload interval
 # - Consistent flags across native builds (direct emcc)
 #
 # Performance Optimization Override:
@@ -23,7 +22,6 @@
 # - [library] section: Additional flags specific to libfastled compilation only
 # - [build_modes.*] sections: Build-specific flags (debug/quick/release)
 # - [linking.*] sections: Linker-specific flags for different targets
-# - [dwarf] section: DWARF debug info and source path resolution settings
 # - [strict_mode] section: Additional warning flags for strict compilation
 #
 # ================================================================================================
@@ -143,7 +141,6 @@ flags = [
 link_flags = [
     # Debug Info and Error Detection
     "--profiling-funcs",                     # Enable function profiling in debug builds
-    "-sSEPARATE_DWARF_URL=fastled.wasm.dwarf", # Separate DWARF debug info file
     "-sSTACK_OVERFLOW_CHECK=2",              # Maximum stack overflow detection
     "-sASSERTIONS=1",                        # Enable runtime assertions
 ]
@@ -174,8 +171,7 @@ flags = [
 
 # Fast debug linking flags - minimal overhead, preserves debug info for stack traces
 link_flags = [
-    # Note: No --strip-debug here — fast_debug keeps minimal DWARF for stack traces
-    # Note: No separate DWARF file (unlike full debug) for faster linking
+    # Note: No --strip-debug here — fast_debug keeps minimal debug info for stack traces
 
     # Error Detection - Essential only
     "-sSTACK_OVERFLOW_CHECK=1",             # Basic stack overflow detection (faster than level 2)
@@ -358,7 +354,7 @@ flags = [
     # Optimization and Debugging
     # Note: --gc-sections disabled in quick mode for faster linking (saves ~1-2s)
     # Re-enable for release builds: "-Wl,--gc-sections"
-    # Note: -Wl,--strip-debug is in quick link_flags only; debug/fast_debug preserve DWARF for stack traces
+    # Note: -Wl,--strip-debug is in quick link_flags only; debug/fast_debug preserve debug info for stack traces
     "-Wl,--no-export-dynamic",              # Don't export all symbols (faster symbol processing)
     # Note: --source-map-base removed in quick mode for faster linking
 ]
@@ -374,34 +370,6 @@ flags = [
     # Currently no library-specific linking flags
     # This section is ready for future library-specific linking requirements
 ]
-
-[dwarf]
-# ================================================================================================
-# DWARF DEBUG INFO AND SOURCE RESOLUTION
-# ================================================================================================
-# Configuration for DWARF debug information generation and dynamic source path resolution.
-# This system supports hot-reloading (~1 second interval) for real-time debugging configuration.
-#
-# Key Features:
-# - Dynamic prefix resolution for source path mapping
-# - Periodic configuration reloading without restart
-# - Centralized debug path mapping control
-# - Cross-platform source path normalization
-
-# Source path resolution prefixes (reloaded every ~1 second)
-fastled_prefix = "fastledsource"                # Prefix for FastLED library sources in debug info
-sketch_prefix = "sketchsource"                  # Prefix for user sketch sources in debug info  
-dwarf_prefix = "dwarfsource"                    # Prefix for generic dwarf-resolved sources
-
-# Debug file naming
-dwarf_filename = "fastled.wasm.dwarf"           # Name of separate DWARF debug info file
-
-# File prefix mapping for source path resolution in debug info
-# This controls how absolute paths in the compilation environment are mapped to
-# relative paths in the debug information for consistent debugging experience
-# Format: -ffile-prefix-map=FROM=TO
-file_prefix_map_from = "/"                      # Map from root path
-file_prefix_map_to = "sketchsource/"            # Map to sketch source prefix
 
 [strict_mode]
 # ================================================================================================

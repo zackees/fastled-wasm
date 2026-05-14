@@ -1,72 +1,76 @@
-"""FastLED Wasm Compiler package."""
-
-import subprocess
-from pathlib import Path
+"""Thin Python API over the native FastLED Rust extension."""
 
 from .__version__ import __version__
-
-try:
-    from fastled._native import version as _native_version
-except ImportError:
-    _native_version = None
-from .build_service import BuildService
-from .build_types import BuildRequest, BuildResult
-from .site.build import build
-from .types import BuildMode, CompileResult
+from ._native import (
+    BuildArtifacts,
+    BuildMode,
+    BuildRequest,
+    BuildResult,
+    BuildService,
+    CompileResult,
+    archive_available,
+    build_available,
+    collect_examples,
+    copy_frontend_to_output,
+    find_example_in_repo,
+    find_fastled_repo_upwards,
+    find_fastled_viewer,
+    find_sketch_by_partial_name,
+    find_sketch_directories,
+    get_examples,
+    init_example,
+    init_example_from_repo,
+    is_in_order_match,
+    looks_like_fastled_repo,
+    looks_like_sketch_directory,
+    prepare_sketch_selection,
+    project_available,
+    project_init,
+    read_fastled_json_ref,
+    resolve_prompt_choice,
+    string_diff,
+    version,
+    viewer_available,
+    watch_available,
+)
 
 
 class Api:
-    @staticmethod
-    def get_examples() -> list[str]:
-        from fastled.project_init import get_examples
-
-        return get_examples()
-
-    @staticmethod
-    def project_init(
-        example=None,
-        outputdir=None,
-    ) -> Path:
-        from fastled.project_init import project_init
-
-        return project_init(example, outputdir)
-
-
-class Test:
-    __test__ = False  # This prevents unittest from recognizing it as a test class.
-
-    @staticmethod
-    def build_site(outputdir: Path, fast: bool | None = None, check: bool = True):
-        """Builds the FastLED compiler site."""
-        build(outputdir=outputdir, fast=fast, check=check)
-
-    @staticmethod
-    def spawn_http_server(
-        directory: Path | str = Path("."),
-        port: int | None = None,
-        open_browser: bool = True,
-        enable_https: bool = False,
-    ) -> subprocess.Popen:
-        """Spawn the Rust CLI HTTP server as a subprocess."""
-        from fastled.open_browser import spawn_http_server
-
-        del port, enable_https  # handled by Rust server (auto-assigns port)
-        if isinstance(directory, str):
-            directory = Path(directory)
-        proc: subprocess.Popen = spawn_http_server(
-            directory,
-            open_browser=open_browser,
-        )
-        return proc
+    get_examples = staticmethod(get_examples)
+    project_init = staticmethod(project_init)
 
 
 __all__ = [
     "Api",
+    "BuildArtifacts",
+    "BuildMode",
     "BuildRequest",
     "BuildResult",
     "BuildService",
-    "Test",
     "CompileResult",
-    "BuildMode",
     "__version__",
+    "archive_available",
+    "build_available",
+    "collect_examples",
+    "copy_frontend_to_output",
+    "find_example_in_repo",
+    "find_fastled_repo_upwards",
+    "find_fastled_viewer",
+    "find_sketch_by_partial_name",
+    "find_sketch_directories",
+    "get_examples",
+    "init_example",
+    "init_example_from_repo",
+    "is_in_order_match",
+    "looks_like_fastled_repo",
+    "looks_like_sketch_directory",
+    "prepare_sketch_selection",
+    "project_available",
+    "project_init",
+    "read_fastled_json_ref",
+    "resolve_prompt_choice",
+    "string_diff",
+    "version",
+    "viewer_available",
+    "watch_available",
 ]

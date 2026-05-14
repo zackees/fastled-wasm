@@ -30,6 +30,7 @@ RUST_TOOLS = {
     "cargo-fmt",
 }
 LEGACY_RUST_TRAMPOLINES = {"_cargo", "_rustc", "_rustfmt"}
+SHELL_TOOL_NAMES = {"Bash", "Shell", "shell_command", "functions.shell_command"}
 
 
 def _is_env_assignment(word: str) -> bool:
@@ -155,7 +156,7 @@ def main() -> int:
     except json.JSONDecodeError:
         return 0
 
-    if data.get("tool_name", "") != "Bash":
+    if data.get("tool_name", "") not in SHELL_TOOL_NAMES:
         return 0
 
     command = data.get("tool_input", {}).get("command", "")

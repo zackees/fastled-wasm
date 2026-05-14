@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv run python ci/hooks/tool_guard.py",
-            "timeout": 5
+            "command": "ci/hooks/tool_guard",
+            "timeout": 10
           }
         ]
       }
