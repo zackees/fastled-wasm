@@ -17,13 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11.9"
-
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
 
       - uses: zackees/setup-soldr@v0
         env:

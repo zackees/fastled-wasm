@@ -72,12 +72,13 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - uses: actions/setup-python@v5
+    - uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: true
         python-version: '3.11.9'
 
-    - name: Install UV
-      run: pip install uv
+    - name: Install Python
+      run: uv python install "$UV_PYTHON"
 
     - name: Install dependencies  
       run: ./install
@@ -171,14 +172,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11.9'
-
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          python-version: '3.11.9'
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
 
       - uses: zackees/setup-soldr@v0
         env:

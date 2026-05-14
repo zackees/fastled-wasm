@@ -16,7 +16,7 @@ if ! command -v uv &> /dev/null; then
   fi
 fi
 
-uv venv --python 3.11 --seed
+uv venv --python "${UV_PYTHON:-3.11}" --seed
 uv pip install "build>=1" "setuptools>=69" "wheel>=0.43"
 uv pip install -r requirements.testing.txt
 
