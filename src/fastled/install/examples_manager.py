@@ -1,6 +1,6 @@
 """Examples installation manager using FastLED's built-in --project-init command."""
 
-import subprocess
+from fastled._rust_cli import invoke_rust_fastled_cli
 
 
 def install_fastled_examples_via_project_init(
@@ -18,7 +18,7 @@ def install_fastled_examples_via_project_init(
     """
     if not force:
         if no_interactive:
-            print("⚠️  No existing Arduino content found.")
+            print("No existing Arduino content found.")
             print("    In non-interactive mode, skipping examples installation.")
             print("    Run 'fastled --project-init' manually to install examples.")
             return False
@@ -31,32 +31,23 @@ def install_fastled_examples_via_project_init(
             print("Skipping FastLED examples installation.")
             return False
 
-    print("📦 Installing FastLED examples using project initialization...")
+    print("Installing FastLED examples using project initialization...")
 
     try:
-        # Use FastLED's built-in project initialization
-        subprocess.run(
-            ["fastled", "--project-init"],
-            check=True,
-            capture_output=True,
-            text=True,
-            cwd=".",
-        )
+        rc = invoke_rust_fastled_cli(["--project-init"])
+        if rc != 0:
+            print(f"Warning: FastLED project initialization exited with {rc}")
+            print("You can manually run: fastled --project-init")
+            return False
 
-        print("✅ FastLED project initialized successfully!")
-        print("📁 Examples and project structure created")
-        print("🚀 Quick start: Check for generated .ino files and press F5 to debug")
+        print("FastLED project initialized successfully!")
+        print("Examples and project structure created")
+        print("Quick start: Check for generated .ino files and press F5 to debug")
 
         return True
 
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️  Warning: Failed to initialize FastLED project: {e}")
-        if e.stderr:
-            print(f"Error details: {e.stderr}")
-        print("You can manually run: fastled --project-init")
-        return False
-    except FileNotFoundError:
-        print("⚠️  Warning: FastLED package not found. Please install it first:")
-        print("    pip install fastled")
+    except RuntimeError as e:
+        print(f"Warning: Failed to initialize FastLED project: {e}")
+        print("    Ensure the native fastled-rs CLI is installed or built.")
         print("Then run: fastled --project-init")
         return False

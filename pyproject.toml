@@ -14,18 +14,11 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
     # Build-system dependencies for the FastLED C++ → WASM compile.
     # `meson` configures the build; `ninja` is meson's backend. Both ship
-    # standalone executables when pip-installed, which the toolchain
-    # invokes via subprocess from `src/fastled/toolchain/internal_wasm_build.py`.
+    # standalone executables when pip-installed. Rust owns Emscripten
+    # resolution via linked ctcb crates and invokes the checked-in
+    # emcc.py/em++.py/emar.py entry points directly.
     "meson>=1.4",
     "ninja>=1.11",
-    # FastLED's meson cross-file at `ci/meson/wasm_cross_file.ini` invokes
-    # `clang-tool-chain-emcc` / `clang-tool-chain-em++` / `clang-tool-chain-emar`
-    # as the wasm compiler/linker/archiver. Those wrapper scripts are shipped
-    # by the `clang-tool-chain` PyPI package. The Rust CLI installs the
-    # underlying emscripten toolchain itself (see install.rs); the wrappers
-    # find it via the CLANG_TOOL_CHAIN_DOWNLOAD_PATH env var that the Rust
-    # binary exports before delegating to Python.
-    "clang-tool-chain>=1.2.6",
     "zcmds_win32; sys_platform == 'win32'",
 ]
 

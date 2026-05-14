@@ -13,6 +13,7 @@ mod keyboard;
 pub mod project;
 mod server;
 pub mod viewer;
+pub mod wasm_build;
 mod watcher;
 
 const DEFAULT_EXAMPLE: &str = "wasm";
@@ -21,9 +22,9 @@ fn ensure_compile_prerequisites() -> Result<(), String> {
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
-            // FastLED's meson cross-file uses clang-tool-chain wrapper binaries.
-            // Those wrappers locate emscripten from the toolchain root, not the
-            // versioned install dir, so export the root when it can be derived.
+            // Compatibility exports for any remaining callers that still read
+            // the historical clang-tool-chain environment variables. The Rust
+            // build backend invokes the installed Emscripten scripts directly.
             if let Some(root) = install_dir
                 .parent()
                 .and_then(|p| p.parent())
@@ -244,8 +245,8 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
     }
 
     // Ensure the emscripten + esbuild toolchains are installed before invoking
-    // the native build path. The embedded Python build service consumes the
-    // Rust-installed directories via these environment variables.
+    // the native Rust build backend. The backend consumes the Rust-installed
+    // directories via these environment variables.
     if let Err(message) = ensure_compile_prerequisites() {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
@@ -374,9 +375,8 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
 ///
 /// Rust front-end for FastLED WASM workflows.
 ///
-/// Native Rust owns the full user-facing CLI surface. The only remaining
-/// Python runtime dependency on compile paths is the in-process build service
-/// invoked from `build.rs`.
+/// Native Rust owns the full user-facing CLI surface, including compile
+/// orchestration through `build.rs`.
 #[derive(Parser, Debug)]
 #[command(
     name = "fastled",
