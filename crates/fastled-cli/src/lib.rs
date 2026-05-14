@@ -3,7 +3,7 @@
 use clap::Parser;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 mod archive;
 mod build;
@@ -217,27 +217,14 @@ fn run_native_compile_streaming(
 }
 
 // ---------------------------------------------------------------------------
-// Viewer mode selector
-// ---------------------------------------------------------------------------
-
-/// Controls how the compiled output is displayed to the user.
-enum ViewerMode {
-    /// Open the default system browser.
-    Browser,
-    /// Launch the native Tauri viewer pointing at the output directory.
-    TauriViewer,
-}
-
-// ---------------------------------------------------------------------------
 // Compile + serve + watch (replaces Flask-based flow)
 // ---------------------------------------------------------------------------
 
 /// Compile a sketch, serve the output via the built-in HTTP server, and
 /// watch for file changes to trigger recompilation.
 ///
-/// Build output is streamed to the browser (or Tauri viewer) in real time
-/// via SSE.
-fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
+/// Build output is streamed to the Tauri viewer in real time via SSE.
+fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     let sketch_dir = PathBuf::from(dir);
     if !sketch_dir.is_dir() {
         eprintln!("fastled: sketch directory does not exist: {dir}");
@@ -281,14 +268,9 @@ fn compile_and_serve(dir: &str, cli: &Cli, mode: ViewerMode) -> ExitCode {
         let url = format!("http://{addr}");
         println!("Serving at {url}");
 
-        match mode {
-            ViewerMode::Browser => open_browser(&url),
-            ViewerMode::TauriViewer => {
-                if let Err(e) = viewer::launch_tauri_viewer(&output_dir) {
-                    eprintln!("fastled: Tauri viewer failed: {e}, falling back to browser");
-                    open_browser(&url);
-                }
-            }
+        if let Err(e) = viewer::launch_tauri_viewer(&output_dir) {
+            eprintln!("fastled: Tauri viewer failed: {e:#}");
+            return ExitCode::FAILURE;
         }
 
         // --- Initial compilation ------------------------------------------------
@@ -407,15 +389,6 @@ struct Cli {
     #[arg(long)]
     profile: bool,
 
-    /// Use Playwright app-like browser experience (downloads browsers if needed).
-    #[arg(long)]
-    app: bool,
-
-    /// Force the legacy Flask + browser viewer even when the native Tauri
-    /// viewer is available.  Has no effect unless `--app` is also passed.
-    #[arg(long)]
-    legacy_browser: bool,
-
     /// Install the FastLED development environment with VSCode configuration.
     #[arg(long)]
     install: bool,
@@ -459,12 +432,6 @@ struct Cli {
     #[arg(long, value_name = "REF", num_args = 0..=1, default_missing_value = "__latest__", hide = true)]
     internal_ensure_fastled_repo: Option<String>,
 
-    /// Internal plumbing flag: download a Chrome Web Store extension (by ID)
-    /// into ``~/.fastled/chrome-extensions/<NAME>/``, print the path to
-    /// stdout, and exit. Used by the Python playwright helpers.
-    #[arg(long, value_names = ["EXTENSION_ID", "NAME"], num_args = 2, hide = true)]
-    internal_ensure_chrome_extension: Vec<String>,
-
     // Build mode (mutually exclusive).
     /// Build in debug mode.
     #[arg(long, conflicts_with_all = ["quick", "release"])]
@@ -477,16 +444,6 @@ struct Cli {
     /// Build in optimised release mode.
     #[arg(long, conflicts_with_all = ["debug", "quick"])]
     release: bool,
-}
-
-/// Decide whether to use the native Tauri viewer for this invocation.
-///
-/// Returns `true` when:
-/// * `--app` was requested, AND
-/// * `--legacy-browser` was NOT passed, AND
-/// * the `fastled-viewer` binary can be found.
-fn should_use_tauri_viewer(cli: &Cli) -> bool {
-    cli.app && !cli.legacy_browser && viewer::viewer_available()
 }
 
 fn validate_init_ref_flags(cli: &Cli) -> Result<(), &'static str> {
@@ -948,7 +905,7 @@ fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
 ///
 /// This replaces the Flask-based `--serve-dir` implementation with a native
 /// Rust server, eliminating the Python/Flask dependency for this code path.
-fn serve_directory(dir: &str, cli: &Cli) -> ExitCode {
+fn serve_directory(dir: &str) -> ExitCode {
     let path = PathBuf::from(dir);
     if !path.is_dir() {
         eprintln!("fastled: --serve-dir path does not exist: {dir}");
@@ -969,14 +926,9 @@ fn serve_directory(dir: &str, cli: &Cli) -> ExitCode {
         println!("Serving {dir} at {url}");
         println!("Press Ctrl+C to stop...");
 
-        // Open the Tauri viewer or fall back to system browser.
-        if viewer::viewer_available() && !cli.no_https {
-            if let Err(e) = viewer::launch_tauri_viewer(&path) {
-                eprintln!("fastled: Tauri viewer failed: {e}, opening system browser");
-                open_browser(&url);
-            }
-        } else {
-            open_browser(&url);
+        if let Err(e) = viewer::launch_tauri_viewer(&path) {
+            eprintln!("fastled: Tauri viewer failed: {e:#}");
+            return ExitCode::FAILURE;
         }
 
         // Wait for Ctrl+C.
@@ -984,22 +936,6 @@ fn serve_directory(dir: &str, cli: &Cli) -> ExitCode {
         println!("\nShutting down...");
         ExitCode::SUCCESS
     })
-}
-
-/// Open a URL in the default system browser.
-fn open_browser(url: &str) {
-    #[cfg(target_os = "windows")]
-    {
-        let _ = Command::new("cmd").args(["/c", "start", url]).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = Command::new("open").arg(url).spawn();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = Command::new("xdg-open").arg(url).spawn();
-    }
 }
 
 /// Library entry point — invoked from both the `fastled` binary in this crate
@@ -1032,30 +968,9 @@ pub fn run() -> ExitCode {
         };
     }
 
-    // Hidden plumbing: download a Chrome Web Store extension and print its
-    // local install path. Used by the Python playwright helpers.
-    if !cli.internal_ensure_chrome_extension.is_empty() {
-        if cli.internal_ensure_chrome_extension.len() != 2 {
-            eprintln!("fastled: --internal-ensure-chrome-extension requires EXTENSION_ID NAME");
-            return ExitCode::FAILURE;
-        }
-        let extension_id = &cli.internal_ensure_chrome_extension[0];
-        let name = &cli.internal_ensure_chrome_extension[1];
-        return match install::ensure_chrome_extension(extension_id, name) {
-            Ok(path) => {
-                println!("{}", path.display());
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("fastled: failed to fetch Chrome extension: {e:#}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-
     // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
     if let Some(ref serve_dir) = cli.serve_dir {
-        return serve_directory(serve_dir, &cli);
+        return serve_directory(serve_dir);
     }
 
     if cli.install {
@@ -1102,11 +1017,9 @@ pub fn run() -> ExitCode {
         }
     }
 
-    let use_tauri = should_use_tauri_viewer(&cli);
-
     // Normal compilation flow with Rust HTTP server + watch mode.
-    // Both browser and Tauri viewer paths use the same compile_and_serve()
-    // infrastructure so compilation output is streamed via SSE in real time.
+    // The Tauri viewer uses the same compile_and_serve() infrastructure so
+    // compilation output is streamed via SSE in real time.
     //
     // Conditions:
     //  - a sketch directory was provided
@@ -1117,12 +1030,7 @@ pub fn run() -> ExitCode {
             return run_native_just_compile(&cli, dir);
         }
         if !cli.just_compile && cli.init.is_none() {
-            let mode = if use_tauri {
-                ViewerMode::TauriViewer
-            } else {
-                ViewerMode::Browser
-            };
-            return compile_and_serve(dir, &cli, mode);
+            return compile_and_serve(dir, &cli);
         }
     }
 
@@ -1166,8 +1074,6 @@ mod tests {
             init: None,
             just_compile: false,
             profile: false,
-            app: false,
-            legacy_browser: false,
             install: false,
             dry_run: false,
             no_interactive: false,
@@ -1178,7 +1084,6 @@ mod tests {
             fastled_path: None,
             purge: false,
             internal_ensure_fastled_repo: None,
-            internal_ensure_chrome_extension: Vec::new(),
             debug: false,
             quick: false,
             release: false,

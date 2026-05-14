@@ -45,7 +45,6 @@ class Test:
         directory: Path | str = Path("."),
         port: int | None = None,
         open_browser: bool = True,
-        app: bool = False,
         enable_https: bool = False,
     ) -> subprocess.Popen:
         """Spawn the Rust CLI HTTP server as a subprocess."""
@@ -57,7 +56,6 @@ class Test:
         proc: subprocess.Popen = spawn_http_server(
             directory,
             open_browser=open_browser,
-            app=app,
         )
         return proc
 

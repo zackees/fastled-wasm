@@ -6,4 +6,3 @@ ruff
 pytest-xdist
 pyright
 httpx
-playwright

@@ -133,8 +133,11 @@ class TestNativeAppOrchestration(unittest.TestCase):
     def test_remaining_python_wrappers_delegate_to_native_helpers(self) -> None:
         for filename in self.WRAPPER_MODULES_WITH_NATIVE_DELEGATES:
             source = (SRC_DIR / filename).read_text()
+            expected_delegate = (
+                "fastled._rust_cli" if filename == "open_browser.py" else "fastled._native"
+            )
             self.assertIn(
-                "fastled._native",
+                expected_delegate,
                 source,
                 f"{filename} should delegate core behavior to native helpers",
             )
@@ -156,6 +159,11 @@ class TestNativeAppOrchestration(unittest.TestCase):
                     source,
                     f"{filename} is a compatibility holdout, not a fallback service owner",
                 )
+
+    def test_rust_build_orchestration_has_no_python_cli_fallback(self) -> None:
+        source = (ROOT_DIR / "crates" / "fastled-cli" / "src" / "build.rs").read_text()
+        self.assertNotIn("python -m " + "fastled.app", source)
+        self.assertNotIn("run_build_" + "subprocess", source)
 
     def test_types_do_not_import_legacy_args_at_runtime(self) -> None:
         source = (SRC_DIR / "types.py").read_text()
@@ -224,6 +232,27 @@ class TestNoDeadCodeModules(unittest.TestCase):
         native_tools = SRC_DIR / "toolchain" / "native_tools"
         self.assertFalse((native_tools / "launcher_emcc.cpp").exists())
         self.assertFalse((native_tools / "launcher_wasmld.cpp").exists())
+
+    def test_playwright_package_removed(self) -> None:
+        self.assertFalse((SRC_DIR / "playwright").exists())
+        requirements = (ROOT_DIR / "requirements.testing.txt").read_text()
+        self.assertNotIn("playwright", requirements.lower())
+
+    def test_cli_removed_browser_mode_flags_and_extension_plumbing(self) -> None:
+        cli_source = (FASTLED_CLI_SRC_DIR / "lib.rs").read_text()
+        install_source = (FASTLED_CLI_SRC_DIR / "install.rs").read_text()
+        vscode_source = (SRC_DIR / "install" / "vscode_config.py").read_text()
+
+        for source in (cli_source, install_source, vscode_source):
+            self.assertNotIn("--app", source)
+            self.assertNotIn("--legacy-browser", source)
+            self.assertNotIn("internal_ensure_chrome_extension", source)
+            self.assertNotIn("chrome-extensions", source)
+            self.assertNotIn("CHROME_CRX", source)
+
+        self.assertIn("viewer::launch_tauri_viewer", cli_source)
+        self.assertNotIn("ViewerMode::Browser", cli_source)
+        self.assertNotIn("fn open_browser", cli_source)
 
 
 class TestAllExportsValid(unittest.TestCase):
