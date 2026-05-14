@@ -6,7 +6,7 @@ This module is a thin Python wrapper around the native Rust implementation in
 * normalize ``Path``-vs-``str`` inputs for callers, and
 * return ``pathlib.Path`` instances rather than strings.
 
-There is no longer a Python fallback — the native extension is the
+There is no longer a Python fallback; the native extension is the
 authoritative implementation. Stream A of the Rust orchestration migration
 deliberately removed all Python-side fallback code paths.
 """

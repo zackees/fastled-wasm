@@ -32,7 +32,8 @@ class ResizeTracker:
             return None
 
         try:
-            return await self.page.evaluate("""
+            return await self.page.evaluate(
+                """
                 () => {
                     return {
                         outerWidth: window.outerWidth,
@@ -43,7 +44,8 @@ class ResizeTracker:
                         contentHeight: document.documentElement.clientHeight
                     };
                 }
-                """)
+                """
+            )
         except KeyboardInterrupt as ki:
             handle_keyboard_interrupt(ki)
         except Exception:

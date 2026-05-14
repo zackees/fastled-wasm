@@ -54,25 +54,25 @@ jobs:
 
       - name: Build fastled CLI binary (for wheel bundling)
         run: |
-          # Compile the Rust `fastled` CLI and stage it under wheel-data/scripts/
+          # Compile the Rust `fastled-rs` CLI and stage it under wheel-data/scripts/
           # so maturin packages it into <pkg>-<ver>.data/scripts/ in the wheel.
           # See `build-wheel` and `[tool.maturin] data` in pyproject.toml.
           if [ -n "${{ inputs.maturin-target }}" ]; then
-            soldr cargo build --release --bin fastled --target "${{ inputs.maturin-target }}"
+            soldr cargo build --release --bin fastled-rs --target "${{ inputs.maturin-target }}"
             case "${{ inputs.maturin-target }}" in
-              *windows*) EXE_NAME="fastled.exe" ;;
-              *)         EXE_NAME="fastled" ;;
+              *windows*) EXE_NAME="fastled-rs.exe" ;;
+              *)         EXE_NAME="fastled-rs" ;;
             esac
             BIN_SRC="target/${{ inputs.maturin-target }}/release/${EXE_NAME}"
           else
-            soldr cargo build --release --bin fastled
+            soldr cargo build --release --bin fastled-rs
             case "$(uname -s)" in
-              MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
-              *)                    EXE_NAME="fastled" ;;
+              MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled-rs.exe" ;;
+              *)                    EXE_NAME="fastled-rs" ;;
             esac
             # On Windows the rustup default host triple is MSVC; cargo writes
             # the binary under target/<triple>/release/ even without --target.
-            if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled.exe" ]; then
+            if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled-rs.exe" ]; then
               ARCH="$(uname -m)"
               if [ "$ARCH" = "x86_64" ]; then TRIPLE="x86_64-pc-windows-msvc"; else TRIPLE="aarch64-pc-windows-msvc"; fi
               if [ -f "target/${TRIPLE}/release/${EXE_NAME}" ]; then

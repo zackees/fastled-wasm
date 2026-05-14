@@ -1,3 +1,9 @@
+"""Compatibility prompt helpers backed by native Rust matching logic.
+
+Python owns the interactive prompt loop for existing callers. Sketch selection
+preparation and choice resolution are delegated to ``fastled._native``.
+"""
+
 from pathlib import Path
 from typing import Callable, TypeVar, Union
 

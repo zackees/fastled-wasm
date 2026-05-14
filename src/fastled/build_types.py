@@ -1,3 +1,9 @@
+"""Python request/result DTOs for the native build service wrapper.
+
+These dataclasses are part of the public Python compatibility surface. They do
+not own build orchestration or fallback service behavior.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

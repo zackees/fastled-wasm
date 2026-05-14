@@ -1,3 +1,5 @@
+"""Compatibility wrappers for native string matching helpers."""
+
 from pathlib import Path
 
 from fastled._native import is_in_order_match, string_diff

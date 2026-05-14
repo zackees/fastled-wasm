@@ -13,7 +13,7 @@ name = "fastled_cli"
 path = "src/lib.rs"
 
 [[bin]]
-name = "fastled"
+name = "fastled-rs"
 path = "src/main.rs"
 
 [dependencies]
@@ -41,7 +41,7 @@ tempfile = "3"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
-bin-dir = "fastled{ binary-ext }"
+bin-dir = "fastled-rs{ binary-ext }"
 pkg-fmt = "zip"
 
 [dev-dependencies]

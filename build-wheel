@@ -14,16 +14,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # Platform-specific binary name and target directory.
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
-  *)                    EXE_NAME="fastled" ;;
+  MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled-rs.exe" ;;
+  *)                    EXE_NAME="fastled-rs" ;;
 esac
 
 echo "Compiling fastled CLI (release)..."
 if command -v soldr &> /dev/null; then
-  soldr cargo build --release --bin fastled
+  soldr cargo build --release --bin fastled-rs
 else
   echo "Warning: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
-  cargo build --release --bin fastled
+  cargo build --release --bin fastled-rs
 fi
 
 # Resolve where cargo wrote the binary. cargo on Windows MSVC writes the

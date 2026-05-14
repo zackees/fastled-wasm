@@ -58,7 +58,7 @@ uv run pytest tests/unit --ignore=tests/unit/test_cli.py -v
 
 ## Common gotchas
 
-- The installed `fastled` CLI on PATH (e.g. `/c/tools/python13/Scripts/fastled.exe`) may be stale; `find_rust_fastled_cli` in `src/fastled/_rust_cli.py` prefers `target/{release,debug}/fastled.exe` over PATH for exactly this reason. If a CLI test fails, check `uv run python -c "from fastled._rust_cli import find_rust_fastled_cli; print(find_rust_fastled_cli())"`.
+- The installed `fastled` CLI on PATH (e.g. `/c/tools/python13/Scripts/fastled.exe`) may be a Python compatibility shim or stale script; the Rust CLI binary is named `fastled-rs[.exe]` during the migration. If a CLI test fails, check `uv run python -c "from fastled._rust_cli import find_rust_fastled_cli; print(find_rust_fastled_cli())"`.
 - Error messages from the Rust CLI go to **stderr**. Tests asserting `result.stdout` for error text should use `result.stdout + result.stderr` (the parse_args.py removal in #72 exposed this).
 - `tasklist` on Windows may report tens of thousands of `python.exe` zombies — most are stale tasklist artifacts, not real processes. `ps -ef | grep python` is more reliable for live ones.
 

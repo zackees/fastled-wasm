@@ -1,3 +1,9 @@
+"""Compatibility process launcher for the native Rust HTTP server.
+
+The Rust CLI owns server startup and viewer launch. Python keeps this module as
+an API-compatible subprocess wrapper for existing callers.
+"""
+
 import atexit
 import subprocess
 import time
@@ -73,7 +79,7 @@ def spawn_http_server(
 
     if actual_port is None:
         # The Rust CLI prints its listening URL once the socket is bound, so the
-        # URL parse above already gates "server is up". Only the fallback path
+        # URL parse above already gates "server is up". Only the unknown-port path
         # (URL line not seen yet) needs a small grace period.
         time.sleep(1.0)
 

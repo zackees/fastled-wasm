@@ -1,3 +1,10 @@
+"""Compatibility project-init helpers backed by native Rust operations.
+
+Python keeps the prompt/API surface and local-repo detection glue. Repository
+download, example discovery, and project materialization are delegated to
+``fastled._native`` helpers.
+"""
+
 import os
 from dataclasses import dataclass
 from pathlib import Path

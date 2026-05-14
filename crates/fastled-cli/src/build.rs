@@ -1,7 +1,6 @@
 //! Build orchestration for WASM compilation.
 //!
-//! The Rust CLI now drives the Python build service in-process through PyO3
-//! instead of shelling out through `python -m fastled.app`.
+//! The Rust CLI now drives the Python build service in-process through PyO3.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,13 +60,6 @@ pub struct BuildRequest {
     pub force_clean: bool,
 }
 
-impl BuildRequest {
-    /// Derive the conventional output directory for this request.
-    pub fn output_dir(&self) -> PathBuf {
-        self.sketch_dir.join("fastled_js")
-    }
-}
-
 /// Mirrors the useful fields returned from `build_types.BuildResult`.
 #[derive(Debug)]
 pub struct BuildResult {
@@ -106,6 +98,65 @@ fn normalize_path(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+fn python_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "python.exe"
+    } else {
+        "python"
+    }
+}
+
+fn python_executable_from_virtual_env() -> Option<PathBuf> {
+    let venv = std::env::var_os("VIRTUAL_ENV")?;
+    let venv = PathBuf::from(venv);
+    let bindir = if cfg!(windows) { "Scripts" } else { "bin" };
+    let candidate = venv.join(bindir).join(python_executable_name());
+    candidate.is_file().then_some(candidate)
+}
+
+fn python_executable_from_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(python_executable_name());
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if !cfg!(windows) {
+            let candidate = dir.join("python3");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn resolve_python_executable() -> Option<PathBuf> {
+    std::env::var_os("FASTLED_PYTHON_EXECUTABLE")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .or_else(python_executable_from_virtual_env)
+        .or_else(python_executable_from_path)
+}
+
+fn configure_embedded_python_executable(py: Python<'_>) -> PyResult<()> {
+    let Some(python) = resolve_python_executable() else {
+        return Ok(());
+    };
+    let python = python.to_string_lossy().into_owned();
+    let sys = PyModule::import(py, "sys")?;
+    sys.setattr("executable", python.as_str())?;
+    let _ = sys.setattr("_base_executable", python.as_str());
+
+    let os = PyModule::import(py, "os")?;
+    let environ = os.getattr("environ")?;
+    environ.set_item("PYTHON", python.as_str())?;
+    environ.set_item("EMSDK_PYTHON", python.as_str())?;
+    std::env::set_var("PYTHON", python.as_str());
+    std::env::set_var("EMSDK_PYTHON", python.as_str());
+    Ok(())
+}
+
 /// Canonicalize a sketch/`fastled_path` so the toolchain key registered with
 /// `NativeBuildService.register_toolchain` matches the key passed into
 /// `NativeBuildService.build` — mirrors `_toolchain_key` in
@@ -135,6 +186,8 @@ fn run_build_embedded(request: &BuildRequest) -> Result<BuildResult> {
     Python::with_gil(|py| -> Result<BuildResult> {
         ensure_workspace_src_on_sys_path(py)
             .context("failed to add workspace Python sources to sys.path")?;
+        configure_embedded_python_executable(py)
+            .context("failed to configure embedded Python executable")?;
 
         let native_mod =
             PyModule::import(py, "fastled._native").context("import fastled._native")?;
@@ -256,84 +309,19 @@ fn run_build_embedded(request: &BuildRequest) -> Result<BuildResult> {
     })
 }
 
-fn run_build_subprocess(request: &BuildRequest, reason: &str) -> Result<BuildResult> {
-    use std::process::Command;
-
-    let python = if Command::new("python")
-        .args(["--version"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        "python"
-    } else {
-        "python3"
-    };
-
-    let output_dir = request.output_dir();
-    let mut cmd = Command::new(python);
-    cmd.args(["-m", "fastled.app", "--just-compile"]);
-    cmd.arg(&request.sketch_dir);
-
-    match request.build_mode {
-        BuildMode::Quick => {}
-        BuildMode::Debug => {
-            cmd.arg("--debug");
-        }
-        BuildMode::Release => {
-            cmd.arg("--release");
-        }
-    }
-
-    if request.profile {
-        cmd.arg("--profile");
-    }
-    if let Some(fp) = &request.fastled_path {
-        cmd.arg("--fastled-path");
-        cmd.arg(fp);
-    }
-    if request.force_clean {
-        cmd.arg("--purge");
-    }
-
-    eprintln!("fastled: falling back to subprocess build path: {reason}");
-    let start = Instant::now();
-    let output = cmd
-        .output()
-        .with_context(|| format!("failed to launch `{python} -m fastled.app`"))?;
-    let duration_secs = start.elapsed().as_secs_f64();
-
-    let combined = {
-        let mut s = String::new();
-        s.push_str(&String::from_utf8_lossy(&output.stdout));
-        if !output.stderr.is_empty() {
-            s.push('\n');
-            s.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-        s
-    };
-
-    Ok(BuildResult {
-        success: output.status.success(),
-        output_dir,
-        duration_secs,
-        sketch_time_secs: duration_secs,
-        strategy: "unknown".to_string(),
-        output: combined,
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Run a WASM build through the Python build service without the legacy
-/// `fastled.app` CLI trampoline.
+/// Run a WASM build through the in-process Python build service.
 pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
-    match run_build_embedded(request) {
-        Ok(result) => Ok(result),
-        Err(err) => run_build_subprocess(request, &format!("{err:#}")),
-    }
+    run_build_embedded(request).with_context(|| {
+        format!(
+            "native build failed for sketch `{}` in {} mode",
+            request.sketch_dir.display(),
+            request.build_mode
+        )
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -396,20 +384,6 @@ mod tests {
         assert!(!req.profile);
         assert!(req.fastled_path.is_none());
         assert!(!req.force_clean);
-    }
-
-    #[test]
-    fn test_build_request_output_dir() {
-        let sketch = PathBuf::from("/tmp/my_sketch");
-        let req = BuildRequest {
-            sketch_dir: sketch.clone(),
-            build_mode: BuildMode::Debug,
-            profile: false,
-            fastled_path: None,
-            force_clean: false,
-        };
-
-        assert_eq!(req.output_dir(), sketch.join("fastled_js"));
     }
 
     #[test]

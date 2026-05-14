@@ -20,6 +20,8 @@ import pytest  # type: ignore[reportMissingImports]
 from playwright.async_api import async_playwright  # type: ignore[reportMissingImports]
 
 from fastled import Test
+from fastled._rust_cli import find_rust_fastled_cli
+from fastled.interrupts import handle_keyboard_interrupt
 
 ANIMARTRIX_DIR = Path.home() / "dev" / "fastled" / "examples" / "Animartrix"
 FASTLED_JS_DIR = ANIMARTRIX_DIR / "fastled_js"
@@ -41,9 +43,11 @@ class AnimartrixE2ETest(unittest.TestCase):
         original_dir = os.getcwd()
         try:
             os.chdir(str(ANIMARTRIX_DIR))
+            cli = find_rust_fastled_cli()
+            if cli is None:
+                self.skipTest("Rust fastled-rs CLI binary not found")
             cp = subprocess.run(
-                "fastled --just-compile",
-                shell=True,
+                [str(cli), "--just-compile"],
                 capture_output=True,
                 check=False,
                 timeout=300,
@@ -55,6 +59,9 @@ class AnimartrixE2ETest(unittest.TestCase):
                     f"Compilation failed (rc={cp.returncode}):\n"
                     f"stdout:\n{stdout}\nstderr:\n{stderr}"
                 )
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+            raise
         finally:
             os.chdir(original_dir)
 
