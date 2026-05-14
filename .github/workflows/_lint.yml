@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.11.9"
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -30,6 +30,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           cache: true
+          linker: platform-default
           # Include github.workflow because some callers (e.g. Windows
           # x86/ARM) currently share the same runs-on. Without this they
           # collide on the same cache key and one job fails to save.
