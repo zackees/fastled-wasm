@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+        exec python ci/hooks/tool_guard.py
+        ;;
+    *)
+        exec python3 ci/hooks/tool_guard.py
+        ;;
+esac

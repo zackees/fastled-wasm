@@ -757,7 +757,7 @@ fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
         .parent()
         .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
     fs::create_dir_all(output_dir)?;
-    for name in ["fastled.js", "fastled.wasm", "fastled.wasm.dwarf"] {
+    for name in ["fastled.js", "fastled.wasm"] {
         let src = sketch_cache_dir.join(name);
         if src.is_file() {
             fs::copy(&src, output_dir.join(name))

@@ -1,69 +1,57 @@
 # Agent Instructions
 
-This file is read by Claude Code, Codex, and other coding agents that work on this repo. Codex agents should also see `CODEX.md` — that file is a single-line pointer back here so both agents read the same playbook.
+This file is read by Claude Code, Codex, and other coding agents that work on this repo. Codex agents should also see `CODEX.md`, which points back here.
 
 ## Layout
 
-- Python package: `src/fastled/`
+- Python package shim: `src/fastled/`
 - Rust workspace: `crates/fastled-cli`, `crates/fastled-py`, `crates/fastled-tauri`
-- Tests: `tests/unit/` (Python), `cargo test --workspace` (Rust)
+- Tests: `tests/unit/` (thin Python API smoke tests), `cargo test --workspace` (Rust)
 - CI workflows: `.github/workflows/_*.yml`
 - Dev scripts: `./install`, `./lint`, `./test`, `./build-wheel`, `./clean`
 
-## Build cache — use soldr + zccache
+## Build Cache
 
-This project uses **soldr** (build orchestrator) + **zccache** (compile cache). They are NOT optional for local Rust builds: a clean `cargo build -p fastled-py` recompiles PyO3 + reqwest + tokio + axum + clap from scratch and takes 8–10 minutes. With soldr/zccache the same build hits the cache and finishes in seconds.
+Use `soldr cargo ...`, `soldr rustfmt ...`, and related soldr-wrapped commands for Rust work. Plain `cargo`, `rustc`, and `rustfmt` bypass zccache and are blocked by `ci/hooks/tool_guard.py`.
 
-- Binaries live at `/c/tools/python13/Scripts/{soldr,zccache}` on Windows, or wherever `uv pip install soldr` placed them.
-- `soldr` wraps `cargo` and automatically uses `zccache` as `RUSTC_WRAPPER`.
-- CI installs soldr via `zackees/setup-soldr@v0` (see workflows). Local dev should match.
+If `soldr` is not on PATH, install it with `uv tool install soldr`.
 
-**When you invoke any Rust tool from an agent, use `soldr cargo …`, `soldr rustfmt …`, etc.** Plain `cargo` / `rustc` / `rustfmt` are blocked by the PreToolUse hook (`ci/hooks/tool_guard.py`) — they bypass zccache and turn a 30-second incremental build into a 10-minute cold build. The legacy `./_cargo`, `./_rustc`, `./_rustfmt` trampolines were retired in #76; the hook explicitly rejects them too.
+## Tests
 
-If `soldr` is not on PATH, install it with `uv tool install soldr` (or see `zackees/soldr` on GitHub).
+`bash test` runs the Python API smoke tests plus the Rust workspace tests. End-to-end WASM compiles should be run only when the change touches the native build backend.
 
-## Tests are slow — pick a narrow set
-
-`bash test` runs the full pytest + cargo test suite. Some unit tests (`tests/unit/test_cli.py`, `tests/unit/test_build_service.py`) perform real WASM compiles via emscripten and can take 10+ minutes each.
-
-For iterative work, run targeted tests:
+For iterative work:
 
 ```bash
-uv run pytest tests/unit/test_string_diff.py tests/unit/test_select_sketch_directory.py -v
+uv run pytest tests/unit/test_python_api.py -v
+soldr cargo test --workspace
 ```
 
-Skip `test_cli.py` unless you actually need to validate end-to-end WASM output:
+Do not pipe pytest through `| tail -N` if you want streaming output; it buffers until pytest exits.
 
-```bash
-uv run pytest tests/unit --ignore=tests/unit/test_cli.py -v
-```
+## Architecture Notes
 
-**Do not pipe pytest through `| tail -N`** if you want streaming output — it buffers until pytest exits, and a multi-minute pytest looks indistinguishable from a hang. Redirect to a file or use `-v`.
-
-## Architecture notes
-
-- The user-facing CLI is the Rust binary `fastled` (built from `crates/fastled-cli`, bundled into the wheel via `[tool.maturin] data`). Python `cli.py` / `app.py` are 15-line shims that call `fastled._rust_cli.invoke_rust_fastled_cli`.
-- `fastled._native` is the PyO3 extension compiled from `crates/fastled-py/src/lib.rs`. It exposes Rust functions to Python (sketch discovery, build service, project init, string diff, frontend bundling, …).
-- The compile path is Rust-owned: `crates/fastled-cli/src/build.rs` re-exports the native WASM backend in `crates/fastled-cli/src/wasm_build.rs`. Python `BuildService` / `EmscriptenToolchain` are compatibility facades over `fastled._native.NativeBuildService`.
-- For PyO3 changes, after `cargo build -p fastled-py` the new `.dll` lands in `target/maturin/_native.dll`. `maturin develop` copies that to `src/fastled/_native.pyd`. If `_native.pyd` is locked by other Python processes (common on Windows), use the move-aside trick: `mv src/fastled/_native.pyd src/fastled/_native.pyd.old && cp target/maturin/_native.dll src/fastled/_native.pyd`. Remember to delete the `.pyd.old` before committing.
+- The user-facing CLI is the Rust binary `fastled`/`fastled-rs` built from `crates/fastled-cli`.
+- Python `cli.py` and `app.py` are tiny shims that call `fastled._rust_cli.invoke_rust_fastled_cli`.
+- `fastled._native` is the PyO3 extension compiled from `crates/fastled-py/src/lib.rs`. It exposes the public Python API classes and functions directly from Rust.
+- The compile path is Rust-owned through `crates/fastled-cli/src/build.rs` and `crates/fastled-cli/src/wasm_build.rs`.
+- Python no longer owns build, toolchain, sketch selection, project init, install, server, debug-symbol, or frontend-bundling orchestration.
 
 ## Conventions
 
-- Lint command: `bash lint` — runs cargo fmt + clippy, then ruff/black/isort/pyright. Must be green before commit.
-- Test command: `bash test` (or targeted subset; see above).
-- Cross-platform pyright warnings about `sys.platform` are expected — don't chase them.
-- Always fix all diagnostics found, even pre-existing ones not caused by current changes, before declaring a change complete.
-- Prefer native (Rust) implementations and fail-loud over silent Python fallbacks. The migration tracked in #14/#71/#72/#73 is moving everything in this direction.
-- Don't add backwards-compat hacks for code paths that no longer exist (e.g. unused `_var` renames, "removed" comments).
+- Lint command: `bash lint`.
+- Test command: `bash test` or targeted subsets above.
+- Prefer native Rust implementations and fail-loud behavior over silent Python fallbacks.
+- Do not add backwards-compat hacks for code paths that no longer exist.
 
-## Common gotchas
+## Common Gotchas
 
-- The installed `fastled` CLI on PATH (e.g. `/c/tools/python13/Scripts/fastled.exe`) may be a Python compatibility shim or stale script; the Rust CLI binary is named `fastled-rs[.exe]` during the migration. If a CLI test fails, check `uv run python -c "from fastled._rust_cli import find_rust_fastled_cli; print(find_rust_fastled_cli())"`.
-- Error messages from the Rust CLI go to **stderr**. Tests asserting `result.stdout` for error text should use `result.stdout + result.stderr` (the parse_args.py removal in #72 exposed this).
-- `tasklist` on Windows may report tens of thousands of `python.exe` zombies — most are stale tasklist artifacts, not real processes. `ps -ef | grep python` is more reliable for live ones.
+- The installed `fastled` CLI on PATH may be a Python compatibility shim or stale script; during migration the Rust CLI binary is named `fastled-rs[.exe]`.
+- Error messages from the Rust CLI go to stderr.
+- On Windows, if `_native.pyd` is locked after a PyO3 build, move it aside before copying the newly built extension into `src/fastled/`.
 
-## Filing issues / PRs
+## Filing Issues / PRs
 
-- `gh issue create --repo zackees/fastled-wasm …`
-- `gh pr create …`
+- `gh issue create --repo zackees/fastled-wasm ...`
+- `gh pr create ...`
 - Reference the originating issue (`Refs #72`) in commits/PRs when applicable.

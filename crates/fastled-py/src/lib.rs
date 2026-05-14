@@ -4,9 +4,9 @@ use fastled_cli::project;
 use fastled_cli::viewer;
 use fastled_cli::wasm_build;
 use fastled_cli::{PromptChoice, SketchSelection};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyModule};
+use pyo3::types::{PyBytes, PyDict, PyModule};
 use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
@@ -14,6 +14,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use zip::write::SimpleFileOptions;
+
+const DEFAULT_EXAMPLE: &str = "wasm";
 
 // ---------------------------------------------------------------------------
 // Internal: Native BuildService
@@ -28,11 +30,6 @@ struct BuildState {
 
 fn normalize_path(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn normalize_optional_path(path: Option<&str>) -> Option<String> {
-    path.map(PathBuf::from)
-        .map(|value| normalize_path(&value).to_string_lossy().into_owned())
 }
 
 fn resolve_state_key(path: &Path) -> PathBuf {
@@ -110,8 +107,6 @@ fn zip_output(output_dir: &Path) -> io::Result<Vec<u8>> {
 struct NativeBuildArtifacts {
     js: Option<PathBuf>,
     wasm: Option<PathBuf>,
-    dwarf: Option<PathBuf>,
-    symbol_map: Option<PathBuf>,
     frontend_assets: Option<PathBuf>,
 }
 
@@ -126,8 +121,6 @@ fn discover_artifacts(output_dir: &Path) -> NativeBuildArtifacts {
     NativeBuildArtifacts {
         js: existing_path(output_dir.join("fastled.js")),
         wasm: existing_path(output_dir.join("fastled.wasm")),
-        dwarf: existing_path(output_dir.join("fastled.wasm.dwarf")),
-        symbol_map: existing_path(output_dir.join("fastled.js.symbols")),
         frontend_assets,
     }
 }
@@ -145,6 +138,19 @@ fn python_optional_path(py: Python<'_>, path: Option<&Path>) -> PyResult<Py<PyAn
     match path {
         Some(path) => python_path(py, path),
         None => Ok(py.None()),
+    }
+}
+
+fn path_from_py(value: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
+    let os = PyModule::import(value.py(), "os")?;
+    let path_obj = os.getattr("fspath")?.call1((value,))?;
+    Ok(PathBuf::from(path_obj.extract::<String>()?))
+}
+
+fn optional_path_from_py(value: Option<&Bound<'_, PyAny>>) -> PyResult<Option<PathBuf>> {
+    match value {
+        Some(value) if !value.is_none() => Ok(Some(path_from_py(value)?)),
+        _ => Ok(None),
     }
 }
 
@@ -508,13 +514,465 @@ fn string_diff_impl(
         .collect()
 }
 
-#[pyclass(name = "NativeBuildService")]
-struct NativeBuildService {
+#[pyclass(name = "BuildMode", frozen)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PyBuildMode {
+    name: String,
+    value: String,
+}
+
+impl PyBuildMode {
+    fn from_label(label: &str) -> PyResult<Self> {
+        let normalized = label.trim().to_ascii_uppercase();
+        match normalized.as_str() {
+            "DEBUG" => Ok(Self {
+                name: "DEBUG".to_string(),
+                value: "DEBUG".to_string(),
+            }),
+            "QUICK" => Ok(Self {
+                name: "QUICK".to_string(),
+                value: "QUICK".to_string(),
+            }),
+            "RELEASE" => Ok(Self {
+                name: "RELEASE".to_string(),
+                value: "RELEASE".to_string(),
+            }),
+            other => Err(PyValueError::new_err(format!(
+                "BUILD_MODE must be one of ['DEBUG', 'QUICK', 'RELEASE'], got {other}"
+            ))),
+        }
+    }
+
+    fn from_py(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(mode) = value.extract::<PyRef<'_, PyBuildMode>>() {
+            return Ok(mode.clone());
+        }
+        if let Ok(attr) = value.getattr("value") {
+            if let Ok(text) = attr.extract::<String>() {
+                return Self::from_label(&text);
+            }
+        }
+        if let Ok(text) = value.extract::<String>() {
+            return Self::from_label(&text);
+        }
+        Err(PyValueError::new_err(
+            "expected BuildMode or build mode string",
+        ))
+    }
+
+    fn as_wasm_mode(&self) -> PyResult<wasm_build::BuildMode> {
+        match self.value.as_str() {
+            "QUICK" => Ok(wasm_build::BuildMode::Quick),
+            "DEBUG" => Ok(wasm_build::BuildMode::Debug),
+            "RELEASE" => Ok(wasm_build::BuildMode::Release),
+            other => Err(PyValueError::new_err(format!(
+                "unsupported build mode: {other}"
+            ))),
+        }
+    }
+}
+
+#[pymethods]
+#[allow(non_snake_case)]
+impl PyBuildMode {
+    #[new]
+    fn new(mode: &str) -> PyResult<Self> {
+        Self::from_label(mode)
+    }
+
+    #[classattr]
+    fn DEBUG() -> Self {
+        Self::from_label("DEBUG").expect("valid build mode")
+    }
+
+    #[classattr]
+    fn QUICK() -> Self {
+        Self::from_label("QUICK").expect("valid build mode")
+    }
+
+    #[classattr]
+    fn RELEASE() -> Self {
+        Self::from_label("RELEASE").expect("valid build mode")
+    }
+
+    #[staticmethod]
+    fn from_string(mode: &str) -> PyResult<Self> {
+        Self::from_label(mode)
+    }
+
+    #[staticmethod]
+    fn from_args(args: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let debug = args
+            .getattr("debug")
+            .ok()
+            .and_then(|value| value.extract::<bool>().ok())
+            .unwrap_or(false);
+        let release = args
+            .getattr("release")
+            .ok()
+            .and_then(|value| value.extract::<bool>().ok())
+            .unwrap_or(false);
+        if debug {
+            Self::from_label("DEBUG")
+        } else if release {
+            Self::from_label("RELEASE")
+        } else {
+            Self::from_label("QUICK")
+        }
+    }
+
+    #[getter]
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[getter]
+    fn value(&self) -> &str {
+        &self.value
+    }
+
+    fn __str__(&self) -> &str {
+        &self.value
+    }
+
+    fn __repr__(&self) -> String {
+        format!("BuildMode.{}", self.name)
+    }
+}
+
+#[pyclass(name = "BuildRequest")]
+#[derive(Clone)]
+struct PyBuildRequest {
+    sketch_dir: PathBuf,
+    build_mode: PyBuildMode,
+    profile: bool,
+    fastled_path: Option<PathBuf>,
+    force_clean: bool,
+}
+
+#[pymethods]
+impl PyBuildRequest {
+    #[new]
+    #[pyo3(signature = (sketch_dir, build_mode, profile=false, fastled_path=None, force_clean=false))]
+    fn new(
+        sketch_dir: &Bound<'_, PyAny>,
+        build_mode: &Bound<'_, PyAny>,
+        profile: bool,
+        fastled_path: Option<&Bound<'_, PyAny>>,
+        force_clean: bool,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            sketch_dir: path_from_py(sketch_dir)?,
+            build_mode: PyBuildMode::from_py(build_mode)?,
+            profile,
+            fastled_path: optional_path_from_py(fastled_path)?,
+            force_clean,
+        })
+    }
+
+    #[getter]
+    fn sketch_dir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_path(py, &self.sketch_dir)
+    }
+
+    #[getter]
+    fn build_mode(&self, py: Python<'_>) -> PyResult<Py<PyBuildMode>> {
+        Py::new(py, self.build_mode.clone())
+    }
+
+    #[getter]
+    fn profile(&self) -> bool {
+        self.profile
+    }
+
+    #[getter]
+    fn fastled_path(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_optional_path(py, self.fastled_path.as_deref())
+    }
+
+    #[getter]
+    fn force_clean(&self) -> bool {
+        self.force_clean
+    }
+
+    #[getter]
+    fn output_dir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_path(py, &self.sketch_dir.join("fastled_js"))
+    }
+}
+
+#[pyclass(name = "BuildArtifacts")]
+#[derive(Clone, Default)]
+struct PyBuildArtifacts {
+    js: Option<PathBuf>,
+    wasm: Option<PathBuf>,
+    frontend_assets: Option<PathBuf>,
+}
+
+impl PyBuildArtifacts {
+    fn from_native(value: NativeBuildArtifacts) -> Self {
+        Self {
+            js: value.js,
+            wasm: value.wasm,
+            frontend_assets: value.frontend_assets,
+        }
+    }
+
+    fn path_by_name(&self, name: &str) -> Option<&Path> {
+        match name {
+            "js" => self.js.as_deref(),
+            "wasm" => self.wasm.as_deref(),
+            "frontend_assets" => self.frontend_assets.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+#[pymethods]
+impl PyBuildArtifacts {
+    #[new]
+    #[pyo3(signature = (js=None, wasm=None, frontend_assets=None))]
+    fn new(
+        js: Option<&Bound<'_, PyAny>>,
+        wasm: Option<&Bound<'_, PyAny>>,
+        frontend_assets: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            js: optional_path_from_py(js)?,
+            wasm: optional_path_from_py(wasm)?,
+            frontend_assets: optional_path_from_py(frontend_assets)?,
+        })
+    }
+
+    #[getter]
+    fn js(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_optional_path(py, self.js.as_deref())
+    }
+
+    #[getter]
+    fn wasm(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_optional_path(py, self.wasm.as_deref())
+    }
+
+    #[getter]
+    fn frontend_assets(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_optional_path(py, self.frontend_assets.as_deref())
+    }
+
+    fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        for name in ["js", "wasm", "frontend_assets"] {
+            if let Some(path) = self.path_by_name(name) {
+                dict.set_item(name, python_path(py, path)?)?;
+            }
+        }
+        Ok(dict.unbind())
+    }
+
+    fn __getitem__(&self, py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
+        self.path_by_name(name)
+            .map(|path| python_path(py, path))
+            .unwrap_or_else(|| Err(PyKeyError::new_err(name.to_string())))
+    }
+
+    #[pyo3(signature = (name, default=None))]
+    fn get(&self, py: Python<'_>, name: &str, default: Option<Py<PyAny>>) -> PyResult<Py<PyAny>> {
+        match self.path_by_name(name) {
+            Some(path) => python_path(py, path),
+            None => Ok(default.unwrap_or_else(|| py.None())),
+        }
+    }
+
+    fn items(&self, py: Python<'_>) -> PyResult<Vec<(String, Py<PyAny>)>> {
+        let mut out = Vec::new();
+        for name in ["js", "wasm", "frontend_assets"] {
+            if let Some(path) = self.path_by_name(name) {
+                out.push((name.to_string(), python_path(py, path)?));
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[pyclass(name = "CompileResult")]
+#[derive(Clone)]
+struct PyCompileResult {
+    success: bool,
+    stdout: String,
+    hash_value: Option<String>,
+    zip_bytes: Vec<u8>,
+    zip_time: f64,
+    libfastled_time: f64,
+    sketch_time: f64,
+    response_processing_time: f64,
+}
+
+#[pymethods]
+impl PyCompileResult {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (success, stdout, hash_value=None, zip_bytes=None, zip_time=0.0, libfastled_time=0.0, sketch_time=0.0, response_processing_time=0.0))]
+    fn new(
+        success: bool,
+        stdout: String,
+        hash_value: Option<String>,
+        zip_bytes: Option<&Bound<'_, PyAny>>,
+        zip_time: f64,
+        libfastled_time: f64,
+        sketch_time: f64,
+        response_processing_time: f64,
+    ) -> PyResult<Self> {
+        let zip_bytes = match zip_bytes {
+            Some(value) if !value.is_none() => value.extract::<Vec<u8>>()?,
+            _ => Vec::new(),
+        };
+        Ok(Self {
+            success,
+            stdout,
+            hash_value,
+            zip_bytes,
+            zip_time,
+            libfastled_time,
+            sketch_time,
+            response_processing_time,
+        })
+    }
+
+    #[getter]
+    fn success(&self) -> bool {
+        self.success
+    }
+
+    #[getter]
+    fn stdout(&self) -> &str {
+        &self.stdout
+    }
+
+    #[getter]
+    fn hash_value(&self) -> Option<String> {
+        self.hash_value.clone()
+    }
+
+    #[getter]
+    fn zip_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        PyBytes::new(py, &self.zip_bytes).into_any().unbind()
+    }
+
+    #[getter]
+    fn zip_time(&self) -> f64 {
+        self.zip_time
+    }
+
+    #[getter]
+    fn libfastled_time(&self) -> f64 {
+        self.libfastled_time
+    }
+
+    #[getter]
+    fn sketch_time(&self) -> f64 {
+        self.sketch_time
+    }
+
+    #[getter]
+    fn response_processing_time(&self) -> f64 {
+        self.response_processing_time
+    }
+
+    fn __bool__(&self) -> bool {
+        self.success
+    }
+
+    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("success", self.success)?;
+        dict.set_item("stdout", &self.stdout)?;
+        dict.set_item("hash_value", self.hash_value.clone())?;
+        dict.set_item("zip_bytes", PyBytes::new(py, &self.zip_bytes))?;
+        dict.set_item("zip_time", self.zip_time)?;
+        dict.set_item("libfastled_time", self.libfastled_time)?;
+        dict.set_item("sketch_time", self.sketch_time)?;
+        dict.set_item("response_processing_time", self.response_processing_time)?;
+        Ok(dict.unbind())
+    }
+}
+
+#[pyclass(name = "BuildResult")]
+#[derive(Clone)]
+struct PyBuildResult {
+    compile_result: PyCompileResult,
+    strategy: String,
+    output_dir: PathBuf,
+    artifacts: PyBuildArtifacts,
+}
+
+#[pymethods]
+impl PyBuildResult {
+    #[new]
+    #[pyo3(signature = (compile_result, strategy, output_dir, artifacts))]
+    fn new(
+        compile_result: PyRef<'_, PyCompileResult>,
+        strategy: String,
+        output_dir: &Bound<'_, PyAny>,
+        artifacts: PyRef<'_, PyBuildArtifacts>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            compile_result: compile_result.clone(),
+            strategy,
+            output_dir: path_from_py(output_dir)?,
+            artifacts: artifacts.clone(),
+        })
+    }
+
+    #[getter]
+    fn compile_result(&self, py: Python<'_>) -> PyResult<Py<PyCompileResult>> {
+        Py::new(py, self.compile_result.clone())
+    }
+
+    #[getter]
+    fn strategy(&self) -> &str {
+        &self.strategy
+    }
+
+    #[getter]
+    fn output_dir(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        python_path(py, &self.output_dir)
+    }
+
+    #[getter]
+    fn artifacts(&self, py: Python<'_>) -> PyResult<Py<PyBuildArtifacts>> {
+        Py::new(py, self.artifacts.clone())
+    }
+
+    #[getter]
+    fn success(&self) -> bool {
+        self.compile_result.success
+    }
+
+    #[getter]
+    fn stdout(&self) -> &str {
+        &self.compile_result.stdout
+    }
+
+    #[getter]
+    fn sketch_time(&self) -> f64 {
+        self.compile_result.sketch_time
+    }
+
+    #[getter]
+    fn zip_bytes(&self, py: Python<'_>) -> Py<PyAny> {
+        PyBytes::new(py, &self.compile_result.zip_bytes)
+            .into_any()
+            .unbind()
+    }
+}
+
+#[pyclass(name = "BuildService")]
+struct PyBuildService {
     states: HashMap<PathBuf, BuildState>,
 }
 
 #[pymethods]
-impl NativeBuildService {
+impl PyBuildService {
     #[new]
     fn new() -> Self {
         Self {
@@ -522,71 +980,61 @@ impl NativeBuildService {
         }
     }
 
-    #[pyo3(signature = (toolchain, fastled_path=None))]
-    fn register_toolchain(&mut self, toolchain: Py<PyAny>, fastled_path: Option<&str>) {
-        let _ = (toolchain, fastled_path);
-        // Compatibility no-op. Build orchestration is now owned by
-        // fastled_cli::wasm_build rather than Python toolchain objects.
+    #[pyo3(signature = (fastled_path=None, toolchain=None))]
+    fn register_toolchain(
+        &mut self,
+        fastled_path: Option<&Bound<'_, PyAny>>,
+        toolchain: Option<Py<PyAny>>,
+    ) {
+        let _ = (fastled_path, toolchain);
     }
 
-    #[pyo3(signature = (sketch_dir, build_mode, profile=false, fastled_path=None, force_clean=false))]
-    fn detect_strategy(
-        &mut self,
-        sketch_dir: &str,
-        build_mode: &str,
-        profile: bool,
-        fastled_path: Option<&str>,
-        force_clean: bool,
-    ) -> String {
-        let sketch_dir = PathBuf::from(sketch_dir);
+    fn detect_strategy(&mut self, request: PyRef<'_, PyBuildRequest>) -> String {
         self.detect_strategy_inner(
-            &sketch_dir,
-            build_mode,
-            profile,
-            normalize_optional_path(fastled_path),
-            force_clean,
+            &request.sketch_dir,
+            &request.build_mode.value,
+            request.profile,
+            request
+                .fastled_path
+                .as_deref()
+                .map(|path| normalize_path(path).to_string_lossy().into_owned()),
+            request.force_clean,
         )
     }
 
-    #[pyo3(signature = (sketch_dir, build_mode, build_mode_obj, profile=false, fastled_path=None, force_clean=false))]
-    #[allow(clippy::too_many_arguments)]
     fn build(
         &mut self,
         py: Python<'_>,
-        sketch_dir: &str,
-        build_mode: &str,
-        build_mode_obj: Py<PyAny>,
-        profile: bool,
-        fastled_path: Option<&str>,
-        force_clean: bool,
-    ) -> PyResult<Py<PyAny>> {
-        let _ = build_mode_obj;
-        let sketch_dir = PathBuf::from(sketch_dir);
-        let output_dir = sketch_dir.join("fastled_js");
-        let fastled_path = normalize_optional_path(fastled_path);
+        request: PyRef<'_, PyBuildRequest>,
+    ) -> PyResult<Py<PyBuildResult>> {
+        let output_dir = request.sketch_dir.join("fastled_js");
+        let fastled_path = request
+            .fastled_path
+            .as_deref()
+            .map(|path| normalize_path(path).to_string_lossy().into_owned());
         let strategy = self.detect_strategy_inner(
-            &sketch_dir,
-            build_mode,
-            profile,
+            &request.sketch_dir,
+            &request.build_mode.value,
+            request.profile,
             fastled_path.clone(),
-            force_clean,
+            request.force_clean,
         );
 
-        if force_clean && output_dir.exists() {
+        if request.force_clean && output_dir.exists() {
             let _ = fs::remove_dir_all(&output_dir);
         }
 
         fs::create_dir_all(&output_dir).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
 
-        let request = wasm_build::BuildRequest {
-            sketch_dir: sketch_dir.clone(),
-            build_mode: Self::wasm_build_mode(build_mode)?,
-            profile,
-            fastled_path: fastled_path.clone().map(PathBuf::from),
-            force_clean,
+        let native_request = wasm_build::BuildRequest {
+            sketch_dir: request.sketch_dir.clone(),
+            build_mode: request.build_mode.as_wasm_mode()?,
+            profile: request.profile,
+            fastled_path: request.fastled_path.clone(),
+            force_clean: request.force_clean,
         };
 
-        let result_payload = match wasm_build::run_build(&request) {
+        match wasm_build::run_build(&native_request) {
             Ok(build_result) if build_result.success => {
                 let zip_start = Instant::now();
                 let zip_bytes = zip_output(&build_result.output_dir)
@@ -594,15 +1042,15 @@ impl NativeBuildService {
                 let zip_time = zip_start.elapsed().as_secs_f64();
 
                 let state = BuildState {
-                    build_mode: build_mode.to_string(),
-                    profile,
+                    build_mode: request.build_mode.value.clone(),
+                    profile: request.profile,
                     fastled_path: fastled_path.clone(),
                 };
                 self.states
-                    .insert(resolve_state_key(&sketch_dir), state.clone());
+                    .insert(resolve_state_key(&request.sketch_dir), state.clone());
                 write_state(&output_dir, &state);
 
-                Self::build_payload(
+                Self::build_result(
                     py,
                     true,
                     build_result.output,
@@ -611,9 +1059,9 @@ impl NativeBuildService {
                     build_result.sketch_time_secs,
                     build_result.strategy,
                     &build_result.output_dir,
-                )?
+                )
             }
-            Ok(build_result) => Self::build_payload(
+            Ok(build_result) => Self::build_result(
                 py,
                 false,
                 build_result.output,
@@ -622,8 +1070,8 @@ impl NativeBuildService {
                 build_result.sketch_time_secs,
                 build_result.strategy,
                 &build_result.output_dir,
-            )?,
-            Err(err) => Self::build_payload(
+            ),
+            Err(err) => Self::build_result(
                 py,
                 false,
                 format!("Native Rust WASM build failed: {err:#}"),
@@ -632,34 +1080,22 @@ impl NativeBuildService {
                 0.0,
                 strategy,
                 &output_dir,
-            )?,
-        };
-
-        Ok(result_payload)
+            ),
+        }
     }
 
-    fn purge(&mut self, sketch_dir: &str) {
-        let sketch_dir = PathBuf::from(sketch_dir);
+    fn purge(&mut self, sketch_dir: &Bound<'_, PyAny>) -> PyResult<()> {
+        let sketch_dir = path_from_py(sketch_dir)?;
         self.states.remove(&resolve_state_key(&sketch_dir));
         let output_dir = sketch_dir.join("fastled_js");
         if output_dir.exists() {
             let _ = fs::remove_dir_all(output_dir);
         }
+        Ok(())
     }
 }
 
-impl NativeBuildService {
-    fn wasm_build_mode(build_mode: &str) -> PyResult<wasm_build::BuildMode> {
-        match build_mode.to_ascii_lowercase().as_str() {
-            "quick" => Ok(wasm_build::BuildMode::Quick),
-            "debug" => Ok(wasm_build::BuildMode::Debug),
-            "release" => Ok(wasm_build::BuildMode::Release),
-            other => Err(PyValueError::new_err(format!(
-                "unsupported build mode: {other}"
-            ))),
-        }
-    }
-
+impl PyBuildService {
     fn detect_strategy_inner(
         &mut self,
         sketch_dir: &Path,
@@ -713,7 +1149,7 @@ impl NativeBuildService {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn build_payload(
+    fn build_result(
         py: Python<'_>,
         success: bool,
         stdout: String,
@@ -722,36 +1158,27 @@ impl NativeBuildService {
         sketch_time: f64,
         strategy: String,
         output_dir: &Path,
-    ) -> PyResult<Py<PyAny>> {
-        let build_types = PyModule::import(py, "fastled.build_types")?;
-        let artifacts_cls = build_types.getattr("BuildArtifacts")?;
-        let payload_cls = build_types.getattr("NativeBuildPayload")?;
-
-        let artifact_paths = discover_artifacts(output_dir);
-        let artifacts = artifacts_cls.call1((
-            python_optional_path(py, artifact_paths.js.as_deref())?,
-            python_optional_path(py, artifact_paths.wasm.as_deref())?,
-            python_optional_path(py, artifact_paths.dwarf.as_deref())?,
-            python_optional_path(py, artifact_paths.symbol_map.as_deref())?,
-            python_optional_path(py, artifact_paths.frontend_assets.as_deref())?,
-        ))?;
-
-        Ok(payload_cls
-            .call1((
-                success,
-                stdout,
-                py.None(),
-                PyBytes::new(py, &zip_bytes),
-                zip_time,
-                0.0,
-                sketch_time,
-                0.0,
+    ) -> PyResult<Py<PyBuildResult>> {
+        let compile_result = PyCompileResult {
+            success,
+            stdout,
+            hash_value: None,
+            zip_bytes,
+            zip_time,
+            libfastled_time: 0.0,
+            sketch_time,
+            response_processing_time: 0.0,
+        };
+        let artifacts = PyBuildArtifacts::from_native(discover_artifacts(output_dir));
+        Py::new(
+            py,
+            PyBuildResult {
+                compile_result,
                 strategy,
-                python_path(py, output_dir)?,
+                output_dir: output_dir.to_path_buf(),
                 artifacts,
-            ))?
-            .into_any()
-            .unbind())
+            },
+        )
     }
 }
 
@@ -783,6 +1210,46 @@ fn archive_available() -> bool {
 #[pyfunction]
 fn project_available() -> bool {
     true
+}
+
+#[pyfunction(signature = (ref_name=None))]
+fn get_examples(ref_name: Option<&str>) -> PyResult<Vec<String>> {
+    let cwd = std::env::current_dir()?;
+    let repo_root = match project::find_fastled_repo_upwards(&cwd, 10) {
+        Some(local_repo) => local_repo,
+        None => install::ensure_fastled_repo(ref_name)
+            .map_err(|err| PyRuntimeError::new_err(format!("{err:#}")))?,
+    };
+    Ok(project::collect_examples(&repo_root.join("examples")))
+}
+
+#[pyfunction(signature = (example=None, outputdir=None, ref_name=None))]
+fn project_init(
+    py: Python<'_>,
+    example: Option<&str>,
+    outputdir: Option<&Bound<'_, PyAny>>,
+    ref_name: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let output_dir = optional_path_from_py(outputdir)?.unwrap_or_else(|| PathBuf::from("fastled"));
+    fs::create_dir_all(&output_dir).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+
+    let cwd = std::env::current_dir()?;
+    let local_repo = project::find_fastled_repo_upwards(&cwd, 10);
+    let repo_root = match local_repo {
+        Some(path) => path,
+        None => install::ensure_fastled_repo(ref_name)
+            .map_err(|err| PyRuntimeError::new_err(format!("{err:#}")))?,
+    };
+
+    let selected = match example {
+        Some(value) if value != "PROMPT" => value,
+        _ => DEFAULT_EXAMPLE,
+    };
+    let resolved_ref = ref_name.map(|_| project::cached_repo_ref_name(&repo_root));
+    let out =
+        project::init_example_from_repo(&repo_root, selected, &output_dir, resolved_ref.as_deref())
+            .map_err(|err| PyRuntimeError::new_err(format!("{err:#}")))?;
+    python_path(py, &out)
 }
 
 #[pyfunction(signature = (directory=None))]
@@ -969,9 +1436,12 @@ fn string_diff(
 /// Python shim can delegate without re-implementing the bundling logic.
 #[pyfunction]
 #[pyo3(signature = (output_dir, source_dir=None))]
-fn copy_frontend_to_output(output_dir: &str, source_dir: Option<&str>) -> PyResult<()> {
-    let out = PathBuf::from(output_dir);
-    let src = source_dir.map(PathBuf::from);
+fn copy_frontend_to_output(
+    output_dir: &Bound<'_, PyAny>,
+    source_dir: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let out = path_from_py(output_dir)?;
+    let src = optional_path_from_py(source_dir)?;
     frontend::copy_frontend_to_output(&out, src.as_deref())
         .map_err(|e| PyRuntimeError::new_err(format!("{e:#}")))
 }
@@ -979,11 +1449,18 @@ fn copy_frontend_to_output(output_dir: &str, source_dir: Option<&str>) -> PyResu
 /// FastLED native extension module.
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<NativeBuildService>()?;
+    m.add_class::<PyBuildMode>()?;
+    m.add_class::<PyBuildRequest>()?;
+    m.add_class::<PyBuildArtifacts>()?;
+    m.add_class::<PyCompileResult>()?;
+    m.add_class::<PyBuildResult>()?;
+    m.add_class::<PyBuildService>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(watch_available, m)?)?;
     m.add_function(wrap_pyfunction!(archive_available, m)?)?;
     m.add_function(wrap_pyfunction!(project_available, m)?)?;
+    m.add_function(wrap_pyfunction!(get_examples, m)?)?;
+    m.add_function(wrap_pyfunction!(project_init, m)?)?;
     m.add_function(wrap_pyfunction!(find_sketch_directories, m)?)?;
     m.add_function(wrap_pyfunction!(find_sketch_by_partial_name, m)?)?;
     m.add_function(wrap_pyfunction!(prepare_sketch_selection, m)?)?;

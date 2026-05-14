@@ -46,8 +46,8 @@ jobs:
       - name: Install
         run: ./install
 
-      - name: Integration Tests
-        run: uv run pytest -x -v -s tests/integration
+      - name: Native Test Suite
+        run: ./test
 
       - name: Upload failure logs
         if: failure()

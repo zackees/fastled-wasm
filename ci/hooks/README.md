@@ -4,8 +4,10 @@ Python scripts invoked by Claude Code and Codex hooks. Claude Code loads the
 hook config from `.claude/settings.json`; Codex loads the migrated config from
 `.codex/hooks.json`.
 
-All hooks run via `uv run python ci/hooks/<name>.py` so they share the project
-Python environment.
+Hooks run through `ci/hooks/tool_guard`, not `uv run python`. The wrapper uses
+`python` on Windows, including Git Bash/MSYS/Cygwin, and `python3` on
+macOS/Linux. They are intentionally stdlib-only so PreToolUse checks do not
+trigger a uv sync or a native-extension rebuild before every tool call.
 
 ## Hooks
 

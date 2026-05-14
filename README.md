@@ -9,7 +9,6 @@
 | **macOS x86** | [![macOS x86 Build](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-build.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-build.yml) | [![macOS x86 Lint](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-lint.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-lint.yml) | [![macOS x86 Unit Test](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-unit-test.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-unit-test.yml) | [![macOS x86 Integration Test](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-integration-test.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-x86-integration-test.yml) |
 | **macOS ARM** | [![macOS ARM Build](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-build.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-build.yml) | [![macOS ARM Lint](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-lint.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-lint.yml) | [![macOS ARM Unit Test](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-unit-test.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-unit-test.yml) | [![macOS ARM Integration Test](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-integration-test.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/macos-arm-integration-test.yml) |
 
-[![Build Webpage](https://github.com/zackees/fastled-wasm/actions/workflows/build_webpage.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/build_webpage.yml)
 [![Publish Release](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml/badge.svg)](https://github.com/zackees/fastled-wasm/actions/workflows/publish_release.yml)
 
 ## Compile your FastLED sketch and run it on the browser!
@@ -71,10 +70,9 @@ Useful flags:
 | Flag | Description |
 |------|-------------|
 | `--just-compile` | Compile and exit without opening a browser or watching files |
-| `--debug` | Build with debug artifacts for browser DWARF debugging |
+| `--debug` | Build with debug-friendly compiler settings |
 | `--quick` | Default build mode |
 | `--release` | Optimized build (~1/3 smaller binary) |
-| `--app` | Launch local preview in the Tauri-based native viewer |
 | `--fastled-path <path>` | Point the build at a local FastLED checkout |
 | `--purge` | Clear cached FastLED downloads and stale WASM build artifacts |
 | `--serve-dir <dir>` | Serve an existing directory without compiling |
@@ -97,17 +95,11 @@ For an example see `examples/SdCard` in the FastLED repo.
 
 ### Compile Speed
 
-Three compile modes are available: `--quick` (default), `--release` (optimized for size, ~1/3 smaller binary), and `--debug` (includes DWARF symbols for browser step-through debugging). Aggressive object caching means incremental rebuilds are near-instant.
+Three compile modes are available: `--quick` (default), `--release` (optimized for size, ~1/3 smaller binary), and `--debug` (debug-friendly compiler settings). Aggressive object caching means incremental rebuilds are near-instant.
 
 ### Arduino Compatibility
 
 Most simple Arduino sketches compile out of the box. Common functions like `digitalWrite()`, `Serial.println()`, and others are stubbed. `digitalRead()` returns 0 and `analogRead()` returns random numbers.
-
-## Debugging
-
-`fastled --debug --app` serves the local preview and exposes `/dwarfsource` resolution so browser devtools can map DWARF paths back to sketch, FastLED, and EMSDK source files.
-
-For setup details see [DEBUGGER.md](DEBUGGER.md).
 
 ## HTTPS
 
