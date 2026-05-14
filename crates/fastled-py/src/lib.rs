@@ -1400,14 +1400,15 @@ fn build_available() -> bool {
     true
 }
 
-/// Return whether the native Tauri viewer binary (`fastled-viewer`) can be
-/// found alongside the CLI, in the Cargo target directory, or on PATH.
+/// Return whether the native FastLED CLI binary (`fastled-rs`) can be found
+/// and used to host the Tauri viewer.
 #[pyfunction]
 fn viewer_available() -> bool {
     viewer::find_tauri_viewer().is_some()
 }
 
-/// Locate the `fastled-viewer` (Tauri) binary.  Returns `None` if not found.
+/// Locate the `fastled-rs` binary that hosts the Tauri viewer. Returns `None`
+/// if not found.
 ///
 /// Delegates to `fastled_cli::viewer::find_tauri_viewer` so the Python shim no
 /// longer duplicates the discovery logic.

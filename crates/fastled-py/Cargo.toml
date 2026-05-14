@@ -14,7 +14,7 @@ crate-type = ["cdylib", "lib"]
 
 [dependencies]
 pyo3 = { workspace = true }
-fastled-cli = { path = "../fastled-cli" }
+fastled-cli = { path = "../fastled-cli", default-features = false }
 serde_json = { workspace = true }
 zip = { workspace = true }
 strsim = { workspace = true }

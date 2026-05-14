@@ -1109,11 +1109,14 @@ dependencies = [
  "sha2",
  "strsim",
  "tar",
+ "tauri",
+ "tauri-build",
  "tempfile",
  "tokio",
  "tokio-stream",
  "toml 0.8.2",
  "tower-http",
+ "windows-sys 0.61.2",
  "zip",
  "zstd",
 ]
@@ -1127,17 +1130,6 @@ dependencies = [
  "serde_json",
  "strsim",
  "zip",
-]
-
-[[package]]
-name = "fastled-tauri"
-version = "2.0.7"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
 ]
 
 [[package]]
