@@ -1,15 +1,15 @@
-"""Locate the Rust ``fastled`` binary.
+"""Locate the Rust ``fastled-rs`` binary.
 
 In wheel-installed deployments the Rust binary is bundled directly into the
 venv's ``Scripts/`` / ``bin/`` directory via ``[tool.maturin] data`` (see
-``pyproject.toml``), so ``shutil.which(\"fastled\")`` returns it. In editable
+``pyproject.toml``), so ``shutil.which(\"fastled-rs\")`` returns it. In editable
 dev installs the Rust binary lives under ``target/`` from a local
-``cargo build --bin fastled``.
+``cargo build --bin fastled-rs``.
 
 Search order:
-    1. Workspace ``target/{release,debug}/fastled[.exe]`` (dev / editable).
-    2. ``$CARGO_HOME/bin/fastled[.exe]`` (where ``cargo binstall`` installs).
-    3. ``shutil.which(\"fastled\")`` (wheel install puts it on ``PATH``).
+    1. Workspace ``target/{release,debug}/fastled-rs[.exe]`` (dev / editable).
+    2. ``$CARGO_HOME/bin/fastled-rs[.exe]`` (where ``cargo binstall`` installs).
+    3. ``shutil.which(\"fastled-rs\")`` (wheel install puts it on ``PATH``).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 def _exe_name() -> str:
-    return "fastled.exe" if sys.platform == "win32" else "fastled"
+    return "fastled-rs.exe" if sys.platform == "win32" else "fastled-rs"
 
 
 def _find_workspace_root() -> Path | None:
@@ -38,7 +38,7 @@ def _find_workspace_root() -> Path | None:
 
 
 def find_rust_fastled_cli() -> Path | None:
-    """Return the path to the Rust ``fastled`` binary, or ``None``."""
+    """Return the path to the Rust ``fastled-rs`` binary, or ``None``."""
     exe = _exe_name()
 
     # 1. Workspace target/ tree (dev / editable).
@@ -68,9 +68,8 @@ def find_rust_fastled_cli() -> Path | None:
         return candidate
 
     # 3. Wheel install drops the Rust binary directly into the venv's
-    # Scripts/bin dir; there is no Python `fastled` entry-point shim
-    # competing for the name anymore (see pyproject.toml). Plain PATH lookup
-    # finds it.
+    # Scripts/bin dir under the distinct fastled-rs name, so a Python
+    # `fastled` compatibility shim cannot resolve itself here.
     found = shutil.which(exe)
     if found:
         return Path(found)
@@ -80,16 +79,22 @@ def find_rust_fastled_cli() -> Path | None:
 def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
     """Run the Rust FastLED CLI and return its exit code."""
     args = list(argv or [])
+    env = os.environ.copy()
+    env.setdefault("FASTLED_PYTHON_EXECUTABLE", sys.executable)
+
     cli = find_rust_fastled_cli()
     if cli is not None:
-        return subprocess.run([str(cli), *args], check=False).returncode
+        return subprocess.run([str(cli), *args], check=False, env=env).returncode
 
     workspace_root = _find_workspace_root()
     if workspace_root is not None:
+        soldr = shutil.which("soldr")
+        cargo = [soldr, "cargo"] if soldr else ["cargo"]
         return subprocess.run(
-            ["cargo", "run", "--quiet", "--bin", "fastled", "--", *args],
+            [*cargo, "run", "--quiet", "--bin", "fastled-rs", "--", *args],
             check=False,
             cwd=workspace_root,
+            env=env,
         ).returncode
 
-    raise RuntimeError("Could not locate the Rust fastled CLI binary.")
+    raise RuntimeError("Could not locate the Rust fastled-rs CLI binary.")

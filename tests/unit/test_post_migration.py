@@ -1,9 +1,19 @@
 """Tests for post-migration cleanup: dead code removal, stale exports, and bug fixes."""
 
+import ast
 import unittest
 from pathlib import Path
 
-SRC_DIR = Path(__file__).parent.parent.parent / "src" / "fastled"
+ROOT_DIR = Path(__file__).parent.parent.parent
+SRC_DIR = ROOT_DIR / "src" / "fastled"
+FASTLED_CLI_SRC_DIR = ROOT_DIR / "crates" / "fastled-cli" / "src"
+
+
+def _implementation_source(path: Path) -> str:
+    lines = path.read_text().splitlines()
+    return "\n".join(
+        line for line in lines if not line.lstrip().startswith(("#", "//", "//!"))
+    )
 
 
 class TestPythonEntrypointsDelegateToRust(unittest.TestCase):
@@ -17,9 +27,81 @@ class TestPythonEntrypointsDelegateToRust(unittest.TestCase):
         source = (SRC_DIR / "app.py").read_text()
         self.assertIn("invoke_rust_fastled_cli", source)
 
+    def test_primary_runtime_has_no_fastled_app_module_fallback(self) -> None:
+        runtime_files = [
+            SRC_DIR / "app.py",
+            SRC_DIR / "cli.py",
+            SRC_DIR / "_rust_cli.py",
+            SRC_DIR / "open_browser.py",
+            *FASTLED_CLI_SRC_DIR.glob("*.rs"),
+        ]
+
+        fallback_patterns = [
+            "python -m fastled.app",
+            '"-m", "fastled.app"',
+            "'-m', 'fastled.app'",
+            '"-m",\n        "fastled.app"',
+            "'-m',\n        'fastled.app'",
+        ]
+
+        for path in runtime_files:
+            source = _implementation_source(path)
+            for pattern in fallback_patterns:
+                self.assertNotIn(
+                    pattern,
+                    source,
+                    f"{path.relative_to(ROOT_DIR)} must not invoke the old Python app fallback",
+                )
+
+    def test_rust_cli_binary_uses_distinct_migration_name(self) -> None:
+        cli_source = (SRC_DIR / "_rust_cli.py").read_text()
+        cargo_manifest = ROOT_DIR / "crates" / "fastled-cli" / "Cargo.toml"
+        self.assertIn("fastled-rs", cli_source)
+        self.assertIn('name = "fastled-rs"', cargo_manifest.read_text())
+
+    def test_python_fastled_shim_cannot_resolve_itself_on_path(self) -> None:
+        cli_source = _implementation_source(SRC_DIR / "_rust_cli.py")
+        self.assertNotIn('shutil.which("fastled")', cli_source)
+        self.assertNotIn('"fastled.exe"', cli_source)
+        self.assertIn('"fastled-rs.exe"', cli_source)
+        self.assertIn("shutil.which(exe)", cli_source)
+        self.assertIn("FASTLED_PYTHON_EXECUTABLE", cli_source)
+
+    def test_embedded_python_uses_real_python_executable(self) -> None:
+        build_source = (FASTLED_CLI_SRC_DIR / "build.rs").read_text()
+        self.assertIn("configure_embedded_python_executable", build_source)
+        self.assertIn("FASTLED_PYTHON_EXECUTABLE", build_source)
+        self.assertIn("EMSDK_PYTHON", build_source)
+
 
 class TestNativeAppOrchestration(unittest.TestCase):
     """App-layer compatibility modules should prefer native Rust behavior."""
+
+    COMPATIBILITY_MODULES = {
+        "build_service.py": "Compatibility build-service facade backed by the native Rust service.",
+        "build_types.py": "Python request/result DTOs for the native build service wrapper.",
+        "frontend_esbuild.py": "Compatibility shim. Frontend bundling is implemented in Rust.",
+        "open_browser.py": "Compatibility process launcher for the native Rust HTTP server.",
+        "project_init.py": "Compatibility project-init helpers backed by native Rust operations.",
+        "select_sketch_directory.py": "Compatibility prompt helpers backed by native Rust matching logic.",
+        "sketch.py": "Sketch detection helpers.",
+        "string_diff.py": "Compatibility wrappers for native string matching helpers.",
+    }
+
+    WRAPPER_MODULES_WITH_NATIVE_DELEGATES = [
+        "build_service.py",
+        "frontend_esbuild.py",
+        "open_browser.py",
+        "project_init.py",
+        "select_sketch_directory.py",
+        "sketch.py",
+        "string_diff.py",
+    ]
+
+    EXPLICIT_PYTHON_HOLDOUTS = [
+        "build_types.py",
+        "select_sketch_directory.py",
+    ]
 
     def test_select_sketch_directory_uses_native_resolver(self) -> None:
         source = (SRC_DIR / "select_sketch_directory.py").read_text()
@@ -32,6 +114,48 @@ class TestNativeAppOrchestration(unittest.TestCase):
         self.assertIn("from fastled._native import NativeBuildService", source)
         self.assertNotIn("class _PythonBuildService", source)
         self.assertNotIn("if self._native is None", source)
+        self.assertNotIn("python -m fastled.app", source)
+
+    def test_remaining_python_modules_document_wrapper_or_holdout_role(self) -> None:
+        for filename, expected_summary in self.COMPATIBILITY_MODULES.items():
+            module = ast.parse((SRC_DIR / filename).read_text())
+            docstring = ast.get_docstring(module)
+            if docstring is None:
+                self.fail(
+                    f"{filename} should document its post-migration compatibility role"
+                )
+            self.assertEqual(
+                docstring.splitlines()[0],
+                expected_summary,
+                f"{filename} should document its post-migration compatibility role",
+            )
+
+    def test_remaining_python_wrappers_delegate_to_native_helpers(self) -> None:
+        for filename in self.WRAPPER_MODULES_WITH_NATIVE_DELEGATES:
+            source = (SRC_DIR / filename).read_text()
+            self.assertIn(
+                "fastled._native",
+                source,
+                f"{filename} should delegate core behavior to native helpers",
+            )
+
+    def test_remaining_python_holdouts_are_not_fallback_service_owners(self) -> None:
+        service_owner_markers = [
+            "class _PythonBuildService",
+            "class BuildService",
+            "def build(",
+            "NativeBuildService",
+            "python -m fastled.app",
+        ]
+
+        for filename in self.EXPLICIT_PYTHON_HOLDOUTS:
+            source = (SRC_DIR / filename).read_text()
+            for marker in service_owner_markers:
+                self.assertNotIn(
+                    marker,
+                    source,
+                    f"{filename} is a compatibility holdout, not a fallback service owner",
+                )
 
     def test_types_do_not_import_legacy_args_at_runtime(self) -> None:
         source = (SRC_DIR / "types.py").read_text()

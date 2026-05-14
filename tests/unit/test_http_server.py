@@ -20,13 +20,12 @@ from fastled.interrupts import handle_keyboard_interrupt
 
 
 def _find_rust_cli() -> Path | None:
-    """Locate the *Rust* fastled CLI binary (not the Python shim).
+    """Locate the *Rust* fastled-rs CLI binary.
 
-    The Rust binary handles ``--serve-dir`` natively.  To distinguish it
-    from the Python entry-point shim (which is also called ``fastled.exe``),
-    we run a quick ``--serve-dir`` probe on any candidate before accepting it.
+    The Rust binary handles ``--serve-dir`` natively.  It uses the distinct
+    ``fastled-rs`` name during the Python compatibility-shim migration.
     """
-    exe_name = "fastled.exe" if sys.platform == "win32" else "fastled"
+    exe_name = "fastled-rs.exe" if sys.platform == "win32" else "fastled-rs"
 
     candidates: list[Path] = []
 

@@ -37,9 +37,9 @@ features = ["pyo3/extension-module", "pyo3/abi3-py310"]
 # Pre-built Rust binaries get dropped into wheel-data/scripts/ by the
 # build-wheel helper before maturin runs. maturin packages this directory as
 # the wheel's <pkg>-<ver>.data/ tree; pip then extracts scripts/ to the
-# venv's Scripts/ (Windows) or bin/ (Unix) at install time, so end users get
-# the Rust `fastled` binary directly — no Python entry-point shim, no
-# cargo build at install time.
+# venv's Scripts/ (Windows) or bin/ (Unix) at install time, so the Python
+# compatibility shim can launch the Rust `fastled-rs` binary without a cargo
+# build at runtime.
 data = "wheel-data"
 
 [tool.ruff]
@@ -71,10 +71,9 @@ ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 
 [project.scripts]
-# `fastled` is intentionally NOT a Python entry-point; the Rust binary is
-# bundled into the wheel via [tool.maturin] data (see above) and pip
-# installs it directly to the venv's Scripts/bin directory. The Python
-# aliases below are kept as thin shims for the rarely-used `python -m`
-# invocation paths.
+# `fastled` remains a Python compatibility entry point during the migration.
+# It resolves and execs the Rust binary under the distinct `fastled-rs` name
+# so the shim cannot recursively find itself on PATH.
+fastled = "fastled.cli:main"
 fastled-wasm = "fastled.cli:main"
 fled = "fastled.cli:main"

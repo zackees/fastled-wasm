@@ -23,7 +23,7 @@ uv pip install "maturin>=1.7,<2"
 # `[tool.maturin] data = "wheel-data"` config points here; maturin treats a
 # missing path as an error during `pep517 build-wheel`. The cargo-build step
 # later in this script will populate `wheel-data/scripts/` with the Rust
-# fastled binary so subsequent `./build-wheel` invocations bundle it; an
+# fastled-rs binary so subsequent `./build-wheel` invocations bundle it; an
 # empty dir is fine for the editable-install path that pip is about to run.
 mkdir -p wheel-data/scripts
 
@@ -104,22 +104,22 @@ if command -v cargo-binstall &> /dev/null; then
   fi
 fi
 
-# Ensure the Rust `fastled` CLI binary is materialised somewhere our Python
+# Ensure the Rust `fastled-rs` CLI binary is materialised somewhere our Python
 # helpers (src/fastled/_rust_cli.py) can find it. The Python `[project.scripts]`
-# entry-point shim collides with the Rust binary's name on PATH, so the helper
-# explicitly looks in target/{release,debug}/ and $CARGO_HOME/bin. If
+# entry-point shim owns the user-facing `fastled` command during the migration,
+# while the Rust binary uses a distinct `fastled-rs` name. If
 # cargo-binstall didn't supply a pre-built copy, build from source so unit
 # tests and the deploy workflow can subprocess the binary for the internal
 # auto-install plumbing flags (--internal-ensure-fastled-repo, etc.).
 if [[ "$FASTLED_CLI_BINSTALLED" -eq 0 ]]; then
   echo "Building fastled CLI from source..."
   if command -v soldr &> /dev/null; then
-    soldr cargo build --release --bin fastled \
-      || { echo "Error: soldr cargo build --bin fastled failed"; exit 1; }
+    soldr cargo build --release --bin fastled-rs \
+      || { echo "Error: soldr cargo build --bin fastled-rs failed"; exit 1; }
   else
     echo "Warning: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
-    cargo build --release --bin fastled \
-      || { echo "Error: cargo build --bin fastled failed"; exit 1; }
+    cargo build --release --bin fastled-rs \
+      || { echo "Error: cargo build --bin fastled-rs failed"; exit 1; }
   fi
 fi
 
@@ -127,16 +127,15 @@ fi
 # downstream tooling will find it. Editable installs (`uv pip install -e .`)
 # don't extract the maturin `data` dir to the venv's Scripts/, so we mimic
 # the wheel-install layout manually:
-#   * `.venv/Scripts/fastled[.exe]` (or `.venv/bin/fastled`) — so PATH lookup
-#     resolves the Rust binary for callers like `build_site.py` that shell
-#     out to plain `fastled`.
-#   * `wheel-data/scripts/fastled[.exe]` — so a subsequent `./build-wheel`
+#   * `.venv/Scripts/fastled-rs[.exe]` (or `.venv/bin/fastled-rs`) so the
+#     Python `fastled` compatibility shim can find the Rust binary.
+#   * `wheel-data/scripts/fastled-rs[.exe]` so a subsequent `./build-wheel`
 #     produces a wheel that bundles the binary.
 if [[ "$OSTYPE" == "msys" ]]; then
-  EXE_NAME="fastled.exe"
+  EXE_NAME="fastled-rs.exe"
   VENV_BIN_DIR=".venv/Scripts"
 else
-  EXE_NAME="fastled"
+  EXE_NAME="fastled-rs"
   VENV_BIN_DIR=".venv/bin"
 fi
 
@@ -161,5 +160,5 @@ if [[ -n "$BIN_SRC" ]]; then
   cp -f "$BIN_SRC" "wheel-data/scripts/$EXE_NAME"
   echo "Staged $BIN_SRC -> $VENV_BIN_DIR/$EXE_NAME (and wheel-data/scripts/)"
 else
-  echo "Warning: Rust fastled binary not found; PATH lookups for 'fastled' will miss" >&2
+  echo "Warning: Rust fastled-rs binary not found; Python fastled shims will fail" >&2
 fi

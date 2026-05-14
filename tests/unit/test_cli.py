@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest  # type: ignore[reportMissingImports]
 
+from fastled._rust_cli import find_rust_fastled_cli
+from fastled.interrupts import handle_keyboard_interrupt
+
 HERE = Path(__file__).parent
 TEST_DIR = HERE / "test_ino" / "wasm"
 
@@ -26,14 +29,20 @@ class MainTester(unittest.TestCase):
         original_dir = os.getcwd()
         try:
             os.chdir(str(TEST_DIR))
-            cp: subprocess.CompletedProcess = subprocess.run(
-                "fastled --just-compile",
-                shell=True,
+            cli = find_rust_fastled_cli()
+            if cli is None:
+                self.skipTest("Rust fastled-rs CLI binary not found")
+            cp: subprocess.CompletedProcess[bytes] = subprocess.run(
+                [str(cli), "--just-compile"],
                 check=False,
+                timeout=300,
             )
             ok = cp.returncode == 0
             if not ok:
                 self.fail(f"Command failed with return code {cp.returncode}")
+        except KeyboardInterrupt as ki:
+            handle_keyboard_interrupt(ki)
+            raise
         finally:
             os.chdir(original_dir)
 

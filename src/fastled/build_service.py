@@ -1,3 +1,10 @@
+"""Compatibility build-service facade backed by the native Rust service.
+
+This module preserves the Python ``BuildService`` API for callers that still
+import it directly. Build orchestration is owned by ``NativeBuildService``;
+Python only adapts request/result types and registers compiler toolchains.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
