@@ -6,7 +6,7 @@ on:
       runs-on:
         required: true
         type: string
-      maturin-target:
+      rust-target:
         required: false
         type: string
         default: ""
@@ -34,9 +34,6 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           cache: true
-          # Include github.workflow because some callers (e.g. Windows
-          # x86/ARM) currently share the same runs-on. Without this they
-          # collide on the same cache key and one job fails to save.
           cache-key-suffix: build-${{ inputs.runs-on }}-${{ github.workflow }}
 
       - name: Install system dependencies (Linux)
@@ -48,30 +45,21 @@ jobs:
       - name: Install
         run: ./install
 
-      - name: Add cross-compile target
-        if: inputs.maturin-target != ''
-        run: rustup target add "${{ inputs.maturin-target }}"
-
       - name: Build fastled CLI binary (for wheel bundling)
         run: |
-          # Compile the Rust `fastled-rs` CLI and stage it under wheel-data/scripts/
-          # so maturin packages it into <pkg>-<ver>.data/scripts/ in the wheel.
-          # See `build-wheel` and `[tool.maturin] data` in pyproject.toml.
-          if [ -n "${{ inputs.maturin-target }}" ]; then
-            soldr cargo build --release --bin fastled-rs --target "${{ inputs.maturin-target }}"
-            case "${{ inputs.maturin-target }}" in
+          if [ -n "${{ inputs.rust-target }}" ]; then
+            soldr cargo build --release --bin fastled-rs --target "${{ inputs.rust-target }}"
+            case "${{ inputs.rust-target }}" in
               *windows*) EXE_NAME="fastled-rs.exe" ;;
               *)         EXE_NAME="fastled-rs" ;;
             esac
-            BIN_SRC="target/${{ inputs.maturin-target }}/release/${EXE_NAME}"
+            BIN_SRC="target/${{ inputs.rust-target }}/release/${EXE_NAME}"
           else
             soldr cargo build --release --bin fastled-rs
             case "$(uname -s)" in
               MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled-rs.exe" ;;
               *)                    EXE_NAME="fastled-rs" ;;
             esac
-            # On Windows the rustup default host triple is MSVC; cargo writes
-            # the binary under target/<triple>/release/ even without --target.
             if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled-rs.exe" ]; then
               ARCH="$(uname -m)"
               if [ "$ARCH" = "x86_64" ]; then TRIPLE="x86_64-pc-windows-msvc"; else TRIPLE="aarch64-pc-windows-msvc"; fi
@@ -84,36 +72,33 @@ jobs:
               BIN_SRC="target/release/${EXE_NAME}"
             fi
           fi
-          mkdir -p wheel-data/scripts
-          cp -f "$BIN_SRC" "wheel-data/scripts/${EXE_NAME}"
-          ls -lh wheel-data/scripts/
+          mkdir -p src/fastled/bin
+          cp -f "$BIN_SRC" "src/fastled/bin/${EXE_NAME}"
+          ls -lh src/fastled/bin/
 
       - name: Build wheel
         run: |
-          if [ -n "${{ inputs.maturin-target }}" ]; then
-            # Generate import lib stub for cross-compilation.
-            # PyO3 abi3-py310 expects python310.lib but generate-import-lib
-            # creates python3.lib; copy to satisfy the linker.
-            BUILD_DIR="target/${{ inputs.maturin-target }}/release/build"
-            uv run maturin build --release --target "${{ inputs.maturin-target }}" || {
-              echo "First build failed — patching import lib name..."
-              for d in "$BUILD_DIR"/pyo3-ffi-*/out/lib; do
-                if [ -f "$d/python3.lib" ] && [ ! -f "$d/python310.lib" ]; then
-                  cp "$d/python3.lib" "$d/python310.lib"
-                  echo "Copied python3.lib -> python310.lib in $d"
-                fi
-              done
-              uv run maturin build --release --target "${{ inputs.maturin-target }}"
-            }
+          PLAT_NAME=""
+          case "${{ inputs.rust-target }}" in
+            aarch64-pc-windows-msvc) PLAT_NAME="win_arm64" ;;
+            x86_64-pc-windows-msvc)  PLAT_NAME="win_amd64" ;;
+            aarch64-apple-darwin)    PLAT_NAME="macosx_11_0_arm64" ;;
+            x86_64-apple-darwin)     PLAT_NAME="macosx_10_12_x86_64" ;;
+            aarch64-unknown-linux-gnu) PLAT_NAME="manylinux_2_28_aarch64" ;;
+            x86_64-unknown-linux-gnu)  PLAT_NAME="manylinux_2_28_x86_64" ;;
+          esac
+
+          if [ -n "$PLAT_NAME" ]; then
+            uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel --plat-name "$PLAT_NAME"
           else
-            uv run maturin build --release
+            uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel
           fi
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-${{ inputs.runs-on }}-${{ inputs.maturin-target || 'native' }}
-          path: target/wheels/*.whl
+          name: wheel-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          path: dist/*.whl
 
       - name: Upload failure logs
         if: failure()

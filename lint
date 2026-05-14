@@ -5,18 +5,14 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # Rust linting goes through soldr so the zccache compile cache is hit.
 # Install soldr with: uv tool install soldr  (or see zackees/soldr).
-if command -v soldr &> /dev/null; then
-  echo Running cargo fmt check
-  soldr cargo fmt --all --check
-  echo Running cargo clippy
-  soldr cargo clippy --workspace --all-targets -- -D warnings
-elif command -v cargo &> /dev/null; then
-  echo "WARNING: soldr not found; falling back to plain cargo (slow). Install with: uv tool install soldr"
-  cargo fmt --all --check
-  cargo clippy --workspace --all-targets -- -D warnings
-else
-  echo "WARNING: neither soldr nor cargo found; skipping Rust linting"
+if ! command -v soldr &> /dev/null; then
+  echo "Error: soldr is required for Rust linting. Install with: uv tool install soldr" >&2
+  exit 1
 fi
+echo Running cargo fmt check
+soldr cargo fmt --all --check
+echo Running cargo clippy
+soldr cargo clippy --workspace --all-targets -- -D warnings
 
 echo Running ruff src
 uv run ruff check --fix src

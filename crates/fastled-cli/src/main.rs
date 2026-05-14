@@ -91,7 +91,24 @@ fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
     }
 }
 
+fn exit_code_from_process(code: i32) -> ExitCode {
+    if code == 0 {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from((code & 0xff) as u8)
+    }
+}
+
 fn main() -> ExitCode {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    match fastled_cli::runtime::maybe_reexec_from_managed_runtime(&raw_args) {
+        Ok(Some(code)) => return exit_code_from_process(code),
+        Ok(None) => {}
+        Err(err) => {
+            eprintln!("fastled: runtime handoff failed: {err:#}");
+        }
+    }
+
     match parse_internal_viewer_args() {
         Some(Ok(args)) => run_internal_viewer(args),
         Some(Err(message)) => {

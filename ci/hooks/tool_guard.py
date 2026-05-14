@@ -3,8 +3,8 @@
 
 Blocks invocations that bypass soldr/zccache:
 
-* Bare ``cargo``, ``rustc``, ``rustfmt``, ``clippy-driver`` (and their
-  ``cargo-`` variants). These must run through ``soldr cargo …`` so the
+* Bare ``cargo``, ``rustc``, ``rustfmt``, ``clippy-driver``, ``rustup`` (and their
+  ``cargo-`` variants). These must run through ``soldr cargo ...`` so the
   zccache compile cache is consulted; otherwise cold builds take 8-10
   minutes (see issue #75).
 * Legacy ``./_cargo``, ``./_rustc``, ``./_rustfmt`` trampolines. Removed
@@ -19,31 +19,51 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 
 RUST_TOOLS = {
     "cargo",
     "rustc",
     "rustfmt",
+    "rustup",
     "clippy-driver",
     "cargo-clippy",
     "cargo-fmt",
 }
 LEGACY_RUST_TRAMPOLINES = {"_cargo", "_rustc", "_rustfmt"}
 SHELL_TOOL_NAMES = {"Bash", "Shell", "shell_command", "functions.shell_command"}
+NESTED_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd"}
 
 
 def _is_env_assignment(word: str) -> bool:
     return re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", word) is not None
 
 
-def _command_words(seg: str) -> list[str]:
-    words = seg.split()
+def _strip_env_prefix(words: list[str]) -> list[str]:
     if words and words[0] == "env":
         words = words[1:]
     while words and _is_env_assignment(words[0]):
         words = words[1:]
     return words
+
+
+def _command_words(seg: str) -> list[str]:
+    return _strip_env_prefix(seg.split())
+
+
+def _shell_words(seg: str) -> list[str]:
+    try:
+        return shlex.split(seg)
+    except ValueError:
+        return []
+
+
+def _tool_basename(word: str) -> str:
+    bare = word.replace("\\", "/").rsplit("/", 1)[-1]
+    if bare.lower().endswith(".exe"):
+        bare = bare[:-4]
+    return bare
 
 
 def _resolve_uv_run_tool(seg: str) -> str | None:
@@ -73,8 +93,49 @@ def _strip_noncode(command: str) -> str:
     return out
 
 
-def check_command(command: str) -> tuple[str, str] | None:
+def _nested_shell_command(words: list[str]) -> str | None:
+    words = _strip_env_prefix(words)
+    if not words:
+        return None
+
+    shell = _tool_basename(words[0]).lower()
+    if shell not in NESTED_SHELLS:
+        return None
+
+    for index, word in enumerate(words[1:], start=1):
+        lower = word.lower()
+        if shell == "cmd":
+            if lower in {"/c", "-c"} and index + 1 < len(words):
+                return " ".join(words[index + 1 :])
+            continue
+
+        if lower in {"-c", "-command"} or (lower.startswith("-") and "c" in lower[1:]):
+            if index + 1 < len(words):
+                return words[index + 1]
+    return None
+
+
+def _check_nested_shells(command: str) -> tuple[str, str] | None:
+    segments = re.split(r"&&|\|\||;|\n", command)
+    for seg in segments:
+        words = _shell_words(seg.strip())
+        if not words:
+            continue
+        nested = _nested_shell_command(words)
+        if nested:
+            result = check_command(nested, _depth=1)
+            if result:
+                return result
+    return None
+
+
+def check_command(command: str, _depth: int = 0) -> tuple[str, str] | None:
     """Return (tool, reason) if forbidden, otherwise None."""
+    if _depth == 0:
+        nested_result = _check_nested_shells(command)
+        if nested_result:
+            return nested_result
+
     command = _strip_noncode(command)
     segments = re.split(r"&&|\|\||;|\n", command)
 
@@ -88,7 +149,7 @@ def check_command(command: str) -> tuple[str, str] | None:
             continue
 
         first = words[0]
-        bare = first.lstrip("./\\")
+        bare = _tool_basename(first)
         normalized = " ".join(words)
 
         if bare in LEGACY_RUST_TRAMPOLINES:
@@ -106,7 +167,7 @@ def check_command(command: str) -> tuple[str, str] | None:
             tool = _resolve_uv_run_tool(normalized)
             if tool is None:
                 continue
-            tool_bare = tool.lstrip("./\\")
+            tool_bare = _tool_basename(tool)
             if tool_bare in LEGACY_RUST_TRAMPOLINES:
                 replacement = tool_bare[1:]
                 return (
@@ -114,10 +175,13 @@ def check_command(command: str) -> tuple[str, str] | None:
                     f"`{tool}` was retired (see issue #76). "
                     f"Use `soldr {replacement} ...` instead.",
                 )
-            if tool in RUST_TOOLS:
+            if tool_bare in RUST_TOOLS:
+                replacement = (
+                    "soldr cargo" if tool_bare == "rustup" else f"soldr {tool_bare}"
+                )
                 return (
                     tool,
-                    f"Use `soldr {tool} ...` instead of `uv run {tool} ...`. "
+                    f"Use `{replacement} ...` instead of `uv run {tool_bare} ...`. "
                     "`uv run <rust-tool>` bypasses soldr's toolchain "
                     "selection and the zccache compile cache.",
                 )
@@ -126,12 +190,13 @@ def check_command(command: str) -> tuple[str, str] | None:
         if normalized.startswith("uv pip "):
             continue
 
-        if first in RUST_TOOLS:
+        if bare in RUST_TOOLS:
+            replacement = "soldr cargo" if bare == "rustup" else f"soldr {bare}"
             return (
-                first,
-                f"Use `soldr {first} ...` instead of bare `{first}`. "
-                "Plain cargo invocations bypass zccache and turn a 30-second "
-                "incremental build into a 10-minute cold build (see issue #75).",
+                bare,
+                f"Use `{replacement} ...` instead of bare `{bare}`. "
+                "Plain Rust tool invocations bypass soldr's toolchain "
+                "selection and zccache integration (see issue #75).",
             )
 
     return None

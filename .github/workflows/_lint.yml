@@ -35,12 +35,6 @@ jobs:
           # collide on the same cache key and one job fails to save.
           cache-key-suffix: lint-${{ inputs.runs-on }}-${{ github.workflow }}
 
-      - name: Install rustfmt + clippy components
-        # setup-soldr reads `channel` from rust-toolchain.toml but does not
-        # honor the `components` array, so cargo fmt / cargo clippy fail with
-        # "component is not installed". Provision them explicitly here.
-        run: rustup component add rustfmt clippy
-
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |

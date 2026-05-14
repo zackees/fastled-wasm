@@ -11,6 +11,7 @@ pub mod frontend;
 pub mod install;
 mod keyboard;
 pub mod project;
+pub mod runtime;
 mod server;
 pub mod viewer;
 pub mod wasm_build;
@@ -944,8 +945,7 @@ fn serve_directory(dir: &str) -> ExitCode {
     })
 }
 
-/// Library entry point — invoked from both the `fastled` binary in this crate
-/// and the wheel-bundled `fastled` binary in `crates/fastled-py`.
+/// Library entry point invoked by the `fastled-rs` binary.
 pub fn run() -> ExitCode {
     let mut cli = Cli::parse();
 

@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/fastled-cli",
-    "crates/fastled-py",
 ]
 
 [workspace.package]
@@ -14,11 +13,11 @@ repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
-pyo3 = { version = "0.23", features = ["abi3-py310", "generate-import-lib"] }
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
 notify = { version = "7", features = ["macos_fsevent"] }
 sha2 = "0.10"
+fs2 = "0.4"
 reqwest = { version = "0.12", features = ["blocking"] }
 running-process-core = "3.1.0"
 zip = "2"

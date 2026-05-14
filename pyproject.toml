@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
-build-backend = "maturin"
+requires = ["setuptools>=69", "wheel>=0.43"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastled"
@@ -12,7 +12,7 @@ keywords = ["fastled", "wasm", "rust"]
 license = { text = "BSD 3-Clause License" }
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = [
-    # Build-system dependencies for the FastLED C++ → WASM compile.
+    # Build-system dependencies for the FastLED C++ -> WASM compile.
     # `meson` configures the build; `ninja` is meson's backend. Both ship
     # standalone executables when pip-installed. Rust owns Emscripten
     # resolution via linked ctcb crates and invokes the checked-in
@@ -22,18 +22,15 @@ dependencies = [
     "zcmds_win32; sys_platform == 'win32'",
 ]
 
-[tool.maturin]
-manifest-path = "crates/fastled-py/Cargo.toml"
-module-name = "fastled._native"
-python-source = "src"
-features = ["pyo3/extension-module", "pyo3/abi3-py310"]
-# Pre-built Rust binaries get dropped into wheel-data/scripts/ by the
-# build-wheel helper before maturin runs. maturin packages this directory as
-# the wheel's <pkg>-<ver>.data/ tree; pip then extracts scripts/ to the
-# venv's Scripts/ (Windows) or bin/ (Unix) at install time, so the Python
-# compatibility shim can launch the Rust `fastled-rs` binary without a cargo
-# build at runtime.
-data = "wheel-data"
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fastled = ["assets/*", "frontend/**/*", "bin/*"]
 
 [tool.ruff]
 line-length = 200

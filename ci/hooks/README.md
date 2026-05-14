@@ -12,7 +12,7 @@ trigger a uv sync or a native-extension rebuild before every tool call.
 ## Hooks
 
 - `tool_guard.py` - **PreToolUse / Bash**. Blocks bare `cargo`, `rustc`,
-  `rustfmt`, `clippy-driver`, the `cargo-clippy` / `cargo-fmt` aliases, and the
+  `rustfmt`, `rustup`, `clippy-driver`, the `cargo-clippy` / `cargo-fmt` aliases, and the
   legacy `./_cargo`, `./_rustc`, `./_rustfmt` trampolines (retired in #76). All
   Rust tooling must go through `soldr` so zccache is consulted; otherwise cold
   builds take 8-10 minutes (see #75).

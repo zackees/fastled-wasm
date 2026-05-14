@@ -1,15 +1,14 @@
 """Locate the Rust ``fastled-rs`` binary.
 
-In wheel-installed deployments the Rust binary is bundled directly into the
-venv's ``Scripts/`` / ``bin/`` directory via ``[tool.maturin] data`` (see
-``pyproject.toml``), so ``shutil.which(\"fastled-rs\")`` returns it. In editable
-dev installs the Rust binary lives under ``target/`` from a local
-``cargo build --bin fastled-rs``.
+Wheel-installed deployments bundle the Rust binary under ``fastled/bin``.
+Editable dev installs usually resolve the binary from ``target/`` after a
+local ``soldr cargo build --bin fastled-rs``.
 
 Search order:
-    1. Workspace ``target/{release,debug}/fastled-rs[.exe]`` (dev / editable).
-    2. ``$CARGO_HOME/bin/fastled-rs[.exe]`` (where ``cargo binstall`` installs).
-    3. ``shutil.which(\"fastled-rs\")`` (wheel install puts it on ``PATH``).
+    1. Package-local ``fastled/bin/fastled-rs[.exe]`` (wheel install).
+    2. Workspace ``target/{release,debug}/fastled-rs[.exe]`` (dev / editable).
+    3. ``$CARGO_HOME/bin/fastled-rs[.exe]`` (where ``cargo binstall`` installs).
+    4. ``shutil.which(\"fastled-rs\")``.
 """
 
 from __future__ import annotations
@@ -41,7 +40,12 @@ def find_rust_fastled_cli() -> Path | None:
     """Return the path to the Rust ``fastled-rs`` binary, or ``None``."""
     exe = _exe_name()
 
-    # 1. Workspace target/ tree (dev / editable).
+    # 1. Wheel-bundled native binary.
+    candidate = Path(__file__).resolve().parent / "bin" / exe
+    if candidate.is_file():
+        return candidate
+
+    # 2. Workspace target/ tree (dev / editable).
     workspace_root = _find_workspace_root()
     if workspace_root is not None:
         for profile in ("release", "debug"):
@@ -57,7 +61,7 @@ def find_rust_fastled_cli() -> Path | None:
                         if candidate.is_file():
                             return candidate
 
-    # 2. cargo-binstall install location.
+    # 3. cargo-binstall install location.
     cargo_home = os.environ.get("CARGO_HOME")
     if cargo_home:
         candidate = Path(cargo_home) / "bin" / exe
@@ -67,9 +71,7 @@ def find_rust_fastled_cli() -> Path | None:
     if candidate.is_file():
         return candidate
 
-    # 3. Wheel install drops the Rust binary directly into the venv's
-    # Scripts/bin dir under the distinct fastled-rs name, so a Python
-    # `fastled` compatibility shim cannot resolve itself here.
+    # 4. PATH lookup.
     found = shutil.which(exe)
     if found:
         return Path(found)
@@ -89,9 +91,12 @@ def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
     workspace_root = _find_workspace_root()
     if workspace_root is not None:
         soldr = shutil.which("soldr")
-        cargo = [soldr, "cargo"] if soldr else ["cargo"]
+        if soldr is None:
+            raise RuntimeError(
+                "soldr is required to build the Rust fastled-rs CLI binary."
+            )
         return subprocess.run(
-            [*cargo, "run", "--quiet", "--bin", "fastled-rs", "--", *args],
+            [soldr, "cargo", "run", "--quiet", "--bin", "fastled-rs", "--", *args],
             check=False,
             cwd=workspace_root,
             env=env,
