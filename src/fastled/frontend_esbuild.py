@@ -1,8 +1,7 @@
 """Compatibility shim. Frontend bundling is implemented in Rust.
 
 See ``crates/fastled-cli/src/frontend.rs`` for the implementation; this module
-exists so existing callers (``fastled.toolchain.emscripten``,
-``fastled.toolchain.internal_wasm_build``) keep working without churn.
+exists so existing Python callers can keep importing the old helper.
 """
 
 from __future__ import annotations

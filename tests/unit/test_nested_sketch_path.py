@@ -2,15 +2,14 @@
 """
 Regression test for https://github.com/zackees/fastled-wasm/issues/12
 
-When a sketch is nested like examples/Fx/FxCylon, the --example argument
-passed to wasm_build.py must be "Fx/FxCylon", not just "FxCylon".
+When a sketch is nested like examples/Fx/FxCylon, the native WASM backend
+must receive "Fx/FxCylon", not just "FxCylon".
 """
 
 import tempfile
 from pathlib import Path
 
-from fastled.toolchain.emscripten import EmscriptenToolchain, _resolve_example_name
-from fastled.types import BuildMode
+from fastled.toolchain.emscripten import _resolve_example_name
 
 
 def test_nested_sketch_preserves_intermediate_directory():
@@ -59,48 +58,9 @@ def test_external_sketch_uses_leaf_name():
         assert is_in_tree is False
 
 
-def test_compile_via_wasm_build_preserves_sketch_cache(monkeypatch):
-    """The internal builder must preserve the per-sketch cache directory."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        fastled_dir = Path(tmpdir) / "FastLED"
-        sketch_dir = fastled_dir / "examples" / "LuminescentGrand"
-        output_dir = sketch_dir / "fastled_js"
-        cache_dir = sketch_dir / ".build" / "wasm"
-
-        (fastled_dir / "ci").mkdir(parents=True)
-        sketch_dir.mkdir(parents=True)
-        output_dir.mkdir(parents=True)
-        cache_dir.mkdir(parents=True)
-        (sketch_dir / "LuminescentGrand.ino").write_text("// sketch\n")
-        cache_marker = cache_dir / "cache-marker.txt"
-        cache_marker.write_text("keep me\n")
-
-        calls: list[tuple[str, object]] = []
-
-        def fake_configure(project_root):
-            calls.append(("configure", project_root))
-
-        def fake_build(*, example, output, mode, verbose=False, force=False):
-            calls.append(("build", (example, output, mode, verbose, force)))
-            return 0
-
-        monkeypatch.setattr(
-            "fastled.toolchain.internal_wasm_build.configure_project_root",
-            fake_configure,
-        )
-        monkeypatch.setattr(
-            "fastled.toolchain.internal_wasm_build.build",
-            fake_build,
-        )
-
-        toolchain = EmscriptenToolchain(fastled_path=fastled_dir)
-        output_js = toolchain._compile_via_wasm_build(
-            sketch_dir=sketch_dir,
-            output_dir=output_dir,
-            fastled_dir=fastled_dir,
-            build_mode=BuildMode.QUICK,
-        )
-
-        assert output_js == output_dir / "fastled.js"
-        assert cache_marker.exists()
-        assert calls, "expected internal wasm builder to be invoked"
+def test_python_internal_wasm_builder_removed():
+    """The old Python Meson/Ninja build orchestrator should stay deleted."""
+    root = Path(__file__).parent.parent.parent
+    assert not (
+        root / "src" / "fastled" / "toolchain" / "internal_wasm_build.py"
+    ).exists()

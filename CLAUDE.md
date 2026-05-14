@@ -44,7 +44,7 @@ uv run pytest tests/unit --ignore=tests/unit/test_cli.py -v
 
 - The user-facing CLI is the Rust binary `fastled` (built from `crates/fastled-cli`, bundled into the wheel via `[tool.maturin] data`). Python `cli.py` / `app.py` are 15-line shims that call `fastled._rust_cli.invoke_rust_fastled_cli`.
 - `fastled._native` is the PyO3 extension compiled from `crates/fastled-py/src/lib.rs`. It exposes Rust functions to Python (sketch discovery, build service, project init, string diff, frontend bundling, …).
-- The compile path goes Rust → Python toolchain → Rust: `crates/fastled-cli/src/build.rs` constructs `fastled._native.NativeBuildService` and calls it; the Python toolchain (Meson/Ninja/Emscripten internals under `src/fastled/toolchain/`) is intentionally Python-owned.
+- The compile path is Rust-owned: `crates/fastled-cli/src/build.rs` re-exports the native WASM backend in `crates/fastled-cli/src/wasm_build.rs`. Python `BuildService` / `EmscriptenToolchain` are compatibility facades over `fastled._native.NativeBuildService`.
 - For PyO3 changes, after `cargo build -p fastled-py` the new `.dll` lands in `target/maturin/_native.dll`. `maturin develop` copies that to `src/fastled/_native.pyd`. If `_native.pyd` is locked by other Python processes (common on Windows), use the move-aside trick: `mv src/fastled/_native.pyd src/fastled/_native.pyd.old && cp target/maturin/_native.dll src/fastled/_native.pyd`. Remember to delete the `.pyd.old` before committing.
 
 ## Conventions

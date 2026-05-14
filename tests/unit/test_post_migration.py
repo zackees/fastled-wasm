@@ -67,11 +67,11 @@ class TestPythonEntrypointsDelegateToRust(unittest.TestCase):
         self.assertIn("shutil.which(exe)", cli_source)
         self.assertIn("FASTLED_PYTHON_EXECUTABLE", cli_source)
 
-    def test_embedded_python_uses_real_python_executable(self) -> None:
+    def test_build_rs_reexports_native_wasm_backend(self) -> None:
         build_source = (FASTLED_CLI_SRC_DIR / "build.rs").read_text()
-        self.assertIn("configure_embedded_python_executable", build_source)
-        self.assertIn("FASTLED_PYTHON_EXECUTABLE", build_source)
-        self.assertIn("EMSDK_PYTHON", build_source)
+        self.assertIn("pub use crate::wasm_build::{", build_source)
+        self.assertIn("run_build", build_source)
+        self.assertNotIn("configure_embedded_python_executable", build_source)
 
 
 class TestNativeAppOrchestration(unittest.TestCase):
@@ -162,6 +162,40 @@ class TestNativeAppOrchestration(unittest.TestCase):
         self.assertNotIn("from fastled.args import Args", source)
 
 
+class TestInstallSiteWrapperCleanup(unittest.TestCase):
+    """Install/site compatibility wrappers should not orchestrate fastled via PATH."""
+
+    WRAPPER_PATHS = [
+        SRC_DIR / "site" / "build.py",
+        SRC_DIR / "install" / "examples_manager.py",
+    ]
+
+    def test_wrappers_do_not_use_shell_or_path_fastled_subprocesses(self) -> None:
+        forbidden_patterns = [
+            "shell=True",
+            'which("fastled")',
+            "which('fastled')",
+            '["fastled",',
+            "['fastled',",
+        ]
+        for path in self.WRAPPER_PATHS:
+            source = _implementation_source(path)
+            for pattern in forbidden_patterns:
+                self.assertNotIn(
+                    pattern,
+                    source,
+                    f"{path.relative_to(ROOT_DIR)} must delegate through native helpers",
+                )
+
+    def test_wrappers_delegate_to_native_cli_or_project_init_helpers(self) -> None:
+        site_source = (SRC_DIR / "site" / "build.py").read_text()
+        install_source = (SRC_DIR / "install" / "examples_manager.py").read_text()
+
+        self.assertIn("project_init", site_source)
+        self.assertIn("invoke_rust_fastled_cli", site_source)
+        self.assertIn("invoke_rust_fastled_cli", install_source)
+
+
 class TestNoDeadCodeModules(unittest.TestCase):
     """Bug 2: Dead code files left over from the backend cleanup must be removed."""
 
@@ -170,6 +204,7 @@ class TestNoDeadCodeModules(unittest.TestCase):
         "interruptible_http",
         "zip_files",
         "header_dump",
+        "toolchain/internal_wasm_build",
     ]
 
     def test_dead_modules_do_not_exist(self) -> None:
@@ -179,6 +214,16 @@ class TestNoDeadCodeModules(unittest.TestCase):
                 path.exists(),
                 f"Dead code module {mod}.py should have been deleted",
             )
+
+    def test_emscripten_wrapper_does_not_import_internal_builder(self) -> None:
+        source = (SRC_DIR / "toolchain" / "emscripten.py").read_text()
+        self.assertNotIn("internal_wasm_build", source)
+        self.assertNotIn("subprocess.run", source)
+
+    def test_legacy_native_toolchain_launchers_removed(self) -> None:
+        native_tools = SRC_DIR / "toolchain" / "native_tools"
+        self.assertFalse((native_tools / "launcher_emcc.cpp").exists())
+        self.assertFalse((native_tools / "launcher_wasmld.cpp").exists())
 
 
 class TestAllExportsValid(unittest.TestCase):

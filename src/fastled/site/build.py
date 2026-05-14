@@ -1,9 +1,10 @@
 import argparse
-import subprocess
 from pathlib import Path
-from shutil import copytree, rmtree, which
+from shutil import copytree, rmtree
 
+from fastled._rust_cli import invoke_rust_fastled_cli
 from fastled.interrupts import handle_keyboard_interrupt
+from fastled.project_init import project_init
 from fastled.site.examples import EXAMPLES
 
 CSS_CONTENT = """
@@ -342,17 +343,13 @@ INDEX_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def _exec(cmd: str) -> None:
-    subprocess.run(cmd, shell=True, check=True)
-
-
 def build_example(example: str, outputdir: Path) -> None:
-    if not which("fastled"):
-        raise FileNotFoundError("fastled executable not found")
     src_dir = outputdir / example / "src"
-    _exec(f"fastled --init={example} --branch master {src_dir}")
+    project_init(example=example, outputdir=src_dir, ref="master")
     assert src_dir.exists()
-    _exec(f"fastled {src_dir / example} --just-compile")
+    rc = invoke_rust_fastled_cli([str(src_dir / example), "--just-compile"])
+    if rc != 0:
+        raise RuntimeError(f"FastLED compile failed for {example} with exit code {rc}")
     fastled_dir = src_dir / example / "fastled_js"
     assert fastled_dir.exists(), f"fastled dir {fastled_dir} not found"
     # now copy it to the example dir

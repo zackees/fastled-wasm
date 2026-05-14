@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use ctcb_core::Target;
 use ctcb_manifest::{PartRef, PlatformManifest};
 use serde_json::{json, Value};
 
@@ -34,22 +35,9 @@ fn fastled_root() -> Result<PathBuf> {
     Ok(home.join(".fastled"))
 }
 
-fn detect_platform_arch() -> (&'static str, &'static str) {
-    let platform = if cfg!(target_os = "windows") {
-        "win"
-    } else if cfg!(target_os = "macos") {
-        "darwin"
-    } else {
-        "linux"
-    };
-    let arch = if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        std::env::consts::ARCH
-    };
-    (platform, arch)
+fn detect_platform_arch() -> Result<(String, String)> {
+    let target = Target::current().context("detect host clang-tool-chain target")?;
+    Ok((target.platform.to_string(), target.arch.to_string()))
 }
 
 /// Fetch and parse the platform manifest JSON.
@@ -119,13 +107,13 @@ fn download_multipart(parts: &[PartRef], parts_dir: &Path, merged_path: &Path) -
 /// The layout intentionally matches the Python implementation so a previously
 /// Python-installed toolchain is picked up without re-downloading.
 pub fn ensure_emscripten_installed() -> Result<PathBuf> {
-    let (platform, arch) = detect_platform_arch();
+    let (platform, arch) = detect_platform_arch()?;
     let root = fastled_root()?;
     let install_base = root
         .join("toolchains")
         .join("emscripten")
-        .join(platform)
-        .join(arch);
+        .join(&platform)
+        .join(&arch);
     let cache_dir = root.join("toolchains").join("archives");
     fs::create_dir_all(&install_base)?;
     fs::create_dir_all(&cache_dir)?;

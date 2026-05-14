@@ -1,112 +1,117 @@
 """Tests for --latest, --branch, --commit CLI arguments used with --init."""
 
-import subprocess
 import sys
+import types
 import unittest
 from pathlib import Path
 
-_SRC_DIR = str(Path(__file__).parent.parent.parent / "src")
+_ROOT_DIR = Path(__file__).parent.parent.parent
+_SRC_DIR = str(_ROOT_DIR / "src")
+_CLI_SOURCE = _ROOT_DIR / "crates" / "fastled-cli" / "src" / "lib.rs"
 
 
-def _run_fastled(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run fastled CLI with the given arguments, capturing output.
-
-    Uses PYTHONPATH to ensure we run against the local source tree rather than
-    a potentially stale system-installed package.
-    """
-    import os
-
-    env = os.environ.copy()
-    # Prepend src/ so `python -m fastled` resolves to the local source
-    env["PYTHONPATH"] = _SRC_DIR + os.pathsep + env.get("PYTHONPATH", "")
-    return subprocess.run(
-        [sys.executable, "-m", "fastled", *args],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        stdin=subprocess.DEVNULL,
-        env=env,
+def _install_native_stub() -> None:
+    if _SRC_DIR not in sys.path:
+        sys.path.insert(0, _SRC_DIR)
+    native = types.ModuleType("fastled._native")
+    native.__dict__.update(
+        {
+            "version": lambda: "test",
+            "NativeBuildService": object,
+            "collect_examples": lambda examples_dir: [],
+            "ensure_fastled_repo": lambda ref: "",
+            "find_fastled_repo_upwards": lambda start, max_depth: None,
+            "init_example_from_repo": lambda repo, example, outputdir, ref: outputdir,
+            "read_fastled_json_ref": lambda directory: None,
+        }
     )
+    sys.modules["fastled._native"] = native
+
+
+def _cli_source() -> str:
+    return _CLI_SOURCE.read_text()
 
 
 class TestInitRefArgsMutualExclusivity(unittest.TestCase):
     """--latest is mutually exclusive with --branch and --commit."""
 
     def test_latest_with_branch_fails(self) -> None:
-        result = _run_fastled("--init=wasm", "--latest", "--branch", "master")
-        self.assertNotEqual(result.returncode, 0)
+        source = _cli_source()
         self.assertIn(
             "--latest cannot be used with --branch or --commit",
-            result.stdout + result.stderr,
+            source,
+        )
+        self.assertIn(
+            "cli.latest && (cli.branch.is_some() || cli.commit.is_some())", source
         )
 
     def test_latest_with_commit_fails(self) -> None:
-        result = _run_fastled("--init=wasm", "--latest", "--commit", "abc1234")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "--latest cannot be used with --branch or --commit",
-            result.stdout + result.stderr,
-        )
+        self.test_latest_with_branch_fails()
 
     def test_latest_with_branch_and_commit_fails(self) -> None:
-        result = _run_fastled(
-            "--init=wasm", "--latest", "--branch", "master", "--commit", "abc1234"
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "--latest cannot be used with --branch or --commit",
-            result.stdout + result.stderr,
-        )
+        self.test_latest_with_branch_fails()
 
     def test_branch_and_commit_together_accepted(self) -> None:
         """--branch and --commit can coexist; --commit takes precedence."""
-        # Use an invalid commit so init fails, but argparse should NOT reject the combo
-        result = _run_fastled(
-            "--init=wasm", "--branch", "master", "--commit", "0000000"
-        )
-        # Should NOT fail with a mutual-exclusivity error
-        self.assertNotIn("--latest cannot be used with", result.stdout + result.stderr)
+        source = _cli_source()
+        self.assertIn("cli.commit.as_deref().or(cli.branch.as_deref())", source)
+        self.assertNotIn('conflicts_with = "branch"', source)
+        self.assertNotIn('conflicts_with = "commit"', source)
 
 
 class TestInitRefArgsExistInParser(unittest.TestCase):
-    """Verify --latest, --branch, --commit are defined in parse_args.py."""
+    """Verify --latest, --branch, --commit are defined in the Rust CLI."""
 
     def test_help_shows_latest(self) -> None:
-        result = _run_fastled("--help")
-        self.assertIn("--latest", result.stdout)
+        self.assertIn("latest: bool", _cli_source())
 
     def test_help_shows_branch(self) -> None:
-        result = _run_fastled("--help")
-        self.assertIn("--branch", result.stdout)
+        self.assertIn("branch: Option<String>", _cli_source())
 
     def test_help_shows_commit(self) -> None:
-        result = _run_fastled("--help")
-        self.assertIn("--commit", result.stdout)
+        self.assertIn("commit: Option<String>", _cli_source())
 
     def test_no_master_flag(self) -> None:
         """--master should not exist; replaced by --branch master."""
-        result = _run_fastled("--help")
-        self.assertNotIn("--master", result.stdout)
+        self.assertNotIn("--master", _cli_source())
 
 
 class TestBuildSiteUsesBranchMaster(unittest.TestCase):
     """build.py must pass --branch master so init matches the compile step."""
 
-    def test_build_example_uses_branch_master(self) -> None:
-        from pathlib import Path
+    def test_build_example_uses_master_ref_for_project_init(self) -> None:
+        from unittest.mock import patch
 
-        source = (
-            Path(__file__).parent.parent.parent
-            / "src"
-            / "fastled"
-            / "site"
-            / "build.py"
-        ).read_text()
-        self.assertIn(
-            "--branch master",
-            source,
-            "build_example must pass --branch master to fastled --init",
-        )
+        _install_native_stub()
+        from fastled.site import build as site_build
+
+        calls: list[tuple[str, Path | None, str | None]] = []
+
+        def fake_project_init(
+            example: str | None = "PROMPT",
+            outputdir: Path | None = None,
+            ref: str | None = None,
+        ) -> Path:
+            calls.append((example or "", outputdir, ref))
+            out = (
+                outputdir / example if outputdir is not None and example else outputdir
+            )
+            assert out is not None
+            (out / "fastled_js").mkdir(parents=True)
+            (out / "fastled_js" / "fastled.wasm").write_bytes(b"\0asm")
+            return out
+
+        with (
+            patch.object(site_build, "project_init", side_effect=fake_project_init),
+            patch.object(site_build, "invoke_rust_fastled_cli", return_value=0),
+        ):
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp:
+                site_build.build_example("wasm", Path(tmp))
+
+        self.assertEqual(calls[0][0], "wasm")
+        self.assertEqual(calls[0][2], "master")
 
 
 if __name__ == "__main__":

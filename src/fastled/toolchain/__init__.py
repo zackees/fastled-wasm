@@ -1,8 +1,7 @@
-"""
-FastLED Toolchain Module
+"""Compatibility exports for legacy FastLED toolchain imports.
 
-Provides toolchain implementations for compiling FastLED sketches:
-- EmscriptenToolchain: Compile to WebAssembly using Emscripten
+WASM compilation is owned by the Rust backend. ``EmscriptenToolchain`` remains
+as a thin facade for callers that still import it directly.
 """
 
 from fastled.toolchain.emscripten import EmscriptenToolchain

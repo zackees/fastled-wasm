@@ -2,6 +2,7 @@ use fastled_cli::frontend;
 use fastled_cli::install;
 use fastled_cli::project;
 use fastled_cli::viewer;
+use fastled_cli::wasm_build;
 use fastled_cli::{PromptChoice, SketchSelection};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -126,23 +127,6 @@ fn discover_artifacts(output_dir: &Path) -> HashMap<String, String> {
         );
     }
     artifacts
-}
-
-fn python_path(py: Python<'_>, path: &Path) -> PyResult<Py<PyAny>> {
-    let pathlib = PyModule::import(py, "pathlib")?;
-    let cls = pathlib.getattr("Path")?;
-    Ok(cls
-        .call1((path.to_string_lossy().as_ref(),))?
-        .into_any()
-        .unbind())
-}
-
-fn py_fspath(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<PathBuf> {
-    let os = PyModule::import(py, "os")?;
-    let fspath = os.getattr("fspath")?;
-    let path_value = fspath.call1((value,))?;
-    let path_str: String = path_value.extract()?;
-    Ok(PathBuf::from(path_str))
 }
 
 // ---------------------------------------------------------------------------
@@ -507,7 +491,6 @@ fn string_diff_impl(
 
 #[pyclass(name = "NativeBuildService")]
 struct NativeBuildService {
-    toolchains: HashMap<Option<String>, Py<PyAny>>,
     states: HashMap<PathBuf, BuildState>,
 }
 
@@ -516,15 +499,15 @@ impl NativeBuildService {
     #[new]
     fn new() -> Self {
         Self {
-            toolchains: HashMap::new(),
             states: HashMap::new(),
         }
     }
 
     #[pyo3(signature = (toolchain, fastled_path=None))]
     fn register_toolchain(&mut self, toolchain: Py<PyAny>, fastled_path: Option<&str>) {
-        let key = normalize_optional_path(fastled_path);
-        self.toolchains.insert(key, toolchain);
+        let _ = (toolchain, fastled_path);
+        // Compatibility no-op. Build orchestration is now owned by
+        // fastled_cli::wasm_build rather than Python toolchain objects.
     }
 
     #[pyo3(signature = (sketch_dir, build_mode, profile=false, fastled_path=None, force_clean=false))]
@@ -558,6 +541,7 @@ impl NativeBuildService {
         fastled_path: Option<&str>,
         force_clean: bool,
     ) -> PyResult<Py<PyDict>> {
+        let _ = build_mode_obj;
         let sketch_dir = PathBuf::from(sketch_dir);
         let output_dir = sketch_dir.join("fastled_js");
         let fastled_path = normalize_optional_path(fastled_path);
@@ -573,27 +557,20 @@ impl NativeBuildService {
             let _ = fs::remove_dir_all(&output_dir);
         }
 
-        let toolchain = self
-            .toolchains
-            .get(&fastled_path)
-            .map(|toolchain| toolchain.clone_ref(py))
-            .ok_or_else(|| PyRuntimeError::new_err("No toolchain registered for build"))?;
-
         fs::create_dir_all(&output_dir).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
 
-        let start = Instant::now();
-        let result_payload = match self.run_toolchain(
-            py,
-            toolchain,
-            &sketch_dir,
-            &output_dir,
-            build_mode_obj,
+        let request = wasm_build::BuildRequest {
+            sketch_dir: sketch_dir.clone(),
+            build_mode: Self::wasm_build_mode(build_mode)?,
             profile,
-        ) {
-            Ok(js_file) => {
-                let compile_time = start.elapsed().as_secs_f64();
+            fastled_path: fastled_path.clone().map(PathBuf::from),
+            force_clean,
+        };
+
+        let result_payload = match wasm_build::run_build(&request) {
+            Ok(build_result) if build_result.success => {
                 let zip_start = Instant::now();
-                let zip_bytes = zip_output(&output_dir)
+                let zip_bytes = zip_output(&build_result.output_dir)
                     .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
                 let zip_time = zip_start.elapsed().as_secs_f64();
 
@@ -609,34 +586,34 @@ impl NativeBuildService {
                 Self::build_payload(
                     py,
                     true,
-                    format!(
-                        "Native compilation successful!\nOutput: {}\nWASM: {}",
-                        js_file.display(),
-                        js_file.with_extension("wasm").display()
-                    ),
+                    build_result.output,
                     zip_bytes,
                     zip_time,
-                    compile_time,
-                    strategy,
-                    &output_dir,
+                    build_result.sketch_time_secs,
+                    build_result.strategy,
+                    &build_result.output_dir,
                 )?
             }
-            Err(err) => {
-                if err.is_instance_of::<pyo3::exceptions::PyKeyboardInterrupt>(py) {
-                    return Err(err);
-                }
-                let compile_time = start.elapsed().as_secs_f64();
-                Self::build_payload(
-                    py,
-                    false,
-                    format!("Native compilation failed: {err}"),
-                    Vec::new(),
-                    0.0,
-                    compile_time,
-                    strategy,
-                    &output_dir,
-                )?
-            }
+            Ok(build_result) => Self::build_payload(
+                py,
+                false,
+                build_result.output,
+                Vec::new(),
+                0.0,
+                build_result.sketch_time_secs,
+                build_result.strategy,
+                &build_result.output_dir,
+            )?,
+            Err(err) => Self::build_payload(
+                py,
+                false,
+                format!("Native Rust WASM build failed: {err:#}"),
+                Vec::new(),
+                0.0,
+                0.0,
+                strategy,
+                &output_dir,
+            )?,
         };
 
         Ok(result_payload)
@@ -653,6 +630,17 @@ impl NativeBuildService {
 }
 
 impl NativeBuildService {
+    fn wasm_build_mode(build_mode: &str) -> PyResult<wasm_build::BuildMode> {
+        match build_mode.to_ascii_lowercase().as_str() {
+            "quick" => Ok(wasm_build::BuildMode::Quick),
+            "debug" => Ok(wasm_build::BuildMode::Debug),
+            "release" => Ok(wasm_build::BuildMode::Release),
+            other => Err(PyValueError::new_err(format!(
+                "unsupported build mode: {other}"
+            ))),
+        }
+    }
+
     fn detect_strategy_inner(
         &mut self,
         sketch_dir: &Path,
@@ -703,27 +691,6 @@ impl NativeBuildService {
         }
 
         "incremental".to_string()
-    }
-
-    fn run_toolchain(
-        &self,
-        py: Python<'_>,
-        toolchain: Py<PyAny>,
-        sketch_dir: &Path,
-        output_dir: &Path,
-        build_mode_obj: Py<PyAny>,
-        profile: bool,
-    ) -> PyResult<PathBuf> {
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("sketch_dir", python_path(py, sketch_dir)?)?;
-        kwargs.set_item("output_dir", python_path(py, output_dir)?)?;
-        kwargs.set_item("build_mode", build_mode_obj)?;
-        kwargs.set_item("profile", profile)?;
-
-        let js_file = toolchain
-            .bind(py)
-            .call_method("compile", (), Some(&kwargs))?;
-        py_fspath(py, &js_file)
     }
 
     #[allow(clippy::too_many_arguments)]
