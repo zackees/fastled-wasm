@@ -1,22 +1,37 @@
 #!/bin/bash
 set -e
 
+OS_NAME="$(uname -s 2>/dev/null || echo unknown)"
+
 # Check if UV is not found
 if ! command -v uv &> /dev/null; then
   # If Darwin (macOS), use brew to install UV
-  if [[ "$OSTYPE" == "darwin"* ]]; then
+  if [[ "$OS_NAME" == "Darwin"* ]]; then
     brew install uv
   else
     # If it's Windows, use pip to install UV, else use pip3
-    if [[ "$OSTYPE" == "msys" ]]; then
+    case "$OS_NAME" in
+    MINGW*|MSYS*|CYGWIN*)
       pip install uv
-    else
+      ;;
+    *)
       pip3 install uv
-    fi
+      ;;
+    esac
   fi
 fi
 
-uv venv --python "${UV_PYTHON:-3.11}" --seed
+if [[ -d .venv ]]; then
+  if [[ -f .venv/pyvenv.cfg ]]; then
+    echo "Reusing existing virtual environment at .venv"
+  else
+    echo "Error: .venv exists but does not look like a Python virtual environment" >&2
+    echo "Remove or rename .venv, or create a valid virtual environment there first." >&2
+    exit 1
+  fi
+else
+  uv venv --python "${UV_PYTHON:-3.11}" --seed
+fi
 uv pip install "build>=1" "setuptools>=69" "wheel>=0.43"
 uv pip install -r requirements.testing.txt
 
@@ -31,11 +46,14 @@ fi
 # many dev machines) lack; current windows-2025 images fail here even for
 # git-bash. Fall back to plain copy, then to a no-op with a warning. Not
 # fatal: ./activate is only used interactively.
-if [[ "$OSTYPE" == "msys" ]]; then
+case "$OS_NAME" in
+MINGW*|MSYS*|CYGWIN*)
   ACTIVATE_SRC=".venv/Scripts/activate"
-else
+  ;;
+*)
   ACTIVATE_SRC=".venv/bin/activate"
-fi
+  ;;
+esac
 
 if [[ -f "$ACTIVATE_SRC" ]]; then
   ln -s "$ACTIVATE_SRC" ./activate 2>/dev/null \
@@ -101,11 +119,14 @@ fi
 # into the venv's Scripts/bin directory, so stage the package-local binary:
 #   * `src/fastled/bin/fastled[.exe]` so the Python compatibility shim and a
 #     subsequent `./build-wheel` both use the bundled native binary.
-if [[ "$OSTYPE" == "msys" ]]; then
+case "$OS_NAME" in
+MINGW*|MSYS*|CYGWIN*)
   EXE_NAME="fastled.exe"
-else
+  ;;
+*)
   EXE_NAME="fastled"
-fi
+  ;;
+esac
 
 BIN_SRC=""
 # Discover where the binary landed. cargo on Windows MSVC writes under

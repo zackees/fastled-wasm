@@ -29,13 +29,28 @@ jobs:
       - name: Install Python
         run: uv python install "$UV_PYTHON"
 
+      - name: Configure Rust target
+        run: |
+          cp rust-toolchain.toml rust-toolchain.ci.toml
+          if [ -n "${{ inputs.rust-target }}" ]; then
+            printf '\ntargets = ["%s"]\n' "${{ inputs.rust-target }}" >> rust-toolchain.ci.toml
+          fi
+          cat rust-toolchain.ci.toml
+
       - uses: zackees/setup-soldr@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # setup-soldr@v0 reads underscore-normalized INPUT_* values
+          # directly, so mirror hyphenated inputs until the action handles
+          # them natively.
+          INPUT_CACHE_KEY_SUFFIX: build-${{ inputs.runs-on }}-${{ github.workflow }}
+          INPUT_LINKER: platform-default
+          INPUT_TOOLCHAIN_FILE: rust-toolchain.ci.toml
         with:
           cache: true
           cache-key-suffix: build-${{ inputs.runs-on }}-${{ github.workflow }}
           linker: platform-default
+          toolchain-file: rust-toolchain.ci.toml
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'

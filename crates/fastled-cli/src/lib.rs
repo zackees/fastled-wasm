@@ -1107,8 +1107,13 @@ mod tests {
         fs::write(sketch_dir.join("Blink.ino"), b"void setup() {}").unwrap();
         let _guard = CurrentDirGuard::enter(&sketch_dir);
 
-        let resolved = resolve_compile_directory(&base_cli()).unwrap();
-        assert_eq!(resolved, Some(display_path(&sketch_dir)));
+        let resolved = resolve_compile_directory(&base_cli())
+            .unwrap()
+            .expect("sketch directory");
+        assert_eq!(
+            canonical_display_path(Path::new(&resolved)),
+            canonical_display_path(&sketch_dir)
+        );
     }
 
     #[test]
@@ -1123,7 +1128,7 @@ mod tests {
         cli.directory = Some(display_path(&source_file));
 
         let resolved = resolve_compile_directory(&cli).unwrap();
-        assert_eq!(resolved, Some(display_path(&sketch_dir)));
+        assert_eq!(resolved, Some(canonical_display_path(&sketch_dir)));
     }
 
     #[test]
@@ -1165,7 +1170,7 @@ mod tests {
         let _guard = CurrentDirGuard::enter(&nested);
 
         let detected = detect_local_fastled_path();
-        assert_eq!(detected, Some(display_path(&repo_root)));
+        assert_eq!(detected, Some(canonical_display_path(&repo_root)));
     }
 
     #[test]
