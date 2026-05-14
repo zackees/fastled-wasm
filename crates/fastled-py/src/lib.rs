@@ -1485,7 +1485,309 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_in_order_match_impl, string_diff_impl};
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use fastled_cli::wasm_build;
+    use pyo3::prelude::*;
+
+    use super::{
+        is_in_order_match_impl, path_from_py, string_diff_impl, write_state, BuildState,
+        PyBuildArtifacts, PyBuildMode, PyBuildRequest, PyBuildService, PyCompileResult,
+    };
+
+    struct TestDir {
+        path: PathBuf,
+    }
+
+    impl TestDir {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system time before unix epoch")
+                .as_nanos();
+            let path = std::env::temp_dir()
+                .join(format!("fastled-py-{name}-{}-{nanos}", std::process::id()));
+            fs::create_dir_all(&path).expect("create temp test directory");
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn write_build_outputs(sketch_dir: &Path, state: BuildState) {
+        let output_dir = sketch_dir.join("fastled_js");
+        fs::create_dir_all(&output_dir).expect("create output directory");
+        fs::write(output_dir.join("fastled.js"), "js").expect("write fastled.js");
+        fs::write(output_dir.join("fastled.wasm"), "wasm").expect("write fastled.wasm");
+        write_state(&output_dir, &state);
+    }
+
+    #[test]
+    fn test_build_mode_normalizes_labels_and_maps_to_wasm_modes() {
+        let quick = PyBuildMode::from_label(" quick ").expect("quick mode");
+        assert_eq!(quick.name, "QUICK");
+        assert_eq!(quick.value, "QUICK");
+        assert_eq!(quick.__str__(), "QUICK");
+        assert_eq!(quick.__repr__(), "BuildMode.QUICK");
+        assert_eq!(
+            quick.as_wasm_mode().expect("quick wasm mode"),
+            wasm_build::BuildMode::Quick
+        );
+
+        let debug = PyBuildMode::from_label("debug").expect("debug mode");
+        assert_eq!(
+            debug.as_wasm_mode().expect("debug wasm mode"),
+            wasm_build::BuildMode::Debug
+        );
+
+        let release = PyBuildMode::from_label("RELEASE").expect("release mode");
+        assert_eq!(
+            release.as_wasm_mode().expect("release wasm mode"),
+            wasm_build::BuildMode::Release
+        );
+    }
+
+    #[test]
+    fn test_build_mode_rejects_unknown_label() {
+        assert!(PyBuildMode::from_label("fast").is_err());
+    }
+
+    #[test]
+    fn test_build_request_defaults_to_fastled_js_output_dir() {
+        let sketch_dir = PathBuf::from("sketch");
+        let request = PyBuildRequest {
+            sketch_dir: sketch_dir.clone(),
+            build_mode: PyBuildMode::from_label("quick").expect("quick mode"),
+            profile: false,
+            fastled_path: None,
+            force_clean: false,
+        };
+
+        assert_eq!(request.sketch_dir, sketch_dir);
+        assert_eq!(request.build_mode.value, "QUICK");
+        assert!(!request.profile);
+        assert!(request.fastled_path.is_none());
+        assert!(!request.force_clean);
+
+        Python::with_gil(|py| {
+            let output_dir = request.output_dir(py).expect("output_dir");
+            assert_eq!(
+                path_from_py(output_dir.bind(py)).expect("path from output_dir"),
+                PathBuf::from("sketch").join("fastled_js")
+            );
+        });
+    }
+
+    #[test]
+    fn test_build_artifacts_exposes_present_paths_only() {
+        let js_path = PathBuf::from("out").join("fastled.js");
+        let wasm_path = PathBuf::from("out").join("fastled.wasm");
+        let artifacts = PyBuildArtifacts {
+            js: Some(js_path.clone()),
+            wasm: Some(wasm_path.clone()),
+            frontend_assets: None,
+        };
+
+        assert_eq!(artifacts.path_by_name("js"), Some(js_path.as_path()));
+        assert_eq!(artifacts.path_by_name("wasm"), Some(wasm_path.as_path()));
+        assert_eq!(artifacts.path_by_name("frontend_assets"), None);
+        assert_eq!(artifacts.path_by_name("missing"), None);
+
+        Python::with_gil(|py| {
+            let js = artifacts.__getitem__(py, "js").expect("js item");
+            assert_eq!(
+                path_from_py(js.bind(py)).expect("path from js item"),
+                js_path
+            );
+            assert!(artifacts.__getitem__(py, "missing").is_err());
+
+            let dict = artifacts.as_dict(py).expect("artifacts dict");
+            let dict = dict.bind(py);
+            assert_eq!(dict.len(), 2);
+            let wasm = dict
+                .get_item("wasm")
+                .expect("wasm lookup")
+                .expect("wasm present");
+            assert_eq!(
+                path_from_py(&wasm).expect("path from wasm dict item"),
+                wasm_path
+            );
+            assert!(dict
+                .get_item("frontend_assets")
+                .expect("frontend lookup")
+                .is_none());
+        });
+    }
+
+    #[test]
+    fn test_compile_result_stores_bool_bytes_and_timing_fields() {
+        let result = PyCompileResult {
+            success: true,
+            stdout: "ok".to_string(),
+            hash_value: Some("abc123".to_string()),
+            zip_bytes: b"abc".to_vec(),
+            zip_time: 0.5,
+            libfastled_time: 0.75,
+            sketch_time: 1.25,
+            response_processing_time: 0.125,
+        };
+
+        assert!(result.__bool__());
+        assert_eq!(result.success, true);
+        assert_eq!(result.stdout, "ok");
+        assert_eq!(result.hash_value, Some("abc123".to_string()));
+        assert_eq!(result.zip_bytes, b"abc");
+        assert_eq!(result.sketch_time, 1.25);
+
+        Python::with_gil(|py| {
+            let dict = result.to_dict(py).expect("compile result dict");
+            let dict = dict.bind(py);
+            assert!(dict
+                .get_item("success")
+                .expect("success lookup")
+                .expect("success present")
+                .extract::<bool>()
+                .expect("extract success"));
+            assert_eq!(
+                dict.get_item("stdout")
+                    .expect("stdout lookup")
+                    .expect("stdout present")
+                    .extract::<String>()
+                    .expect("extract stdout"),
+                "ok"
+            );
+            assert_eq!(
+                dict.get_item("zip_bytes")
+                    .expect("zip lookup")
+                    .expect("zip present")
+                    .extract::<Vec<u8>>()
+                    .expect("extract zip bytes"),
+                b"abc"
+            );
+            assert_eq!(
+                dict.get_item("sketch_time")
+                    .expect("sketch_time lookup")
+                    .expect("sketch_time present")
+                    .extract::<f64>()
+                    .expect("extract sketch_time"),
+                1.25
+            );
+        });
+    }
+
+    #[test]
+    fn test_build_service_detect_strategy_cold_when_output_missing() {
+        let temp = TestDir::new("missing-output");
+        let mut service = PyBuildService::new();
+
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "QUICK", false, None, false),
+            "cold"
+        );
+    }
+
+    #[test]
+    fn test_build_service_detect_strategy_cold_when_force_clean() {
+        let temp = TestDir::new("force-clean");
+        write_build_outputs(
+            temp.path(),
+            BuildState {
+                build_mode: "QUICK".to_string(),
+                profile: false,
+                fastled_path: None,
+            },
+        );
+        let mut service = PyBuildService::new();
+
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "QUICK", false, None, true),
+            "cold"
+        );
+    }
+
+    #[test]
+    fn test_build_service_detect_strategy_cold_when_artifacts_missing() {
+        let temp = TestDir::new("missing-artifacts");
+        let output_dir = temp.path().join("fastled_js");
+        fs::create_dir_all(&output_dir).expect("create output directory");
+        fs::write(output_dir.join("fastled.js"), "js").expect("write partial artifact");
+        write_state(
+            &output_dir,
+            &BuildState {
+                build_mode: "QUICK".to_string(),
+                profile: false,
+                fastled_path: None,
+            },
+        );
+        let mut service = PyBuildService::new();
+
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "QUICK", false, None, false),
+            "cold"
+        );
+    }
+
+    #[test]
+    fn test_build_service_detect_strategy_incremental_when_state_matches() {
+        let temp = TestDir::new("incremental");
+        write_build_outputs(
+            temp.path(),
+            BuildState {
+                build_mode: "QUICK".to_string(),
+                profile: false,
+                fastled_path: None,
+            },
+        );
+        let mut service = PyBuildService::new();
+
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "QUICK", false, None, false),
+            "incremental"
+        );
+    }
+
+    #[test]
+    fn test_build_service_detect_strategy_cold_when_state_changes() {
+        let temp = TestDir::new("state-changes");
+        write_build_outputs(
+            temp.path(),
+            BuildState {
+                build_mode: "QUICK".to_string(),
+                profile: false,
+                fastled_path: None,
+            },
+        );
+        let mut service = PyBuildService::new();
+
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "RELEASE", false, None, false),
+            "cold"
+        );
+        assert_eq!(
+            service.detect_strategy_inner(temp.path(), "QUICK", true, None, false),
+            "cold"
+        );
+        assert_eq!(
+            service.detect_strategy_inner(
+                temp.path(),
+                "QUICK",
+                false,
+                Some("different-fastled-path".to_string()),
+                false,
+            ),
+            "cold"
+        );
+    }
 
     #[test]
     fn test_native_is_in_order_match() {

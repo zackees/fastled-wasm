@@ -22,6 +22,7 @@ pyo3 = { workspace = true, features = ["auto-initialize"] }
 notify = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
+running-process-core = { workspace = true }
 zip = { workspace = true }
 tar = { workspace = true }
 zstd = { workspace = true }
