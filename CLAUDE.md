@@ -31,7 +31,7 @@ Do not pipe pytest through `| tail -N` if you want streaming output; it buffers 
 
 ## Architecture Notes
 
-- The user-facing CLI is the Rust binary `fastled`/`fastled-rs` built from `crates/fastled-cli`.
+- The user-facing CLI is the Rust binary `fastled` built from `crates/fastled-cli`.
 - Python `cli.py` and `app.py` are tiny shims that call `fastled._rust_cli.invoke_rust_fastled_cli`.
 - The Python package intentionally does not ship a PyO3 extension; it bundles and launches the native Rust CLI.
 - The compile path is Rust-owned through `crates/fastled-cli/src/build.rs` and `crates/fastled-cli/src/wasm_build.rs`.
@@ -46,7 +46,7 @@ Do not pipe pytest through `| tail -N` if you want streaming output; it buffers 
 
 ## Common Gotchas
 
-- The installed `fastled` CLI on PATH may be a Python compatibility shim or stale script; during migration the Rust CLI binary is named `fastled-rs[.exe]`.
+- The installed `fastled` CLI on PATH may be a Python compatibility shim or stale script; the bundled native binary is `fastled[.exe]`.
 - Error messages from the Rust CLI go to stderr.
 - On Windows, stale generated binaries under `src/fastled/bin/` are build artifacts and should not be committed.
 

@@ -49,19 +49,19 @@ jobs:
       - name: Build fastled CLI binary (for wheel bundling)
         run: |
           if [ -n "${{ inputs.rust-target }}" ]; then
-            soldr cargo build --release --bin fastled-rs --target "${{ inputs.rust-target }}"
+            soldr cargo build --release --bin fastled --target "${{ inputs.rust-target }}"
             case "${{ inputs.rust-target }}" in
-              *windows*) EXE_NAME="fastled-rs.exe" ;;
-              *)         EXE_NAME="fastled-rs" ;;
+              *windows*) EXE_NAME="fastled.exe" ;;
+              *)         EXE_NAME="fastled" ;;
             esac
             BIN_SRC="target/${{ inputs.rust-target }}/release/${EXE_NAME}"
           else
-            soldr cargo build --release --bin fastled-rs
+            soldr cargo build --release --bin fastled
             case "$(uname -s)" in
-              MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled-rs.exe" ;;
-              *)                    EXE_NAME="fastled-rs" ;;
+              MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
+              *)                    EXE_NAME="fastled" ;;
             esac
-            if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled-rs.exe" ]; then
+            if [ -n "${CARGO_BUILD_TARGET:-}" ] || [ "$EXE_NAME" = "fastled.exe" ]; then
               ARCH="$(uname -m)"
               if [ "$ARCH" = "x86_64" ]; then TRIPLE="x86_64-pc-windows-msvc"; else TRIPLE="aarch64-pc-windows-msvc"; fi
               if [ -f "target/${TRIPLE}/release/${EXE_NAME}" ]; then

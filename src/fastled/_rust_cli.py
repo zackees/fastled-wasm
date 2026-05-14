@@ -1,14 +1,13 @@
-"""Locate the Rust ``fastled-rs`` binary.
+"""Locate the native Rust ``fastled`` binary.
 
 Wheel-installed deployments bundle the Rust binary under ``fastled/bin``.
 Editable dev installs usually resolve the binary from ``target/`` after a
-local ``soldr cargo build --bin fastled-rs``.
+local ``soldr cargo build --bin fastled``.
 
 Search order:
-    1. Package-local ``fastled/bin/fastled-rs[.exe]`` (wheel install).
-    2. Workspace ``target/{release,debug}/fastled-rs[.exe]`` (dev / editable).
-    3. ``$CARGO_HOME/bin/fastled-rs[.exe]`` (where ``cargo binstall`` installs).
-    4. ``shutil.which(\"fastled-rs\")``.
+    1. Package-local ``fastled/bin/fastled[.exe]`` (wheel install).
+    2. Workspace ``target/{release,debug}/fastled[.exe]`` (dev / editable).
+    3. ``$CARGO_HOME/bin/fastled[.exe]`` (where ``cargo-binstall`` installs).
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from pathlib import Path
 
 
 def _exe_name() -> str:
-    return "fastled-rs.exe" if sys.platform == "win32" else "fastled-rs"
+    return "fastled.exe" if sys.platform == "win32" else "fastled"
 
 
 def _find_workspace_root() -> Path | None:
@@ -37,7 +36,7 @@ def _find_workspace_root() -> Path | None:
 
 
 def find_rust_fastled_cli() -> Path | None:
-    """Return the path to the Rust ``fastled-rs`` binary, or ``None``."""
+    """Return the path to the Rust ``fastled`` binary, or ``None``."""
     exe = _exe_name()
 
     # 1. Wheel-bundled native binary.
@@ -71,10 +70,6 @@ def find_rust_fastled_cli() -> Path | None:
     if candidate.is_file():
         return candidate
 
-    # 4. PATH lookup.
-    found = shutil.which(exe)
-    if found:
-        return Path(found)
     return None
 
 
@@ -93,13 +88,13 @@ def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
         soldr = shutil.which("soldr")
         if soldr is None:
             raise RuntimeError(
-                "soldr is required to build the Rust fastled-rs CLI binary."
+                "soldr is required to build the Rust fastled CLI binary."
             )
         return subprocess.run(
-            [soldr, "cargo", "run", "--quiet", "--bin", "fastled-rs", "--", *args],
+            [soldr, "cargo", "run", "--quiet", "--bin", "fastled", "--", *args],
             check=False,
             cwd=workspace_root,
             env=env,
         ).returncode
 
-    raise RuntimeError("Could not locate the Rust fastled-rs CLI binary.")
+    raise RuntimeError("Could not locate the Rust fastled CLI binary.")

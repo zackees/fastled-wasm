@@ -17,7 +17,7 @@ name = "fastled_cli"
 path = "src/lib.rs"
 
 [[bin]]
-name = "fastled-rs"
+name = "fastled"
 path = "src/main.rs"
 
 [dependencies]
@@ -60,7 +60,7 @@ windows-sys = { workspace = true, features = [
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
-bin-dir = "fastled-rs{ binary-ext }"
+bin-dir = "fastled{ binary-ext }"
 pkg-fmt = "zip"
 
 [dev-dependencies]

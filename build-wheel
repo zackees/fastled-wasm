@@ -6,8 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled-rs.exe" ;;
-  *)                    EXE_NAME="fastled-rs" ;;
+  MINGW*|MSYS*|CYGWIN*) EXE_NAME="fastled.exe" ;;
+  *)                    EXE_NAME="fastled" ;;
 esac
 
 echo "Compiling fastled CLI (release)..."
@@ -15,7 +15,7 @@ if ! command -v soldr &> /dev/null; then
   echo "Error: soldr is required for Rust builds. Install with: uv tool install soldr" >&2
   exit 1
 fi
-soldr cargo build --release --bin fastled-rs
+soldr cargo build --release --bin fastled
 
 if [[ -n "${CARGO_BUILD_TARGET:-}" ]]; then
   BIN_SRC="$SCRIPT_DIR/target/${CARGO_BUILD_TARGET}/release/${EXE_NAME}"

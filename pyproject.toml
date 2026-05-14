@@ -62,8 +62,8 @@ disable_error_code = ["import-untyped"]
 
 [project.scripts]
 # `fastled` remains a Python compatibility entry point during the migration.
-# It resolves and execs the Rust binary under the distinct `fastled-rs` name
-# so the shim cannot recursively find itself on PATH.
+# It resolves and execs the bundled Rust `fastled[.exe]` binary from package
+# data; the shim deliberately does not search PATH to avoid recursive launch.
 fastled = "fastled.cli:main"
 fastled-wasm = "fastled.cli:main"
 fled = "fastled.cli:main"
