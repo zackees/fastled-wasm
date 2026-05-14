@@ -16,7 +16,17 @@ if ! command -v uv &> /dev/null; then
   fi
 fi
 
-uv venv --python "${UV_PYTHON:-3.11}" --seed
+if [[ -d .venv ]]; then
+  if [[ -f .venv/pyvenv.cfg ]]; then
+    echo "Reusing existing virtual environment at .venv"
+  else
+    echo "Error: .venv exists but does not look like a Python virtual environment" >&2
+    echo "Remove or rename .venv, or create a valid virtual environment there first." >&2
+    exit 1
+  fi
+else
+  uv venv --python "${UV_PYTHON:-3.11}" --seed
+fi
 uv pip install "build>=1" "setuptools>=69" "wheel>=0.43"
 uv pip install -r requirements.testing.txt
 
