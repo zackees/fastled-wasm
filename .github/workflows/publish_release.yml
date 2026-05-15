@@ -80,9 +80,23 @@ jobs:
     - name: Install Python
       run: uv python install "$UV_PYTHON"
 
-    - name: Install dependencies  
-      run: ./install
+    - uses: zackees/setup-soldr@v0
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_CACHE_KEY_SUFFIX: publish-release-${{ matrix.os }}
+        INPUT_LINKER: platform-default
+        INPUT_TOOLCHAIN_FILE: rust-toolchain.toml
+      with:
+        cache: true
+        cache-key-suffix: publish-release-${{ matrix.os }}
+        linker: platform-default
+
+    - name: Install system dependencies (Linux)
+      if: matrix.os == 'ubuntu-24.04'
       shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
     - name: Build executable
       shell: bash
@@ -196,15 +210,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Install dependencies for PyPI publishing
-        run: ./install
-        shell: bash
-
       - name: Build distribution packages
         run: |
           ./build-wheel
           rm -rf src/fastled/bin
-          uv run python -m build --sdist --no-isolation
+          uv run --with "build>=1" --with "setuptools>=69" --with "wheel>=0.43" python -m build --sdist --no-isolation
         shell: bash
 
       - name: Publish package distributions to PyPI
