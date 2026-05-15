@@ -58,9 +58,6 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Install
-        run: ./install
-
       - name: Build fastled CLI binary (for wheel bundling)
         run: |
           if [ -n "${{ inputs.rust-target }}" ]; then
