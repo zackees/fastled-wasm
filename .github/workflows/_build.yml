@@ -113,6 +113,12 @@ jobs:
           name: wheel-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           path: dist/*.whl
 
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          path: src/fastled/bin/fastled*
+
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
