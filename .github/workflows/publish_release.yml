@@ -78,6 +78,7 @@ jobs:
         python-version: '3.11.9'
 
     - name: Install Python
+      shell: bash
       run: uv python install "$UV_PYTHON"
 
     - uses: zackees/setup-soldr@v0
@@ -212,7 +213,7 @@ jobs:
 
       - name: Build distribution packages
         run: |
-          ./build-wheel
+          ./build-wheel --plat-name manylinux_2_28_x86_64
           rm -rf src/fastled/bin
           uv run --with "build>=1" --with "setuptools>=69" --with "wheel>=0.43" python -m build --sdist --no-isolation
         shell: bash
