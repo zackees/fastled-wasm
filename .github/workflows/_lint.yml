@@ -45,8 +45,8 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
-      - name: Install
-        run: ./install
+      - name: Sync Python deps
+        run: uv sync --group dev
 
       - name: Lint
         run: ./lint
