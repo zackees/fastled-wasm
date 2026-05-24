@@ -11,7 +11,7 @@ use std::process::Stdio;
 
 use anyhow::{Context, Result};
 #[cfg(not(windows))]
-use running_process_core::{ContainedChild, ContainedProcessGroup};
+use running_process::{ContainedProcessGroup, SpawnStdio, SpawnedChild, StdioSource};
 
 // ---------------------------------------------------------------------------
 // Binary names (platform-aware)
@@ -135,7 +135,7 @@ pub struct ViewerProcess {
 #[cfg(not(windows))]
 pub struct ViewerProcess {
     _group: ContainedProcessGroup,
-    child: ContainedChild,
+    child: SpawnedChild,
 }
 
 impl ViewerProcess {
@@ -146,7 +146,7 @@ impl ViewerProcess {
 
     #[cfg(not(windows))]
     pub fn pid(&self) -> u32 {
-        self.child.child.id()
+        self.child.id()
     }
 }
 
@@ -360,7 +360,13 @@ pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProce
         let group =
             ContainedProcessGroup::new().context("failed to create viewer process group")?;
         let mut command = viewer_command(&binary, frontend_dir);
-        let child = group.spawn(&mut command).with_context(|| {
+        let stdio = SpawnStdio {
+            stdin: StdioSource::Null,
+            stdout: StdioSource::Null,
+            stderr: StdioSource::Null,
+            ..SpawnStdio::default()
+        };
+        let child = group.spawn(&mut command, stdio).with_context(|| {
             format!("failed to spawn FastLED viewer from '{}'", binary.display())
         })?;
 

@@ -26,7 +26,7 @@ notify = { workspace = true }
 sha2 = { workspace = true }
 fs2 = { workspace = true }
 reqwest = { workspace = true }
-running-process-core = { workspace = true }
+running-process = { workspace = true }
 zip = { workspace = true }
 tar = { workspace = true }
 zstd = { workspace = true }
