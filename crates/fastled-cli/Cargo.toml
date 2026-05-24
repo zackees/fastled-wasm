@@ -34,7 +34,6 @@ flate2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-ctcb-manifest = { workspace = true }
 ctcb-core = { workspace = true }
 strsim = { workspace = true }
 crossterm = { workspace = true }

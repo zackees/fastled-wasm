@@ -754,18 +754,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ctcb-manifest"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97c47fc9cd2017787aad53c7a11fb8529291cadb369dc15ad041eb81fbc06221"
-dependencies = [
- "anyhow",
- "ctcb-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "ctor"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1090,14 +1078,13 @@ dependencies = [
 
 [[package]]
 name = "fastled-cli"
-version = "2.0.7"
+version = "2.0.9"
 dependencies = [
  "anyhow",
  "axum",
  "clap",
  "crossterm",
  "ctcb-core",
- "ctcb-manifest",
  "dirs 5.0.1",
  "flate2",
  "fs2",

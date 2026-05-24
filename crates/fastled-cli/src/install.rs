@@ -5,6 +5,7 @@
 //! Public entry points are intended to be called once at the top of the
 //! compile flow; results are cached on disk via a `done.txt` marker.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -12,10 +13,37 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use ctcb_core::Target;
-use ctcb_manifest::{PartRef, PlatformManifest};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::archive;
+
+/// Toolchain platform manifest as published in
+/// `clang-tool-chain-bins/assets/emscripten/{platform}/{arch}/manifest.json`.
+///
+/// Local mirror of the schema rather than relying on `ctcb-manifest` because
+/// the published manifests use a `"versions": { … }` map, while older
+/// `ctcb-manifest` releases expected version keys at the top level. Keeping
+/// the schema local insulates the CLI from upstream crate drift.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlatformManifest {
+    latest: String,
+    versions: BTreeMap<String, VersionInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VersionInfo {
+    href: String,
+    sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parts: Option<Vec<PartRef>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PartRef {
+    href: String,
+    sha256: String,
+}
 
 const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
     "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
@@ -1085,4 +1113,68 @@ pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
 
     println!("\nFastLED installation completed successfully!");
     Ok(InstallOutcome { launch_after })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DARWIN_ARM64_MANIFEST: &str = r#"{
+  "latest": "releases-d70a5da89b3e673bf6a482724478fc17e81e575e",
+  "versions": {
+    "releases-d70a5da89b3e673bf6a482724478fc17e81e575e": {
+      "version": "releases-d70a5da89b3e673bf6a482724478fc17e81e575e",
+      "href": "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/main/assets/emscripten/darwin/arm64/emscripten-releases-d70a5da89b3e673bf6a482724478fc17e81e575e-darwin-arm64.tar.zst",
+      "sha256": "6af749f0d44927c7d4c93c9e407e195257ed690b8e3bd3a43d7a3f4badc52082"
+    }
+  }
+}"#;
+
+    const LINUX_X86_64_MANIFEST_WITH_PARTS: &str = r#"{
+  "latest": "4.0.21",
+  "versions": {
+    "4.0.21": {
+      "version": "4.0.21",
+      "href": "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten/linux/x86_64/emscripten-4.0.21-linux-x86_64.tar.zst",
+      "sha256": "5cd3cbe0316d37c9b39bdc63691c014f136a5d82a9f08ed29bb7ad62f7a83655",
+      "parts": [
+        {
+          "href": "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten/linux/x86_64/emscripten-4.0.21-linux-x86_64.tar.zst.part-aa",
+          "sha256": "e427aee7d1197f59bcbd7a82a581f8d0bdf484ea24036a3c52903bb26cfd4488",
+          "size": 99614720
+        }
+      ]
+    }
+  }
+}"#;
+
+    #[test]
+    fn parses_nested_versions_manifest_without_parts() {
+        let manifest: PlatformManifest =
+            serde_json::from_str(DARWIN_ARM64_MANIFEST).expect("parse darwin/arm64 manifest");
+        assert_eq!(
+            manifest.latest,
+            "releases-d70a5da89b3e673bf6a482724478fc17e81e575e"
+        );
+        let entry = manifest
+            .versions
+            .get(&manifest.latest)
+            .expect("entry for latest");
+        assert!(entry.href.contains("emscripten-releases-"));
+        assert_eq!(
+            entry.sha256,
+            "6af749f0d44927c7d4c93c9e407e195257ed690b8e3bd3a43d7a3f4badc52082"
+        );
+        assert!(entry.parts.is_none());
+    }
+
+    #[test]
+    fn parses_manifest_with_multipart_archive_and_extra_size_field() {
+        let manifest: PlatformManifest = serde_json::from_str(LINUX_X86_64_MANIFEST_WITH_PARTS)
+            .expect("parse linux/x86_64 manifest");
+        let entry = manifest.versions.get("4.0.21").expect("entry for 4.0.21");
+        let parts = entry.parts.as_ref().expect("parts present");
+        assert_eq!(parts.len(), 1);
+        assert!(parts[0].href.ends_with(".part-aa"));
+    }
 }
