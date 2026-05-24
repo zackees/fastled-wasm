@@ -19,7 +19,7 @@ notify = { version = "7", features = ["macos_fsevent"] }
 sha2 = "0.10"
 fs2 = "0.4"
 reqwest = { version = "0.12", features = ["blocking"] }
-running-process-core = "3.1.0"
+running-process = { version = "4.0.0", default-features = false }
 zip = "2"
 tar = "0.4"
 zstd = "0.13"
