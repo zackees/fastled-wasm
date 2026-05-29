@@ -38,6 +38,12 @@ jobs:
           # x86/ARM) currently share the same runs-on. Without this they
           # collide on the same cache key and one job fails to save.
           cache-key-suffix: lint-${{ inputs.runs-on }}-${{ github.workflow }}
+          # `./lint` runs `soldr cargo clippy --workspace --all-targets`
+          # (dev/debug profile). Cook in debug so its prebuilt deps share the
+          # compile-cache key with the clippy compile; the default `--release`
+          # cook is zero-reuse here and only bloats the build-cache
+          # (setup-soldr#235).
+          prebuild-deps-flags: ""
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
