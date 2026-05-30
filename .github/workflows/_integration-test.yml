@@ -30,7 +30,7 @@ jobs:
       - uses: zackees/setup-soldr@v0
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          INPUT_CACHE_KEY_SUFFIX: integration-test-${{ inputs.runs-on }}-${{ github.workflow }}
+          INPUT_CACHE_KEY_SUFFIX: ${{ inputs.runs-on }}
           INPUT_LINKER: platform-default
           INPUT_TOOLCHAIN_FILE: rust-toolchain.toml
         with:
@@ -39,7 +39,7 @@ jobs:
           # Include github.workflow because some callers (e.g. Windows
           # x86/ARM) currently share the same runs-on. Without this they
           # collide on the same cache key and one job fails to save.
-          cache-key-suffix: integration-test-${{ inputs.runs-on }}-${{ github.workflow }}
+          cache-key-suffix: ${{ inputs.runs-on }}
           # `./test` runs `soldr cargo test --workspace` (dev/debug profile).
           # Cook in debug so its prebuilt deps share the compile-cache key with
           # the test compile; the default `--release` cook is zero-reuse here
