@@ -36,9 +36,6 @@ jobs:
         with:
           cache: true
           linker: platform-default
-          # Include github.workflow because some callers (e.g. Windows
-          # x86/ARM) currently share the same runs-on. Without this they
-          # collide on the same cache key and one job fails to save.
           cache-key-suffix: ${{ inputs.runs-on }}
           # `./test` runs `soldr cargo test --workspace` (dev/debug profile).
           # Cook in debug so its prebuilt deps share the compile-cache key with
