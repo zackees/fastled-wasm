@@ -49,6 +49,13 @@ pub struct BuildResult {
     pub sketch_time_secs: f64,
     pub strategy: String,
     pub output: String,
+    /// Resolved FastLED checkout used for this build. Surfaces upward so that
+    /// the embedded HTTP server can wire DWARF source resolution against it.
+    pub fastled_dir: Option<PathBuf>,
+    /// Resolved emscripten install root (the parent of `emscripten/`), if
+    /// known. Used to expose `emsdk/` source paths for DWARF entries that
+    /// point at emsdk headers.
+    pub emsdk_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +172,15 @@ fn build_env(tools: &ToolPaths) -> Vec<(String, String)> {
         ("EMCC_SKIP_SANITY_CHECK".to_string(), "1".to_string()),
     ];
     if cfg!(windows) {
-        env.push(("EMCC_CORES".to_string(), "128".to_string()));
+        // Match the host's logical core count so emscripten's parallel
+        // sub-builds (libc, compiler_rt, libcxx) don't spawn 128 simultaneous
+        // emcc subprocesses, which on Windows can crash with access
+        // violations under contention. Clamp to a reasonable maximum.
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8)
+            .min(32);
+        env.push(("EMCC_CORES".to_string(), cores.to_string()));
     }
     env
 }
@@ -188,8 +203,11 @@ fn run_status(mut command: Command, label: &str) -> Result<()> {
     Ok(())
 }
 
+/// Canonicalize and lexically normalize, stripping the Windows `\\?\`
+/// long-path prefix that breaks external tools (meson, Python, emcc).
+/// See `crate::path::canonicalize_normalized` for details.
 fn normalize_path(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    crate::path::canonicalize_normalized(path).into_path_buf()
 }
 
 fn resolve_example_name(sketch_dir: &Path, fastled_dir: &Path) -> (String, PathBuf, bool) {
@@ -380,15 +398,18 @@ fn write_native_cross_file(fastled_dir: &Path, tools: &ToolPaths) -> Result<Path
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let python = tools.python.to_string_lossy().replace('\\', "/");
-    let emcc = tools.emcc.to_string_lossy().replace('\\', "/");
-    let empp = tools.empp.to_string_lossy().replace('\\', "/");
-    let emar = tools.emar.to_string_lossy().replace('\\', "/");
+    // Meson's machine-file parser only accepts single-quoted strings — using
+    // Rust's {:?} debug format here produces double-quoted strings and meson
+    // rejects them on Windows with "Double quotes are not supported".
+    let python = meson_quote(&tools.python.to_string_lossy().replace('\\', "/"));
+    let emcc = meson_quote(&tools.emcc.to_string_lossy().replace('\\', "/"));
+    let empp = meson_quote(&tools.empp.to_string_lossy().replace('\\', "/"));
+    let emar = meson_quote(&tools.emar.to_string_lossy().replace('\\', "/"));
     let content = format!(
         r#"[binaries]
-c = [{python:?}, {emcc:?}]
-cpp = [{python:?}, {empp:?}]
-ar = [{python:?}, {emar:?}]
+c = [{python}, {emcc}]
+cpp = [{python}, {empp}]
+ar = [{python}, {emar}]
 strip = 'true'
 
 [host_machine]
@@ -404,6 +425,13 @@ needs_exe_wrapper = true
     );
     fs::write(&path, content).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
+}
+
+/// Wrap a string in single quotes, escaping any embedded apostrophes so the
+/// result is a valid meson machine-file string literal.
+fn meson_quote(value: &str) -> String {
+    let escaped = value.replace('\'', "\\'");
+    format!("'{escaped}'")
 }
 
 fn ensure_meson_configured(
@@ -742,14 +770,45 @@ fn link_wasm(
     args.extend(get_link_flags(fastled_dir, mode)?);
 
     println!("[WASM] Linking final WASM module...");
-    let mut command = command_with_env(&tools.python, tools);
-    command
-        .current_dir(fastled_dir)
-        .arg(&tools.empp)
-        .args(&args);
-    run_status(command, "em++ wasm link")?;
+    run_em_link_with_retries(fastled_dir, tools, &args)?;
     copy_linked_output(sketch_cache_dir, output_js)?;
     Ok(())
+}
+
+/// On Windows, emscripten builds its sysroot libraries (libc, compiler_rt,
+/// libc++…) from source the first time we link. Individual `emcc`
+/// subprocesses occasionally crash mid-build with a non-deterministic
+/// access-violation-style exit code; the surrounding em++ link then aborts.
+/// Because each completed library is cached to disk, retrying advances the
+/// build by one library each time. A small retry loop lets the link
+/// converge without exposing the upstream flakiness to users. See #116.
+fn run_em_link_with_retries(
+    fastled_dir: &Path,
+    tools: &ToolPaths,
+    args: &[String],
+) -> Result<()> {
+    let max_attempts = if cfg!(windows) { 6 } else { 1 };
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=max_attempts {
+        let mut command = command_with_env(&tools.python, tools);
+        command
+            .current_dir(fastled_dir)
+            .arg(&tools.empp)
+            .args(args);
+        match run_status(command, "em++ wasm link") {
+            Ok(()) => return Ok(()),
+            Err(err) => {
+                if attempt < max_attempts {
+                    println!(
+                        "[WASM] em++ link attempt {attempt}/{max_attempts} failed; \
+                         retrying (sysroot libs cache progressively): {err:#}"
+                    );
+                }
+                last_err = Some(err);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("em++ wasm link failed")))
 }
 
 fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
@@ -812,7 +871,19 @@ fn resolve_fastled_dir(request: &BuildRequest) -> Result<(PathBuf, Option<PathBu
     if let Some(path) = &request.fastled_path {
         return Ok((normalize_path(path), None));
     }
-    let repo = install::ensure_fastled_repo(Some("master"))?;
+    // Honour the ref written into `<sketch>/fastled.json` by `fastled --init`
+    // so the build always uses the same FastLED checkout the sketch was
+    // scaffolded against (master example layout drifts from older releases).
+    // Falls back to `master` only when no pin is recorded.
+    let pinned_ref = crate::project::read_fastled_json_ref(&request.sketch_dir);
+    if let Some(local_path) = pinned_ref
+        .as_deref()
+        .filter(|s| Path::new(s).join("library.json").is_file())
+    {
+        return Ok((normalize_path(Path::new(local_path)), None));
+    }
+    let ref_arg = pinned_ref.as_deref().or(Some("master"));
+    let repo = install::ensure_fastled_repo(ref_arg)?;
     let cache_root = repo
         .parent()
         .map(Path::to_path_buf)
@@ -871,6 +942,10 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
     let tools = resolve_tool_paths(&emscripten_install)?;
     let (fastled_dir, _cleanup) = resolve_fastled_dir(request)?;
     let fastled_dir = normalize_path(&fastled_dir);
+    let emsdk_root = emscripten_install
+        .parent()
+        .map(Path::to_path_buf)
+        .or_else(|| Some(emscripten_install.clone()));
     let (example_name, example_dir, _is_in_tree) =
         resolve_example_name(&normalize_path(&request.sketch_dir), &fastled_dir);
 
@@ -936,6 +1011,8 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             sketch_time_secs: sketch_start.elapsed().as_secs_f64(),
             strategy,
             output: "Native Rust WASM build successful".to_string(),
+            fastled_dir: Some(fastled_dir.clone()),
+            emsdk_root: emsdk_root.clone(),
         }),
         Err(err) => Ok(BuildResult {
             success: false,
@@ -944,6 +1021,8 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             sketch_time_secs: sketch_start.elapsed().as_secs_f64(),
             strategy,
             output: format!("Native Rust WASM build failed: {err:#}"),
+            fastled_dir: Some(fastled_dir.clone()),
+            emsdk_root: emsdk_root.clone(),
         }),
     }
 }
@@ -960,6 +1039,20 @@ mod tests {
         assert_eq!(name, "Fx/FxCylon");
         assert_eq!(dir, sketch);
         assert!(in_tree);
+    }
+
+    #[test]
+    fn meson_quote_wraps_in_single_quotes() {
+        assert_eq!(meson_quote("simple"), "'simple'");
+        assert_eq!(
+            meson_quote("C:/path/with spaces/em.py"),
+            "'C:/path/with spaces/em.py'"
+        );
+    }
+
+    #[test]
+    fn meson_quote_escapes_embedded_apostrophes() {
+        assert_eq!(meson_quote("it's"), r"'it\'s'");
     }
 
     #[test]

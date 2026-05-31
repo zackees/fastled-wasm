@@ -4,12 +4,15 @@ use clap::Parser;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::{Arc, RwLock};
 
 mod archive;
 mod build;
+pub mod debug_symbols;
 pub mod frontend;
 pub mod install;
 mod keyboard;
+pub mod path;
 pub mod project;
 pub mod runtime;
 mod server;
@@ -188,6 +191,7 @@ fn run_native_compile_streaming(
     sketch_dir: &Path,
     force_clean: bool,
     tx: &tokio::sync::broadcast::Sender<String>,
+    debug_symbols: &server::DebugSymbolHandle,
 ) -> bool {
     if force_clean {
         purge_fastled_cache(cli.fastled_path.as_deref());
@@ -204,6 +208,14 @@ fn run_native_compile_streaming(
     match build::run_build(&request) {
         Ok(result) => {
             emit_build_result_logs(&result, tx);
+            if result.success {
+                update_debug_symbol_resolver(
+                    debug_symbols,
+                    sketch_dir,
+                    result.fastled_dir.as_deref(),
+                    result.emsdk_root.as_deref(),
+                );
+            }
             result.success
         }
         Err(err) => {
@@ -214,6 +226,25 @@ fn run_native_compile_streaming(
             );
             false
         }
+    }
+}
+
+fn update_debug_symbol_resolver(
+    handle: &server::DebugSymbolHandle,
+    sketch_dir: &Path,
+    fastled_dir: Option<&Path>,
+    emsdk_root: Option<&Path>,
+) {
+    let resolver =
+        debug_symbols::DebugSymbolResolver::new(debug_symbols::load_debug_symbol_config(
+            sketch_dir.to_path_buf(),
+            fastled_dir.map(Path::to_path_buf),
+            emsdk_root
+                .map(Path::to_path_buf)
+                .or_else(debug_symbols::guess_emsdk_path),
+        ));
+    if let Ok(mut guard) = handle.write() {
+        *guard = Some(resolver);
     }
 }
 
@@ -252,13 +283,23 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     // Broadcast channel for SSE streaming to browser.
     let (tx, _rx) = tokio::sync::broadcast::channel::<String>(256);
 
+    // Shared DWARF source resolver populated after the first successful build.
+    let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
+
     // Write initial compiling status for polling fallback.
     write_build_status(&output_dir, "compiling", "Compiling...");
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
         // Start the Rust HTTP server (background tokio task).
-        let addr = match server::start_server(output_dir.clone(), 0, Some(tx.clone())).await {
+        let addr = match server::start_server(
+            output_dir.clone(),
+            0,
+            Some(tx.clone()),
+            debug_symbols.clone(),
+        )
+        .await
+        {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("fastled: failed to start server: {e}");
@@ -283,7 +324,8 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             r#"{"type":"status","status":"compiling","message":"Compiling..."}"#,
         );
 
-        let success = run_native_compile_streaming(cli, &sketch_dir, cli.purge, &tx);
+        let success =
+            run_native_compile_streaming(cli, &sketch_dir, cli.purge, &tx, &debug_symbols);
 
         if success {
             write_build_status(&output_dir, "success", "Done");
@@ -333,7 +375,8 @@ fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
                     r#"{"type":"status","status":"compiling","message":"Recompiling..."}"#,
                 );
 
-                let success = run_native_compile_streaming(cli, &sketch_dir, false, &tx);
+                let success =
+                    run_native_compile_streaming(cli, &sketch_dir, false, &tx, &debug_symbols);
                 if success {
                     println!("Recompilation successful!");
                     write_build_status(&output_dir, "success", "Done");
@@ -409,7 +452,8 @@ struct Cli {
     #[arg(long)]
     no_https: bool,
 
-    /// Use the latest release when initialising examples with --init (default behaviour).
+    /// Use the latest tagged FastLED release when initialising examples with --init.
+    /// Defaults to `master`; tagged releases older than the meson migration cannot be built.
     #[arg(long)]
     latest: bool,
 
@@ -459,9 +503,19 @@ fn validate_init_ref_flags(cli: &Cli) -> Result<(), &'static str> {
 
 fn requested_init_ref(cli: &Cli) -> Option<&str> {
     if cli.latest {
+        // `--latest` opts into the most recent tagged FastLED release. The
+        // build path only supports refs that include `meson.build`, so users
+        // who pass `--latest` are responsible for a release new enough to
+        // ship the meson backend.
         None
+    } else if let Some(explicit) = cli.commit.as_deref().or(cli.branch.as_deref()) {
+        Some(explicit)
     } else {
-        cli.commit.as_deref().or(cli.branch.as_deref())
+        // Default to `master`. Tagged releases before the meson migration
+        // (≤ 3.10.x) do not contain `meson.build`, so the unconditional
+        // "latest release" default produced sketches that the build path
+        // could not compile.
+        Some("master")
     }
 }
 
@@ -778,11 +832,13 @@ fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
                 }
             }
         };
+        // Pin the local repo so subsequent builds use the same checkout.
+        let local_ref = local_repo.to_string_lossy().into_owned();
         return match project::init_example_from_repo(
             &local_repo,
             &selected_example,
             &output_dir,
-            None,
+            Some(local_ref.as_str()),
         ) {
             Ok(out) => {
                 println!("Project initialized at {}", out.display());
@@ -838,19 +894,22 @@ fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
         selected_example
     );
 
+    // Always pin the resolved ref into `fastled.json` so that a later
+    // `fastled --just-compile <sketch>` builds against the same FastLED
+    // checkout the sketch was scaffolded from. Without this, the build
+    // path defaulted to `master`, which broke compiles when the latest
+    // release used different header layouts than master.
     match project::init_example_from_repo(
         &repo_root,
         &selected_example,
         &output_dir,
-        ref_name.as_ref().map(|_| resolved_ref.as_str()),
+        Some(resolved_ref.as_str()),
     ) {
         Ok(out) => {
-            if ref_name.is_some() {
-                println!(
-                    "Saved ref '{resolved_ref}' to {}",
-                    out.join("fastled.json").display()
-                );
-            }
+            println!(
+                "Saved ref '{resolved_ref}' to {}",
+                out.join("fastled.json").display()
+            );
             println!("Project initialized at {}", out.display());
             println!("\nInitialized FastLED project in {}", out.display());
             println!("Use 'fastled {}' to compile the project.", out.display());
@@ -918,13 +977,14 @@ fn serve_directory(dir: &str) -> ExitCode {
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
-        let addr = match server::start_server(path.clone(), 0, None).await {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("fastled: failed to start server: {e}");
-                return ExitCode::FAILURE;
-            }
-        };
+        let addr =
+            match server::start_server(path.clone(), 0, None, Arc::new(RwLock::new(None))).await {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("fastled: failed to start server: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
 
         let url = format!("http://{addr}");
         println!("Serving {dir} at {url}");

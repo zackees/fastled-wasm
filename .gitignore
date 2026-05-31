@@ -164,3 +164,4 @@ vscode-plugin
 /src/fastled/bin/
 .clud/loop/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
