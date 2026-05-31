@@ -37,7 +37,7 @@ jobs:
           fi
           cat rust-toolchain.ci.toml
 
-      - uses: zackees/setup-soldr@v0.9.39
+      - uses: zackees/setup-soldr@v0.9.40
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
