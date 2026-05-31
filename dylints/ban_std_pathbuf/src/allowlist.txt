@@ -1,0 +1,28 @@
+# Files that may still use raw `std::path::PathBuf`.
+#
+# Entries are matched as path suffixes (forward-slashes), so
+# `crates/fastled-cli/src/foo.rs` matches both the absolute path the rustc
+# source map emits and the relative form in diagnostics.
+#
+# New files should default to `fastled_cli::path::NormalizedPath`. Remove a
+# line from this list when its file has finished migrating.
+
+# Wrapper itself: defines NormalizedPath in terms of PathBuf. Permanent.
+crates/fastled-cli/src/path.rs
+
+# Migrated boundary type already wraps the canonicalize result.
+crates/fastled-cli/src/wasm_build.rs
+
+# Legacy modules — migrate progressively, then strike the line.
+crates/fastled-cli/src/lib.rs
+crates/fastled-cli/src/debug_symbols.rs
+crates/fastled-cli/src/server.rs
+crates/fastled-cli/src/install.rs
+crates/fastled-cli/src/watcher.rs
+crates/fastled-cli/src/viewer.rs
+crates/fastled-cli/src/runtime.rs
+crates/fastled-cli/src/project.rs
+crates/fastled-cli/src/main.rs
+crates/fastled-cli/src/tauri_viewer.rs
+crates/fastled-cli/src/frontend.rs
+crates/fastled-cli/src/archive.rs

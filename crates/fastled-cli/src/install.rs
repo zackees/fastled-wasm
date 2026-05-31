@@ -78,8 +78,47 @@ fn fetch_manifest(url: &str) -> Result<PlatformManifest> {
         .error_for_status()
         .with_context(|| format!("manifest fetch returned error for {url}"))?;
     let text = response.text().context("read manifest body")?;
-    serde_json::from_str::<PlatformManifest>(&text)
-        .with_context(|| format!("parse manifest JSON from {url}"))
+    parse_platform_manifest(&text).with_context(|| format!("parse manifest JSON from {url}"))
+}
+
+/// Parse a platform manifest, accepting both the current schema (`versions`
+/// sub-map) and the historical layout where version keys live at the top
+/// level next to `latest`. The two formats coexist on the assets server
+/// today, so the CLI has to handle both.
+fn parse_platform_manifest(text: &str) -> Result<PlatformManifest> {
+    if let Ok(parsed) = serde_json::from_str::<PlatformManifest>(text) {
+        return Ok(parsed);
+    }
+
+    let value: serde_json::Value = serde_json::from_str(text)?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("manifest is not a JSON object"))?;
+
+    let latest = object
+        .get("latest")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("manifest is missing required field `latest`"))?
+        .to_string();
+
+    let mut versions = BTreeMap::new();
+    for (key, value) in object {
+        if key == "latest" {
+            continue;
+        }
+        let info: VersionInfo = serde_json::from_value(value.clone())
+            .with_context(|| format!("parse version entry `{key}`"))?;
+        versions.insert(key.clone(), info);
+    }
+
+    if versions.is_empty() {
+        bail!("manifest does not declare any versions");
+    }
+    if !versions.contains_key(&latest) {
+        bail!("manifest `latest`={latest} has no matching version entry");
+    }
+
+    Ok(PlatformManifest { latest, versions })
 }
 
 /// Download each part to `parts_dir`, verify its SHA256, then concatenate the
@@ -1176,5 +1215,45 @@ mod tests {
         let parts = entry.parts.as_ref().expect("parts present");
         assert_eq!(parts.len(), 1);
         assert!(parts[0].href.ends_with(".part-aa"));
+    }
+
+    /// Regression for issue #111: the win/x86_64 manifest publishes version
+    /// entries as siblings of `latest` rather than under a `versions` map.
+    /// The CLI must accept that legacy shape.
+    #[test]
+    fn parses_legacy_flat_manifest_shape() {
+        let text = r#"{
+            "latest": "4.0.19",
+            "4.0.19": {
+                "href": "https://example.com/em-4.0.19.tar.zst",
+                "sha256": "b19c2e35b863eb17866034f917d7957514645e179e9d22800729b0dcbb2aa2e2"
+            }
+        }"#;
+        let manifest = parse_platform_manifest(text).expect("parse legacy manifest");
+        assert_eq!(manifest.latest, "4.0.19");
+        let entry = manifest
+            .versions
+            .get("4.0.19")
+            .expect("entry for latest version");
+        assert_eq!(entry.sha256.len(), 64);
+        assert!(entry.href.ends_with(".tar.zst"));
+    }
+
+    #[test]
+    fn legacy_manifest_with_no_versions_errors() {
+        let text = r#"{ "latest": "4.0.19" }"#;
+        assert!(parse_platform_manifest(text).is_err());
+    }
+
+    #[test]
+    fn legacy_manifest_with_unknown_latest_errors() {
+        let text = r#"{
+            "latest": "9.9.9",
+            "4.0.19": {
+                "href": "https://example.com/em.tar.zst",
+                "sha256": "abcdef"
+            }
+        }"#;
+        assert!(parse_platform_manifest(text).is_err());
     }
 }
