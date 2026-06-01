@@ -13,7 +13,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::{archive, frontend, install};
+use crate::{archive, debug_symbols, frontend, install};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildMode {
@@ -73,6 +73,7 @@ struct BuildFlagsToml {
     sketch: Option<FlagSection>,
     linking: Option<LinkingSection>,
     build_modes: Option<BTreeMap<String, ModeSection>>,
+    dwarf: Option<debug_symbols::DwarfPrefixConfig>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -97,6 +98,13 @@ struct ModeSection {
 #[derive(Debug, Default, Deserialize)]
 struct FlagList {
     flags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct DwarfPathRoots {
+    sketch_dir: Option<PathBuf>,
+    fastled_dir: PathBuf,
+    emsdk_root: Option<PathBuf>,
 }
 
 fn resolve_python_executable() -> PathBuf {
@@ -281,7 +289,11 @@ fn load_build_flags(fastled_dir: &Path) -> Result<BuildFlagsToml> {
     toml::from_str(&source).with_context(|| format!("parse {}", path.display()))
 }
 
-fn get_sketch_compile_flags(fastled_dir: &Path, mode: BuildMode) -> Result<Vec<String>> {
+fn get_sketch_compile_flags(
+    fastled_dir: &Path,
+    mode: BuildMode,
+    dwarf_roots: Option<&DwarfPathRoots>,
+) -> Result<Vec<String>> {
     let config = load_build_flags(fastled_dir)?;
     let mode_key = mode.as_str().to_string();
     let mode_config = config
@@ -304,6 +316,9 @@ fn get_sketch_compile_flags(fastled_dir: &Path, mode: BuildMode) -> Result<Vec<S
         } else {
             flags.extend(mode_config.flags.clone().unwrap_or_default());
         }
+    }
+    if mode == BuildMode::Debug {
+        append_dwarf_prefix_maps(&mut flags, config.dwarf.as_ref(), dwarf_roots);
     }
     Ok(flags)
 }
@@ -328,7 +343,76 @@ fn get_link_flags(fastled_dir: &Path, mode: BuildMode) -> Result<Vec<String>> {
     if let Some(mode_config) = mode_config {
         flags.extend(mode_config.link_flags.clone().unwrap_or_default());
     }
+    if mode == BuildMode::Debug
+        && !flags
+            .iter()
+            .any(|flag| flag == "-gsource-map" || flag.starts_with("-gsource-map="))
+    {
+        flags.push("-gsource-map".to_string());
+    }
     Ok(flags)
+}
+
+fn append_dwarf_prefix_maps(
+    flags: &mut Vec<String>,
+    config: Option<&debug_symbols::DwarfPrefixConfig>,
+    roots: Option<&DwarfPathRoots>,
+) {
+    let prefixes = config.cloned().unwrap_or_default();
+    if let Some(roots) = roots {
+        if let Some(sketch_dir) = &roots.sketch_dir {
+            push_file_prefix_map(flags, sketch_dir, &prefixes.sketch_prefix);
+        }
+        push_file_prefix_map(
+            flags,
+            &roots.fastled_dir.join("src"),
+            &prefixes.fastled_prefix,
+        );
+        if let Some(emsdk_root) = &roots.emsdk_root {
+            let emsdk_prefix = format!("{}/emsdk", prefixes.dwarf_prefix.trim_matches('/'));
+            push_file_prefix_map(flags, emsdk_root, &emsdk_prefix);
+        }
+        return;
+    }
+
+    if let (Some(from), Some(to)) = (
+        prefixes.file_prefix_map_from.as_ref(),
+        prefixes.file_prefix_map_to.as_ref(),
+    ) {
+        flags.push(format!(
+            "-ffile-prefix-map={}={}",
+            normalize_prefix_map_from(from),
+            normalize_prefix_map_to(to)
+        ));
+    }
+}
+
+fn push_file_prefix_map(flags: &mut Vec<String>, from: &Path, to: &str) {
+    flags.push(format!(
+        "-ffile-prefix-map={}={}",
+        normalize_prefix_map_path(from),
+        normalize_prefix_map_to(to)
+    ));
+}
+
+fn normalize_prefix_map_path(path: &Path) -> String {
+    let mut normalized = normalize_path(path).to_string_lossy().replace('\\', "/");
+    if !normalized.ends_with('/') {
+        normalized.push('/');
+    }
+    normalized
+}
+
+fn normalize_prefix_map_from(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn normalize_prefix_map_to(prefix: &str) -> String {
+    let mut normalized = prefix.trim_matches('/').replace('\\', "/");
+    if !normalized.ends_with('/') {
+        normalized.push('/');
+    }
+    normalized
 }
 
 fn hash_files(root: &Path, files: &[PathBuf]) -> Result<String> {
@@ -569,6 +653,7 @@ fn build_sketch_pch(
     tools: &ToolPaths,
     build_dir: &Path,
     mode: BuildMode,
+    emsdk_root: Option<&Path>,
     lib_was_rebuilt: bool,
 ) -> Result<Option<PathBuf>> {
     let pcm = build_dir.join("wasm_pch.h.pcm");
@@ -583,7 +668,13 @@ fn build_sketch_pch(
     if !header.is_file() {
         return Ok(None);
     }
-    let mut hash_input = get_sketch_compile_flags(fastled_dir, mode)?.join("\n");
+    let dwarf_roots = DwarfPathRoots {
+        sketch_dir: None,
+        fastled_dir: fastled_dir.to_path_buf(),
+        emsdk_root: emsdk_root.map(Path::to_path_buf),
+    };
+    let compile_flags = get_sketch_compile_flags(fastled_dir, mode, Some(&dwarf_roots))?;
+    let mut hash_input = compile_flags.join("\n");
     hash_input.push_str(&compute_source_file_hash(fastled_dir)?);
     let current_hash = format!("{:x}", Sha256::digest(hash_input.as_bytes()));
     if !lib_was_rebuilt
@@ -602,7 +693,7 @@ fn build_sketch_pch(
         "-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST".to_string(),
         "-D_FILE_OFFSET_BITS=64".to_string(),
     ];
-    args.extend(get_sketch_compile_flags(fastled_dir, mode)?);
+    args.extend(compile_flags);
     args.push(format!("-I{}", fastled_dir.join("src").display()));
     args.push(format!(
         "-I{}",
@@ -651,25 +742,33 @@ fn build_sketch_pch(
 }
 
 fn compile_sketch(
-    fastled_dir: &Path,
     tools: &ToolPaths,
     wrapper: &Path,
     build_dir: &Path,
     sketch_cache_dir: &Path,
     example_dir: &Path,
     mode: BuildMode,
+    dwarf_roots: &DwarfPathRoots,
 ) -> Result<PathBuf> {
+    let fastled_dir = &dwarf_roots.fastled_dir;
     let object = sketch_cache_dir.join("sketch.o");
     let archive = library_archive(build_dir);
     let ino = sketch_ino_file(example_dir)?;
+    let compile_flags = get_sketch_compile_flags(fastled_dir, mode, Some(dwarf_roots))?;
+    let flags_hash_path = sketch_cache_dir.join("sketch_compile_flags.hash");
+    let current_flags_hash = format!("{:x}", Sha256::digest(compile_flags.join("\n").as_bytes()));
     if object.is_file() {
         let object_mtime = object.metadata()?.modified()?;
         let inputs = [wrapper, &ino, &archive];
-        if inputs
-            .iter()
-            .filter_map(|path| path.metadata().ok())
-            .filter_map(|metadata| metadata.modified().ok())
-            .all(|mtime| mtime <= object_mtime)
+        if fs::read_to_string(&flags_hash_path)
+            .unwrap_or_default()
+            .trim()
+            == current_flags_hash
+            && inputs
+                .iter()
+                .filter_map(|path| path.metadata().ok())
+                .filter_map(|metadata| metadata.modified().ok())
+                .all(|mtime| mtime <= object_mtime)
         {
             println!("[WASM] Sketch is up-to-date");
             return Ok(object);
@@ -682,7 +781,7 @@ fn compile_sketch(
         "-o".to_string(),
         object.display().to_string(),
     ];
-    args.extend(get_sketch_compile_flags(fastled_dir, mode)?);
+    args.extend(compile_flags);
     args.push(format!("-I{}", fastled_dir.join("src").display()));
     args.push(format!(
         "-I{}",
@@ -706,6 +805,7 @@ fn compile_sketch(
         .arg(&tools.empp)
         .args(&args);
     run_status(command, "em++ sketch compile")?;
+    fs::write(flags_hash_path, current_flags_hash)?;
     Ok(object)
 }
 
@@ -721,14 +821,21 @@ fn link_wasm(
     let archive = library_archive(build_dir);
     let cached_js = sketch_cache_dir.join("fastled.js");
     let cached_wasm = sketch_cache_dir.join("fastled.wasm");
+    let link_flags = get_link_flags(fastled_dir, mode)?;
+    let flags_hash_path = sketch_cache_dir.join("link_flags.hash");
+    let current_flags_hash = format!("{:x}", Sha256::digest(link_flags.join("\n").as_bytes()));
     if cached_js.is_file() && cached_wasm.is_file() {
         let output_mtime = cached_js.metadata()?.modified()?;
         let inputs = [sketch_object, &archive];
-        if inputs
-            .iter()
-            .filter_map(|path| path.metadata().ok())
-            .filter_map(|metadata| metadata.modified().ok())
-            .all(|mtime| mtime <= output_mtime)
+        if fs::read_to_string(&flags_hash_path)
+            .unwrap_or_default()
+            .trim()
+            == current_flags_hash
+            && inputs
+                .iter()
+                .filter_map(|path| path.metadata().ok())
+                .filter_map(|metadata| metadata.modified().ok())
+                .all(|mtime| mtime <= output_mtime)
         {
             copy_linked_output(sketch_cache_dir, output_js)?;
             println!("[WASM] Link output up-to-date");
@@ -767,10 +874,11 @@ fn link_wasm(
         "-o".to_string(),
         cached_js.display().to_string(),
     ];
-    args.extend(get_link_flags(fastled_dir, mode)?);
+    args.extend(link_flags);
 
     println!("[WASM] Linking final WASM module...");
     run_em_link_with_retries(fastled_dir, tools, &args)?;
+    fs::write(flags_hash_path, current_flags_hash)?;
     copy_linked_output(sketch_cache_dir, output_js)?;
     Ok(())
 }
@@ -782,19 +890,12 @@ fn link_wasm(
 /// Because each completed library is cached to disk, retrying advances the
 /// build by one library each time. A small retry loop lets the link
 /// converge without exposing the upstream flakiness to users. See #116.
-fn run_em_link_with_retries(
-    fastled_dir: &Path,
-    tools: &ToolPaths,
-    args: &[String],
-) -> Result<()> {
+fn run_em_link_with_retries(fastled_dir: &Path, tools: &ToolPaths, args: &[String]) -> Result<()> {
     let max_attempts = if cfg!(windows) { 6 } else { 1 };
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=max_attempts {
         let mut command = command_with_env(&tools.python, tools);
-        command
-            .current_dir(fastled_dir)
-            .arg(&tools.empp)
-            .args(args);
+        command.current_dir(fastled_dir).arg(&tools.empp).args(args);
         match run_status(command, "em++ wasm link") {
             Ok(()) => return Ok(()),
             Err(err) => {
@@ -816,11 +917,19 @@ fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
         .parent()
         .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
     fs::create_dir_all(output_dir)?;
-    for name in ["fastled.js", "fastled.wasm"] {
+    for name in [
+        "fastled.js",
+        "fastled.wasm",
+        "fastled.wasm.map",
+        "fastled.js.map",
+    ] {
         let src = sketch_cache_dir.join(name);
+        let dst = output_dir.join(name);
         if src.is_file() {
-            fs::copy(&src, output_dir.join(name))
+            fs::copy(&src, &dst)
                 .with_context(|| format!("copy {} to {}", src.display(), output_dir.display()))?;
+        } else if dst.exists() {
+            fs::remove_file(&dst).with_context(|| format!("remove stale {}", dst.display()))?;
         }
     }
     Ok(())
@@ -975,18 +1084,24 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             &tools,
             &build_dir,
             request.build_mode,
+            emsdk_root.as_deref(),
             lib_rebuilt,
         );
         let sketch_cache = sketch_cache_dir(&example_dir);
         let wrapper = create_wrapper(&example_dir, &example_name, &sketch_cache)?;
+        let sketch_dwarf_roots = DwarfPathRoots {
+            sketch_dir: Some(example_dir.clone()),
+            fastled_dir: fastled_dir.clone(),
+            emsdk_root: emsdk_root.clone(),
+        };
         let sketch_o = compile_sketch(
-            &fastled_dir,
             &tools,
             &wrapper,
             &build_dir,
             &sketch_cache,
             &example_dir,
             request.build_mode,
+            &sketch_dwarf_roots,
         )?;
         let output_js = output_dir.join("fastled.js");
         link_wasm(
@@ -1000,6 +1115,12 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
         )?;
         frontend::copy_frontend_to_output(&output_dir, None)?;
         generate_manifest(&example_dir, &output_dir)?;
+        let debug_config = debug_symbols::load_debug_symbol_config(
+            example_dir.clone(),
+            Some(fastled_dir.clone()),
+            emsdk_root.clone(),
+        );
+        debug_symbols::write_debug_symbol_manifest(&output_dir, &debug_config)?;
         Ok(())
     })();
 
@@ -1030,6 +1151,13 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    fn write_build_flags(fastled_dir: &Path, source: &str) {
+        let compiler_dir = fastled_dir.join("src/platforms/wasm/compiler");
+        fs::create_dir_all(&compiler_dir).unwrap();
+        fs::write(compiler_dir.join("build_flags.toml"), source).unwrap();
+    }
 
     #[test]
     fn resolve_example_preserves_nested_names() {
@@ -1070,5 +1198,133 @@ mod tests {
         assert_eq!(BuildMode::Quick.as_str(), "quick");
         assert_eq!(BuildMode::Debug.as_str(), "debug");
         assert_eq!(BuildMode::Release.as_str(), "release");
+    }
+
+    #[test]
+    fn debug_compile_flags_include_dynamic_dwarf_prefix_maps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fastled_dir = tmp.path().join("FastLED");
+        let sketch_dir = tmp.path().join("Blink");
+        let emsdk_root = tmp.path().join("emsdk");
+        write_build_flags(
+            &fastled_dir,
+            r#"
+[all]
+defines = []
+compiler_flags = []
+
+[sketch]
+defines = []
+compiler_flags = []
+
+[build_modes.debug]
+flags = ["-g3"]
+
+[dwarf]
+fastled_prefix = "fastledsource"
+sketch_prefix = "sketchsource"
+dwarf_prefix = "dwarfsource"
+"#,
+        );
+        let roots = DwarfPathRoots {
+            sketch_dir: Some(sketch_dir.clone()),
+            fastled_dir: fastled_dir.clone(),
+            emsdk_root: Some(emsdk_root.clone()),
+        };
+
+        let flags = get_sketch_compile_flags(&fastled_dir, BuildMode::Debug, Some(&roots)).unwrap();
+
+        assert!(flags.contains(&format!(
+            "-ffile-prefix-map={}={}",
+            normalize_prefix_map_path(&sketch_dir),
+            "sketchsource/"
+        )));
+        assert!(flags.contains(&format!(
+            "-ffile-prefix-map={}={}",
+            normalize_prefix_map_path(&fastled_dir.join("src")),
+            "fastledsource/"
+        )));
+        assert!(flags.contains(&format!(
+            "-ffile-prefix-map={}={}",
+            normalize_prefix_map_path(&emsdk_root),
+            "dwarfsource/emsdk/"
+        )));
+    }
+
+    #[test]
+    fn quick_compile_flags_do_not_include_dwarf_prefix_maps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fastled_dir = tmp.path().join("FastLED");
+        write_build_flags(
+            &fastled_dir,
+            r#"
+[all]
+defines = []
+compiler_flags = []
+
+[sketch]
+defines = []
+compiler_flags = []
+
+[build_modes.quick]
+flags = ["-g0"]
+"#,
+        );
+        let roots = DwarfPathRoots {
+            sketch_dir: Some(tmp.path().join("Blink")),
+            fastled_dir: fastled_dir.clone(),
+            emsdk_root: None,
+        };
+
+        let flags = get_sketch_compile_flags(&fastled_dir, BuildMode::Quick, Some(&roots)).unwrap();
+
+        assert!(!flags
+            .iter()
+            .any(|flag| flag.starts_with("-ffile-prefix-map=")));
+    }
+
+    #[test]
+    fn debug_link_flags_emit_wasm_source_map() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fastled_dir = tmp.path().join("FastLED");
+        write_build_flags(
+            &fastled_dir,
+            r#"
+[linking.base]
+flags = ["-sWASM=1"]
+
+[linking.sketch]
+flags = []
+
+[build_modes.debug]
+link_flags = []
+"#,
+        );
+
+        let flags = get_link_flags(&fastled_dir, BuildMode::Debug).unwrap();
+
+        assert!(flags.contains(&"-gsource-map".to_string()));
+    }
+
+    #[test]
+    fn copy_linked_output_copies_and_removes_source_maps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = tmp.path().join("cache");
+        let output = tmp.path().join("out").join("fastled.js");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(cache.join("fastled.js"), "js").unwrap();
+        fs::write(cache.join("fastled.wasm"), "wasm").unwrap();
+        fs::write(cache.join("fastled.wasm.map"), "map").unwrap();
+
+        copy_linked_output(&cache, &output).unwrap();
+        assert_eq!(
+            fs::read_to_string(output.parent().unwrap().join("fastled.wasm.map")).unwrap(),
+            "map"
+        );
+
+        fs::remove_file(cache.join("fastled.wasm.map")).unwrap();
+        copy_linked_output(&cache, &output).unwrap();
+        assert!(!output.parent().unwrap().join("fastled.wasm.map").exists());
     }
 }

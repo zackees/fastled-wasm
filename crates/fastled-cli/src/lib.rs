@@ -975,16 +975,29 @@ fn serve_directory(dir: &str) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let resolver = match debug_symbols::read_debug_symbol_manifest(&path) {
+        Ok(Some(config)) => Some(debug_symbols::DebugSymbolResolver::new(config)),
+        Ok(None) => None,
+        Err(err) => {
+            eprintln!(
+                "fastled: could not load {} from {}: {err:#}",
+                debug_symbols::DWARF_ROOTS_MANIFEST,
+                path.display()
+            );
+            None
+        }
+    };
+
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
-        let addr =
-            match server::start_server(path.clone(), 0, None, Arc::new(RwLock::new(None))).await {
-                Ok(a) => a,
-                Err(e) => {
-                    eprintln!("fastled: failed to start server: {e}");
-                    return ExitCode::FAILURE;
-                }
-            };
+        let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
+        let addr = match server::start_server(path.clone(), 0, None, debug_symbols).await {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("fastled: failed to start server: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
 
         let url = format!("http://{addr}");
         println!("Serving {dir} at {url}");

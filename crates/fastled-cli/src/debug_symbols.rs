@@ -10,17 +10,19 @@
 //! This is the Rust port of the legacy Python `debug_symbols.py` module that
 //! used to back the Flask-based debug routes.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_FASTLED_PREFIX: &str = "fastledsource";
 pub const DEFAULT_SKETCH_PREFIX: &str = "sketchsource";
 pub const DEFAULT_DWARF_PREFIX: &str = "dwarfsource";
+pub const DWARF_ROOTS_MANIFEST: &str = "dwarf-roots.json";
 
 /// Configurable DWARF path prefixes loaded from
 /// `<fastled-src>/platforms/wasm/compiler/build_flags.toml`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DwarfPrefixConfig {
     #[serde(default = "default_fastled_prefix")]
     pub fastled_prefix: String,
@@ -28,6 +30,10 @@ pub struct DwarfPrefixConfig {
     pub sketch_prefix: String,
     #[serde(default = "default_dwarf_prefix")]
     pub dwarf_prefix: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_prefix_map_from: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_prefix_map_to: Option<String>,
 }
 
 fn default_fastled_prefix() -> String {
@@ -48,11 +54,13 @@ impl Default for DwarfPrefixConfig {
             fastled_prefix: default_fastled_prefix(),
             sketch_prefix: default_sketch_prefix(),
             dwarf_prefix: default_dwarf_prefix(),
+            file_prefix_map_from: None,
+            file_prefix_map_to: None,
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DebugSymbolConfig {
     pub sketch_dir: PathBuf,
     pub fastled_dir: Option<PathBuf>,
@@ -86,7 +94,7 @@ impl DebugSymbolConfig {
 }
 
 fn canonicalize_or(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+    crate::path::canonicalize_normalized(path).into_path_buf()
 }
 
 /// Load DWARF prefix overrides from
@@ -129,6 +137,47 @@ fn read_dwarf_prefixes(fastled_dir: &Path) -> Option<DwarfPrefixConfig> {
     parsed.dwarf
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct DebugSymbolManifest {
+    version: u32,
+    config: DebugSymbolConfig,
+}
+
+pub fn write_debug_symbol_manifest(
+    output_dir: &Path,
+    config: &DebugSymbolConfig,
+) -> Result<PathBuf> {
+    std::fs::create_dir_all(output_dir)
+        .with_context(|| format!("create {}", output_dir.display()))?;
+    let path = output_dir.join(DWARF_ROOTS_MANIFEST);
+    let manifest = DebugSymbolManifest {
+        version: 1,
+        config: config.clone(),
+    };
+    let json = serde_json::to_string_pretty(&manifest)?;
+    std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
+    Ok(path)
+}
+
+pub fn read_debug_symbol_manifest(output_dir: &Path) -> Result<Option<DebugSymbolConfig>> {
+    let path = output_dir.join(DWARF_ROOTS_MANIFEST);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let json =
+        std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let manifest: DebugSymbolManifest =
+        serde_json::from_str(&json).with_context(|| format!("parse {}", path.display()))?;
+    if manifest.version != 1 {
+        anyhow::bail!(
+            "unsupported debug symbol manifest version {} in {}",
+            manifest.version,
+            path.display()
+        );
+    }
+    Ok(Some(manifest.config))
+}
+
 /// Resolves browser-issued DWARF paths to absolute file paths on disk.
 #[derive(Debug, Clone)]
 pub struct DebugSymbolResolver {
@@ -144,12 +193,18 @@ impl DebugSymbolResolver {
         &self.config
     }
 
-    fn known_prefixes(&self) -> [&str; 3] {
-        [
-            self.config.prefixes.fastled_prefix.as_str(),
-            self.config.prefixes.sketch_prefix.as_str(),
-            self.config.prefixes.dwarf_prefix.as_str(),
-        ]
+    fn known_prefixes(&self) -> Vec<String> {
+        let mut prefixes = vec![
+            self.config.prefixes.fastled_prefix.clone(),
+            self.config.prefixes.sketch_prefix.clone(),
+            self.config.prefixes.dwarf_prefix.clone(),
+        ];
+        for (prefix, _) in self.config.source_roots() {
+            if !prefixes.iter().any(|known| known == &prefix) {
+                prefixes.push(prefix);
+            }
+        }
+        prefixes
     }
 
     /// Strip leading garbage from a DWARF-issued path so that what remains
@@ -173,7 +228,7 @@ impl DebugSymbolResolver {
         let parts: Vec<&str> = normalized.split('/').filter(|p| !p.is_empty()).collect();
         let mut prefix_index: Option<usize> = None;
         for (idx, part) in parts.iter().enumerate() {
-            if prefixes.contains(part) {
+            if prefixes.iter().any(|prefix| prefix == part) {
                 prefix_index = Some(idx);
             }
         }
@@ -267,20 +322,7 @@ fn finalize_target(
 }
 
 fn lexically_normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::CurDir => {}
-            other => out.push(other.as_os_str()),
-        }
-    }
-    if let Ok(canonical) = path.canonicalize() {
-        return canonical;
-    }
-    out
+    crate::path::canonicalize_normalized(path).into_path_buf()
 }
 
 fn is_within(path: &Path, root: &Path) -> bool {
@@ -445,5 +487,61 @@ dwarf_prefix = "fl_dwarf"
         assert_eq!(config.prefixes.fastled_prefix, "fl_src");
         assert_eq!(config.prefixes.sketch_prefix, "fl_sketch");
         assert_eq!(config.prefixes.dwarf_prefix, "fl_dwarf");
+    }
+
+    #[test]
+    fn debug_symbol_manifest_round_trips_config() {
+        let (tmp, sketch_dir, fastled_dir, emsdk_dir) = setup_dirs();
+        let output_dir = tmp.path().join("fastled_js");
+        let config = load_debug_symbol_config(
+            sketch_dir.clone(),
+            Some(fastled_dir.clone()),
+            Some(emsdk_dir.clone()),
+        );
+
+        let path = write_debug_symbol_manifest(&output_dir, &config).unwrap();
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some(DWARF_ROOTS_MANIFEST)
+        );
+
+        let loaded = read_debug_symbol_manifest(&output_dir)
+            .unwrap()
+            .expect("manifest should exist");
+        let resolver = DebugSymbolResolver::new(loaded);
+        let resolved = resolver.resolve("sketchsource/src/demo.ino", true).unwrap();
+        let expected =
+            crate::path::canonicalize_normalized(&sketch_dir.join("src").join("demo.ino"))
+                .into_path_buf();
+        assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn direct_emsdk_prefix_resolves_from_source_roots() {
+        let (_tmp, sketch_dir, fastled_dir, emsdk_dir) = setup_dirs();
+        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(
+            sketch_dir,
+            Some(fastled_dir),
+            Some(emsdk_dir),
+        ));
+
+        let emsdk = resolver
+            .resolve("emsdk/upstream/emscripten/cache.h", true)
+            .unwrap();
+        assert!(emsdk.ends_with("cache.h"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn source_roots_strip_windows_long_path_prefix() {
+        let config = DebugSymbolConfig {
+            sketch_dir: PathBuf::from(r"\\?\C:\tmp\sketch"),
+            fastled_dir: None,
+            emsdk_path: None,
+            prefixes: DwarfPrefixConfig::default(),
+        };
+
+        let roots = config.source_roots();
+        assert!(!roots[0].1.display().to_string().starts_with(r"\\?\"));
     }
 }
