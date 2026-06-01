@@ -1051,10 +1051,7 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
     let tools = resolve_tool_paths(&emscripten_install)?;
     let (fastled_dir, _cleanup) = resolve_fastled_dir(request)?;
     let fastled_dir = normalize_path(&fastled_dir);
-    let emsdk_root = emscripten_install
-        .parent()
-        .map(Path::to_path_buf)
-        .or_else(|| Some(emscripten_install.clone()));
+    let emsdk_root = Some(emscripten_install.clone());
     let (example_name, example_dir, _is_in_tree) =
         resolve_example_name(&normalize_path(&request.sketch_dir), &fastled_dir);
 

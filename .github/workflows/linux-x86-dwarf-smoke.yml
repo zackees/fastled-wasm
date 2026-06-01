@@ -1,0 +1,64 @@
+name: Linux x86 DWARF Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dwarf-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      - uses: zackees/setup-soldr@v0.9.48
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          cache-preset: foundation
+          cache-key-suffix: ubuntu-24.04-dwarf-smoke
+          linker: platform-default
+          toolchain-file: rust-toolchain.toml
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Sync Python deps
+        run: uv sync --group dev
+
+      - name: Build fastled CLI
+        run: soldr cargo build --release --bin fastled
+
+      - name: DWARF source smoke
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          fastled_bin="$PWD/target/release/fastled"
+          sketch_dir="$workdir/Blink"
+          "$fastled_bin" --init Blink --branch master --no-interactive "$workdir"
+          "$fastled_bin" --internal-dwarf-smoke --debug --no-interactive "$sketch_dir"
+
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-logs-dwarf-smoke-ubuntu-24.04
+          path: logs/*
+          if-no-files-found: warn

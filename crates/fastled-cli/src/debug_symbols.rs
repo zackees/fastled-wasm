@@ -360,7 +360,7 @@ pub fn guess_emsdk_path() -> Option<PathBuf> {
         return Some(PathBuf::from(emsdk));
     }
     if let Some(install_dir) = std::env::var_os("FASTLED_EMSCRIPTEN_DIR").map(PathBuf::from) {
-        return install_dir.parent().map(Path::to_path_buf);
+        return Some(install_dir);
     }
     None
 }
