@@ -151,7 +151,11 @@ async fn serve_file(
     // Prevent directory traversal.
     let canonical = match file_path.canonicalize() {
         Ok(p) => p,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+        Err(_) => {
+            return serve_debug_source_url(&state, &path)
+                .await
+                .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
+        }
     };
     let serve_canonical = match state.serve_dir.canonicalize() {
         Ok(p) => p,
@@ -166,7 +170,28 @@ async fn serve_file(
             let mime = mime_for_path(&path);
             (StatusCode::OK, [(header::CONTENT_TYPE, mime)], data).into_response()
         }
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => serve_debug_source_url(&state, &path)
+            .await
+            .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response()),
+    }
+}
+
+async fn serve_debug_source_url(state: &AppState, request_path: &str) -> Option<Response> {
+    let resolver = state.debug_symbols.read().ok()?.clone()?;
+    match resolver.resolve(request_path, true) {
+        Ok(file) => match tokio::fs::read(&file).await {
+            Ok(bytes) => Some(
+                (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    bytes,
+                )
+                    .into_response(),
+            ),
+            Err(_) => Some(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+        },
+        Err(ResolveError::NotFound(_)) => Some(StatusCode::NOT_FOUND.into_response()),
+        Err(ResolveError::Invalid(_)) => None,
     }
 }
 
@@ -666,6 +691,77 @@ mod tests {
         assert!(roots
             .iter()
             .any(|r| r["prefix"].as_str() == Some("sketchsource")));
+    }
+
+    #[tokio::test]
+    async fn source_map_style_get_returns_resolved_file() {
+        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+        let dir = tempfile::tempdir().unwrap();
+        let serve_dir = dir.path().join("fastled_js");
+        let sketch_dir = dir.path().join("sketch");
+        fs::create_dir_all(sketch_dir.join("src")).unwrap();
+        fs::create_dir_all(&serve_dir).unwrap();
+        fs::write(sketch_dir.join("src").join("demo.ino"), "void loop() {}").unwrap();
+
+        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+        let addr = start_server(serve_dir, 0, None, handle).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
+        assert!(resp.text().await.unwrap().contains("void loop()"));
+
+        let resp = reqwest::get(format!(
+            "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
+        ))
+        .await
+        .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert!(resp.text().await.unwrap().contains("void loop()"));
+    }
+
+    #[tokio::test]
+    async fn source_map_get_works_from_debug_symbol_manifest() {
+        use crate::debug_symbols::{
+            load_debug_symbol_config, read_debug_symbol_manifest, write_debug_symbol_manifest,
+            DebugSymbolResolver,
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let serve_dir = dir.path().join("fastled_js");
+        let sketch_dir = dir.path().join("sketch");
+        fs::create_dir_all(sketch_dir.join("src")).unwrap();
+        fs::create_dir_all(&serve_dir).unwrap();
+        fs::write(sketch_dir.join("src").join("demo.ino"), "void setup() {}").unwrap();
+
+        let config = load_debug_symbol_config(sketch_dir, None, None);
+        write_debug_symbol_manifest(&serve_dir, &config).unwrap();
+        let loaded = read_debug_symbol_manifest(&serve_dir)
+            .unwrap()
+            .expect("manifest should exist");
+        let handle: DebugSymbolHandle =
+            Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
+
+        let addr = start_server(serve_dir, 0, None, handle).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        assert!(resp.text().await.unwrap().contains("void setup()"));
     }
 
     #[tokio::test]

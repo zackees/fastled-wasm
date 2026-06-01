@@ -1,6 +1,8 @@
 #![recursion_limit = "512"]
 
+use anyhow::Context;
 use clap::Parser;
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -479,6 +481,11 @@ struct Cli {
     /// path so the Python side never has to do an HTTP download.
     #[arg(long, value_name = "REF", num_args = 0..=1, default_missing_value = "__latest__", hide = true)]
     internal_ensure_fastled_repo: Option<String>,
+
+    /// Internal CI plumbing: compile a debug sketch, start the source server
+    /// without the viewer, and verify every embedded debug source path.
+    #[arg(long, hide = true)]
+    internal_dwarf_smoke: bool,
 
     // Build mode (mutually exclusive).
     /// Build in debug mode.
@@ -975,16 +982,29 @@ fn serve_directory(dir: &str) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let resolver = match debug_symbols::read_debug_symbol_manifest(&path) {
+        Ok(Some(config)) => Some(debug_symbols::DebugSymbolResolver::new(config)),
+        Ok(None) => None,
+        Err(err) => {
+            eprintln!(
+                "fastled: could not load {} from {}: {err:#}",
+                debug_symbols::DWARF_ROOTS_MANIFEST,
+                path.display()
+            );
+            None
+        }
+    };
+
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
-        let addr =
-            match server::start_server(path.clone(), 0, None, Arc::new(RwLock::new(None))).await {
-                Ok(a) => a,
-                Err(e) => {
-                    eprintln!("fastled: failed to start server: {e}");
-                    return ExitCode::FAILURE;
-                }
-            };
+        let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
+        let addr = match server::start_server(path.clone(), 0, None, debug_symbols).await {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("fastled: failed to start server: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
 
         let url = format!("http://{addr}");
         println!("Serving {dir} at {url}");
@@ -1003,6 +1023,196 @@ fn serve_directory(dir: &str) -> ExitCode {
         println!("\nShutting down...");
         ExitCode::SUCCESS
     })
+}
+
+fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
+    let Some(dir) = cli.directory.as_deref() else {
+        eprintln!("fastled: --internal-dwarf-smoke requires a sketch directory");
+        return ExitCode::FAILURE;
+    };
+    if selected_build_mode(cli) != build::BuildMode::Debug {
+        eprintln!("fastled: --internal-dwarf-smoke must be run with --debug");
+        return ExitCode::FAILURE;
+    }
+    if let Err(message) = ensure_compile_prerequisites() {
+        eprintln!("fastled: {message}");
+        return ExitCode::FAILURE;
+    }
+    if cli.purge {
+        purge_fastled_cache(cli.fastled_path.as_deref());
+    }
+
+    let request = build::BuildRequest {
+        sketch_dir: PathBuf::from(dir),
+        build_mode: build::BuildMode::Debug,
+        profile: cli.profile,
+        fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
+        force_clean: cli.purge,
+    };
+    let result = match build::run_build(&request) {
+        Ok(result) => result,
+        Err(err) => {
+            eprintln!("fastled: native compile path failed: {err:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if !result.success {
+        eprintln!("{}", result.output.trim_end());
+        eprintln!("\nCompilation failed.");
+        return ExitCode::FAILURE;
+    }
+
+    match run_dwarf_source_smoke(&result.output_dir) {
+        Ok(count) => {
+            println!(
+                "DWARF source smoke passed: resolved {count} embedded source paths via /dwarfsource"
+            );
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("fastled: DWARF source smoke failed: {err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize> {
+    let config = debug_symbols::read_debug_symbol_manifest(output_dir)?.ok_or_else(|| {
+        anyhow::anyhow!(
+            "missing {} in {}",
+            debug_symbols::DWARF_ROOTS_MANIFEST,
+            output_dir.display()
+        )
+    })?;
+    let paths = collect_debug_source_paths(output_dir, &config)?;
+    if paths.is_empty() {
+        anyhow::bail!(
+            "no debug source paths found in {} or {}",
+            output_dir.join("fastled.wasm").display(),
+            output_dir.join("fastled.wasm.map").display()
+        );
+    }
+
+    let resolver = debug_symbols::DebugSymbolResolver::new(config);
+    let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+    let output_dir = output_dir.to_path_buf();
+    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    rt.block_on(async move {
+        let addr = server::start_server(output_dir, 0, None, debug_symbols).await?;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let client = reqwest::Client::new();
+        for path in &paths {
+            let resp = client
+                .post(format!("http://{addr}/dwarfsource"))
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(serde_json::json!({ "path": path }).to_string())
+                .send()
+                .await
+                .with_context(|| format!("POST /dwarfsource for {path}"))?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                anyhow::bail!("/dwarfsource rejected {path} with {status}: {body}");
+            }
+        }
+        Ok(paths.len())
+    })
+}
+
+fn collect_debug_source_paths(
+    output_dir: &Path,
+    config: &debug_symbols::DebugSymbolConfig,
+) -> anyhow::Result<BTreeSet<String>> {
+    let prefixes = debug_source_prefixes(config);
+    let mut paths = BTreeSet::new();
+
+    let wasm_path = output_dir.join("fastled.wasm");
+    let wasm =
+        std::fs::read(&wasm_path).with_context(|| format!("read {}", wasm_path.display()))?;
+    for candidate in extract_ascii_strings(&wasm) {
+        insert_debug_source_candidate(&mut paths, &prefixes, &candidate);
+    }
+
+    let source_map_path = output_dir.join("fastled.wasm.map");
+    if source_map_path.is_file() {
+        let json = std::fs::read_to_string(&source_map_path)
+            .with_context(|| format!("read {}", source_map_path.display()))?;
+        let parsed: serde_json::Value = serde_json::from_str(&json)
+            .with_context(|| format!("parse {}", source_map_path.display()))?;
+        if let Some(sources) = parsed.get("sources").and_then(serde_json::Value::as_array) {
+            for source in sources.iter().filter_map(serde_json::Value::as_str) {
+                insert_debug_source_candidate(&mut paths, &prefixes, source);
+            }
+        }
+    }
+
+    Ok(paths)
+}
+
+fn debug_source_prefixes(config: &debug_symbols::DebugSymbolConfig) -> Vec<String> {
+    let mut prefixes = Vec::new();
+    for prefix in [
+        config.prefixes.sketch_prefix.as_str(),
+        config.prefixes.fastled_prefix.as_str(),
+        config.prefixes.dwarf_prefix.as_str(),
+    ] {
+        push_debug_source_prefix(&mut prefixes, prefix);
+    }
+    for (prefix, _) in config.source_roots() {
+        push_debug_source_prefix(&mut prefixes, &prefix);
+    }
+    prefixes
+}
+
+fn push_debug_source_prefix(prefixes: &mut Vec<String>, prefix: &str) {
+    let mut normalized = prefix.trim_matches('/').replace('\\', "/");
+    if normalized.is_empty() {
+        return;
+    }
+    normalized.push('/');
+    if !prefixes.iter().any(|existing| existing == &normalized) {
+        prefixes.push(normalized);
+    }
+}
+
+fn insert_debug_source_candidate(
+    paths: &mut BTreeSet<String>,
+    prefixes: &[String],
+    candidate: &str,
+) {
+    let normalized = candidate
+        .trim()
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+    if normalized.is_empty() || normalized.split('/').any(|segment| segment == "..") {
+        return;
+    }
+    if prefixes
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix) || normalized.contains(&format!("/{prefix}")))
+    {
+        paths.insert(normalized);
+    }
+}
+
+fn extract_ascii_strings(bytes: &[u8]) -> Vec<String> {
+    let mut strings = Vec::new();
+    let mut current = Vec::new();
+    for &byte in bytes {
+        if (0x20..=0x7e).contains(&byte) {
+            current.push(byte);
+        } else if current.len() >= 4 {
+            strings.push(String::from_utf8_lossy(&current).into_owned());
+            current.clear();
+        } else {
+            current.clear();
+        }
+    }
+    if current.len() >= 4 {
+        strings.push(String::from_utf8_lossy(&current).into_owned());
+    }
+    strings
 }
 
 /// Library entry point invoked by the `fastled` binary.
@@ -1032,6 +1242,10 @@ pub fn run() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if cli.internal_dwarf_smoke {
+        return run_internal_dwarf_smoke(&cli);
     }
 
     // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
@@ -1150,10 +1364,41 @@ mod tests {
             fastled_path: None,
             purge: false,
             internal_ensure_fastled_repo: None,
+            internal_dwarf_smoke: false,
             debug: false,
             quick: false,
             release: false,
         }
+    }
+
+    #[test]
+    fn collect_debug_source_paths_finds_wasm_and_source_map_entries() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let output_dir = temp.path().join("fastled_js");
+        fs::create_dir_all(&output_dir).unwrap();
+        fs::write(
+            output_dir.join("fastled.wasm"),
+            b"\0sketchsource/Blink.ino\0prefix/fastledsource/FastLED.h\0",
+        )
+        .unwrap();
+        fs::write(
+            output_dir.join("fastled.wasm.map"),
+            r#"{"version":3,"sources":["dwarfsource/emsdk/upstream/emscripten/cache.h","ignored.js"]}"#,
+        )
+        .unwrap();
+        let config = debug_symbols::DebugSymbolConfig {
+            sketch_dir: temp.path().join("Blink"),
+            fastled_dir: Some(temp.path().join("FastLED")),
+            emsdk_path: Some(temp.path().join("emsdk")),
+            prefixes: debug_symbols::DwarfPrefixConfig::default(),
+        };
+
+        let paths = collect_debug_source_paths(&output_dir, &config).unwrap();
+
+        assert!(paths.contains("sketchsource/Blink.ino"));
+        assert!(paths.contains("prefix/fastledsource/FastLED.h"));
+        assert!(paths.contains("dwarfsource/emsdk/upstream/emscripten/cache.h"));
+        assert!(!paths.contains("ignored.js"));
     }
 
     #[test]

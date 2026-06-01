@@ -163,6 +163,55 @@ fn download_multipart(parts: &[PartRef], parts_dir: &Path, merged_path: &Path) -
     Ok(())
 }
 
+fn multipart_parts(version_info: &VersionInfo) -> Option<&[PartRef]> {
+    version_info
+        .parts
+        .as_deref()
+        .filter(|parts| !parts.is_empty())
+}
+
+#[cfg(unix)]
+fn ensure_bin_executables(install_dir: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let bin_dir = install_dir.join("bin");
+    if !bin_dir.is_dir() {
+        return Ok(());
+    }
+
+    let mut pending = vec![bin_dir];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry.with_context(|| format!("read entry in {}", dir.display()))?;
+            let path = entry.path();
+            let metadata = fs::metadata(&path)
+                .with_context(|| format!("read metadata for {}", path.display()))?;
+            if metadata.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if !metadata.is_file() {
+                continue;
+            }
+
+            let mut permissions = metadata.permissions();
+            let mode = permissions.mode();
+            if mode & 0o111 == 0 {
+                permissions.set_mode(mode | 0o111);
+                fs::set_permissions(&path, permissions)
+                    .with_context(|| format!("set executable bit on {}", path.display()))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_bin_executables(_install_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
 /// Ensure the emscripten toolchain is installed at
 /// `~/.fastled/toolchains/emscripten/{platform}/{arch}/{version}/`.
 /// Returns the install directory path.
@@ -199,11 +248,12 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let parts_subdir = cache_dir.join(format!("emscripten-{platform}-{arch}-{version}.parts"));
 
     if !archive_path.exists() {
-        let parts = version_info
-            .parts
-            .as_ref()
-            .with_context(|| format!("manifest version {version} has no parts"))?;
-        download_multipart(parts, &parts_subdir, &archive_path)?;
+        if let Some(parts) = multipart_parts(version_info) {
+            download_multipart(parts, &parts_subdir, &archive_path)?;
+        } else {
+            archive::download(&version_info.href, &archive_path)
+                .with_context(|| format!("download archive {}", version_info.href))?;
+        }
     }
 
     if !archive::verify_sha256(&archive_path, &version_info.sha256)? {
@@ -224,6 +274,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     }
     fs::create_dir_all(&staging)?;
     archive::extract_tar_zst(&archive_path, &staging)?;
+    ensure_bin_executables(&staging)?;
 
     fs::write(staging.join("done.txt"), "ok\n")?;
 
@@ -1205,6 +1256,7 @@ mod tests {
             "6af749f0d44927c7d4c93c9e407e195257ed690b8e3bd3a43d7a3f4badc52082"
         );
         assert!(entry.parts.is_none());
+        assert!(multipart_parts(entry).is_none());
     }
 
     #[test]
@@ -1212,9 +1264,30 @@ mod tests {
         let manifest: PlatformManifest = serde_json::from_str(LINUX_X86_64_MANIFEST_WITH_PARTS)
             .expect("parse linux/x86_64 manifest");
         let entry = manifest.versions.get("4.0.21").expect("entry for 4.0.21");
-        let parts = entry.parts.as_ref().expect("parts present");
+        let parts = multipart_parts(entry).expect("parts present");
         assert_eq!(parts.len(), 1);
         assert!(parts[0].href.ends_with(".part-aa"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_bin_executables_restores_unix_execute_bits() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir).expect("create bin");
+        let tool = bin_dir.join("llvm-ar");
+        fs::write(&tool, b"#!/bin/sh\n").expect("write tool");
+
+        let mut permissions = fs::metadata(&tool).expect("metadata").permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&tool, permissions).expect("clear executable bit");
+
+        ensure_bin_executables(temp.path()).expect("restore executable bits");
+
+        let mode = fs::metadata(&tool).expect("metadata").permissions().mode();
+        assert_ne!(mode & 0o111, 0);
     }
 
     /// Regression for issue #111: the win/x86_64 manifest publishes version
