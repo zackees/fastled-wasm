@@ -163,6 +163,13 @@ fn download_multipart(parts: &[PartRef], parts_dir: &Path, merged_path: &Path) -
     Ok(())
 }
 
+fn multipart_parts(version_info: &VersionInfo) -> Option<&[PartRef]> {
+    version_info
+        .parts
+        .as_deref()
+        .filter(|parts| !parts.is_empty())
+}
+
 /// Ensure the emscripten toolchain is installed at
 /// `~/.fastled/toolchains/emscripten/{platform}/{arch}/{version}/`.
 /// Returns the install directory path.
@@ -199,11 +206,12 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let parts_subdir = cache_dir.join(format!("emscripten-{platform}-{arch}-{version}.parts"));
 
     if !archive_path.exists() {
-        let parts = version_info
-            .parts
-            .as_ref()
-            .with_context(|| format!("manifest version {version} has no parts"))?;
-        download_multipart(parts, &parts_subdir, &archive_path)?;
+        if let Some(parts) = multipart_parts(version_info) {
+            download_multipart(parts, &parts_subdir, &archive_path)?;
+        } else {
+            archive::download(&version_info.href, &archive_path)
+                .with_context(|| format!("download archive {}", version_info.href))?;
+        }
     }
 
     if !archive::verify_sha256(&archive_path, &version_info.sha256)? {
@@ -1205,6 +1213,7 @@ mod tests {
             "6af749f0d44927c7d4c93c9e407e195257ed690b8e3bd3a43d7a3f4badc52082"
         );
         assert!(entry.parts.is_none());
+        assert!(multipart_parts(entry).is_none());
     }
 
     #[test]
@@ -1212,7 +1221,7 @@ mod tests {
         let manifest: PlatformManifest = serde_json::from_str(LINUX_X86_64_MANIFEST_WITH_PARTS)
             .expect("parse linux/x86_64 manifest");
         let entry = manifest.versions.get("4.0.21").expect("entry for 4.0.21");
-        let parts = entry.parts.as_ref().expect("parts present");
+        let parts = multipart_parts(entry).expect("parts present");
         assert_eq!(parts.len(), 1);
         assert!(parts[0].href.ends_with(".part-aa"));
     }
