@@ -9,6 +9,7 @@ import path from "node:path";
 const PROBE_NAME = "issue_85_runtime_stack_probe";
 const SERVER_URL_RE = /http:\/\/127\.0\.0\.1:\d+/;
 const DEFAULT_CDP_TIMEOUT_MS = 180_000;
+const DIAGNOSTIC_LIMIT = 80;
 
 const base64Vlq = new Map(
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -347,68 +348,147 @@ async function driveChromeToProbe(cdp, options) {
   const { appUrl, wasmUrl, mapping, timeoutMs } = options;
   const breakpointIds = new Set();
   const targetSessions = new Map();
+  const sessionTargets = new Map();
   const instrumentation = new Map();
+  const diagnostics = [];
   let instrumentationError;
 
+  const addDiagnostic = (text) => {
+    diagnostics.push(text);
+    if (diagnostics.length > DIAGNOSTIC_LIMIT) {
+      diagnostics.shift();
+    }
+  };
+
   cdp.onEvent((message) => {
-    if (message.method !== "Target.attachedToTarget") {
+    if (message.method === "Target.attachedToTarget") {
+      const { sessionId, targetInfo } = message.params;
+      targetSessions.set(targetInfo.targetId, sessionId);
+      sessionTargets.set(sessionId, targetInfo);
+      addDiagnostic(`attached ${targetInfo.type} ${targetInfo.url || targetInfo.title || targetInfo.targetId}`);
+      const promise = instrumentSession(cdp, sessionId, targetInfo, wasmUrl, mapping, breakpointIds)
+        .catch((error) => {
+          instrumentationError = error;
+        });
+      instrumentation.set(sessionId, promise);
       return;
     }
-    const { sessionId, targetInfo } = message.params;
-    targetSessions.set(targetInfo.targetId, sessionId);
-    const promise = instrumentSession(cdp, sessionId, targetInfo, wasmUrl, mapping, breakpointIds)
-      .catch((error) => {
-        instrumentationError = error;
-      });
-    instrumentation.set(sessionId, promise);
+
+    if (message.method === "Debugger.scriptParsed" && looksWasmRelated(message.params, wasmUrl)) {
+      const targetInfo = sessionTargets.get(message.sessionId);
+      addDiagnostic(
+        `scriptParsed ${targetInfo?.type || "unknown"} url=${message.params.url || "<empty>"} ` +
+          `sourceMap=${message.params.sourceMapURL || "<none>"}`,
+      );
+      if (matchesWasmScript(message.params, wasmUrl)) {
+        setBreakpointInScript(cdp, message.sessionId, message.params, mapping, breakpointIds)
+          .then((breakpointId) => addDiagnostic(`scriptId breakpoint set ${breakpointId}`))
+          .catch((error) => {
+            instrumentationError = error;
+          });
+      }
+      return;
+    }
+
+    if (message.method === "Runtime.consoleAPICalled") {
+      const targetInfo = sessionTargets.get(message.sessionId);
+      addDiagnostic(
+        `${targetInfo?.type || "unknown"} console.${message.params.type}: ` +
+          `${tail(formatConsoleCall(message.params), 500)}`,
+      );
+      return;
+    }
+
+    if (message.method === "Runtime.exceptionThrown") {
+      const targetInfo = sessionTargets.get(message.sessionId);
+      addDiagnostic(
+        `${targetInfo?.type || "unknown"} exception: ` +
+          `${tail(formatExceptionDetails(message.params?.exceptionDetails), 500)}`,
+      );
+    }
   });
 
-  const pausedPromise = cdp.waitForEvent((message) => {
-    if (message.method !== "Debugger.paused") {
-      return false;
+  const wrapEvidence = (kind, message) => ({ kind, message });
+  const evidencePromises = [
+    cdp.waitForEvent((message) => {
+      if (message.method !== "Debugger.paused") {
+        return false;
+      }
+      const hitBreakpoints = message.params.hitBreakpoints || [];
+      return hitBreakpoints.some((id) => breakpointIds.has(id));
+    }, timeoutMs, `${PROBE_NAME} breakpoint`).then((message) => wrapEvidence("breakpoint", message)),
+
+    cdp.waitForEvent((message) => {
+      if (message.method !== "Runtime.exceptionThrown") {
+        return false;
+      }
+      return isWasmRuntimeException(message.params?.exceptionDetails);
+    }, timeoutMs, `${PROBE_NAME} runtime exception`).then(
+      (message) => wrapEvidence("runtime exception", message),
+    ),
+
+    cdp.waitForEvent((message) => {
+      if (message.method !== "Runtime.consoleAPICalled") {
+        return false;
+      }
+      return isWasmRuntimeText(formatConsoleCall(message.params));
+    }, timeoutMs, `${PROBE_NAME} worker console error`).then(
+      (message) => wrapEvidence("worker console error", message),
+    ),
+  ];
+
+  try {
+    await cdp.send("Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: true,
+      flatten: true,
+    });
+    await cdp.send("Target.setDiscoverTargets", { discover: true });
+
+    const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
+    const pageSessionId = await waitForCondition(
+      () => targetSessions.get(targetId),
+      30_000,
+      "page target attachment",
+    );
+
+    await instrumentation.get(pageSessionId);
+    if (instrumentationError) {
+      throw instrumentationError;
     }
-    const hitBreakpoints = message.params.hitBreakpoints || [];
-    return hitBreakpoints.some((id) => breakpointIds.has(id));
-  }, timeoutMs, `${PROBE_NAME} breakpoint`).then((message) => ({
-    kind: "breakpoint",
-    message,
-  }));
 
-  const exceptionPromise = cdp.waitForEvent((message) => {
-    if (message.method !== "Runtime.exceptionThrown") {
-      return false;
+    const pageLoadedPromise = cdp.waitForEvent(
+      (message) => message.sessionId === pageSessionId && message.method === "Page.loadEventFired",
+      60_000,
+      "page load",
+    ).then(() => undefined);
+
+    await cdp.send("Page.navigate", { url: appUrl }, pageSessionId);
+    const loadOrEvidence = await Promise.race([pageLoadedPromise, ...evidencePromises]);
+    if (loadOrEvidence) {
+      return loadOrEvidence;
     }
-    return isWasmRuntimeException(message.params?.exceptionDetails);
-  }, timeoutMs, `${PROBE_NAME} runtime exception`).then((message) => ({
-    kind: "runtime exception",
-    message,
-  }));
 
-  await cdp.send("Target.setAutoAttach", {
-    autoAttach: true,
-    waitForDebuggerOnStart: true,
-    flatten: true,
-  });
-  await cdp.send("Target.setDiscoverTargets", { discover: true });
+    const startupOrEvidence = await Promise.race([
+      startFastLedRuntime(cdp, pageSessionId, addDiagnostic).then(() => undefined),
+      ...evidencePromises,
+    ]);
+    if (startupOrEvidence) {
+      return startupOrEvidence;
+    }
 
-  const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
-  const pageSessionId = await waitForCondition(
-    () => targetSessions.get(targetId),
-    30_000,
-    "page target attachment",
-  );
-
-  await instrumentation.get(pageSessionId);
-  if (instrumentationError) {
-    throw instrumentationError;
+    const evidence = await Promise.race(evidencePromises);
+    if (instrumentationError) {
+      throw instrumentationError;
+    }
+    return evidence;
+  } catch (error) {
+    if (instrumentationError && instrumentationError !== error) {
+      error.message += `\ninstrumentation error: ${instrumentationError.message}`;
+    }
+    error.message += `\nCDP diagnostics:\n${diagnostics.length ? diagnostics.join("\n") : "(none)"}`;
+    throw error;
   }
-
-  await cdp.send("Page.navigate", { url: appUrl }, pageSessionId);
-  const evidence = await Promise.race([pausedPromise, exceptionPromise]);
-  if (instrumentationError) {
-    throw instrumentationError;
-  }
-  return evidence;
 }
 
 async function instrumentSession(cdp, sessionId, targetInfo, wasmUrl, mapping, breakpointIds) {
@@ -433,6 +513,79 @@ async function instrumentSession(cdp, sessionId, targetInfo, wasmUrl, mapping, b
   await cdp.send("Runtime.runIfWaitingForDebugger", {}, sessionId).catch(async () => {
     await cdp.send("Debugger.resume", {}, sessionId).catch(() => {});
   });
+}
+
+async function setBreakpointInScript(cdp, sessionId, script, mapping, breakpointIds) {
+  const breakpoint = await cdp.send("Debugger.setBreakpoint", {
+    location: {
+      scriptId: script.scriptId,
+      lineNumber: mapping.generatedLine,
+      columnNumber: mapping.generatedColumn,
+    },
+  }, sessionId);
+  breakpointIds.add(breakpoint.breakpointId);
+  return breakpoint.breakpointId;
+}
+
+async function startFastLedRuntime(cdp, pageSessionId, addDiagnostic) {
+  let lastState = "";
+  const state = await waitForCondition(async () => {
+    const result = await cdp.send("Runtime.evaluate", {
+      expression: `(() => {
+        const button = document.getElementById("start-btn");
+        const controller = globalThis.fastLEDController || null;
+        const workerManager = globalThis.fastLEDWorkerManager || null;
+        const state = {
+          readyState: document.readyState,
+          hasStartButton: !!button,
+          startHandlerReady: !!button && typeof button.onclick === "function",
+          hasController: !!controller,
+          setupCompleted: !!controller?.setupCompleted,
+          running: !!controller?.running,
+          workerActive: !!workerManager?.isWorkerActive,
+          startFunctionReady: typeof globalThis.startFastLED === "function",
+          startRequested: !!globalThis.__fastledRuntimeSmokeStartRequested,
+        };
+        if (
+          state.setupCompleted &&
+          state.workerActive &&
+          !state.running &&
+          !globalThis.__fastledRuntimeSmokeStartRequested
+        ) {
+          globalThis.__fastledRuntimeSmokeStartRequested = true;
+          state.startRequested = true;
+          if (state.startHandlerReady) {
+            button.click();
+          } else if (state.startFunctionReady) {
+            globalThis.startFastLED().catch((error) => {
+              console.error("runtime smoke startFastLED failed", error);
+            });
+          }
+        }
+        return state;
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    }, pageSessionId);
+
+    if (result.exceptionDetails) {
+      throw new Error(`page startup evaluation failed: ${formatExceptionDetails(result.exceptionDetails)}`);
+    }
+
+    const value = result.result?.value || {};
+    const serialized = JSON.stringify(value);
+    if (serialized !== lastState) {
+      addDiagnostic(`page state ${serialized}`);
+      lastState = serialized;
+    }
+
+    if (value.hasController && value.setupCompleted && value.workerActive && (value.running || value.startRequested)) {
+      return value;
+    }
+    return undefined;
+  }, 60_000, "FastLED page startup");
+
+  addDiagnostic(`page startup ready ${JSON.stringify(state)}`);
 }
 
 class CdpConnection {
@@ -649,9 +802,65 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function looksWasmRelated(script, wasmUrl) {
+  const url = script?.url || "";
+  const sourceMapUrl = script?.sourceMapURL || "";
+  return (
+    matchesWasmScript(script, wasmUrl) ||
+    url.startsWith("wasm://") ||
+    url.includes("fastled") ||
+    sourceMapUrl.includes("fastled")
+  );
+}
+
+function matchesWasmScript(script, wasmUrl) {
+  const url = script?.url || "";
+  const sourceMapUrl = script?.sourceMapURL || "";
+  return (
+    url === wasmUrl ||
+    url.endsWith("/fastled.wasm") ||
+    sourceMapUrl === `${wasmUrl}.map` ||
+    sourceMapUrl.endsWith("/fastled.wasm.map") ||
+    (script?.isWasm && sourceMapUrl.includes("fastled.wasm.map"))
+  );
+}
+
 function isWasmRuntimeException(exceptionDetails) {
-  const text = JSON.stringify(exceptionDetails || {});
+  return isWasmRuntimeText(formatExceptionDetails(exceptionDetails));
+}
+
+function isWasmRuntimeText(text) {
   return /WebAssembly|RuntimeError|unreachable|trap|abort/i.test(text);
+}
+
+function formatConsoleCall(params) {
+  return (params?.args || []).map(formatRemoteObject).filter(Boolean).join(" ");
+}
+
+function formatRemoteObject(object) {
+  if (!object) {
+    return "";
+  }
+  if (Object.hasOwn(object, "value")) {
+    if (typeof object.value === "string") {
+      return object.value;
+    }
+    return JSON.stringify(object.value);
+  }
+  return object.description || object.unserializableValue || object.className || object.type || "";
+}
+
+function formatExceptionDetails(exceptionDetails) {
+  if (!exceptionDetails) {
+    return "";
+  }
+  const exceptionText = formatRemoteObject(exceptionDetails.exception);
+  const stackText = exceptionDetails.stackTrace?.callFrames
+    ?.map((frame) => `${frame.functionName || "<anonymous>"} ${frame.url || ""}:${frame.lineNumber || 0}`)
+    .join(" ");
+  return [exceptionDetails.text, exceptionText, stackText, JSON.stringify(exceptionDetails)]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function formatFunctionNames(frames) {
