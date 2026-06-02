@@ -30,7 +30,9 @@ implicitly attaching this crate to the parent stable workspace.
 The repository `./lint` script runs this lint after `cargo clippy`. It builds
 the lint with the pinned nightly in a short target directory, copies the shared
 library to Dylint's required `@toolchain` filename, then passes that file to
-Dylint with `--lib-path`:
+Dylint with `--lib-path`. The Dylint invocation keeps rustup shims ahead of any
+direct toolchain binaries so Dylint's internal driver build can resolve the
+nightly toolchain:
 
 ```bash
 ./lint
