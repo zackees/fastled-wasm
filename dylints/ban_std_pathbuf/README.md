@@ -28,8 +28,9 @@ implicitly attaching this crate to the parent stable workspace.
 ## Running
 
 The repository `./lint` script runs this lint after `cargo clippy`. It builds
-the lint with the pinned nightly in a short target directory, then passes the
-built shared library to Dylint with `--lib-path`:
+the lint with the pinned nightly in a short target directory, copies the shared
+library to Dylint's required `@toolchain` filename, then passes that file to
+Dylint with `--lib-path`:
 
 ```bash
 ./lint

@@ -32,12 +32,15 @@ fi
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     DYLINT_BUILT_LIBRARY="$(find "$DYLINT_LIBRARY_DIR" -path "*/release/ban_std_pathbuf.dll" ! -path "*/deps/*" -print -quit)"
+    DYLINT_LIBRARY_NAME="ban_std_pathbuf@$DYLINT_TOOLCHAIN.dll"
     ;;
   Darwin*)
     DYLINT_BUILT_LIBRARY="$(find "$DYLINT_LIBRARY_DIR" -path "*/release/libban_std_pathbuf.dylib" ! -path "*/deps/*" -print -quit)"
+    DYLINT_LIBRARY_NAME="libban_std_pathbuf@$DYLINT_TOOLCHAIN.dylib"
     ;;
   *)
     DYLINT_BUILT_LIBRARY="$(find "$DYLINT_LIBRARY_DIR" -path "*/release/libban_std_pathbuf.so" ! -path "*/deps/*" -print -quit)"
+    DYLINT_LIBRARY_NAME="libban_std_pathbuf@$DYLINT_TOOLCHAIN.so"
     ;;
 esac
 
@@ -46,8 +49,11 @@ if [ -z "$DYLINT_BUILT_LIBRARY" ]; then
   exit 1
 fi
 
+DYLINT_NAMED_LIBRARY="$DYLINT_LIBRARY_DIR/release/$DYLINT_LIBRARY_NAME"
+mkdir -p "$DYLINT_LIBRARY_DIR/release"
+cp "$DYLINT_BUILT_LIBRARY" "$DYLINT_NAMED_LIBRARY"
 RUSTUP_TOOLCHAIN="$DYLINT_TOOLCHAIN" CARGO_TARGET_DIR="$DYLINT_TARGET_DIR" \
-  soldr cargo dylint --workspace --lib-path "$DYLINT_BUILT_LIBRARY" -- --all-targets
+  soldr cargo dylint --workspace --lib-path "$DYLINT_NAMED_LIBRARY" -- --all-targets
 
 echo Running ruff src
 uv run ruff check --fix src
