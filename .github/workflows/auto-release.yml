@@ -22,7 +22,7 @@ jobs:
       - name: Check if version needs release
         id: version_check
         run: |
-          VERSION=$(grep '^__version__' src/fastled/__version__.py | sed 's/.*"\(.*\)"/\1/')
+          VERSION=$(python -c 'import tomllib; from pathlib import Path; manifest = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8")); print(manifest["workspace"]["package"]["version"])')
           echo "current=$VERSION" >> $GITHUB_OUTPUT
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/fastled/$VERSION/json")
           if [ "$STATUS" = "200" ]; then
