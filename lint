@@ -30,6 +30,23 @@ if [ -z "$RUSTUP_BIN" ]; then
   exit 1
 fi
 RUSTUP_BIN_DIR="$(dirname "$RUSTUP_BIN")"
+DYLINT_CARGO_SHIM_DIR="$(mktemp -d)"
+DYLINT_PREVIOUS_DEFAULT="$(rustup default 2>/dev/null | sed 's/ (default)$//')"
+
+cleanup_dylint_toolchain() {
+  rm -rf "$DYLINT_CARGO_SHIM_DIR"
+  if [ -n "$DYLINT_PREVIOUS_DEFAULT" ]; then
+    rustup default "$DYLINT_PREVIOUS_DEFAULT" >/dev/null || true
+  fi
+}
+trap cleanup_dylint_toolchain EXIT
+
+cat > "$DYLINT_CARGO_SHIM_DIR/cargo" <<EOF
+#!/bin/sh
+exec "$RUSTUP_BIN" run "$DYLINT_TOOLCHAIN" cargo "\$@"
+EOF
+chmod +x "$DYLINT_CARGO_SHIM_DIR/cargo"
+rustup default "$DYLINT_TOOLCHAIN" >/dev/null
 
 (
   cd "$DYLINT_DIR"
@@ -60,11 +77,12 @@ DYLINT_NAMED_LIBRARY="$DYLINT_LIBRARY_DIR/release/$DYLINT_LIBRARY_NAME"
 mkdir -p "$DYLINT_LIBRARY_DIR/release"
 cp "$DYLINT_BUILT_LIBRARY" "$DYLINT_NAMED_LIBRARY"
 # cargo-dylint builds an internal driver and intentionally unsets RUSTUP_TOOLCHAIN
-# for that nested build. Put rustup shims first so the nested `cargo` can recover
-# the toolchain from the library filename instead of finding setup-soldr's direct
-# toolchain binary.
-PATH="$RUSTUP_BIN_DIR:$PATH" RUSTUP_TOOLCHAIN="$DYLINT_TOOLCHAIN" CARGO_TARGET_DIR="$DYLINT_TARGET_DIR" \
+# for that nested build. Use a short-lived cargo shim plus a temporary rustup
+# default so the nested driver build uses the pinned nightly in its temp dir.
+PATH="$DYLINT_CARGO_SHIM_DIR:$RUSTUP_BIN_DIR:$PATH" RUSTUP_TOOLCHAIN="$DYLINT_TOOLCHAIN" CARGO_TARGET_DIR="$DYLINT_TARGET_DIR" \
   cargo-dylint dylint --workspace --lib-path "$DYLINT_NAMED_LIBRARY" -- --all-targets
+cleanup_dylint_toolchain
+trap - EXIT
 
 echo Running ruff src
 uv run ruff check --fix src
