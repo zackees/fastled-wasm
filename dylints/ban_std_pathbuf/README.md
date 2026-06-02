@@ -22,13 +22,25 @@ regression from coming back into a different module.
 
 Builds against `nightly-2026-03-26` (see `rust-toolchain.toml`). The main
 workspace stays on stable; this sub-crate is intentionally not in the
-workspace.
+workspace. The local `[workspace]` table in `Cargo.toml` keeps Cargo from
+implicitly attaching this crate to the parent stable workspace.
 
-## Future work
+## Running
 
-Add a `cargo dylint` driver script and wire it into `bash lint` so CI
-enforces the lint. For now this directory is the lint source; running it
-is manual until the driver lands.
+The repository `./lint` script runs this lint after `cargo clippy`. It builds
+the lint with the pinned nightly in a short target directory, copies the shared
+library to Dylint's required `@toolchain` filename, then passes that file to
+Dylint with `--lib-path`. The Dylint invocation keeps rustup shims ahead of any
+direct toolchain binaries so Dylint's internal driver build can resolve the
+nightly toolchain:
+
+```bash
+./lint
+```
+
+The root `rust-toolchain.toml` remains stable. Only the Dylint build/check
+invocation sets `RUSTUP_TOOLCHAIN=nightly-2026-03-26`, which is required by
+`rustc_private`.
 
 ## Reference
 
