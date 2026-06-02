@@ -40,6 +40,7 @@ import './modules/recording/ui_recorder_test.ts';
 
 // Core FastLED Integration imports
 import { FastLEDAsyncController } from './modules/core/fastled_async_controller.ts';
+import { fastLEDWorkerManager } from './modules/core/fastled_worker_manager.ts';
 import './modules/core/fastled_callbacks.ts';
 import { fastLEDEvents, fastLEDPerformanceMonitor } from './modules/core/fastled_events.ts';
 import { FASTLED_DEBUG_LOG, FASTLED_DEBUG_ERROR, FASTLED_DEBUG_TRACE } from './modules/core/fastled_debug_logger.ts';
@@ -69,21 +70,31 @@ console.log(`⭐ index.js loading, URL: ${window.location.href}`);
  */
 (function checkBrowserCompatibility() {
   const errors = [];
+  const workerCapabilities = fastLEDWorkerManager.capabilities;
+  const skipWebGL2Compatibility = urlParams.get('runtime_stack_smoke') === '1';
 
   // Check OffscreenCanvas support
-  if (typeof OffscreenCanvas === 'undefined') {
+  if (workerCapabilities?.offscreenCanvas === true) {
+    // Reuse the worker manager probe when it has already run during module import.
+  } else if (typeof OffscreenCanvas === 'undefined') {
     errors.push('OffscreenCanvas not supported');
   } else {
     // Check WebGL2 support with OffscreenCanvas
     try {
       const testCanvas = new OffscreenCanvas(1, 1);
       const ctx = testCanvas.getContext('webgl2');
-      if (!ctx) {
+      if (!ctx && !skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
         errors.push('WebGL2 not supported with OffscreenCanvas');
       }
     } catch (error) {
-      errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
+      if (!skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
+        errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
+      }
     }
+  }
+
+  if (!skipWebGL2Compatibility && workerCapabilities && workerCapabilities.webgl2 !== true) {
+    errors.push('WebGL2 not supported with OffscreenCanvas');
   }
 
   if (errors.length > 0) {

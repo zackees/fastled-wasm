@@ -487,6 +487,10 @@ struct Cli {
     #[arg(long, hide = true)]
     internal_dwarf_smoke: bool,
 
+    /// Internal CI plumbing: serve compiled output without launching the viewer.
+    #[arg(long, value_name = "DIR", hide = true)]
+    internal_serve_dir_headless: Option<String>,
+
     // Build mode (mutually exclusive).
     /// Build in debug mode.
     #[arg(long, conflicts_with_all = ["quick", "release"])]
@@ -975,7 +979,7 @@ fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
 ///
 /// This replaces the Flask-based `--serve-dir` implementation with a native
 /// Rust server, eliminating the Python/Flask dependency for this code path.
-fn serve_directory(dir: &str) -> ExitCode {
+fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
     let path = PathBuf::from(dir);
     if !path.is_dir() {
         eprintln!("fastled: --serve-dir path does not exist: {dir}");
@@ -1010,12 +1014,16 @@ fn serve_directory(dir: &str) -> ExitCode {
         println!("Serving {dir} at {url}");
         println!("Press Ctrl+C to stop...");
 
-        let _viewer = match viewer::launch_tauri_viewer(&path) {
-            Ok(process) => process,
-            Err(e) => {
-                eprintln!("fastled: Tauri viewer failed: {e:#}");
-                return ExitCode::FAILURE;
+        let _viewer = if launch_viewer {
+            match viewer::launch_tauri_viewer(&path) {
+                Ok(process) => Some(process),
+                Err(e) => {
+                    eprintln!("fastled: Tauri viewer failed: {e:#}");
+                    return ExitCode::FAILURE;
+                }
             }
+        } else {
+            None
         };
 
         // Wait for Ctrl+C.
@@ -1248,9 +1256,13 @@ pub fn run() -> ExitCode {
         return run_internal_dwarf_smoke(&cli);
     }
 
+    if let Some(ref serve_dir) = cli.internal_serve_dir_headless {
+        return serve_directory(serve_dir, false);
+    }
+
     // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
     if let Some(ref serve_dir) = cli.serve_dir {
-        return serve_directory(serve_dir);
+        return serve_directory(serve_dir, true);
     }
 
     if cli.install {
@@ -1365,6 +1377,7 @@ mod tests {
             purge: false,
             internal_ensure_fastled_repo: None,
             internal_dwarf_smoke: false,
+            internal_serve_dir_headless: None,
             debug: false,
             quick: false,
             release: false,
