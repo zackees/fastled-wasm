@@ -55,9 +55,8 @@ jobs:
       - name: Install Dylint
         run: |
           rustup toolchain install nightly-2026-03-26 --profile minimal --component llvm-tools-preview,rust-src,rustc-dev
-          if ! soldr cargo dylint --version >/dev/null 2>&1; then
-            soldr cargo install cargo-dylint dylint-link --locked
-          fi
+          soldr cargo install cargo-dylint --version 5.0.0 --locked --force
+          soldr cargo install dylint-link --version 5.0.0 --locked --force
 
       - name: Lint
         run: ./lint
