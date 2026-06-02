@@ -27,7 +27,7 @@ jobs:
       - name: Install Python
         run: uv python install "$UV_PYTHON"
 
-      - uses: zackees/setup-soldr@v0.9.59
+      - uses: zackees/setup-soldr@v0.9.60
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
