@@ -5,6 +5,8 @@ description = "Ban std::path::PathBuf outside the legacy allowlist (ported from 
 edition = "2021"
 publish = false
 
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 
