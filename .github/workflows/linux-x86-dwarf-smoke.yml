@@ -18,6 +18,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: browser-actions/setup-chrome@v2
+        id: setup-chrome
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -54,6 +64,12 @@ jobs:
           sketch_dir="$workdir/Blink"
           "$fastled_bin" --init Blink --branch master --no-interactive "$workdir"
           "$fastled_bin" --internal-dwarf-smoke --debug --no-interactive "$sketch_dir"
+
+      - name: Runtime mapped stack smoke
+        env:
+          FASTLED_BIN: ${{ github.workspace }}/target/release/fastled
+          FASTLED_CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: node ci/runtime_stack_smoke.mjs
 
       - name: Upload failure logs
         if: failure()
