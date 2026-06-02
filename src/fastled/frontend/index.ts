@@ -69,21 +69,30 @@ console.log(`⭐ index.js loading, URL: ${window.location.href}`);
  */
 (function checkBrowserCompatibility() {
   const errors = [];
+  const workerCapabilities = window.fastLEDWorkerManager?.capabilities;
 
   // Check OffscreenCanvas support
-  if (typeof OffscreenCanvas === 'undefined') {
+  if (workerCapabilities?.offscreenCanvas === true) {
+    // Reuse the worker manager probe when it has already run during module import.
+  } else if (typeof OffscreenCanvas === 'undefined') {
     errors.push('OffscreenCanvas not supported');
   } else {
     // Check WebGL2 support with OffscreenCanvas
     try {
       const testCanvas = new OffscreenCanvas(1, 1);
       const ctx = testCanvas.getContext('webgl2');
-      if (!ctx) {
+      if (!ctx && workerCapabilities?.webgl2 !== true) {
         errors.push('WebGL2 not supported with OffscreenCanvas');
       }
     } catch (error) {
-      errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
+      if (workerCapabilities?.webgl2 !== true) {
+        errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
+      }
     }
+  }
+
+  if (workerCapabilities && workerCapabilities.webgl2 !== true) {
+    errors.push('WebGL2 not supported with OffscreenCanvas');
   }
 
   if (errors.length > 0) {
