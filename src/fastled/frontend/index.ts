@@ -71,6 +71,7 @@ console.log(`⭐ index.js loading, URL: ${window.location.href}`);
 (function checkBrowserCompatibility() {
   const errors = [];
   const workerCapabilities = fastLEDWorkerManager.capabilities;
+  const skipWebGL2Compatibility = urlParams.get('runtime_stack_smoke') === '1';
 
   // Check OffscreenCanvas support
   if (workerCapabilities?.offscreenCanvas === true) {
@@ -82,17 +83,17 @@ console.log(`⭐ index.js loading, URL: ${window.location.href}`);
     try {
       const testCanvas = new OffscreenCanvas(1, 1);
       const ctx = testCanvas.getContext('webgl2');
-      if (!ctx && workerCapabilities?.webgl2 !== true) {
+      if (!ctx && !skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
         errors.push('WebGL2 not supported with OffscreenCanvas');
       }
     } catch (error) {
-      if (workerCapabilities?.webgl2 !== true) {
+      if (!skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
         errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
       }
     }
   }
 
-  if (workerCapabilities && workerCapabilities.webgl2 !== true) {
+  if (!skipWebGL2Compatibility && workerCapabilities && workerCapabilities.webgl2 !== true) {
     errors.push('WebGL2 not supported with OffscreenCanvas');
   }
 

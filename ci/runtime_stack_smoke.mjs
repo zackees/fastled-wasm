@@ -65,7 +65,7 @@ async function main() {
 
     cdp = await CdpConnection.connect(wsUrl);
     const evidence = await driveChromeToProbe(cdp, {
-      appUrl: serverUrl,
+      appUrl: `${serverUrl}/?runtime_stack_smoke=1&gfx=0`,
       wasmUrl: `${serverUrl}/fastled.wasm`,
       mapping,
       timeoutMs: DEFAULT_CDP_TIMEOUT_MS,
