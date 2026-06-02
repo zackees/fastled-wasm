@@ -40,6 +40,7 @@ import './modules/recording/ui_recorder_test.ts';
 
 // Core FastLED Integration imports
 import { FastLEDAsyncController } from './modules/core/fastled_async_controller.ts';
+import { fastLEDWorkerManager } from './modules/core/fastled_worker_manager.ts';
 import './modules/core/fastled_callbacks.ts';
 import { fastLEDEvents, fastLEDPerformanceMonitor } from './modules/core/fastled_events.ts';
 import { FASTLED_DEBUG_LOG, FASTLED_DEBUG_ERROR, FASTLED_DEBUG_TRACE } from './modules/core/fastled_debug_logger.ts';
@@ -69,7 +70,7 @@ console.log(`⭐ index.js loading, URL: ${window.location.href}`);
  */
 (function checkBrowserCompatibility() {
   const errors = [];
-  const workerCapabilities = window.fastLEDWorkerManager?.capabilities;
+  const workerCapabilities = fastLEDWorkerManager.capabilities;
 
   // Check OffscreenCanvas support
   if (workerCapabilities?.offscreenCanvas === true) {
