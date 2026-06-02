@@ -5,9 +5,15 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 from setuptools import Distribution, setup
 from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parent
 PACKAGE_BIN_DIR = ROOT / "src" / "fastled" / "bin"
@@ -19,6 +25,19 @@ def _cargo_command() -> list[str]:
     if soldr:
         return [soldr, "cargo"]
     raise RuntimeError("soldr was not found; cannot build bundled fastled")
+
+
+def _workspace_package_version() -> str:
+    cargo_toml = ROOT / "Cargo.toml"
+    with cargo_toml.open("rb") as handle:
+        manifest: dict[str, Any] = tomllib.load(handle)
+    try:
+        version = manifest["workspace"]["package"]["version"]
+    except KeyError as exc:
+        raise RuntimeError("Cargo.toml is missing workspace.package.version") from exc
+    if not isinstance(version, str) or not version:
+        raise RuntimeError("Cargo.toml workspace.package.version must be a string")
+    return version
 
 
 def _candidate_binaries() -> list[Path]:
@@ -87,6 +106,7 @@ class bdist_wheel(_bdist_wheel):
 
 
 setup(
+    version=_workspace_package_version(),
     distclass=BinaryDistribution,
     cmdclass={
         "bdist_wheel": bdist_wheel,
