@@ -63,22 +63,24 @@ async function main() {
     const wsUrl = await waitForChromeWebSocket(remoteDebuggingPort, chromeChild);
 
     cdp = await CdpConnection.connect(wsUrl);
-    const paused = await driveChromeToProbeBreakpoint(cdp, {
+    const evidence = await driveChromeToProbe(cdp, {
       appUrl: serverUrl,
       wasmUrl: `${serverUrl}/fastled.wasm`,
       mapping,
       timeoutMs: DEFAULT_CDP_TIMEOUT_MS,
     });
 
-    const topFrame = paused.params.callFrames[0];
-    if (!topFrame?.functionName?.includes(PROBE_NAME)) {
-      throw new Error(
-        `breakpoint top frame was '${topFrame?.functionName || "<anonymous>"}', expected ${PROBE_NAME}`,
-      );
+    if (evidence.kind === "breakpoint") {
+      const frames = evidence.message.params.callFrames || [];
+      if (!frames.some((frame) => frame.functionName?.includes(PROBE_NAME))) {
+        throw new Error(
+          `breakpoint stack did not contain ${PROBE_NAME}; frames: ${formatFunctionNames(frames)}`,
+        );
+      }
     }
 
     console.log(
-      `Runtime stack smoke passed: Blink.ino:${patchedFrame.line} ${PROBE_NAME} ` +
+      `Runtime stack smoke passed (${evidence.kind}): Blink.ino:${patchedFrame.line} ${PROBE_NAME} ` +
         `(wasm ${mapping.generatedLine + 1}:${mapping.generatedColumn})`,
     );
   } finally {
@@ -341,7 +343,7 @@ async function waitForChromeWebSocket(port, chromeChild) {
   );
 }
 
-async function driveChromeToProbeBreakpoint(cdp, options) {
+async function driveChromeToProbe(cdp, options) {
   const { appUrl, wasmUrl, mapping, timeoutMs } = options;
   const breakpointIds = new Set();
   const targetSessions = new Map();
@@ -367,7 +369,20 @@ async function driveChromeToProbeBreakpoint(cdp, options) {
     }
     const hitBreakpoints = message.params.hitBreakpoints || [];
     return hitBreakpoints.some((id) => breakpointIds.has(id));
-  }, timeoutMs, `${PROBE_NAME} breakpoint`);
+  }, timeoutMs, `${PROBE_NAME} breakpoint`).then((message) => ({
+    kind: "breakpoint",
+    message,
+  }));
+
+  const exceptionPromise = cdp.waitForEvent((message) => {
+    if (message.method !== "Runtime.exceptionThrown") {
+      return false;
+    }
+    return isWasmRuntimeException(message.params?.exceptionDetails);
+  }, timeoutMs, `${PROBE_NAME} runtime exception`).then((message) => ({
+    kind: "runtime exception",
+    message,
+  }));
 
   await cdp.send("Target.setAutoAttach", {
     autoAttach: true,
@@ -389,11 +404,11 @@ async function driveChromeToProbeBreakpoint(cdp, options) {
   }
 
   await cdp.send("Page.navigate", { url: appUrl }, pageSessionId);
-  const paused = await pausedPromise;
+  const evidence = await Promise.race([pausedPromise, exceptionPromise]);
   if (instrumentationError) {
     throw instrumentationError;
   }
-  return paused;
+  return evidence;
 }
 
 async function instrumentSession(cdp, sessionId, targetInfo, wasmUrl, mapping, breakpointIds) {
@@ -632,6 +647,15 @@ async function stopChild(child) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isWasmRuntimeException(exceptionDetails) {
+  const text = JSON.stringify(exceptionDetails || {});
+  return /WebAssembly|RuntimeError|unreachable|trap|abort/i.test(text);
+}
+
+function formatFunctionNames(frames) {
+  return frames.map((frame) => frame.functionName || "<anonymous>").join(", ");
 }
 
 function tail(text, maxLength = 4_000) {
