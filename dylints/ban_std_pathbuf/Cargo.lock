@@ -200,8 +200,9 @@ dependencies = [
 
 [[package]]
 name = "dylint"
-version = "5.0.0"
-source = "git+https://github.com/trailofbits/dylint?rev=4bd91ce7729b74c7ee5664bbb588f7baf30b4a09#4bd91ce7729b74c7ee5664bbb588f7baf30b4a09"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c738fb72ea7d248df2995a31b3698beb63d0f1f9ca5a5dc0188c4b64cd0e86e4"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -217,8 +218,9 @@ dependencies = [
 
 [[package]]
 name = "dylint_internal"
-version = "5.0.0"
-source = "git+https://github.com/trailofbits/dylint?rev=4bd91ce7729b74c7ee5664bbb588f7baf30b4a09#4bd91ce7729b74c7ee5664bbb588f7baf30b4a09"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9796d3441d7894cbaf4992640799efffc1661978f0cc1266ec788c32254fdfb3"
 dependencies = [
  "anstyle",
  "anyhow",
@@ -236,8 +238,9 @@ dependencies = [
 
 [[package]]
 name = "dylint_linting"
-version = "5.0.0"
-source = "git+https://github.com/trailofbits/dylint?rev=4bd91ce7729b74c7ee5664bbb588f7baf30b4a09#4bd91ce7729b74c7ee5664bbb588f7baf30b4a09"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c213635b3eaa84f43b9b497377f17d9a8d4feb413bab1d82e03ad1c73e4f6d8c"
 dependencies = [
  "cargo_metadata",
  "dylint_internal",
@@ -250,8 +253,9 @@ dependencies = [
 
 [[package]]
 name = "dylint_testing"
-version = "5.0.0"
-source = "git+https://github.com/trailofbits/dylint?rev=4bd91ce7729b74c7ee5664bbb588f7baf30b4a09#4bd91ce7729b74c7ee5664bbb588f7baf30b4a09"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f5f50ee06be9ebfb5b9538ba0d7bb08adc33e8f31c901e7d398de2a9b1ae290"
 dependencies = [
  "anyhow",
  "cargo_metadata",

@@ -20,7 +20,7 @@ DYLINT_TARGET_DIR="${FASTLED_DYLINT_TARGET_DIR:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/
 DYLINT_LIBRARY_DIR="$DYLINT_TARGET_DIR/dylint/libraries/$DYLINT_TOOLCHAIN"
 
 if ! command -v cargo-dylint &> /dev/null; then
-  echo "Error: cargo-dylint is required. Install with: soldr cargo install cargo-dylint --version 5.0.0 --locked" >&2
+  echo "Error: cargo-dylint is required. Install with: soldr cargo install cargo-dylint --version 6.0.1 --locked" >&2
   exit 1
 fi
 
