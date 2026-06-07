@@ -49,24 +49,80 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
   .spinner { width: 40px; height: 40px; border: 4px solid #333;
              border-top: 4px solid #4fc3f7; border-radius: 50%;
              animation: spin 1s linear infinite; margin-bottom: 20px; }
+  .spinner.error { border-top-color: #ef5350; animation: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #status { font-size: 1.2em; }
+  #header { font-size: 1.2em; display: flex; align-items: baseline; gap: 12px; }
+  #status { }
+  #elapsed { color: #888; font-size: 0.9em; }
+  #header.error #status { color: #ef5350; }
   #log { margin-top: 20px; width: 80%; max-height: 50vh;
          overflow-y: auto; font-size: 0.85em; color: #aaa;
          white-space: pre-wrap; text-align: left; line-height: 1.4;
          padding: 8px; background: #1a1a1a; border-radius: 4px; }
 </style>
 <script>
-  const logEl = document.addEventListener('DOMContentLoaded', () => {
+  // Instant-launch flow (#148):
+  //   * subscribe to /build-stream SSE, fall back to polling /build-status.json
+  //   * on 'compiling' (including re-entry from a prior build) clear the log and
+  //     reset the elapsed-time counter so a rebuild shows a fresh view
+  //   * on 'success' reload to the real index.html (now on disk)
+  //   * on 'error' stay on this page; show error styling; keep the log visible
+  //     so the user can read what failed and wait for the next rebuild
+  document.addEventListener('DOMContentLoaded', () => {
     const log = document.getElementById('log');
     const status = document.getElementById('status');
+    const elapsed = document.getElementById('elapsed');
+    const spinner = document.getElementById('spinner');
+    const header = document.getElementById('header');
+    let buildStart = Date.now();
+    let elapsedTimer = null;
 
+    function startTimer() {
+      stopTimer();
+      buildStart = Date.now();
+      elapsedTimer = setInterval(() => {
+        elapsed.textContent = ((Date.now() - buildStart) / 1000).toFixed(1) + 's';
+      }, 100);
+    }
+    function stopTimer() {
+      if (elapsedTimer !== null) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    }
+    function setBuilding(message) {
+      header.classList.remove('error');
+      spinner.classList.remove('error');
+      status.textContent = message || 'Compiling...';
+      log.textContent = '';
+      startTimer();
+    }
+    function setError(message) {
+      header.classList.add('error');
+      spinner.classList.add('error');
+      status.textContent = message || 'Compilation failed';
+      stopTimer();
+    }
     function appendLog(line) {
       log.textContent += line + '\n';
       log.scrollTop = log.scrollHeight;
     }
 
-    // Try SSE first, fall back to polling.
+    startTimer();
+    let lastStatus = 'compiling';
+
+    function handleStatus(s, message) {
+      if (s === 'compiling' && lastStatus !== 'compiling') {
+        setBuilding(message);
+      } else if (s === 'success') {
+        stopTimer();
+        location.reload();
+      } else if (s === 'error') {
+        setError(message);
+      } else if (s === 'compiling') {
+        // First compiling event — keep the in-progress styling, just update text.
+        status.textContent = message || 'Compiling...';
+      }
+      lastStatus = s;
+    }
+
     if (typeof EventSource !== 'undefined') {
       const es = new EventSource('/build-stream');
       es.onmessage = (e) => {
@@ -75,8 +131,8 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
           if (d.type === 'log') {
             appendLog(d.line);
           } else if (d.type === 'status') {
-            status.textContent = d.message || d.status;
-            if (d.status === 'success') { es.close(); location.reload(); }
+            handleStatus(d.status, d.message);
+            if (d.status === 'success') { es.close(); }
           }
         } catch(err) {}
       };
@@ -84,23 +140,24 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
     } else {
       poll();
     }
-  });
 
-  async function poll() {
-    try {
-      const r = await fetch('/build-status.json');
-      if (r.ok) {
-        const s = await r.json();
-        document.getElementById('status').textContent = s.message || 'Compiling...';
-        if (s.status === 'success') { location.reload(); return; }
-      }
-    } catch(e) {}
-    setTimeout(poll, 500);
-  }
+    window.__pollBuildStatus = poll;
+    async function poll() {
+      try {
+        const r = await fetch('/build-status.json');
+        if (r.ok) {
+          const s = await r.json();
+          handleStatus(s.status, s.message);
+          if (s.status === 'success') { return; }
+        }
+      } catch(e) {}
+      setTimeout(poll, 500);
+    }
+  });
 </script>
 </head><body>
-<div class="spinner"></div>
-<div id="status">Compiling...</div>
+<div class="spinner" id="spinner"></div>
+<div id="header"><span id="status">Compiling...</span><span id="elapsed">0.0s</span></div>
 <div id="log"></div>
 </body></html>"#;
 
@@ -410,6 +467,36 @@ mod tests {
         assert!(
             body.contains("Compiling..."),
             "expected loading page, got: {body}"
+        );
+    }
+
+    /// Instant-launch failure UX (#148 acceptance criterion 5):
+    /// when a compile has failed and `index.html` is absent, `/` must still
+    /// return the in-browser loading page (which surfaces the error log) —
+    /// it must NOT 404 or navigate to a stale page.
+    #[tokio::test]
+    async fn test_loading_page_stays_when_build_failed_and_no_index_html() {
+        let (addr, dir) = setup_server().await;
+        fs::write(
+            dir.path().join("build-status.json"),
+            r#"{"status":"error","message":"Compilation failed"}"#,
+        )
+        .unwrap();
+        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            200,
+            "viewer should land on the loading page, not 404/redirect, when compile failed"
+        );
+        let body = resp.text().await.unwrap();
+        assert!(
+            body.contains("Compiling..."),
+            "expected loading page, got: {body}"
+        );
+        // Sanity check: the embedded JS knows how to render the error state.
+        assert!(
+            body.contains("setError"),
+            "loading page must include error-handling branch"
         );
     }
 
