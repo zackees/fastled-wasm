@@ -26,3 +26,11 @@ crates/fastled-cli/src/main.rs
 crates/fastled-cli/src/tauri_viewer.rs
 crates/fastled-cli/src/frontend.rs
 crates/fastled-cli/src/archive.rs
+
+# Modules split out of lib.rs — inherit raw PathBuf usage; migrate alongside lib.rs.
+crates/fastled-cli/src/cli.rs
+crates/fastled-cli/src/commands.rs
+crates/fastled-cli/src/compile_stream.rs
+crates/fastled-cli/src/dwarf_smoke.rs
+crates/fastled-cli/src/paths_util.rs
+crates/fastled-cli/src/selection.rs
