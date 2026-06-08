@@ -40,6 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
+          version: 0.7.53
           cache-preset: foundation
           cache-key-suffix: ubuntu-24.04-dwarf-smoke
           linker: platform-default
