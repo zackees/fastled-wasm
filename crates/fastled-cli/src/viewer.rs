@@ -162,11 +162,11 @@ impl Drop for ViewerProcess {
 }
 
 #[cfg(any(not(windows), test))]
-fn viewer_command(binary: &Path, frontend_dir: &Path) -> Command {
+fn viewer_command(binary: &Path, url: &str) -> Command {
     let mut command = Command::new(binary);
     command
         .arg("--internal-viewer")
-        .arg(frontend_dir)
+        .arg(url)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -214,13 +214,13 @@ fn quote_windows_arg(arg: &std::ffi::OsStr) -> String {
 }
 
 #[cfg(windows)]
-fn viewer_command_line(binary: &Path, frontend_dir: &Path) -> Vec<u16> {
+fn viewer_command_line(binary: &Path, url: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
 
     let args = [
         binary.as_os_str(),
         std::ffi::OsStr::new("--internal-viewer"),
-        frontend_dir.as_os_str(),
+        std::ffi::OsStr::new(url),
     ];
     let command_line = args
         .iter()
@@ -234,7 +234,7 @@ fn viewer_command_line(binary: &Path, frontend_dir: &Path) -> Vec<u16> {
 }
 
 #[cfg(windows)]
-fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProcess> {
+fn spawn_hidden_viewer(binary: &Path, url: &str) -> Result<ViewerProcess> {
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
 
@@ -278,7 +278,7 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
     startup_info.wShowWindow = 0; // SW_HIDE
 
     let mut process_info: PROCESS_INFORMATION = unsafe { zeroed() };
-    let mut command_line = viewer_command_line(binary, frontend_dir);
+    let mut command_line = viewer_command_line(binary, url);
     let flags = VIEWER_CREATION_FLAGS | CREATE_SUSPENDED;
     let create_ok = unsafe {
         CreateProcessW(
@@ -338,7 +338,7 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
     })
 }
 
-/// Spawn the Tauri viewer, pointing it at `frontend_dir`.
+/// Spawn the Tauri viewer, pointing it at the FastLED HTTP server `url`.
 ///
 /// The viewer is launched without inheriting or creating a terminal window, but
 /// it remains contained by this process. Keep the returned [`ViewerProcess`]
@@ -346,20 +346,20 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
 /// viewer/WebView2 process tree is torn down too.
 ///
 /// Returns a process handle whose lifetime controls the viewer lifetime.
-pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProcess> {
+pub fn launch_tauri_viewer(url: &str) -> Result<ViewerProcess> {
     let binary =
         find_tauri_viewer().context("fastled binary not found; cannot launch Tauri viewer")?;
 
     #[cfg(windows)]
     {
-        spawn_hidden_viewer(&binary, frontend_dir)
+        spawn_hidden_viewer(&binary, url)
     }
 
     #[cfg(not(windows))]
     {
         let group =
             ContainedProcessGroup::new().context("failed to create viewer process group")?;
-        let mut command = viewer_command(&binary, frontend_dir);
+        let mut command = viewer_command(&binary, url);
         let stdio = SpawnStdio {
             stdin: StdioSource::Null,
             stdout: StdioSource::Null,
@@ -512,12 +512,12 @@ mod tests {
 
     #[test]
     fn test_viewer_command_uses_internal_viewer_flag() {
-        let command = viewer_command(Path::new(FASTLED_EXE_NAMES[0]), Path::new("out"));
+        let command = viewer_command(Path::new(FASTLED_EXE_NAMES[0]), "http://127.0.0.1:8089");
         let args = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        assert_eq!(args, vec!["--internal-viewer", "out"]);
+        assert_eq!(args, vec!["--internal-viewer", "http://127.0.0.1:8089"]);
     }
 
     #[test]

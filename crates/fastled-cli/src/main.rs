@@ -1,11 +1,10 @@
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[cfg(feature = "viewer")]
 mod tauri_viewer;
 
 struct InternalViewerArgs {
-    frontend_dir: PathBuf,
+    url: String,
     title: String,
     width: u32,
     height: u32,
@@ -18,12 +17,12 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
         return None;
     }
 
-    let Some(frontend_dir) = args.next() else {
-        return Some(Err("--internal-viewer requires a directory".to_string()));
+    let Some(url) = args.next() else {
+        return Some(Err("--internal-viewer requires a URL".to_string()));
     };
 
     let mut parsed = InternalViewerArgs {
-        frontend_dir: PathBuf::from(frontend_dir),
+        url: url.to_string_lossy().into_owned(),
         title: "FastLED Viewer".to_string(),
         width: 800,
         height: 600,
@@ -65,10 +64,10 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
 }
 
 fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
-    if !args.frontend_dir.is_dir() {
+    if !args.url.starts_with("http://") && !args.url.starts_with("https://") {
         eprintln!(
-            "fastled: --internal-viewer path does not exist: {}",
-            args.frontend_dir.display()
+            "fastled: --internal-viewer requires an http(s) URL, got: {}",
+            args.url
         );
         return ExitCode::FAILURE;
     }
@@ -76,7 +75,7 @@ fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
     #[cfg(feature = "viewer")]
     {
         tauri_viewer::run(tauri_viewer::ViewerOptions {
-            frontend_dir: args.frontend_dir,
+            url: args.url,
             title: args.title,
             width: args.width,
             height: args.height,
