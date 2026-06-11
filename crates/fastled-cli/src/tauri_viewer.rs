@@ -1,75 +1,23 @@
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 pub struct ViewerOptions {
-    pub frontend_dir: PathBuf,
+    pub url: String,
     pub title: String,
     pub width: u32,
     pub height: u32,
 }
 
 pub fn run(options: ViewerOptions) -> ExitCode {
-    let mut builder = tauri::Builder::default();
-    let serve_dir = options.frontend_dir.clone();
+    let ViewerOptions {
+        url,
+        title,
+        width,
+        height,
+    } = options;
 
-    builder = builder.register_asynchronous_uri_scheme_protocol(
-        "fastled",
-        move |_ctx, request, responder| {
-            let path = request.uri().path();
-            let relative = path.trim_start_matches('/');
-            let relative = if relative.is_empty() {
-                "index.html"
-            } else {
-                relative
-            };
-            let file_path = serve_dir.join(relative);
-
-            let mime = match file_path.extension().and_then(|e| e.to_str()).unwrap_or("") {
-                "html" => "text/html",
-                "js" => "application/javascript",
-                "wasm" => "application/wasm",
-                "css" => "text/css",
-                "json" => "application/json",
-                "png" => "image/png",
-                "svg" => "image/svg+xml",
-                "ico" => "image/x-icon",
-                "ttf" | "otf" => "font/ttf",
-                "woff" => "font/woff",
-                "woff2" => "font/woff2",
-                "map" => "application/json",
-                _ => "application/octet-stream",
-            };
-
-            match std::fs::read(&file_path) {
-                Ok(data) => {
-                    let response = tauri::http::Response::builder()
-                        .status(200)
-                        .header("Content-Type", mime)
-                        .header("Cross-Origin-Opener-Policy", "same-origin")
-                        .header("Cross-Origin-Embedder-Policy", "require-corp")
-                        .body(data)
-                        .unwrap();
-                    responder.respond(response);
-                }
-                Err(_) => {
-                    let response = tauri::http::Response::builder()
-                        .status(404)
-                        .body(b"Not Found".to_vec())
-                        .unwrap();
-                    responder.respond(response);
-                }
-            }
-        },
-    );
-
-    let title = options.title;
-    let width = options.width;
-    let height = options.height;
-
-    let result = builder
+    let result = tauri::Builder::default()
         .setup(move |app| {
-            let url =
-                tauri::WebviewUrl::CustomProtocol("fastled://localhost/index.html".parse()?);
+            let url = tauri::WebviewUrl::External(url.parse()?);
 
             let window = tauri::WebviewWindowBuilder::new(app, "main", url)
                 .title(&title)
