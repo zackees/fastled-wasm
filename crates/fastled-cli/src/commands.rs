@@ -5,8 +5,8 @@ use std::sync::{Arc, RwLock};
 use crate::build;
 use crate::cli::{requested_init_ref, validate_init_ref_flags, Cli};
 use crate::compile_stream::{
-    ensure_compile_prerequisites, purge_fastled_cache, run_native_compile_streaming,
-    selected_build_mode, send_sse, write_build_status,
+    ensure_compile_prerequisites, purge_fastled_cache, report_build_outcome,
+    run_native_compile_streaming, selected_build_mode, send_sse, write_build_status,
 };
 use crate::debug_symbols;
 use crate::dwarf_smoke::run_dwarf_source_smoke;
@@ -96,20 +96,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
 
         let success =
             run_native_compile_streaming(cli, &sketch_dir, cli.purge, &tx, &debug_symbols);
-
-        if success {
-            write_build_status(&output_dir, "success", "Done");
-            send_sse(
-                &tx,
-                r#"{"type":"status","status":"success","message":"Done"}"#,
-            );
-        } else {
-            write_build_status(&output_dir, "error", "Compilation failed");
-            send_sse(
-                &tx,
-                r#"{"type":"status","status":"error","message":"Compilation failed"}"#,
-            );
-        }
+        report_build_outcome(&output_dir, &tx, success);
 
         // --- Watch mode ---------------------------------------------------------
         println!("\nWill recompile on sketch changes or space bar press.");
@@ -147,20 +134,10 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
 
                 let success =
                     run_native_compile_streaming(cli, &sketch_dir, false, &tx, &debug_symbols);
-                if success {
+                if report_build_outcome(&output_dir, &tx, success) {
                     println!("Recompilation successful!");
-                    write_build_status(&output_dir, "success", "Done");
-                    send_sse(
-                        &tx,
-                        r#"{"type":"status","status":"success","message":"Done"}"#,
-                    );
                 } else {
                     eprintln!("Recompilation failed.");
-                    write_build_status(&output_dir, "error", "Compilation failed");
-                    send_sse(
-                        &tx,
-                        r#"{"type":"status","status":"error","message":"Compilation failed"}"#,
-                    );
                 }
             }
         }

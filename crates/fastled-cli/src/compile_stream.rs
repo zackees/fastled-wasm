@@ -173,6 +173,41 @@ pub(crate) fn emit_build_result_logs(
     }
 }
 
+/// Publish the build outcome to polling (`build-status.json`) and SSE
+/// clients. `success` is only reported when the build claims success *and*
+/// `index.html` actually exists on disk — the loading page reloads on
+/// `success`, and reloading without artifacts would wipe the error log (#153).
+/// Returns the effective success that was reported.
+pub(crate) fn report_build_outcome(
+    output_dir: &Path,
+    tx: &tokio::sync::broadcast::Sender<String>,
+    build_ok: bool,
+) -> bool {
+    let index_exists = output_dir.join("index.html").is_file();
+    if build_ok && index_exists {
+        write_build_status(output_dir, "success", "Done");
+        send_sse(
+            tx,
+            r#"{"type":"status","status":"success","message":"Done"}"#,
+        );
+        return true;
+    }
+    let message = if build_ok {
+        "Build completed but no index.html was produced"
+    } else {
+        "Compilation failed"
+    };
+    write_build_status(output_dir, "error", message);
+    send_sse(
+        tx,
+        &format!(
+            r#"{{"type":"status","status":"error","message":"{}"}}"#,
+            json_escape(message)
+        ),
+    );
+    false
+}
+
 /// Run the native build path and mirror its output to the terminal + SSE.
 pub(crate) fn run_native_compile_streaming(
     cli: &Cli,
@@ -193,7 +228,8 @@ pub(crate) fn run_native_compile_streaming(
         force_clean,
     };
 
-    match build::run_build(&request) {
+    let log = |line: &str, stream: &str| emit_build_log(tx, line, stream);
+    match build::run_build_streaming(&request, &log) {
         Ok(result) => {
             emit_build_result_logs(&result, tx);
             if result.success {
@@ -233,5 +269,43 @@ pub(crate) fn update_debug_symbol_resolver(
         ));
     if let Ok(mut guard) = handle.write() {
         *guard = Some(resolver);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read_status(dir: &Path) -> String {
+        std::fs::read_to_string(dir.join("build-status.json")).unwrap()
+    }
+
+    #[test]
+    fn report_build_outcome_success_requires_index_html() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+
+        assert!(!report_build_outcome(dir.path(), &tx, true));
+        assert!(read_status(dir.path()).contains("\"error\""));
+        let event = rx.try_recv().unwrap();
+        assert!(event.contains("\"status\":\"error\""), "got: {event}");
+
+        std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
+        assert!(report_build_outcome(dir.path(), &tx, true));
+        assert!(read_status(dir.path()).contains("\"success\""));
+        let event = rx.try_recv().unwrap();
+        assert!(event.contains("\"status\":\"success\""), "got: {event}");
+    }
+
+    #[test]
+    fn report_build_outcome_failure_is_error_even_with_stale_index() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+
+        assert!(!report_build_outcome(dir.path(), &tx, false));
+        assert!(read_status(dir.path()).contains("\"error\""));
+        let event = rx.try_recv().unwrap();
+        assert!(event.contains("Compilation failed"), "got: {event}");
     }
 }

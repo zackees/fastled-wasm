@@ -6,14 +6,27 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::{archive, debug_symbols, frontend, install};
+
+/// Receives one build-output line at a time. The second argument is the
+/// originating stream: `"stdout"` or `"stderr"`. Called on the build thread.
+pub type LogSink<'a> = &'a (dyn Fn(&str, &str) + 'a);
+
+fn stdio_log(line: &str, stream: &str) {
+    if stream == "stderr" {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildMode {
@@ -178,6 +191,9 @@ fn build_env(tools: &ToolPaths) -> Vec<(String, String)> {
             tools.python.display().to_string(),
         ),
         ("EMCC_SKIP_SANITY_CHECK".to_string(), "1".to_string()),
+        // Build tools are Python-driven; without this their stdout is
+        // block-buffered when piped, which would defeat live log streaming.
+        ("PYTHONUNBUFFERED".to_string(), "1".to_string()),
     ];
     if cfg!(windows) {
         // Match the host's logical core count so emscripten's parallel
@@ -201,10 +217,56 @@ fn command_with_env(program: impl AsRef<Path>, tools: &ToolPaths) -> Command {
     command
 }
 
-fn run_status(mut command: Command, label: &str) -> Result<()> {
-    let status = command
-        .status()
-        .with_context(|| format!("launch {label}"))?;
+fn spawn_line_reader<R: std::io::Read + Send + 'static>(
+    reader: R,
+    stream: &'static str,
+    tx: std::sync::mpsc::Sender<(String, &'static str)>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut reader = std::io::BufReader::new(reader);
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    while matches!(buf.last(), Some(b'\n' | b'\r')) {
+                        buf.pop();
+                    }
+                    if tx
+                        .send((String::from_utf8_lossy(&buf).into_owned(), stream))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    })
+}
+
+/// Run a build tool with piped stdout/stderr, forwarding each output line to
+/// `log` as it arrives so callers can mirror it to the terminal and the
+/// browser SSE stream in real time (#153).
+fn run_status(mut command: Command, label: &str, log: LogSink) -> Result<()> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().with_context(|| format!("launch {label}"))?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut readers = Vec::new();
+    if let Some(stdout) = child.stdout.take() {
+        readers.push(spawn_line_reader(stdout, "stdout", tx.clone()));
+    }
+    if let Some(stderr) = child.stderr.take() {
+        readers.push(spawn_line_reader(stderr, "stderr", tx.clone()));
+    }
+    drop(tx);
+    for (line, stream) in rx {
+        log(&line, stream);
+    }
+    for reader in readers {
+        let _ = reader.join();
+    }
+    let status = child.wait().with_context(|| format!("wait for {label}"))?;
     if !status.success() {
         bail!("{label} failed with {status}");
     }
@@ -524,6 +586,7 @@ fn ensure_meson_configured(
     build_dir: &Path,
     mode: BuildMode,
     force: bool,
+    log: LogSink,
 ) -> Result<()> {
     let marker = build_dir.join(".src_file_list_hash");
     let current_hash = compute_source_file_hash(fastled_dir)?;
@@ -550,8 +613,11 @@ fn ensure_meson_configured(
     for (key, value) in build_env(tools) {
         command.env(key, value);
     }
-    println!("[WASM] Configuring meson (mode: {})...", mode.as_str());
-    run_status(command, "meson setup")?;
+    log(
+        &format!("[WASM] Configuring meson (mode: {})...", mode.as_str()),
+        "stdout",
+    );
+    run_status(command, "meson setup", log)?;
     fs::write(marker, current_hash)?;
     Ok(())
 }
@@ -564,7 +630,12 @@ fn library_archive(build_dir: &Path) -> PathBuf {
         .join("libfastled.a")
 }
 
-fn build_library(fastled_dir: &Path, tools: &ToolPaths, build_dir: &Path) -> Result<bool> {
+fn build_library(
+    fastled_dir: &Path,
+    tools: &ToolPaths,
+    build_dir: &Path,
+    log: LogSink,
+) -> Result<bool> {
     let archive = library_archive(build_dir);
     let fingerprint_path = build_dir.join("library_src_fingerprint");
     let current = compute_source_file_hash(fastled_dir)?;
@@ -575,7 +646,7 @@ fn build_library(fastled_dir: &Path, tools: &ToolPaths, build_dir: &Path) -> Res
             .trim()
             == current
     {
-        println!("[WASM] Library up-to-date");
+        log("[WASM] Library up-to-date", "stdout");
         return Ok(false);
     }
     if archive.exists() {
@@ -590,10 +661,10 @@ fn build_library(fastled_dir: &Path, tools: &ToolPaths, build_dir: &Path) -> Res
     for (key, value) in build_env(tools) {
         command.env(key, value);
     }
-    println!("[WASM] Building libfastled.a...");
-    run_status(command, "meson compile fastled")?;
+    log("[WASM] Building libfastled.a...", "stdout");
+    run_status(command, "meson compile fastled", log)?;
     fs::write(fingerprint_path, current)?;
-    println!("[WASM] Library build successful");
+    log("[WASM] Library build successful", "stdout");
     Ok(true)
 }
 
@@ -655,6 +726,7 @@ fn build_sketch_pch(
     mode: BuildMode,
     emsdk_root: Option<&Path>,
     lib_was_rebuilt: bool,
+    log: LogSink,
 ) -> Result<Option<PathBuf>> {
     let pcm = build_dir.join("wasm_pch.h.pcm");
     let pch_o = build_dir.join("pch_codegen.o");
@@ -706,13 +778,13 @@ fn build_sketch_pch(
     ));
     args.extend(["-Xclang".to_string(), "-fmodules-codegen".to_string()]);
 
-    println!("[WASM] Building sketch header unit (.pcm)...");
+    log("[WASM] Building sketch header unit (.pcm)...", "stdout");
     let mut command = command_with_env(&tools.python, tools);
     command
         .current_dir(fastled_dir)
         .arg(&tools.emcc)
         .args(&args);
-    run_status(command, "emcc header unit")?;
+    run_status(command, "emcc header unit", log)?;
 
     let mut command = command_with_env(&tools.python, tools);
     command
@@ -723,7 +795,7 @@ fn build_sketch_pch(
         .args(["-o"])
         .arg(&pch_o)
         .args(["-O0", "-g0"]);
-    if run_status(command, "emcc header unit companion").is_ok() {
+    if run_status(command, "emcc header unit companion", log).is_ok() {
         let archive = library_archive(build_dir);
         if archive.is_file() && tools.emar.is_file() {
             let mut command = command_with_env(&tools.python, tools);
@@ -733,7 +805,7 @@ fn build_sketch_pch(
                 .arg("r")
                 .arg(&archive)
                 .arg(&pch_o);
-            let _ = run_status(command, "emar pch companion");
+            let _ = run_status(command, "emar pch companion", log);
         }
     }
 
@@ -741,6 +813,7 @@ fn build_sketch_pch(
     Ok(Some(pcm))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compile_sketch(
     tools: &ToolPaths,
     wrapper: &Path,
@@ -749,6 +822,7 @@ fn compile_sketch(
     example_dir: &Path,
     mode: BuildMode,
     dwarf_roots: &DwarfPathRoots,
+    log: LogSink,
 ) -> Result<PathBuf> {
     let fastled_dir = &dwarf_roots.fastled_dir;
     let object = sketch_cache_dir.join("sketch.o");
@@ -770,7 +844,7 @@ fn compile_sketch(
                 .filter_map(|metadata| metadata.modified().ok())
                 .all(|mtime| mtime <= object_mtime)
         {
-            println!("[WASM] Sketch is up-to-date");
+            log("[WASM] Sketch is up-to-date", "stdout");
             return Ok(object);
         }
     }
@@ -798,17 +872,21 @@ fn compile_sketch(
         args.push(format!("-fmodule-file={}", pcm.display()));
     }
 
-    println!("[WASM] Compiling sketch: {}", wrapper.display());
+    log(
+        &format!("[WASM] Compiling sketch: {}", wrapper.display()),
+        "stdout",
+    );
     let mut command = command_with_env(&tools.python, tools);
     command
         .current_dir(fastled_dir)
         .arg(&tools.empp)
         .args(&args);
-    run_status(command, "em++ sketch compile")?;
+    run_status(command, "em++ sketch compile", log)?;
     fs::write(flags_hash_path, current_flags_hash)?;
     Ok(object)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn link_wasm(
     fastled_dir: &Path,
     tools: &ToolPaths,
@@ -817,6 +895,7 @@ fn link_wasm(
     sketch_cache_dir: &Path,
     output_js: &Path,
     mode: BuildMode,
+    log: LogSink,
 ) -> Result<()> {
     let archive = library_archive(build_dir);
     let cached_js = sketch_cache_dir.join("fastled.js");
@@ -838,7 +917,7 @@ fn link_wasm(
                 .all(|mtime| mtime <= output_mtime)
         {
             copy_linked_output(sketch_cache_dir, output_js)?;
-            println!("[WASM] Link output up-to-date");
+            log("[WASM] Link output up-to-date", "stdout");
             return Ok(());
         }
     }
@@ -876,8 +955,8 @@ fn link_wasm(
     ];
     args.extend(link_flags);
 
-    println!("[WASM] Linking final WASM module...");
-    run_em_link_with_retries(fastled_dir, tools, &args)?;
+    log("[WASM] Linking final WASM module...", "stdout");
+    run_em_link_with_retries(fastled_dir, tools, &args, log)?;
     fs::write(flags_hash_path, current_flags_hash)?;
     copy_linked_output(sketch_cache_dir, output_js)?;
     Ok(())
@@ -890,19 +969,27 @@ fn link_wasm(
 /// Because each completed library is cached to disk, retrying advances the
 /// build by one library each time. A small retry loop lets the link
 /// converge without exposing the upstream flakiness to users. See #116.
-fn run_em_link_with_retries(fastled_dir: &Path, tools: &ToolPaths, args: &[String]) -> Result<()> {
+fn run_em_link_with_retries(
+    fastled_dir: &Path,
+    tools: &ToolPaths,
+    args: &[String],
+    log: LogSink,
+) -> Result<()> {
     let max_attempts = if cfg!(windows) { 6 } else { 1 };
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 1..=max_attempts {
         let mut command = command_with_env(&tools.python, tools);
         command.current_dir(fastled_dir).arg(&tools.empp).args(args);
-        match run_status(command, "em++ wasm link") {
+        match run_status(command, "em++ wasm link", log) {
             Ok(()) => return Ok(()),
             Err(err) => {
                 if attempt < max_attempts {
-                    println!(
-                        "[WASM] em++ link attempt {attempt}/{max_attempts} failed; \
-                         retrying (sysroot libs cache progressively): {err:#}"
+                    log(
+                        &format!(
+                            "[WASM] em++ link attempt {attempt}/{max_attempts} failed; \
+                             retrying (sysroot libs cache progressively): {err:#}"
+                        ),
+                        "stdout",
                     );
                 }
                 last_err = Some(err);
@@ -1038,7 +1125,14 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Run the build, streaming all tool output to stdout/stderr.
 pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
+    run_build_streaming(request, &stdio_log)
+}
+
+/// Run the build, forwarding every output line (tool stdout/stderr plus
+/// `[WASM]` progress markers) to `log` as it is produced.
+pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<BuildResult> {
     let wall_start = std::time::Instant::now();
     let output_dir = mode_output_dir(&request.sketch_dir);
     if request.force_clean && output_dir.exists() {
@@ -1074,8 +1168,9 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             &build_dir,
             request.build_mode,
             request.force_clean,
+            log,
         )?;
-        let lib_rebuilt = build_library(&fastled_dir, &tools, &build_dir)?;
+        let lib_rebuilt = build_library(&fastled_dir, &tools, &build_dir, log)?;
         let _ = build_sketch_pch(
             &fastled_dir,
             &tools,
@@ -1083,6 +1178,7 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             request.build_mode,
             emsdk_root.as_deref(),
             lib_rebuilt,
+            log,
         );
         let sketch_cache = sketch_cache_dir(&example_dir);
         let wrapper = create_wrapper(&example_dir, &example_name, &sketch_cache)?;
@@ -1099,6 +1195,7 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             &example_dir,
             request.build_mode,
             &sketch_dwarf_roots,
+            log,
         )?;
         let output_js = output_dir.join("fastled.js");
         link_wasm(
@@ -1109,6 +1206,7 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
             &sketch_cache,
             &output_js,
             request.build_mode,
+            log,
         )?;
         frontend::copy_frontend_to_output(&output_dir, None)?;
         generate_manifest(&example_dir, &output_dir)?;
@@ -1149,6 +1247,65 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
 mod tests {
     use super::*;
     use std::fs;
+
+    fn shell_command(script: &str) -> Command {
+        if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/C", script]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", script]);
+            command
+        }
+    }
+
+    fn collect_run_status_lines(script: &str) -> (Result<()>, Vec<(String, String)>) {
+        let lines = std::cell::RefCell::new(Vec::new());
+        let log = |line: &str, stream: &str| {
+            lines
+                .borrow_mut()
+                .push((line.to_string(), stream.to_string()));
+        };
+        let result = run_status(shell_command(script), "test command", &log);
+        (result, lines.into_inner())
+    }
+
+    #[test]
+    fn run_status_streams_stdout_and_stderr_lines() {
+        let script = if cfg!(windows) {
+            // No space before the redirect: cmd's echo would include it.
+            "echo out-line& echo err-line>&2"
+        } else {
+            "echo out-line; echo err-line >&2"
+        };
+        let (result, lines) = collect_run_status_lines(script);
+        result.unwrap();
+        assert!(
+            lines.contains(&("out-line".to_string(), "stdout".to_string())),
+            "missing stdout line, got: {lines:?}"
+        );
+        assert!(
+            lines.contains(&("err-line".to_string(), "stderr".to_string())),
+            "missing stderr line, got: {lines:?}"
+        );
+    }
+
+    #[test]
+    fn run_status_reports_failure_but_still_streams_output() {
+        let script = if cfg!(windows) {
+            "echo doomed& exit 3"
+        } else {
+            "echo doomed; exit 3"
+        };
+        let (result, lines) = collect_run_status_lines(script);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("test command failed"), "got: {err}");
+        assert!(
+            lines.contains(&("doomed".to_string(), "stdout".to_string())),
+            "output before failure must still stream, got: {lines:?}"
+        );
+    }
 
     fn write_build_flags(fastled_dir: &Path, source: &str) {
         let compiler_dir = fastled_dir.join("src/platforms/wasm/compiler");

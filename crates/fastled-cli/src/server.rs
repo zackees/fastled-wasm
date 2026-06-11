@@ -59,6 +59,9 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
          overflow-y: auto; font-size: 0.85em; color: #aaa;
          white-space: pre-wrap; text-align: left; line-height: 1.4;
          padding: 8px; background: #1a1a1a; border-radius: 4px; }
+  #log div { min-height: 1.2em; }
+  #log .warn { color: #ffd54f; }
+  #log .err { color: #ef5350; }
 </style>
 <script>
   // Instant-launch flow (#148):
@@ -76,6 +79,11 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
     const header = document.getElementById('header');
     let buildStart = Date.now();
     let elapsedTimer = null;
+    // Auto-scroll follows the log tail unless the user scrolled up to read.
+    let userScrolled = false;
+    log.addEventListener('scroll', () => {
+      userScrolled = log.scrollTop + log.clientHeight < log.scrollHeight - 10;
+    });
 
     function startTimer() {
       stopTimer();
@@ -92,6 +100,7 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
       spinner.classList.remove('error');
       status.textContent = message || 'Compiling...';
       log.textContent = '';
+      userScrolled = false;
       startTimer();
     }
     function setError(message) {
@@ -99,10 +108,28 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
       spinner.classList.add('error');
       status.textContent = message || 'Compilation failed';
       stopTimer();
+      // Jump to the first diagnostic: emcc errors are usually followed by
+      // long noise, so the bottom of the log is the wrong place to land.
+      const firstErr = log.querySelector('.err');
+      if (firstErr) {
+        log.scrollTop = Math.max(0, firstErr.offsetTop - log.offsetTop - 8);
+      }
     }
-    function appendLog(line) {
-      log.textContent += line + '\n';
-      log.scrollTop = log.scrollHeight;
+    function classifyLine(line, stream) {
+      const l = line.toLowerCase();
+      if (l.includes('error:') || l.includes('fatal error') ||
+          l.includes('undefined symbol') ||
+          (stream === 'stderr' && l.includes('failed'))) { return 'err'; }
+      if (l.includes('warning:')) { return 'warn'; }
+      return '';
+    }
+    function appendLog(line, stream) {
+      const div = document.createElement('div');
+      div.textContent = line;
+      const cls = classifyLine(line, stream || 'stdout');
+      if (cls) { div.className = cls; }
+      log.appendChild(div);
+      if (!userScrolled) { log.scrollTop = log.scrollHeight; }
     }
 
     startTimer();
@@ -129,7 +156,7 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
         try {
           const d = JSON.parse(e.data);
           if (d.type === 'log') {
-            appendLog(d.line);
+            appendLog(d.line, d.stream);
           } else if (d.type === 'status') {
             handleStatus(d.status, d.message);
             if (d.status === 'success') { es.close(); }
@@ -697,6 +724,37 @@ mod tests {
         assert!(
             body.contains("/build-stream"),
             "loading page should connect to /build-stream"
+        );
+    }
+
+    /// Live compile log UX (#153): the loading page must classify and color
+    /// warning/error lines, follow the log tail, and never show a fake
+    /// progress bar (build step counts are unknowable).
+    #[test]
+    fn loading_page_colors_log_lines_and_has_no_progress_bar() {
+        assert!(
+            LOADING_PAGE.contains("classifyLine"),
+            "loading page must classify log lines"
+        );
+        assert!(
+            LOADING_PAGE.contains("warning:") && LOADING_PAGE.contains(".warn"),
+            "warnings must get the yellow .warn style"
+        );
+        assert!(
+            LOADING_PAGE.contains("error:") && LOADING_PAGE.contains(".err"),
+            "errors must get the red .err style"
+        );
+        assert!(
+            LOADING_PAGE.contains("spinner"),
+            "indeterminate spinner is the only activity indicator"
+        );
+        assert!(
+            !LOADING_PAGE.contains("<progress"),
+            "no progress bar: build step counts are unknowable"
+        );
+        assert!(
+            LOADING_PAGE.contains("userScrolled"),
+            "auto-scroll must pause when the user scrolls up"
         );
     }
 
