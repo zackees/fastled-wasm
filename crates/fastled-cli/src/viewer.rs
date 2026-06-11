@@ -1,7 +1,7 @@
 //! Tauri viewer launch utilities.
 //!
 //! The viewer is hosted by this same `fastled` executable. The normal CLI
-//! process self-spawns with a hidden `--internal-viewer` flag so packaging only
+//! process self-spawns with a hidden `--internal-viewer-url` flag so packaging only
 //! needs one binary while the Tauri event loop still runs in its own process.
 
 use std::path::{Path, PathBuf};
@@ -162,11 +162,11 @@ impl Drop for ViewerProcess {
 }
 
 #[cfg(any(not(windows), test))]
-fn viewer_command(binary: &Path, frontend_dir: &Path) -> Command {
+fn viewer_command(binary: &Path, server_url: &str) -> Command {
     let mut command = Command::new(binary);
     command
-        .arg("--internal-viewer")
-        .arg(frontend_dir)
+        .arg("--internal-viewer-url")
+        .arg(server_url)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -214,13 +214,13 @@ fn quote_windows_arg(arg: &std::ffi::OsStr) -> String {
 }
 
 #[cfg(windows)]
-fn viewer_command_line(binary: &Path, frontend_dir: &Path) -> Vec<u16> {
+fn viewer_command_line(binary: &Path, server_url: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
 
     let args = [
         binary.as_os_str(),
-        std::ffi::OsStr::new("--internal-viewer"),
-        frontend_dir.as_os_str(),
+        std::ffi::OsStr::new("--internal-viewer-url"),
+        std::ffi::OsStr::new(server_url),
     ];
     let command_line = args
         .iter()
@@ -234,7 +234,7 @@ fn viewer_command_line(binary: &Path, frontend_dir: &Path) -> Vec<u16> {
 }
 
 #[cfg(windows)]
-fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProcess> {
+fn spawn_hidden_viewer(binary: &Path, server_url: &str) -> Result<ViewerProcess> {
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
 
@@ -278,7 +278,7 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
     startup_info.wShowWindow = 0; // SW_HIDE
 
     let mut process_info: PROCESS_INFORMATION = unsafe { zeroed() };
-    let mut command_line = viewer_command_line(binary, frontend_dir);
+    let mut command_line = viewer_command_line(binary, server_url);
     let flags = VIEWER_CREATION_FLAGS | CREATE_SUSPENDED;
     let create_ok = unsafe {
         CreateProcessW(
@@ -338,7 +338,11 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
     })
 }
 
-/// Spawn the Tauri viewer, pointing it at `frontend_dir`.
+/// Spawn the Tauri viewer, pointing it at the embedded HTTP server URL.
+///
+/// The viewer must load the server URL rather than artifacts off disk so the
+/// loading page, SSE build stream, and post-build reload work before the
+/// first compile finishes (issue #151).
 ///
 /// The viewer is launched without inheriting or creating a terminal window, but
 /// it remains contained by this process. Keep the returned [`ViewerProcess`]
@@ -346,20 +350,20 @@ fn spawn_hidden_viewer(binary: &Path, frontend_dir: &Path) -> Result<ViewerProce
 /// viewer/WebView2 process tree is torn down too.
 ///
 /// Returns a process handle whose lifetime controls the viewer lifetime.
-pub fn launch_tauri_viewer(frontend_dir: &std::path::Path) -> Result<ViewerProcess> {
+pub fn launch_tauri_viewer(server_url: &str) -> Result<ViewerProcess> {
     let binary =
         find_tauri_viewer().context("fastled binary not found; cannot launch Tauri viewer")?;
 
     #[cfg(windows)]
     {
-        spawn_hidden_viewer(&binary, frontend_dir)
+        spawn_hidden_viewer(&binary, server_url)
     }
 
     #[cfg(not(windows))]
     {
         let group =
             ContainedProcessGroup::new().context("failed to create viewer process group")?;
-        let mut command = viewer_command(&binary, frontend_dir);
+        let mut command = viewer_command(&binary, server_url);
         let stdio = SpawnStdio {
             stdin: StdioSource::Null,
             stdout: StdioSource::Null,
@@ -510,14 +514,20 @@ mod tests {
         assert!(find_viewer_in_arch_dirs(&missing).is_none());
     }
 
+    /// Guards the instant-launch wiring (#151): the viewer must be spawned
+    /// with the HTTP server URL so it can render the loading page and SSE
+    /// build stream before `index.html` exists — never a bare directory path.
     #[test]
-    fn test_viewer_command_uses_internal_viewer_flag() {
-        let command = viewer_command(Path::new(FASTLED_EXE_NAMES[0]), Path::new("out"));
+    fn test_viewer_command_uses_internal_viewer_url_flag() {
+        let command = viewer_command(Path::new(FASTLED_EXE_NAMES[0]), "http://127.0.0.1:8089/");
         let args = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        assert_eq!(args, vec!["--internal-viewer", "out"]);
+        assert_eq!(
+            args,
+            vec!["--internal-viewer-url", "http://127.0.0.1:8089/"]
+        );
     }
 
     #[test]

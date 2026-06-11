@@ -1,11 +1,10 @@
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[cfg(feature = "viewer")]
 mod tauri_viewer;
 
 struct InternalViewerArgs {
-    frontend_dir: PathBuf,
+    url: String,
     title: String,
     width: u32,
     height: u32,
@@ -14,16 +13,22 @@ struct InternalViewerArgs {
 fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
     let mut args = std::env::args_os().skip(1);
     let first = args.next()?;
-    if first != "--internal-viewer" {
+    if first != "--internal-viewer-url" {
         return None;
     }
 
-    let Some(frontend_dir) = args.next() else {
-        return Some(Err("--internal-viewer requires a directory".to_string()));
+    let Some(url) = args.next() else {
+        return Some(Err("--internal-viewer-url requires a URL".to_string()));
     };
+    let url = url.to_string_lossy().into_owned();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Some(Err(format!(
+            "--internal-viewer-url must be an http(s) URL, got: {url}"
+        )));
+    }
 
     let mut parsed = InternalViewerArgs {
-        frontend_dir: PathBuf::from(frontend_dir),
+        url,
         title: "FastLED Viewer".to_string(),
         width: 800,
         height: 600,
@@ -65,18 +70,10 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
 }
 
 fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
-    if !args.frontend_dir.is_dir() {
-        eprintln!(
-            "fastled: --internal-viewer path does not exist: {}",
-            args.frontend_dir.display()
-        );
-        return ExitCode::FAILURE;
-    }
-
     #[cfg(feature = "viewer")]
     {
         tauri_viewer::run(tauri_viewer::ViewerOptions {
-            frontend_dir: args.frontend_dir,
+            url: args.url,
             title: args.title,
             width: args.width,
             height: args.height,
@@ -85,6 +82,7 @@ fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
 
     #[cfg(not(feature = "viewer"))]
     {
+        let _ = args;
         eprintln!("fastled: this fastled binary was built without viewer support");
         ExitCode::FAILURE
     }

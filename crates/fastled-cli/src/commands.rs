@@ -80,7 +80,10 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         let url = format!("http://{addr}");
         println!("Serving at {url}");
 
-        let _viewer = match viewer::launch_tauri_viewer(&output_dir) {
+        // Point the viewer at the HTTP server, not the artifact directory:
+        // the server hosts the loading page + SSE build stream while
+        // index.html does not exist yet (#151).
+        let _viewer = match viewer::launch_tauri_viewer(&url) {
             Ok(process) => process,
             Err(e) => {
                 eprintln!("fastled: Tauri viewer failed: {e:#}");
@@ -379,7 +382,7 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         println!("Press Ctrl+C to stop...");
 
         let _viewer = if launch_viewer {
-            match viewer::launch_tauri_viewer(&path) {
+            match viewer::launch_tauri_viewer(&url) {
                 Ok(process) => Some(process),
                 Err(e) => {
                     eprintln!("fastled: Tauri viewer failed: {e:#}");
