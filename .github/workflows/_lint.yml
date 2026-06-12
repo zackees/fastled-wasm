@@ -57,9 +57,29 @@ jobs:
       - name: Sync Python deps
         run: uv sync --group dev
 
+      # Installing the dylint nightly toolchain and building cargo-dylint /
+      # dylint-link from source is the dominant fixed cost of every lint job
+      # (10+ min per platform). Cache them keyed on the exact versions; bump
+      # the key when either version below changes (#170).
+      - name: Cache Dylint toolchain and tools
+        id: dylint-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.rustup/toolchains/nightly-2026-03-26-*
+            ~/.cargo/bin/cargo-dylint*
+            ~/.cargo/bin/dylint-link*
+            ~/.dylint_drivers
+          key: dylint-${{ runner.os }}-${{ runner.arch }}-6.0.1-nightly-2026-03-26
+
       - name: Install Dylint
+        if: steps.dylint-cache.outputs.cache-hit != 'true'
         run: |
-          rustup toolchain install nightly-2026-03-26 --profile minimal --component llvm-tools-preview,rust-src,rustc-dev
+          # The dylint nightly is not declared in rust-toolchain.toml (which
+          # setup-soldr already installs via `soldr toolchain ensure`), so
+          # install it through soldr's rustup passthrough rather than bare
+          # rustup, keeping soldr-managed toolchain homes consistent.
+          soldr rustup toolchain install nightly-2026-03-26 --profile minimal --component llvm-tools-preview,rust-src,rustc-dev
           soldr cargo install cargo-dylint --version 6.0.1 --locked --force
           soldr cargo install dylint-link --version 6.0.1 --locked --force
 
