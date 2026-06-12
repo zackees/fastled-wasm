@@ -299,6 +299,7 @@ pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
         profile: cli.profile,
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean: cli.purge,
+        emit_clangd: cli.clangd,
     };
 
     let result = match build::run_build(&request) {
@@ -429,6 +430,7 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
         profile: cli.profile,
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean: cli.purge,
+        emit_clangd: cli.clangd,
     };
     let result = match build::run_build(&request) {
         Ok(result) => result,
