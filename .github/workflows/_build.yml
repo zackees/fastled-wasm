@@ -41,7 +41,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          version: 0.7.53
+          # No soldr version pin: v0.7.53 (zccache v1.11.20) breaks the
+          # aarch64-pc-windows-msvc cross-compile with silent rustc failures
+          # (see #158); the action default v0.7.51 is green here.
           # cache-preset: foundation expands to build-cache: true +
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).
