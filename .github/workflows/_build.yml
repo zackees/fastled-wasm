@@ -48,7 +48,12 @@ jobs:
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).
           cache-preset: foundation
-          cache-key-suffix: ${{ inputs.runs-on }}
+          # Include the rust target: the same runner label hosts multiple
+          # cross-compile targets (e.g. windows-2025 builds both x86_64 and
+          # aarch64-pc-windows-msvc), which would otherwise thrash one key.
+          # "-native" lines up with the lint/test workflows' suffix so jobs
+          # on the same platform share one cache namespace.
+          cache-key-suffix: ${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           linker: platform-default
           toolchain-file: rust-toolchain.ci.toml
 
