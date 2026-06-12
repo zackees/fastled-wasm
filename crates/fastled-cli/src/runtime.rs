@@ -103,6 +103,16 @@ pub fn maybe_reexec_from_managed_runtime(raw_args: &[OsString]) -> Result<Option
 
     let current_exe = std::env::current_exe().context("failed to determine current executable")?;
     let paths = RuntimePaths::new()?;
+
+    // Free the install-location image (venv, pip bin dir) so it can be
+    // deleted while we run. Managed-runtime copies under run/update are
+    // already disposable and handled by GC, so skip those.
+    if !path_is_under(&current_exe, &paths.run_root)
+        && !path_is_under(&current_exe, &paths.update_root)
+    {
+        crate::install_unlock::unlock_install_exe(&current_exe);
+    }
+
     fs::create_dir_all(&paths.run_root)
         .with_context(|| format!("cannot create {}", paths.run_root.display()))?;
     fs::create_dir_all(&paths.update_root)
