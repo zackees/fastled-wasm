@@ -73,6 +73,12 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) purge: bool,
 
+    /// Write VS Code clangd configuration (compile_commands.json,
+    /// .clangd, .vscode/settings.json) for the sketch directory and exit.
+    /// Defaults to the current directory when no DIR is given.
+    #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = "__cwd__")]
+    pub(crate) write_clangd: Option<String>,
+
     /// Internal plumbing flag: ensure the FastLED repo for the given ref
     /// (defaults to latest release) is downloaded and extracted, print the
     /// local path to stdout, and exit. Used by the Python `Api.project_init`
