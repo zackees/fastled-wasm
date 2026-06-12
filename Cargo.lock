@@ -1084,7 +1084,7 @@ dependencies = [
 
 [[package]]
 name = "fastled-cli"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "anyhow",
  "axum",
