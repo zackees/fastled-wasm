@@ -279,7 +279,14 @@ jobs:
 
   publish-pypi:
     needs: [detect-version, create-tag]
-    if: needs.detect-version.outputs.should_release == 'true'
+    # Job-level success() (implied by a plain `if`) evaluates false when any
+    # transitive ancestor was skipped — and the build-* jobs are skipped
+    # whenever collect-artifacts reused CI artifacts, which silently skipped
+    # publishing on the v2.0.12 release. Gate explicitly on create-tag instead.
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      needs.create-tag.result == 'success'
     runs-on: ubuntu-24.04
     environment:
       name: release
@@ -302,7 +309,11 @@ jobs:
 
   create-release:
     needs: [detect-version, create-tag]
-    if: needs.detect-version.outputs.should_release == 'true'
+    # Same skipped-ancestor gotcha as publish-pypi above.
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      needs.create-tag.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
