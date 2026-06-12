@@ -148,6 +148,33 @@ impl ViewerProcess {
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
+
+    /// Non-blocking liveness probe: `true` while the viewer process is still
+    /// running, `false` once it has exited (window closed or crashed).
+    #[cfg(windows)]
+    pub fn is_alive(&mut self) -> bool {
+        process_handle_is_alive(self.process)
+    }
+
+    /// Non-blocking liveness probe: `true` while the viewer process is still
+    /// running, `false` once it has exited (window closed or crashed).
+    ///
+    /// Reaping the child here is safe: the surviving
+    /// [`ContainedProcessGroup`] kill-on-drop is a best-effort `killpg`, so a
+    /// reaped leader does not break group cleanup.
+    #[cfg(not(windows))]
+    pub fn is_alive(&mut self) -> bool {
+        // An error from try_wait means we can no longer observe the child;
+        // treat it as dead so the CLI shuts down instead of running forever.
+        !matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
+    }
+}
+
+#[cfg(windows)]
+fn process_handle_is_alive(process: windows_sys::Win32::Foundation::HANDLE) -> bool {
+    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    unsafe { WaitForSingleObject(process, 0) == WAIT_TIMEOUT }
 }
 
 #[cfg(windows)]
@@ -554,5 +581,70 @@ mod tests {
     fn test_viewer_uses_hidden_process_creation_flags() {
         assert_eq!(VIEWER_CREATION_FLAGS & 0x0800_0000, 0x0800_0000);
         assert_eq!(VIEWER_CREATION_FLAGS & 0x0000_0200, 0x0000_0200);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_process_handle_liveness_alive_to_dead() {
+        use std::os::windows::io::AsRawHandle;
+
+        // ping -n 5 keeps the child alive for several seconds.
+        let mut child = Command::new("ping")
+            .args(["-n", "5", "127.0.0.1"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn ping");
+        let handle = child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+
+        assert!(
+            process_handle_is_alive(handle),
+            "expected freshly spawned process to be alive"
+        );
+
+        child.kill().expect("kill ping");
+        child.wait().expect("wait ping");
+
+        assert!(
+            !process_handle_is_alive(handle),
+            "expected exited process to be dead"
+        );
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_viewer_process_is_alive_alive_to_dead() {
+        let group = ContainedProcessGroup::new().expect("process group");
+        let mut command = Command::new("sleep");
+        command.arg("30");
+        let stdio = SpawnStdio {
+            stdin: StdioSource::Null,
+            stdout: StdioSource::Null,
+            stderr: StdioSource::Null,
+            ..SpawnStdio::default()
+        };
+        let child = group.spawn(&mut command, stdio).expect("spawn sleep");
+        let mut viewer = ViewerProcess {
+            _group: group,
+            child,
+        };
+
+        assert!(
+            viewer.is_alive(),
+            "expected freshly spawned process to be alive"
+        );
+
+        viewer.child.kill().expect("kill sleep");
+
+        // The kill is asynchronous from the probe's perspective; poll briefly.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while viewer.is_alive() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "expected killed process to be observed dead within 5s"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
