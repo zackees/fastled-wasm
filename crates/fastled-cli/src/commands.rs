@@ -80,7 +80,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         let url = format!("http://{addr}");
         println!("Serving at {url}");
 
-        let _viewer = match viewer::launch_tauri_viewer(&url) {
+        let mut viewer = match viewer::launch_tauri_viewer(&url) {
             Ok(process) => process,
             Err(e) => {
                 eprintln!("fastled: Tauri viewer failed: {e:#}");
@@ -115,6 +115,15 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         let rx = file_watcher.start();
 
         loop {
+            // The viewer window is the app from the user's perspective: once
+            // it is gone (closed or crashed), shut the CLI down cleanly. An
+            // in-flight compile always finishes first because this check only
+            // runs between loop ticks.
+            if !viewer.is_alive() {
+                println!("\nViewer window closed; shutting down.");
+                break;
+            }
+
             let should_rebuild = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
                 Ok(changed) => {
                     println!("\nChanges detected in {changed:?}");
@@ -355,7 +364,7 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         println!("Serving {dir} at {url}");
         println!("Press Ctrl+C to stop...");
 
-        let _viewer = if launch_viewer {
+        let viewer = if launch_viewer {
             match viewer::launch_tauri_viewer(&url) {
                 Ok(process) => Some(process),
                 Err(e) => {
@@ -367,9 +376,32 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
             None
         };
 
-        // Wait for Ctrl+C.
-        tokio::signal::ctrl_c().await.ok();
-        println!("\nShutting down...");
+        match viewer {
+            Some(mut viewer) => {
+                // Exit on Ctrl+C or when the viewer window is closed.
+                let ctrl_c = tokio::signal::ctrl_c();
+                tokio::pin!(ctrl_c);
+                loop {
+                    tokio::select! {
+                        _ = &mut ctrl_c => {
+                            println!("\nShutting down...");
+                            break;
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                            if !viewer.is_alive() {
+                                println!("\nViewer window closed; shutting down.");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            None => {
+                // Headless serve has no viewer to watch; run until Ctrl+C.
+                tokio::signal::ctrl_c().await.ok();
+                println!("\nShutting down...");
+            }
+        }
         ExitCode::SUCCESS
     })
 }

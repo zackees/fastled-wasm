@@ -64,13 +64,9 @@ pub fn run() -> ExitCode {
         return commands::run_internal_dwarf_smoke(&cli);
     }
 
-    if let Some(ref serve_dir) = cli.internal_serve_dir_headless {
-        return commands::serve_directory(serve_dir, false);
-    }
-
-    // Handle --serve-dir natively with the Rust HTTP server (no Python needed).
-    if let Some(ref serve_dir) = cli.serve_dir {
-        return commands::serve_directory(serve_dir, true);
+    // Handle serve-dir modes natively with the Rust HTTP server.
+    if let Some((serve_dir, launch_viewer)) = serve_dir_request(&cli) {
+        return commands::serve_directory(serve_dir, launch_viewer);
     }
 
     if cli.install {
@@ -138,6 +134,17 @@ pub fn run() -> ExitCode {
     ExitCode::FAILURE
 }
 
+/// Map serve-dir CLI flags to `(directory, launch_viewer)`.
+///
+/// `--internal-serve-dir-headless` is the no-UI serve path: it never launches
+/// a viewer, so viewer-exit shutdown can never apply to it.
+fn serve_dir_request(cli: &cli::Cli) -> Option<(&str, bool)> {
+    if let Some(ref dir) = cli.internal_serve_dir_headless {
+        return Some((dir, false));
+    }
+    cli.serve_dir.as_deref().map(|dir| (dir, true))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,6 +203,25 @@ mod tests {
             quick: false,
             release: false,
         }
+    }
+
+    #[test]
+    fn serve_dir_request_headless_never_launches_viewer() {
+        let mut cli = base_cli();
+        cli.internal_serve_dir_headless = Some("some/dir".to_string());
+        assert_eq!(serve_dir_request(&cli), Some(("some/dir", false)));
+    }
+
+    #[test]
+    fn serve_dir_request_serve_dir_launches_viewer() {
+        let mut cli = base_cli();
+        cli.serve_dir = Some("some/dir".to_string());
+        assert_eq!(serve_dir_request(&cli), Some(("some/dir", true)));
+    }
+
+    #[test]
+    fn serve_dir_request_none_without_serve_flags() {
+        assert_eq!(serve_dir_request(&base_cli()), None);
     }
 
     #[test]
