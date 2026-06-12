@@ -298,6 +298,16 @@ async fn build_stream(State(state): State<AppState>) -> Response {
         .into_response()
 }
 
+/// `POST /viewer-log` — receive console/error lines forwarded from the Tauri
+/// viewer's injected logging script (enabled via `FASTLED_VIEWER_LOGS`) and
+/// echo them to stderr so viewer-side failures are diagnosable.
+async fn viewer_log(body: String) -> Response {
+    for line in body.lines() {
+        eprintln!("[viewer] {line}");
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 // ---------------------------------------------------------------------------
 // DWARF debug source handlers
 // ---------------------------------------------------------------------------
@@ -423,6 +433,7 @@ pub async fn start_server(
         .route("/", get(serve_index))
         .route("/build-stream", get(build_stream))
         .route("/dwarfsource", post(dwarf_source))
+        .route("/viewer-log", post(viewer_log))
         .route("/debug/source-roots", get(debug_source_roots))
         .route("/{*path}", get(serve_file))
         .layer(SetResponseHeaderLayer::overriding(
@@ -483,6 +494,19 @@ mod tests {
         // Give the server a moment to bind.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
+    }
+
+    #[tokio::test]
+    async fn test_viewer_log_endpoint_accepts_posts() {
+        let (addr, _dir) = setup_server().await;
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("http://{addr}/viewer-log"))
+            .body("error: something broke")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 204);
     }
 
     #[tokio::test]
