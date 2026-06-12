@@ -29,6 +29,10 @@ if [ -z "$RUSTUP_BIN" ]; then
   echo "Error: rustup is required for cargo-dylint's internal driver build" >&2
   exit 1
 fi
+# cargo-dylint 6.x's driver toolchain check requires RUSTUP_HOME to be set
+# explicitly; CI exports it but local shells typically rely on rustup's
+# implicit default and fail with "environment variable not found: RUSTUP_HOME".
+export RUSTUP_HOME="${RUSTUP_HOME:-$("$RUSTUP_BIN" show home)}"
 RUSTUP_BIN_DIR="$(dirname "$RUSTUP_BIN")"
 DYLINT_CARGO_SHIM_DIR="$(mktemp -d)"
 DYLINT_PREVIOUS_DEFAULT="$(rustup default 2>/dev/null | sed 's/ (default)$//')"
