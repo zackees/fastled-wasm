@@ -226,6 +226,7 @@ pub(crate) fn run_native_compile_streaming(
         profile: cli.profile,
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean,
+        emit_clangd: cli.clangd,
     };
 
     let log = |line: &str, stream: &str| emit_build_log(tx, line, stream);

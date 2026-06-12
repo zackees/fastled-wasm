@@ -52,6 +52,9 @@ pub struct BuildRequest {
     pub profile: bool,
     pub fastled_path: Option<PathBuf>,
     pub force_clean: bool,
+    /// Emit clangd/VS Code configuration into the sketch directory after a
+    /// successful build. Off by default; opted in via `fastled --clangd`.
+    pub emit_clangd: bool,
 }
 
 #[derive(Debug)]
@@ -1076,6 +1079,7 @@ pub(crate) fn resolve_fastled_dir_for_sketch(sketch_dir: &Path) -> Result<PathBu
         profile: false,
         fastled_path: None,
         force_clean: false,
+        emit_clangd: false,
     };
     let (fastled_dir, _cleanup) = resolve_fastled_dir(&request)?;
     Ok(normalize_path(&fastled_dir))
@@ -1236,32 +1240,38 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
         debug_symbols::write_debug_symbol_manifest(&output_dir, &debug_config)?;
 
         // Emit clangd/VS Code configuration so "Go to Definition" works for
-        // the sketch in VS Code (Refs #177). Non-fatal: a config-write
-        // failure must never fail an otherwise successful build.
-        let clangd_result = (|| -> Result<()> {
-            let ino_file = sketch_ino_file(&example_dir)?;
-            let compile_flags = get_sketch_compile_flags(
-                &fastled_dir,
-                request.build_mode,
-                Some(&sketch_dwarf_roots),
-            )?;
-            crate::clangd_config::write_clangd_config(&crate::clangd_config::ClangdConfigInputs {
-                sketch_dir: crate::path::NormalizedPath::new(&example_dir),
-                fastled_dir: crate::path::NormalizedPath::new(&fastled_dir),
-                emsdk_install_dir: crate::path::NormalizedPath::new(&emscripten_install),
-                tools_emcc_path: crate::path::NormalizedPath::new(&tools.emcc),
-                tools_empp_path: crate::path::NormalizedPath::new(&tools.empp),
-                wrapper_source: crate::path::NormalizedPath::new(&wrapper),
-                ino_file: crate::path::NormalizedPath::new(ino_file),
-                compile_flags,
-                build_mode: request.build_mode,
-            })
-        })();
-        if let Err(err) = clangd_result {
-            log(
-                &format!("[WASM] warning: failed to write clangd config: {err:#}"),
-                "stderr",
-            );
+        // the sketch in VS Code (Refs #177). Opt-in via `--clangd` (Refs
+        // #179): writing IDE config into the user's project by default is
+        // too intrusive. Non-fatal: a config-write failure must never fail
+        // an otherwise successful build.
+        if request.emit_clangd {
+            let clangd_result = (|| -> Result<()> {
+                let ino_file = sketch_ino_file(&example_dir)?;
+                let compile_flags = get_sketch_compile_flags(
+                    &fastled_dir,
+                    request.build_mode,
+                    Some(&sketch_dwarf_roots),
+                )?;
+                crate::clangd_config::write_clangd_config(
+                    &crate::clangd_config::ClangdConfigInputs {
+                        sketch_dir: crate::path::NormalizedPath::new(&example_dir),
+                        fastled_dir: crate::path::NormalizedPath::new(&fastled_dir),
+                        emsdk_install_dir: crate::path::NormalizedPath::new(&emscripten_install),
+                        tools_emcc_path: crate::path::NormalizedPath::new(&tools.emcc),
+                        tools_empp_path: crate::path::NormalizedPath::new(&tools.empp),
+                        wrapper_source: crate::path::NormalizedPath::new(&wrapper),
+                        ino_file: crate::path::NormalizedPath::new(ino_file),
+                        compile_flags,
+                        build_mode: request.build_mode,
+                    },
+                )
+            })();
+            if let Err(err) = clangd_result {
+                log(
+                    &format!("[WASM] warning: failed to write clangd config: {err:#}"),
+                    "stderr",
+                );
+            }
         }
         Ok(())
     })();

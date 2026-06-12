@@ -73,6 +73,12 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) purge: bool,
 
+    /// Also emit VS Code clangd configuration (compile_commands.json,
+    /// .clangd, .vscode/settings.json) into the sketch directory after a
+    /// successful compile.
+    #[arg(long)]
+    pub(crate) clangd: bool,
+
     /// Write VS Code clangd configuration (compile_commands.json,
     /// .clangd, .vscode/settings.json) for the sketch directory and exit.
     /// Defaults to the current directory when no DIR is given.
@@ -131,5 +137,18 @@ pub(crate) fn requested_init_ref(cli: &Cli) -> Option<&str> {
         // "latest release" default produced sketches that the build path
         // could not compile.
         Some("master")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clangd_emission_is_opt_in() {
+        let cli = Cli::parse_from(["fastled", "sketch"]);
+        assert!(!cli.clangd);
+        let cli = Cli::parse_from(["fastled", "--clangd", "sketch"]);
+        assert!(cli.clangd);
     }
 }

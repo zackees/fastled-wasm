@@ -1,8 +1,9 @@
 //! Emit clangd / VS Code configuration for a sketch directory so that
 //! "Go to Definition" works for WASM sketches (Refs #177).
 //!
-//! After a successful WASM build (or via `fastled --write-clangd [DIR]`) the
-//! sketch directory receives:
+//! Generation is opt-in (Refs #179): after a successful WASM build run with
+//! `fastled --clangd`, or via the standalone `fastled --write-clangd [DIR]`,
+//! the sketch directory receives:
 //!
 //! - `compile_commands.json` — exact compile arguments (bundled clang++,
 //!   `--target=wasm32-unknown-emscripten`, `--sysroot`, includes, defines)

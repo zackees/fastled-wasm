@@ -208,6 +208,7 @@ mod tests {
             commit: None,
             fastled_path: None,
             purge: false,
+            clangd: false,
             write_clangd: None,
             internal_ensure_fastled_repo: None,
             internal_dwarf_smoke: false,
