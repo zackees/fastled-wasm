@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: read
 
 jobs:
   detect-version:
@@ -33,49 +34,204 @@ jobs:
             echo "Version $VERSION not on PyPI, will release"
           fi
 
-  build-linux-x86:
+  # The per-platform CI build workflows already produce release-identical
+  # wheel/binary artifacts for this same SHA (same rust targets, plat-name
+  # tags, and soldr cache keys — see the build wrappers). Wait for those runs
+  # and reuse their artifacts instead of rebuilding all 6 platforms (#170).
+  # Any platform whose CI run is missing, failed, or timed out falls back to
+  # a build-* job below. Runs only on push: a workflow_dispatch SHA may have
+  # no CI runs, so dispatch always builds.
+  collect-artifacts:
     needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    if: needs.detect-version.outputs.should_release == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      reused_linux_x86: ${{ steps.collect.outputs.reused_linux_x86 }}
+      reused_linux_arm: ${{ steps.collect.outputs.reused_linux_arm }}
+      reused_windows_x86: ${{ steps.collect.outputs.reused_windows_x86 }}
+      reused_windows_arm: ${{ steps.collect.outputs.reused_windows_arm }}
+      reused_macos_x86: ${{ steps.collect.outputs.reused_macos_x86 }}
+      reused_macos_arm: ${{ steps.collect.outputs.reused_macos_arm }}
+    steps:
+      - name: Wait for CI build runs and download artifacts
+        id: collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          mkdir -p artifacts
+          declare -A WF_SUFFIX=(
+            ["linux-x86-build.yml"]="ubuntu-24.04-x86_64-unknown-linux-gnu"
+            ["linux-arm-build.yml"]="ubuntu-24.04-arm-aarch64-unknown-linux-gnu"
+            ["windows-x86-build.yml"]="windows-2025-x86_64-pc-windows-msvc"
+            ["windows-arm-build.yml"]="windows-2025-aarch64-pc-windows-msvc"
+            ["macos-x86-build.yml"]="macos-14-x86_64-apple-darwin"
+            ["macos-arm-build.yml"]="macos-15-aarch64-apple-darwin"
+          )
+          deadline=$(( $(date +%s) + 2100 ))
+          for wf in linux-x86-build.yml linux-arm-build.yml windows-x86-build.yml windows-arm-build.yml macos-x86-build.yml macos-arm-build.yml; do
+            suffix="${WF_SUFFIX[$wf]}"
+            key="reused_$(echo "$wf" | sed 's/-build\.yml$//; s/-/_/g')"
+            reused=false
+            while :; do
+              run_json=$(gh api "repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" --jq '.workflow_runs[0] // empty' 2>/dev/null || true)
+              if [ -n "$run_json" ]; then
+                status=$(jq -r .status <<<"$run_json")
+                if [ "$status" = "completed" ]; then
+                  conclusion=$(jq -r .conclusion <<<"$run_json")
+                  run_id=$(jq -r .id <<<"$run_json")
+                  if [ "$conclusion" = "success" ] && \
+                     gh run download "$run_id" -R "$REPO" --dir artifacts -n "wheel-$suffix" -n "binary-$suffix"; then
+                    reused=true
+                  else
+                    echo "$wf run $run_id concluded '$conclusion' or artifact download failed; falling back to build."
+                  fi
+                  break
+                fi
+              fi
+              if [ "$(date +%s)" -ge "$deadline" ]; then
+                echo "Timed out waiting for $wf; falling back to build."
+                break
+              fi
+              sleep 30
+            done
+            echo "$wf -> $key=$reused"
+            echo "$key=$reused" >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_linux_x86 == 'true'
+        with:
+          name: wheel-ubuntu-24.04-x86_64-unknown-linux-gnu
+          path: artifacts/wheel-ubuntu-24.04-x86_64-unknown-linux-gnu/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_linux_x86 == 'true'
+        with:
+          name: binary-ubuntu-24.04-x86_64-unknown-linux-gnu
+          path: artifacts/binary-ubuntu-24.04-x86_64-unknown-linux-gnu/*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_linux_arm == 'true'
+        with:
+          name: wheel-ubuntu-24.04-arm-aarch64-unknown-linux-gnu
+          path: artifacts/wheel-ubuntu-24.04-arm-aarch64-unknown-linux-gnu/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_linux_arm == 'true'
+        with:
+          name: binary-ubuntu-24.04-arm-aarch64-unknown-linux-gnu
+          path: artifacts/binary-ubuntu-24.04-arm-aarch64-unknown-linux-gnu/*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_windows_x86 == 'true'
+        with:
+          name: wheel-windows-2025-x86_64-pc-windows-msvc
+          path: artifacts/wheel-windows-2025-x86_64-pc-windows-msvc/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_windows_x86 == 'true'
+        with:
+          name: binary-windows-2025-x86_64-pc-windows-msvc
+          path: artifacts/binary-windows-2025-x86_64-pc-windows-msvc/*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_windows_arm == 'true'
+        with:
+          name: wheel-windows-2025-aarch64-pc-windows-msvc
+          path: artifacts/wheel-windows-2025-aarch64-pc-windows-msvc/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_windows_arm == 'true'
+        with:
+          name: binary-windows-2025-aarch64-pc-windows-msvc
+          path: artifacts/binary-windows-2025-aarch64-pc-windows-msvc/*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_macos_x86 == 'true'
+        with:
+          name: wheel-macos-14-x86_64-apple-darwin
+          path: artifacts/wheel-macos-14-x86_64-apple-darwin/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_macos_x86 == 'true'
+        with:
+          name: binary-macos-14-x86_64-apple-darwin
+          path: artifacts/binary-macos-14-x86_64-apple-darwin/*
+
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_macos_arm == 'true'
+        with:
+          name: wheel-macos-15-aarch64-apple-darwin
+          path: artifacts/wheel-macos-15-aarch64-apple-darwin/*
+      - uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.reused_macos_arm == 'true'
+        with:
+          name: binary-macos-15-aarch64-apple-darwin
+          path: artifacts/binary-macos-15-aarch64-apple-darwin/*
+
+  # Fallback builds: each runs only when the matching CI artifact could not
+  # be reused (collect skipped on workflow_dispatch, CI run failed/missing,
+  # or download failed).
+  build-linux-x86:
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_linux_x86 == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: ubuntu-24.04
       rust-target: x86_64-unknown-linux-gnu
 
   build-linux-arm:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_linux_arm == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: ubuntu-24.04-arm
       rust-target: aarch64-unknown-linux-gnu
 
   build-windows-x86:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_windows_x86 == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: windows-2025
       rust-target: x86_64-pc-windows-msvc
 
   build-windows-arm:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_windows_arm == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: windows-2025
       rust-target: aarch64-pc-windows-msvc
 
   build-macos-x86:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_macos_x86 == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: macos-14
       rust-target: x86_64-apple-darwin
 
   build-macos-arm:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true'
+    needs: [detect-version, collect-artifacts]
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_macos_arm == 'true')
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: macos-15
@@ -90,7 +246,17 @@ jobs:
       - build-windows-arm
       - build-macos-x86
       - build-macos-arm
-    if: needs.detect-version.outputs.should_release == 'true'
+    # A skipped build means its artifact was reused from CI by
+    # collect-artifacts; any failed or cancelled build blocks the release.
+    if: >-
+      !cancelled() &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-linux-x86.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-linux-arm.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-windows-x86.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-windows-arm.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-macos-x86.result) &&
+      contains(fromJSON('["success", "skipped"]'), needs.build-macos-arm.result)
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -142,6 +308,10 @@ jobs:
       contents: write
       id-token: write
     steps:
+      # With merge-multiple unset, each artifact lands in its own
+      # binaries/<artifact-name>/ directory, so the case match below on the
+      # target-suffixed artifact name works for both reused and rebuilt
+      # artifacts.
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:

@@ -11,3 +11,9 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: macos-14
+      # Explicit target so CI wheels/binaries are identical to the release
+      # builds in auto-release.yml (same artifact names, plat-name tags, and
+      # soldr cache key), letting auto-release reuse them (#170). Also fixes
+      # a latent bug: macos-14 runners are Apple Silicon, so the previous
+      # native build produced an arm64 binary under the "macOS x86" name.
+      rust-target: x86_64-apple-darwin

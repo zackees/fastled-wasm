@@ -11,3 +11,7 @@ jobs:
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: ubuntu-24.04
+      # Explicit target so CI wheels/binaries are identical to the release
+      # builds in auto-release.yml (same artifact names, plat-name tags, and
+      # soldr cache key), letting auto-release reuse them (#170).
+      rust-target: x86_64-unknown-linux-gnu
