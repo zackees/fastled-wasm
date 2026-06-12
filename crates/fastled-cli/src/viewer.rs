@@ -346,7 +346,18 @@ fn spawn_hidden_viewer(binary: &Path, url: &str) -> Result<ViewerProcess> {
 /// viewer/WebView2 process tree is torn down too.
 ///
 /// Returns a process handle whose lifetime controls the viewer lifetime.
+///
+/// Fails loudly when `url` is not an http(s) URL. The viewer must always be
+/// pointed at the embedded HTTP server (which serves the loading page and
+/// reloads on build completion); pointing it at a directory or `fastled://`
+/// path regresses to a dead "Not Found" page (issues #151/#160).
 pub fn launch_tauri_viewer(url: &str) -> Result<ViewerProcess> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        anyhow::bail!(
+            "viewer must be launched with an http(s) URL pointing at the FastLED server, got: {url}"
+        );
+    }
+
     let binary =
         find_tauri_viewer().context("fastled binary not found; cannot launch Tauri viewer")?;
 
@@ -518,6 +529,24 @@ mod tests {
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         assert_eq!(args, vec!["--internal-viewer", "http://127.0.0.1:8089"]);
+    }
+
+    #[test]
+    fn test_launch_tauri_viewer_rejects_directory_path() {
+        // Regression gate for #151/#160: the viewer must never be pointed at
+        // a filesystem path; it must load the FastLED HTTP server URL.
+        match launch_tauri_viewer("examples/TwinkleFox/fastled_js") {
+            Ok(_) => panic!("directory path must be rejected"),
+            Err(err) => assert!(err.to_string().contains("http(s) URL"), "got: {err}"),
+        }
+    }
+
+    #[test]
+    fn test_launch_tauri_viewer_rejects_fastled_protocol() {
+        match launch_tauri_viewer("fastled://localhost/index.html") {
+            Ok(_) => panic!("fastled:// protocol must be rejected"),
+            Err(err) => assert!(err.to_string().contains("http(s) URL"), "got: {err}"),
+        }
     }
 
     #[test]
