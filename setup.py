@@ -55,38 +55,55 @@ def _candidate_binaries() -> list[Path]:
             ]
         )
     candidates.append(ROOT / "target" / "release" / EXE_NAME)
-    cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
-    candidates.append(cargo_home / "bin" / EXE_NAME)
     return candidates
 
 
-def _copy_first_available_binary() -> bool:
+def _copy_newest_available_binary() -> bool:
     PACKAGE_BIN_DIR.mkdir(parents=True, exist_ok=True)
     dest = PACKAGE_BIN_DIR / EXE_NAME
-    for candidate in _candidate_binaries():
-        if candidate.is_file():
-            shutil.copy2(candidate, dest)
-            return True
-    return False
+    existing = [candidate for candidate in _candidate_binaries() if candidate.is_file()]
+    if not existing:
+        return False
+    newest = max(existing, key=lambda path: path.stat().st_mtime)
+    shutil.copy2(newest, dest)
+    return True
+
+
+def _newest_rust_source_mtime() -> float:
+    newest = 0.0
+    for path in (ROOT / "Cargo.toml", ROOT / "Cargo.lock"):
+        if path.is_file():
+            newest = max(newest, path.stat().st_mtime)
+    for path in (ROOT / "crates").rglob("*"):
+        if path.is_file():
+            newest = max(newest, path.stat().st_mtime)
+    return newest
 
 
 def ensure_bundled_fastled_binary() -> None:
     dest = PACKAGE_BIN_DIR / EXE_NAME
-    if dest.is_file():
-        return
-
-    if _copy_first_available_binary():
-        return
 
     if not (ROOT / "Cargo.toml").is_file():
-        raise RuntimeError("Cargo.toml was not found; cannot build bundled fastled")
+        if dest.is_file():
+            return
+        raise RuntimeError(
+            "Cargo.toml was not found and no staged fastled binary exists; "
+            "cannot build bundled fastled"
+        )
+
+    # A staged binary at least as new as every Rust source is current. This
+    # covers CI, which cross-compiles and stages the exe immediately before
+    # building the wheel. Anything older is stale and must be rebuilt so
+    # `pip install .` always bundles a binary matching the checkout.
+    if dest.is_file() and dest.stat().st_mtime >= _newest_rust_source_mtime():
+        return
 
     command = [*_cargo_command(), "build", "--release", "--bin", "fastled"]
     target = os.environ.get("FASTLED_RUST_TARGET")
     if target:
         command.extend(["--target", target])
     subprocess.check_call(command, cwd=ROOT)
-    if not _copy_first_available_binary():
+    if not _copy_newest_available_binary():
         raise RuntimeError("built fastled binary was not found")
 
 
@@ -101,7 +118,7 @@ class bdist_wheel(_bdist_wheel):
         super().run()
 
     def get_tag(self) -> tuple[str, str, str]:
-        _python, _abi, platform = super().get_tag()
+        *_, platform = super().get_tag()
         return "py3", "none", platform
 
 
