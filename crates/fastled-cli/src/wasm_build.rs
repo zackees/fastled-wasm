@@ -114,7 +114,7 @@ struct FlagList {
 }
 
 #[derive(Debug, Clone)]
-struct DwarfPathRoots {
+pub(crate) struct DwarfPathRoots {
     sketch_dir: Option<PathBuf>,
     fastled_dir: PathBuf,
     emsdk_root: Option<PathBuf>,
@@ -280,7 +280,10 @@ fn normalize_path(path: &Path) -> PathBuf {
     crate::path::canonicalize_normalized(path).into_path_buf()
 }
 
-fn resolve_example_name(sketch_dir: &Path, fastled_dir: &Path) -> (String, PathBuf, bool) {
+pub(crate) fn resolve_example_name(
+    sketch_dir: &Path,
+    fastled_dir: &Path,
+) -> (String, PathBuf, bool) {
     let examples_dir = fastled_dir.join("examples");
     if let Ok(relative) = sketch_dir.strip_prefix(&examples_dir) {
         let name = relative.to_string_lossy().replace('\\', "/");
@@ -304,11 +307,11 @@ fn build_dir(fastled_dir: &Path, mode: BuildMode) -> PathBuf {
         .join(format!("meson-wasm-{}", mode.as_str()))
 }
 
-fn sketch_cache_dir(example_dir: &Path) -> PathBuf {
+pub(crate) fn sketch_cache_dir(example_dir: &Path) -> PathBuf {
     example_dir.join(".build").join("wasm")
 }
 
-fn sketch_ino_file(example_dir: &Path) -> Result<PathBuf> {
+pub(crate) fn sketch_ino_file(example_dir: &Path) -> Result<PathBuf> {
     let sketch_name = example_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -351,7 +354,7 @@ fn load_build_flags(fastled_dir: &Path) -> Result<BuildFlagsToml> {
     toml::from_str(&source).with_context(|| format!("parse {}", path.display()))
 }
 
-fn get_sketch_compile_flags(
+pub(crate) fn get_sketch_compile_flags(
     fastled_dir: &Path,
     mode: BuildMode,
     dwarf_roots: Option<&DwarfPathRoots>,
@@ -668,7 +671,7 @@ fn build_library(
     Ok(true)
 }
 
-fn create_wrapper(
+pub(crate) fn create_wrapper(
     example_dir: &Path,
     example_name: &str,
     sketch_cache_dir: &Path,
@@ -1063,6 +1066,21 @@ fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>)
     Ok(())
 }
 
+/// Resolve the FastLED checkout for a sketch directory without a full
+/// `BuildRequest`. Used by `fastled --write-clangd` to mirror the build's
+/// FastLED-ref resolution (honours the `fastled.json` pin).
+pub(crate) fn resolve_fastled_dir_for_sketch(sketch_dir: &Path) -> Result<PathBuf> {
+    let request = BuildRequest {
+        sketch_dir: sketch_dir.to_path_buf(),
+        build_mode: BuildMode::Quick,
+        profile: false,
+        fastled_path: None,
+        force_clean: false,
+    };
+    let (fastled_dir, _cleanup) = resolve_fastled_dir(&request)?;
+    Ok(normalize_path(&fastled_dir))
+}
+
 fn resolve_fastled_dir(request: &BuildRequest) -> Result<(PathBuf, Option<PathBuf>)> {
     if let Some(path) = &request.fastled_path {
         return Ok((normalize_path(path), None));
@@ -1216,6 +1234,35 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             emsdk_root.clone(),
         );
         debug_symbols::write_debug_symbol_manifest(&output_dir, &debug_config)?;
+
+        // Emit clangd/VS Code configuration so "Go to Definition" works for
+        // the sketch in VS Code (Refs #177). Non-fatal: a config-write
+        // failure must never fail an otherwise successful build.
+        let clangd_result = (|| -> Result<()> {
+            let ino_file = sketch_ino_file(&example_dir)?;
+            let compile_flags = get_sketch_compile_flags(
+                &fastled_dir,
+                request.build_mode,
+                Some(&sketch_dwarf_roots),
+            )?;
+            crate::clangd_config::write_clangd_config(&crate::clangd_config::ClangdConfigInputs {
+                sketch_dir: crate::path::NormalizedPath::new(&example_dir),
+                fastled_dir: crate::path::NormalizedPath::new(&fastled_dir),
+                emsdk_install_dir: crate::path::NormalizedPath::new(&emscripten_install),
+                tools_emcc_path: crate::path::NormalizedPath::new(&tools.emcc),
+                tools_empp_path: crate::path::NormalizedPath::new(&tools.empp),
+                wrapper_source: crate::path::NormalizedPath::new(&wrapper),
+                ino_file: crate::path::NormalizedPath::new(ino_file),
+                compile_flags,
+                build_mode: request.build_mode,
+            })
+        })();
+        if let Err(err) = clangd_result {
+            log(
+                &format!("[WASM] warning: failed to write clangd config: {err:#}"),
+                "stderr",
+            );
+        }
         Ok(())
     })();
 

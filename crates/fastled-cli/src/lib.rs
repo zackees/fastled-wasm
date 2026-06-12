@@ -6,6 +6,7 @@ use clap::Parser;
 
 mod archive;
 mod build;
+mod clangd_config;
 mod cli;
 mod commands;
 mod compile_stream;
@@ -85,6 +86,17 @@ pub fn run() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         }
+    }
+
+    // Regenerate VS Code clangd configuration for a sketch without building.
+    if let Some(ref dir) = cli.write_clangd {
+        return match clangd_config::run_write_clangd(dir) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("fastled: failed to write clangd config: {err:#}");
+                ExitCode::FAILURE
+            }
+        };
     }
 
     if let Some(ref init_value) = cli.init {
@@ -196,6 +208,7 @@ mod tests {
             commit: None,
             fastled_path: None,
             purge: false,
+            write_clangd: None,
             internal_ensure_fastled_repo: None,
             internal_dwarf_smoke: false,
             internal_serve_dir_headless: None,

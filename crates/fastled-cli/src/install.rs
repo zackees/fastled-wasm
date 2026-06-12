@@ -733,14 +733,14 @@ fn check_existing_arduino_content() -> bool {
     cwd.join("examples").exists() || has_ino_file(&cwd)
 }
 
-fn read_json_file(path: &Path, default: Value) -> Value {
+pub(crate) fn read_json_file(path: &Path, default: Value) -> Value {
     fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .unwrap_or(default)
 }
 
-fn write_json_file(path: &Path, value: &Value) -> Result<()> {
+pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
