@@ -77,6 +77,8 @@ Useful flags:
 | `--purge` | Clear cached FastLED downloads and stale WASM build artifacts |
 | `--serve-dir <dir>` | Serve an existing directory without compiling |
 
+Set `FASTLED_VIEWER_LOGS=1` to forward the viewer window's browser console output (`console.*`, uncaught errors, failed fetches) to the terminal's stderr, prefixed with `[viewer]` — useful when diagnosing a blank or broken viewer.
+
 ## Features
 
 ### Hot Reload
