@@ -13,6 +13,7 @@ pub mod debug_symbols;
 mod dwarf_smoke;
 pub mod frontend;
 pub mod install;
+mod install_unlock;
 mod keyboard;
 pub mod path;
 mod paths_util;
