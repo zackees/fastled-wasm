@@ -29,12 +29,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          version: 0.7.53
+          # No soldr version pin: keep in lockstep with _build.yml so all jobs
+          # resolve the same soldr/zccache version and share warm caches
+          # (see the pin rationale comment in _build.yml and #158).
           # cache-preset: foundation expands to build-cache: true +
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).
           cache-preset: foundation
-          cache-key-suffix: ${{ inputs.runs-on }}
+          # "-native" matches _build.yml's native-target suffix so lint, test,
+          # and native build jobs on the same runner share one cache namespace.
+          cache-key-suffix: ${{ inputs.runs-on }}-native
           linker: platform-default
           toolchain-file: rust-toolchain.toml
           # `./lint` runs `soldr cargo clippy --workspace --all-targets`
