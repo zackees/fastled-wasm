@@ -32,6 +32,15 @@ fn workspace_root() -> PathBuf {
 /// Walk up from `CARGO_MANIFEST_DIR` looking for the workspace's
 /// `src/fastled/frontend` directory.
 fn default_source_dir() -> Result<PathBuf> {
+    // Check for FASTLED_FRONTEND_DIR environment variable first.
+    if let Ok(path) = std::env::var("FASTLED_FRONTEND_DIR") {
+        let candidate = PathBuf::from(&path);
+        if candidate.is_dir() {
+            return Ok(candidate);
+        }
+        anyhow::bail!("FASTLED_FRONTEND_DIR={} is not a directory", path);
+    }
+
     let candidate = workspace_root()
         .join("src")
         .join("fastled")
@@ -49,7 +58,8 @@ fn default_source_dir() -> Result<PathBuf> {
         current = dir.parent().map(Path::to_path_buf);
     }
     anyhow::bail!(
-        "could not locate src/fastled/frontend relative to CARGO_MANIFEST_DIR={}",
+        "could not locate src/fastled/frontend relative to CARGO_MANIFEST_DIR={}. \
+         Set FASTLED_FRONTEND_DIR to the path containing the frontend assets.",
         env!("CARGO_MANIFEST_DIR")
     )
 }

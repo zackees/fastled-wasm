@@ -79,6 +79,12 @@ def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     env.setdefault("FASTLED_PYTHON_EXECUTABLE", sys.executable)
 
+    # Set FASTLED_FRONTEND_DIR to the bundled frontend if not already set.
+    if "FASTLED_FRONTEND_DIR" not in env:
+        frontend_dir = Path(__file__).resolve().parent / "frontend"
+        if frontend_dir.is_dir():
+            env["FASTLED_FRONTEND_DIR"] = str(frontend_dir)
+
     cli = find_rust_fastled_cli()
     if cli is not None:
         return subprocess.run([str(cli), *args], check=False, env=env).returncode
