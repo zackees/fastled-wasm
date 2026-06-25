@@ -1,0 +1,210 @@
+{
+  "name": "fastled-wasm",
+  "displayName": "FastLED WASM Compiler",
+  "description": "VS Code extension for FastLED WASM compiler - compile and run FastLED sketches in the browser",
+  "version": "1.0.1",
+  "license": "MIT",
+  "publisher": "fastled",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zackees/fastled-wasm.git"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "fastled",
+    "wasm",
+    "arduino",
+    "led",
+    "embedded"
+  ],
+  "activationEvents": [
+    "onLanguage:cpp",
+    "onLanguage:c",
+    "workspaceContains:**/*.ino"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fastled.compile",
+        "title": "Compile & Run",
+        "category": "FastLED",
+        "icon": "$(play)"
+      },
+      {
+        "command": "fastled.compileQuick",
+        "title": "Compile & Run (Quick Mode)",
+        "category": "FastLED",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "fastled.compileWeb",
+        "title": "Compile & Run (Web Compiler)",
+        "category": "FastLED",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "fastled.justCompile",
+        "title": "Just Compile (No Browser)",
+        "category": "FastLED",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "fastled.initProject",
+        "title": "Initialize New Project",
+        "category": "FastLED",
+        "icon": "$(file-directory-create)"
+      },
+      {
+        "command": "fastled.startServer",
+        "title": "Start Compiler Server",
+        "category": "FastLED",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "fastled.stopServer",
+        "title": "Stop Compiler Server",
+        "category": "FastLED",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "fastled.update",
+        "title": "Update Compiler",
+        "category": "FastLED",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "fastled.purge",
+        "title": "Purge Docker Containers",
+        "category": "FastLED",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "fastled.openBrowser",
+        "title": "Open FastLED Output in Browser",
+        "category": "FastLED",
+        "icon": "$(preview)"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "fastled.compile",
+          "group": "fastled@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "when": "resourceExtname == .ino",
+          "command": "fastled.compile",
+          "group": "fastled@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "fastled.compile"
+        },
+        {
+          "command": "fastled.compileQuick"
+        },
+        {
+          "command": "fastled.compileWeb"
+        },
+        {
+          "command": "fastled.justCompile"
+        },
+        {
+          "command": "fastled.initProject"
+        },
+        {
+          "command": "fastled.startServer"
+        },
+        {
+          "command": "fastled.stopServer"
+        },
+        {
+          "command": "fastled.update"
+        },
+        {
+          "command": "fastled.purge"
+        },
+        {
+          "command": "fastled.openBrowser"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "FastLED WASM",
+      "properties": {
+        "fastled.defaultCompileMode": {
+          "type": "string",
+          "enum": ["quick", "debug", "release"],
+          "default": "quick",
+          "description": "Default compilation mode"
+        },
+        "fastled.autoOpenBrowser": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open browser after compilation"
+        },
+        "fastled.useWebCompiler": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use web compiler by default instead of local Docker"
+        },
+        "fastled.webCompilerUrl": {
+          "type": "string",
+          "default": "https://fastled.onrender.com",
+          "description": "URL for the web compiler"
+        },
+        "fastled.watchFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable file watching for automatic recompilation"
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "arduino",
+        "aliases": ["Arduino", "arduino"],
+        "extensions": [".ino"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "arduino",
+        "scopeName": "source.arduino",
+        "path": "./syntaxes/arduino.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "arduino",
+        "path": "./snippets/fastled.json"
+      },
+      {
+        "language": "cpp",
+        "path": "./snippets/fastled.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "typescript": "^4.9.4"
+  }
+}

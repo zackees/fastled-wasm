@@ -1,0 +1,146 @@
+{
+    "FastLED Basic Setup": {
+        "prefix": "fastled-setup",
+        "body": [
+            "#include \"FastLED.h\"",
+            "",
+            "#define NUM_LEDS ${1:60}",
+            "#define DATA_PIN ${2:3}",
+            "#define LED_TYPE ${3:WS2812B}",
+            "#define COLOR_ORDER ${4:GRB}",
+            "",
+            "CRGB leds[NUM_LEDS];",
+            "",
+            "void setup() {",
+            "    FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS);",
+            "    FastLED.setBrightness(${5:96});",
+            "}",
+            "",
+            "void loop() {",
+            "    ${6:// Your code here}",
+            "    FastLED.show();",
+            "    delay(${7:30});",
+            "}"
+        ],
+        "description": "Basic FastLED setup with common configuration"
+    },
+    "FastLED with Clock Pin": {
+        "prefix": "fastled-clock",
+        "body": [
+            "#include \"FastLED.h\"",
+            "",
+            "#define NUM_LEDS ${1:60}",
+            "#define DATA_PIN ${2:11}",
+            "#define CLOCK_PIN ${3:13}",
+            "#define LED_TYPE ${4:APA102}",
+            "#define COLOR_ORDER ${5:BGR}",
+            "",
+            "CRGB leds[NUM_LEDS];",
+            "",
+            "void setup() {",
+            "    FastLED.addLeds<LED_TYPE, DATA_PIN, CLOCK_PIN, COLOR_ORDER>(leds, NUM_LEDS);",
+            "    FastLED.setBrightness(${6:96});",
+            "}",
+            "",
+            "void loop() {",
+            "    ${7:// Your code here}",
+            "    FastLED.show();",
+            "    delay(${8:30});",
+            "}"
+        ],
+        "description": "FastLED setup with clock pin for APA102/DotStar LEDs"
+    },
+    "Fill Solid": {
+        "prefix": "fill-solid",
+        "body": [
+            "fill_solid(leds, NUM_LEDS, ${1:CRGB::Red});"
+        ],
+        "description": "Fill all LEDs with solid color"
+    },
+    "Fill Rainbow": {
+        "prefix": "fill-rainbow",
+        "body": [
+            "fill_rainbow(leds, NUM_LEDS, ${1:0}, ${2:255/NUM_LEDS});"
+        ],
+        "description": "Fill LEDs with rainbow colors"
+    },
+    "Every N Milliseconds": {
+        "prefix": "every-n-ms",
+        "body": [
+            "EVERY_N_MILLISECONDS(${1:20}) {",
+            "    ${2:// Code to run every N milliseconds}",
+            "}"
+        ],
+        "description": "Execute code every N milliseconds"
+    },
+    "Fade to Black": {
+        "prefix": "fade-black",
+        "body": [
+            "fadeToBlackBy(leds, NUM_LEDS, ${1:10});"
+        ],
+        "description": "Fade all LEDs toward black"
+    },
+    "Beatsin8": {
+        "prefix": "beatsin8",
+        "body": [
+            "beatsin8(${1:13}, ${2:0}, ${3:255})"
+        ],
+        "description": "8-bit sine wave that cycles with a given BPM"
+    },
+    "Random Color": {
+        "prefix": "random-color",
+        "body": [
+            "CRGB(random8(), random8(), random8())"
+        ],
+        "description": "Generate a random RGB color"
+    },
+    "HSV Color": {
+        "prefix": "hsv-color",
+        "body": [
+            "CHSV(${1:hue}, ${2:saturation}, ${3:value})"
+        ],
+        "description": "Create HSV color"
+    },
+    "Palette Color": {
+        "prefix": "palette-color",
+        "body": [
+            "ColorFromPalette(${1:palette}, ${2:index}, ${3:brightness}, ${4:LINEARBLEND})"
+        ],
+        "description": "Get color from palette"
+    },
+    "Fire Effect": {
+        "prefix": "fire-effect",
+        "body": [
+            "// Fire effect",
+            "for(int i = 0; i < NUM_LEDS; i++) {",
+            "    int flicker = random8(50);",
+            "    int r = 255 - flicker;",
+            "    int g = r < 100 ? 0 : r - 100;",
+            "    int b = 0;",
+            "    leds[i] = CRGB(r, g, b);",
+            "}"
+        ],
+        "description": "Simple fire effect"
+    },
+    "Sparkle Effect": {
+        "prefix": "sparkle-effect",
+        "body": [
+            "// Sparkle effect",
+            "if(random8() < ${1:80}) {",
+            "    leds[random16(NUM_LEDS)] += CRGB::White;",
+            "}",
+            "fadeToBlackBy(leds, NUM_LEDS, ${2:4});"
+        ],
+        "description": "Sparkle effect with fade"
+    },
+    "Wave Effect": {
+        "prefix": "wave-effect",
+        "body": [
+            "// Wave effect",
+            "uint8_t wave = beatsin8(${1:10}, 0, NUM_LEDS - 1);",
+            "leds[wave] = ${2:CRGB::Blue};",
+            "fadeToBlackBy(leds, NUM_LEDS, ${3:20});"
+        ],
+        "description": "Simple wave effect"
+    }
+} 

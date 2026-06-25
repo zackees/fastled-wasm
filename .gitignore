@@ -152,7 +152,6 @@ cache/
 dist/
 /fastled/
 logs
-vscode-plugin
 .loop
 
 # Rust build artifacts
