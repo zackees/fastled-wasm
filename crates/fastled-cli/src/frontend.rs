@@ -233,7 +233,13 @@ fn build_dist(source_dir: &Path) -> Result<PathBuf> {
     let marker = dist_dir.join(".esbuild_marker");
     let source_mtime = get_source_mtime(source_dir)?;
 
-    if dist_dir.exists() && marker.exists() {
+    if dist_dir.exists()
+        && marker.exists()
+        // The application entry artifact was renamed from app.js to index.js.
+        // Force one rebuild when an older cached dist is present.
+        && dist_dir.join("index.js").is_file()
+        && !dist_dir.join("app.js").exists()
+    {
         if let Ok(text) = fs::read_to_string(&marker) {
             if let Ok(value) = text.trim().parse::<f64>() {
                 if value >= source_mtime {
@@ -252,7 +258,7 @@ fn build_dist(source_dir: &Path) -> Result<PathBuf> {
     let esbuild = resolve_esbuild()?;
 
     let app_ts = source_dir.join("app.ts");
-    let app_out = dist_dir.join("app.js");
+    let app_out = dist_dir.join("index.js");
     run_esbuild(
         &esbuild,
         source_dir,
@@ -291,7 +297,7 @@ fn build_dist(source_dir: &Path) -> Result<PathBuf> {
     let index_src = source_dir.join("index.html");
     let index_html = fs::read_to_string(&index_src)
         .with_context(|| format!("read {}", index_src.display()))?
-        .replace("./app.ts", "./app.js");
+        .replace("./app.ts", "./index.js");
     fs::write(dist_dir.join("index.html"), index_html)
         .with_context(|| format!("write {}", dist_dir.join("index.html").display()))?;
 
@@ -362,6 +368,39 @@ pub fn copy_frontend_to_output(output_dir: &Path, source_dir: Option<&Path>) -> 
     Ok(())
 }
 
+/// Remove only the default application's generated files from an output
+/// directory. WASM, loader, debug, and sketch-asset artifacts are preserved.
+pub fn remove_app_from_output(output_dir: &Path) -> Result<()> {
+    for name in [
+        "index.js",
+        "index.js.map",
+        "app.js",
+        "app.js.map",
+        "index.html",
+        "index.css",
+        "fastled_background_worker.js",
+        "fastled_background_worker.js.map",
+        "audio_worklet_processor.js",
+        "emscripten.d.ts",
+        "types.d.ts",
+        "jsconfig.json",
+        ".esbuild_marker",
+        ".frontend_hash",
+    ] {
+        let path = output_dir.join(name);
+        if path.is_file() {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove stale app artifact {}", path.display()))?;
+        }
+    }
+    let assets = output_dir.join("assets");
+    if assets.is_dir() {
+        fs::remove_dir_all(&assets)
+            .with_context(|| format!("remove stale app assets {}", assets.display()))?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -414,7 +453,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let root = dir.path();
         write(&root.join("app.ts"), b"// app");
-        write(&root.join("dist").join("app.js"), b"// built");
+        write(&root.join("dist").join("index.js"), b"// built");
         write(&root.join("modules").join("util.ts"), b"// util");
         write(&root.join("mydist").join("note.txt"), b"// kept");
 
@@ -450,7 +489,7 @@ mod tests {
         let source = workspace.path().join("frontend");
         let dist = source.join("dist");
         fs::create_dir_all(&dist).unwrap();
-        write(&dist.join("app.js"), b"// stub app");
+        write(&dist.join("index.js"), b"// stub app");
         write(&dist.join("index.html"), b"<!doctype html><title>t</title>");
         // Marker must satisfy `marker_value >= source_mtime` so build_dist is a
         // no-op. Use a value far in the future so any reasonable source mtime
@@ -459,17 +498,17 @@ mod tests {
 
         let output = TempDir::new().unwrap();
         copy_frontend_to_output(output.path(), Some(&source)).expect("first copy");
-        assert!(output.path().join("app.js").exists());
+        assert!(output.path().join("index.js").exists());
         let hash_after_first = fs::read_to_string(output.path().join(".frontend_hash")).unwrap();
 
         // Touch nothing; second call must be a no-op (marker matches).
-        let app_js_meta_before = fs::metadata(output.path().join("app.js"))
+        let app_js_meta_before = fs::metadata(output.path().join("index.js"))
             .unwrap()
             .modified()
             .unwrap();
         thread::sleep(Duration::from_millis(20));
         copy_frontend_to_output(output.path(), Some(&source)).expect("second copy");
-        let app_js_meta_after = fs::metadata(output.path().join("app.js"))
+        let app_js_meta_after = fs::metadata(output.path().join("index.js"))
             .unwrap()
             .modified()
             .unwrap();
@@ -483,5 +522,27 @@ mod tests {
             app_js_meta_before, app_js_meta_after,
             "files must not be re-copied when the hash marker already matches"
         );
+    }
+
+    #[test]
+    fn remove_app_from_output_preserves_runtime_and_assets_manifest() {
+        let output = TempDir::new().unwrap();
+        write(&output.path().join("index.js"), b"app");
+        write(&output.path().join("index.html"), b"html");
+        write(&output.path().join("index.css"), b"css");
+        write(&output.path().join("fastled.js"), b"loader");
+        write(&output.path().join("fastled.wasm"), b"wasm");
+        write(&output.path().join("sketch_assets.json"), b"[]");
+        write(&output.path().join("assets").join("font.ttf"), b"font");
+
+        remove_app_from_output(output.path()).expect("remove app artifacts");
+
+        assert!(!output.path().join("index.js").exists());
+        assert!(!output.path().join("index.html").exists());
+        assert!(!output.path().join("index.css").exists());
+        assert!(!output.path().join("assets").exists());
+        assert!(output.path().join("fastled.js").exists());
+        assert!(output.path().join("fastled.wasm").exists());
+        assert!(output.path().join("sketch_assets.json").exists());
     }
 }

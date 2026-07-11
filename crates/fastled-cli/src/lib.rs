@@ -134,7 +134,7 @@ pub fn run() -> ExitCode {
     //  - the user did NOT pass --just-compile
     //  - it's not a non-compile command (--init)
     if let Some(ref dir) = cli.directory {
-        if cli.just_compile && cli.init.is_none() {
+        if (cli.just_compile || cli.no_app) && cli.init.is_none() {
             return commands::run_native_just_compile(&cli, dir);
         }
         if !cli.just_compile && cli.init.is_none() {
@@ -198,6 +198,8 @@ mod tests {
             serve_dir: None,
             init: None,
             just_compile: false,
+            no_app: false,
+            link_mode: crate::cli::LinkMode::Static,
             profile: false,
             install: false,
             dry_run: false,

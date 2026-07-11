@@ -356,7 +356,9 @@ export function onModuleLoaded(fastLedLoader) {
     const data = await response.json();
     return data;
   };
-  const filesJsonPromise = fetchJson('files.json');
+  // New builds call this manifest sketch_assets.json. Keep files.json as a
+  // fallback so previously generated sketches remain runnable.
+  const filesJsonPromise = fetchJson('sketch_assets.json').catch(() => fetchJson('files.json'));
   try {
     if (typeof fastLedLoader === 'function') {
       // Load the module
@@ -374,13 +376,13 @@ export function onModuleLoaded(fastLedLoader) {
           }
         };
 
-        // Wait for the files.json to load.
+        // Wait for the sketch asset manifest to load.
         let filesJson = null;
         try {
           filesJson = await filesJsonPromise;
           console.log('Files JSON:', filesJson);
         } catch (error) {
-          console.error('Error fetching files.json:', error);
+          console.error('Error fetching sketch asset manifest:', error);
           filesJson = {};
         }
         await __fastledLoadSetupLoop(instance, state.frameRate, filesJson);

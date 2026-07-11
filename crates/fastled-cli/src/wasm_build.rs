@@ -14,6 +14,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+use crate::cli::LinkMode;
 use crate::{archive, debug_symbols, frontend, install};
 
 /// Receives one build-output line at a time. The second argument is the
@@ -55,6 +56,8 @@ pub struct BuildRequest {
     /// Emit clangd/VS Code configuration into the sketch directory after a
     /// successful build. Off by default; opted in via `fastled --clangd`.
     pub emit_clangd: bool,
+    pub no_app: bool,
+    pub(crate) link_mode: LinkMode,
 }
 
 #[derive(Debug)]
@@ -276,6 +279,119 @@ fn run_status(mut command: Command, label: &str, log: LogSink) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+fn link_wasm_dynamic(
+    fastled_dir: &Path,
+    tools: &ToolPaths,
+    sketch_object: &Path,
+    build_dir: &Path,
+    sketch_cache_dir: &Path,
+    output_js: &Path,
+    mode: BuildMode,
+    log: LogSink,
+) -> Result<()> {
+    let archive = library_archive(build_dir);
+    let cached_js = sketch_cache_dir.join("fastled.js");
+    let cached_wasm = sketch_cache_dir.join("fastled.wasm");
+    let cached_sketch = sketch_cache_dir.join("sketch.wasm");
+    let link_flags = get_link_flags(fastled_dir, mode)?;
+    let mut hash_input = vec!["link-mode=dynamic".to_string()];
+    hash_input.extend(link_flags.iter().cloned());
+    hash_input.push("-sMAIN_MODULE=1".to_string());
+    hash_input.push("-sSIDE_MODULE=1".to_string());
+    let current_flags_hash = format!("{:x}", Sha256::digest(hash_input.join("\n").as_bytes()));
+    let flags_hash_path = sketch_cache_dir.join("link_flags.hash");
+    let output_mtime = cached_js
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .ok();
+    let inputs_are_older = output_mtime.is_some_and(|output_mtime| {
+        [sketch_object, &archive]
+            .iter()
+            .filter_map(|path| path.metadata().ok())
+            .filter_map(|metadata| metadata.modified().ok())
+            .all(|mtime| mtime <= output_mtime)
+    });
+    if cached_js.is_file()
+        && cached_wasm.is_file()
+        && cached_sketch.is_file()
+        && fs::read_to_string(&flags_hash_path)
+            .unwrap_or_default()
+            .trim()
+            == current_flags_hash
+        && inputs_are_older
+    {
+        copy_linked_output(sketch_cache_dir, output_js)?;
+        log("[WASM] Dynamic link output up-to-date", "stdout");
+        return Ok(());
+    }
+
+    let include_flags = vec![
+        format!("-I{}", fastled_dir.join("src").display()),
+        format!(
+            "-I{}",
+            fastled_dir
+                .join("src")
+                .join("platforms")
+                .join("wasm")
+                .display()
+        ),
+        format!(
+            "-I{}",
+            fastled_dir
+                .join("src")
+                .join("platforms")
+                .join("wasm")
+                .join("compiler")
+                .display()
+        ),
+    ];
+
+    log("[WASM] Linking sketch side module...", "stdout");
+    let mut side_args = vec![sketch_object.display().to_string()];
+    side_args.extend(include_flags.iter().cloned());
+    side_args.extend([
+        "-pthread".to_string(),
+        "-sSIDE_MODULE=1".to_string(),
+        "-o".to_string(),
+        cached_sketch.display().to_string(),
+    ]);
+    run_em_link_with_retries(fastled_dir, tools, &side_args, log)?;
+
+    let js_library = fastled_dir
+        .join("src")
+        .join("platforms")
+        .join("wasm")
+        .join("compiler")
+        .join("js_library.js");
+    let mut main_args = vec![
+        archive.display().to_string(),
+        cached_sketch.display().to_string(),
+    ];
+    main_args.extend(include_flags);
+    main_args.extend([
+        format!("--js-library={}", js_library.display()),
+        "-sMAIN_MODULE=1".to_string(),
+        "-sAUTOLOAD_DYLIBS=1".to_string(),
+        "-o".to_string(),
+        cached_js.display().to_string(),
+    ]);
+    main_args.extend(link_flags);
+    // These dynamic-main requirements must come after the shared FastLED
+    // flags, whose static profile intentionally disables them.
+    main_args.extend([
+        "-sINCLUDE_FULL_LIBRARY=1".to_string(),
+        "-sFILESYSTEM=1".to_string(),
+        "-sAUTO_NATIVE_LIBRARIES=1".to_string(),
+    ]);
+
+    log("[WASM] Linking dynamic main WASM module...", "stdout");
+    run_em_link_with_retries(fastled_dir, tools, &main_args, log)?;
+    fs::write(flags_hash_path, current_flags_hash)?;
+    copy_linked_output(sketch_cache_dir, output_js)?;
+    Ok(())
+}
+
 /// Canonicalize and lexically normalize, stripping the Windows `\\?\`
 /// long-path prefix that breaks external tools (meson, Python, emcc).
 /// See `crate::path::canonicalize_normalized` for details.
@@ -304,10 +420,14 @@ fn mode_output_dir(sketch_dir: &Path) -> PathBuf {
     sketch_dir.join("fastled_js")
 }
 
-fn build_dir(fastled_dir: &Path, mode: BuildMode) -> PathBuf {
+fn build_dir(fastled_dir: &Path, mode: BuildMode, link_mode: LinkMode) -> PathBuf {
+    let suffix = match link_mode {
+        LinkMode::Static => String::new(),
+        LinkMode::Dynamic => "-dynamic".to_string(),
+    };
     fastled_dir
         .join(".build")
-        .join(format!("meson-wasm-{}", mode.as_str()))
+        .join(format!("meson-wasm-{}{}", mode.as_str(), suffix))
 }
 
 pub(crate) fn sketch_cache_dir(example_dir: &Path) -> PathBuf {
@@ -591,6 +711,7 @@ fn ensure_meson_configured(
     tools: &ToolPaths,
     build_dir: &Path,
     mode: BuildMode,
+    link_mode: LinkMode,
     force: bool,
     log: LogSink,
 ) -> Result<()> {
@@ -618,6 +739,10 @@ fn ensure_meson_configured(
         .arg(format!("-Dbuild_mode={}", mode.as_str()));
     for (key, value) in build_env(tools) {
         command.env(key, value);
+    }
+    if link_mode == LinkMode::Dynamic {
+        command.env("CFLAGS", "-fPIC");
+        command.env("CXXFLAGS", "-fPIC");
     }
     log(
         &format!("[WASM] Configuring meson (mode: {})...", mode.as_str()),
@@ -827,6 +952,7 @@ fn compile_sketch(
     sketch_cache_dir: &Path,
     example_dir: &Path,
     mode: BuildMode,
+    link_mode: LinkMode,
     dwarf_roots: &DwarfPathRoots,
     log: LogSink,
 ) -> Result<PathBuf> {
@@ -836,7 +962,9 @@ fn compile_sketch(
     let ino = sketch_ino_file(example_dir)?;
     let compile_flags = get_sketch_compile_flags(fastled_dir, mode, Some(dwarf_roots))?;
     let flags_hash_path = sketch_cache_dir.join("sketch_compile_flags.hash");
-    let current_flags_hash = format!("{:x}", Sha256::digest(compile_flags.join("\n").as_bytes()));
+    let mut hash_input = compile_flags.join("\n");
+    hash_input.push_str(&format!("\nlink-mode={link_mode:?}"));
+    let current_flags_hash = format!("{:x}", Sha256::digest(hash_input.as_bytes()));
     if object.is_file() {
         let object_mtime = object.metadata()?.modified()?;
         let inputs = [wrapper, &ino, &archive];
@@ -862,6 +990,9 @@ fn compile_sketch(
         object.display().to_string(),
     ];
     args.extend(compile_flags);
+    if link_mode == LinkMode::Dynamic {
+        args.push("-fPIC".to_string());
+    }
     args.push(format!("-I{}", fastled_dir.join("src").display()));
     args.push(format!(
         "-I{}",
@@ -901,11 +1032,31 @@ fn link_wasm(
     sketch_cache_dir: &Path,
     output_js: &Path,
     mode: BuildMode,
+    link_mode: LinkMode,
     log: LogSink,
 ) -> Result<()> {
+    if link_mode == LinkMode::Dynamic {
+        return link_wasm_dynamic(
+            fastled_dir,
+            tools,
+            sketch_object,
+            build_dir,
+            sketch_cache_dir,
+            output_js,
+            mode,
+            log,
+        );
+    }
     let archive = library_archive(build_dir);
     let cached_js = sketch_cache_dir.join("fastled.js");
     let cached_wasm = sketch_cache_dir.join("fastled.wasm");
+    // Static and dynamic modes share the sketch cache directory. Never let a
+    // side module from a previous dynamic build leak into static output.
+    let cached_sketch = sketch_cache_dir.join("sketch.wasm");
+    if cached_sketch.is_file() {
+        fs::remove_file(&cached_sketch)
+            .with_context(|| format!("remove stale {}", cached_sketch.display()))?;
+    }
     let link_flags = get_link_flags(fastled_dir, mode)?;
     let flags_hash_path = sketch_cache_dir.join("link_flags.hash");
     let current_flags_hash = format!("{:x}", Sha256::digest(link_flags.join("\n").as_bytes()));
@@ -1013,6 +1164,7 @@ fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
     for name in [
         "fastled.js",
         "fastled.wasm",
+        "sketch.wasm",
         "fastled.wasm.map",
         "fastled.js.map",
     ] {
@@ -1031,8 +1183,13 @@ fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
 fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
     let mut files = Vec::<serde_json::Value>::new();
     collect_data_files(example_dir, example_dir, &mut files)?;
+    let legacy = output_dir.join("files.json");
+    if legacy.is_file() {
+        fs::remove_file(&legacy)
+            .with_context(|| format!("remove legacy asset manifest {}", legacy.display()))?;
+    }
     fs::write(
-        output_dir.join("files.json"),
+        output_dir.join("sketch_assets.json"),
         serde_json::to_string_pretty(&files)?,
     )?;
     Ok(())
@@ -1080,6 +1237,8 @@ pub(crate) fn resolve_fastled_dir_for_sketch(sketch_dir: &Path) -> Result<PathBu
         fastled_path: None,
         force_clean: false,
         emit_clangd: false,
+        no_app: false,
+        link_mode: LinkMode::Static,
     };
     let (fastled_dir, _cleanup) = resolve_fastled_dir(&request)?;
     Ok(normalize_path(&fastled_dir))
@@ -1174,21 +1333,26 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
     let sketch_start = std::time::Instant::now();
     let strategy = if output_dir.join("fastled.js").is_file()
         && output_dir.join("fastled.wasm").is_file()
+        && (request.link_mode == LinkMode::Static || output_dir.join("sketch.wasm").is_file())
         && !request.force_clean
     {
-        "incremental"
+        match request.link_mode {
+            LinkMode::Static => "incremental-static",
+            LinkMode::Dynamic => "incremental-dynamic",
+        }
     } else {
         "cold"
     }
     .to_string();
 
     let build_result = (|| -> Result<()> {
-        let build_dir = build_dir(&fastled_dir, request.build_mode);
+        let build_dir = build_dir(&fastled_dir, request.build_mode, request.link_mode);
         ensure_meson_configured(
             &fastled_dir,
             &tools,
             &build_dir,
             request.build_mode,
+            request.link_mode,
             request.force_clean,
             log,
         )?;
@@ -1216,6 +1380,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &sketch_cache,
             &example_dir,
             request.build_mode,
+            request.link_mode,
             &sketch_dwarf_roots,
             log,
         )?;
@@ -1228,9 +1393,14 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &sketch_cache,
             &output_js,
             request.build_mode,
+            request.link_mode,
             log,
         )?;
-        frontend::copy_frontend_to_output(&output_dir, None)?;
+        if request.no_app {
+            frontend::remove_app_from_output(&output_dir)?;
+        } else {
+            frontend::copy_frontend_to_output(&output_dir, None)?;
+        }
         generate_manifest(&example_dir, &output_dir)?;
         let debug_config = debug_symbols::load_debug_symbol_config(
             example_dir.clone(),
@@ -1537,5 +1707,44 @@ link_flags = []
         fs::remove_file(cache.join("fastled.wasm.map")).unwrap();
         copy_linked_output(&cache, &output).unwrap();
         assert!(!output.parent().unwrap().join("fastled.wasm.map").exists());
+    }
+
+    #[test]
+    fn copy_linked_output_copies_dynamic_side_module_and_removes_it_when_stale() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = tmp.path().join("cache");
+        let output = tmp.path().join("out").join("fastled.js");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(cache.join("fastled.js"), "js").unwrap();
+        fs::write(cache.join("fastled.wasm"), "wasm").unwrap();
+        fs::write(cache.join("sketch.wasm"), "side").unwrap();
+
+        copy_linked_output(&cache, &output).unwrap();
+        assert_eq!(
+            fs::read_to_string(output.parent().unwrap().join("sketch.wasm")).unwrap(),
+            "side"
+        );
+
+        fs::remove_file(cache.join("sketch.wasm")).unwrap();
+        copy_linked_output(&cache, &output).unwrap();
+        assert!(!output.parent().unwrap().join("sketch.wasm").exists());
+    }
+
+    #[test]
+    fn generate_manifest_uses_new_name_and_removes_legacy_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let example = tmp.path().join("Sketch");
+        let output = example.join("fastled_js");
+        fs::create_dir_all(example.join("data")).unwrap();
+        fs::create_dir_all(&output).unwrap();
+        fs::write(example.join("data").join("config.json"), "{}").unwrap();
+        fs::write(output.join("files.json"), "legacy").unwrap();
+
+        generate_manifest(&example, &output).unwrap();
+
+        assert!(!output.join("files.json").exists());
+        let manifest = fs::read_to_string(output.join("sketch_assets.json")).unwrap();
+        assert!(manifest.contains("config.json"));
     }
 }

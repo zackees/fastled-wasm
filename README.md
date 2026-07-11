@@ -70,6 +70,8 @@ Useful flags:
 | Flag | Description |
 |------|-------------|
 | `--just-compile` | Compile and exit without opening a browser or watching files |
+| `--no-app` | Emit the JavaScript API/WASM artifacts without the default `index.js` application |
+| `--link-mode <static|dynamic>` | Static linking is the default; dynamic mode emits and load-links `sketch.wasm` |
 | `--debug` | Build with debug-friendly compiler settings |
 | `--quick` | Default build mode |
 | `--release` | Optimized build (~1/3 smaller binary) |
@@ -91,7 +93,7 @@ If you launch `fastled` inside the FastLED repo with `--fastled-path`, changes t
 
 ### Big Data in `/data` Directory
 
-Large files (e.g. video) in a sketch's `data/` directory are handled specially to avoid round-tripping blobs. The WASM compiler generates a `files.json` manifest for an emulated SD card system mounted at `/data/`. Files named `*.json`, `*.csv`, `*.txt` are injected before `setup()` runs; all others are streamed asynchronously at runtime.
+Large files (e.g. video) in a sketch's `data/` directory are handled specially to avoid round-tripping blobs. The WASM compiler generates a `sketch_assets.json` manifest for an emulated SD card system mounted at `/data/`. Files named `*.json`, `*.csv`, `*.txt` are injected before `setup()` runs; all others are streamed asynchronously at runtime. The loader accepts legacy `files.json` output when running an older generated sketch.
 
 For an example see `examples/SdCard` in the FastLED repo.
 

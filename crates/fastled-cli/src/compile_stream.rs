@@ -6,7 +6,7 @@ use crate::debug_symbols;
 use crate::install;
 use crate::server;
 
-pub(crate) fn ensure_compile_prerequisites() -> Result<(), String> {
+pub(crate) fn ensure_compile_prerequisites(include_app: bool) -> Result<(), String> {
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
@@ -26,12 +26,14 @@ pub(crate) fn ensure_compile_prerequisites() -> Result<(), String> {
             return Err(format!("emscripten toolchain install failed: {e:#}"));
         }
     }
-    match install::ensure_esbuild_installed() {
-        Ok(esbuild_path) => {
-            std::env::set_var("FASTLED_ESBUILD_PATH", &esbuild_path);
-        }
-        Err(e) => {
-            return Err(format!("esbuild install failed: {e:#}"));
+    if include_app {
+        match install::ensure_esbuild_installed() {
+            Ok(esbuild_path) => {
+                std::env::set_var("FASTLED_ESBUILD_PATH", &esbuild_path);
+            }
+            Err(e) => {
+                return Err(format!("esbuild install failed: {e:#}"));
+            }
         }
     }
     Ok(())
@@ -182,9 +184,10 @@ pub(crate) fn report_build_outcome(
     output_dir: &Path,
     tx: &tokio::sync::broadcast::Sender<String>,
     build_ok: bool,
+    app_required: bool,
 ) -> bool {
     let index_exists = output_dir.join("index.html").is_file();
-    if build_ok && index_exists {
+    if build_ok && (!app_required || index_exists) {
         write_build_status(output_dir, "success", "Done");
         send_sse(
             tx,
@@ -192,7 +195,7 @@ pub(crate) fn report_build_outcome(
         );
         return true;
     }
-    let message = if build_ok {
+    let message = if build_ok && app_required {
         "Build completed but no index.html was produced"
     } else {
         "Compilation failed"
@@ -227,6 +230,8 @@ pub(crate) fn run_native_compile_streaming(
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean,
         emit_clangd: cli.clangd,
+        no_app: cli.no_app,
+        link_mode: cli.link_mode,
     };
 
     let log = |line: &str, stream: &str| emit_build_log(tx, line, stream);
@@ -286,13 +291,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
 
-        assert!(!report_build_outcome(dir.path(), &tx, true));
+        assert!(!report_build_outcome(dir.path(), &tx, true, true));
         assert!(read_status(dir.path()).contains("\"error\""));
         let event = rx.try_recv().unwrap();
         assert!(event.contains("\"status\":\"error\""), "got: {event}");
 
         std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
-        assert!(report_build_outcome(dir.path(), &tx, true));
+        assert!(report_build_outcome(dir.path(), &tx, true, true));
         assert!(read_status(dir.path()).contains("\"success\""));
         let event = rx.try_recv().unwrap();
         assert!(event.contains("\"status\":\"success\""), "got: {event}");
@@ -304,9 +309,20 @@ mod tests {
         std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
         let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
 
-        assert!(!report_build_outcome(dir.path(), &tx, false));
+        assert!(!report_build_outcome(dir.path(), &tx, false, true));
         assert!(read_status(dir.path()).contains("\"error\""));
         let event = rx.try_recv().unwrap();
         assert!(event.contains("Compilation failed"), "got: {event}");
+    }
+
+    #[test]
+    fn report_build_outcome_allows_success_without_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+
+        assert!(report_build_outcome(dir.path(), &tx, true, false));
+        assert!(read_status(dir.path()).contains("\"success\""));
+        let event = rx.try_recv().unwrap();
+        assert!(event.contains("\"status\":\"success\""), "got: {event}");
     }
 }
