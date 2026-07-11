@@ -36,7 +36,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     // Ensure the emscripten + esbuild toolchains are installed before invoking
     // the native Rust build backend. The backend consumes the Rust-installed
     // directories via these environment variables.
-    if let Err(message) = ensure_compile_prerequisites() {
+    if let Err(message) = ensure_compile_prerequisites(true) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }
@@ -96,7 +96,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
 
         let success =
             run_native_compile_streaming(cli, &sketch_dir, cli.purge, &tx, &debug_symbols);
-        report_build_outcome(&output_dir, &tx, success);
+        report_build_outcome(&output_dir, &tx, success, !cli.no_app);
 
         // --- Watch mode ---------------------------------------------------------
         println!("\nWill recompile on sketch changes or space bar press.");
@@ -143,7 +143,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
 
                 let success =
                     run_native_compile_streaming(cli, &sketch_dir, false, &tx, &debug_symbols);
-                if report_build_outcome(&output_dir, &tx, success) {
+                if report_build_outcome(&output_dir, &tx, success, !cli.no_app) {
                     println!("Recompilation successful!");
                 } else {
                     eprintln!("Recompilation failed.");
@@ -284,7 +284,7 @@ pub(crate) fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
 }
 
 pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
-    if let Err(message) = ensure_compile_prerequisites() {
+    if let Err(message) = ensure_compile_prerequisites(!cli.no_app) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }
@@ -300,6 +300,8 @@ pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean: cli.purge,
         emit_clangd: cli.clangd,
+        no_app: cli.no_app,
+        link_mode: cli.link_mode,
     };
 
     let result = match build::run_build(&request) {
@@ -416,7 +418,7 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
         eprintln!("fastled: --internal-dwarf-smoke must be run with --debug");
         return ExitCode::FAILURE;
     }
-    if let Err(message) = ensure_compile_prerequisites() {
+    if let Err(message) = ensure_compile_prerequisites(true) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }
@@ -431,6 +433,8 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
         fastled_path: cli.fastled_path.as_ref().map(PathBuf::from),
         force_clean: cli.purge,
         emit_clangd: cli.clangd,
+        no_app: false,
+        link_mode: crate::cli::LinkMode::Static,
     };
     let result = match build::run_build(&request) {
         Ok(result) => result,

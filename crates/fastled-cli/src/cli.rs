@@ -1,4 +1,14 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+/// How the sketch code is linked into the generated WASM program.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(crate) enum LinkMode {
+    /// Statically link the sketch into fastled.wasm.
+    #[default]
+    Static,
+    /// Emit sketch.wasm as an Emscripten side module loaded by fastled.js.
+    Dynamic,
+}
 
 /// FastLED WASM compilation CLI.
 ///
@@ -31,6 +41,15 @@ pub(crate) struct Cli {
     /// Just compile; skip opening the browser and watching for changes.
     #[arg(long)]
     pub(crate) just_compile: bool,
+
+    /// Omit the default index.js application and emit only the JavaScript API
+    /// plus its WASM/runtime artifacts.
+    #[arg(long)]
+    pub(crate) no_app: bool,
+
+    /// Select static linking (the default) or Emscripten side-module linking.
+    #[arg(long, value_enum, default_value_t = LinkMode::Static)]
+    pub(crate) link_mode: LinkMode,
 
     /// Enable profiling of the C++ build system used for WASM compilation.
     #[arg(long)]
@@ -150,5 +169,24 @@ mod tests {
         assert!(!cli.clangd);
         let cli = Cli::parse_from(["fastled", "--clangd", "sketch"]);
         assert!(cli.clangd);
+    }
+
+    #[test]
+    fn api_and_dynamic_linking_flags_parse_together() {
+        let cli = Cli::parse_from([
+            "fastled",
+            "sketch",
+            "--no-app",
+            "--link-mode=dynamic",
+        ]);
+        assert!(cli.no_app);
+        assert_eq!(cli.link_mode, LinkMode::Dynamic);
+    }
+
+    #[test]
+    fn static_linking_is_the_default() {
+        let cli = Cli::parse_from(["fastled", "sketch"]);
+        assert!(!cli.no_app);
+        assert_eq!(cli.link_mode, LinkMode::Static);
     }
 }
