@@ -173,12 +173,7 @@ mod tests {
 
     #[test]
     fn api_and_dynamic_linking_flags_parse_together() {
-        let cli = Cli::parse_from([
-            "fastled",
-            "sketch",
-            "--no-app",
-            "--link-mode=dynamic",
-        ]);
+        let cli = Cli::parse_from(["fastled", "sketch", "--no-app", "--link-mode=dynamic"]);
         assert!(cli.no_app);
         assert_eq!(cli.link_mode, LinkMode::Dynamic);
     }

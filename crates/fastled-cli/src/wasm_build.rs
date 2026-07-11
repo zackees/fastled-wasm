@@ -301,7 +301,10 @@ fn link_wasm_dynamic(
     hash_input.push("-sSIDE_MODULE=1".to_string());
     let current_flags_hash = format!("{:x}", Sha256::digest(hash_input.join("\n").as_bytes()));
     let flags_hash_path = sketch_cache_dir.join("link_flags.hash");
-    let output_mtime = cached_js.metadata().and_then(|metadata| metadata.modified()).ok();
+    let output_mtime = cached_js
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .ok();
     let inputs_are_older = output_mtime.is_some_and(|output_mtime| {
         [sketch_object, &archive]
             .iter()
@@ -327,7 +330,11 @@ fn link_wasm_dynamic(
         format!("-I{}", fastled_dir.join("src").display()),
         format!(
             "-I{}",
-            fastled_dir.join("src").join("platforms").join("wasm").display()
+            fastled_dir
+                .join("src")
+                .join("platforms")
+                .join("wasm")
+                .display()
         ),
         format!(
             "-I{}",
@@ -357,7 +364,10 @@ fn link_wasm_dynamic(
         .join("wasm")
         .join("compiler")
         .join("js_library.js");
-    let mut main_args = vec![archive.display().to_string(), cached_sketch.display().to_string()];
+    let mut main_args = vec![
+        archive.display().to_string(),
+        cached_sketch.display().to_string(),
+    ];
     main_args.extend(include_flags);
     main_args.extend([
         format!("--js-library={}", js_library.display()),
@@ -1323,8 +1333,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
     let sketch_start = std::time::Instant::now();
     let strategy = if output_dir.join("fastled.js").is_file()
         && output_dir.join("fastled.wasm").is_file()
-        && (request.link_mode == LinkMode::Static
-            || output_dir.join("sketch.wasm").is_file())
+        && (request.link_mode == LinkMode::Static || output_dir.join("sketch.wasm").is_file())
         && !request.force_clean
     {
         match request.link_mode {
