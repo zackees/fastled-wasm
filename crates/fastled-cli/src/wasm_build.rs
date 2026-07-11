@@ -412,6 +412,7 @@ fn link_wasm_dynamic(
 fn dynamic_wasm_bigint_flag(link_flags: &[String]) -> String {
     link_flags
         .iter()
+        .rev()
         .find(|flag| flag.starts_with("-sWASM_BIGINT="))
         .cloned()
         .unwrap_or_else(|| "-sWASM_BIGINT=1".to_string())
@@ -1610,6 +1611,13 @@ mod tests {
     fn dynamic_linking_makes_wasm_bigint_abi_explicit() {
         assert_eq!(
             dynamic_wasm_bigint_flag(&["-sWASM_BIGINT=0".to_string()]),
+            "-sWASM_BIGINT=0"
+        );
+        assert_eq!(
+            dynamic_wasm_bigint_flag(&[
+                "-sWASM_BIGINT=1".to_string(),
+                "-sWASM_BIGINT=0".to_string(),
+            ]),
             "-sWASM_BIGINT=0"
         );
         assert_eq!(dynamic_wasm_bigint_flag(&[]), "-sWASM_BIGINT=1");
