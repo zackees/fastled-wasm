@@ -363,15 +363,9 @@ fn link_wasm_dynamic(
     log("[WASM] Linking sketch side module...", "stdout");
     let mut side_args = vec![sketch_object.display().to_string()];
     side_args.extend(include_flags.iter().cloned());
-    side_args.extend([
-        "-pthread".to_string(),
-        "-sSIDE_MODULE=1".to_string(),
-    ]);
+    side_args.extend(["-pthread".to_string(), "-sSIDE_MODULE=1".to_string()]);
     side_args.extend(side_module_link_flags);
-    side_args.extend([
-        "-o".to_string(),
-        cached_sketch.display().to_string(),
-    ]);
+    side_args.extend(["-o".to_string(), cached_sketch.display().to_string()]);
     run_em_link_with_retries(fastled_dir, tools, &side_args, log)?;
 
     let js_library = fastled_dir
