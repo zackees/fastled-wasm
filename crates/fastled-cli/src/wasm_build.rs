@@ -295,10 +295,23 @@ fn link_wasm_dynamic(
     let cached_wasm = sketch_cache_dir.join("fastled.wasm");
     let cached_sketch = sketch_cache_dir.join("sketch.wasm");
     let link_flags = get_link_flags(fastled_dir, mode)?;
+    // Dynamic linking requires an identical ABI for the main and side
+    // modules. Emscripten's default WASM_BIGINT behavior differs between
+    // ordinary and SIDE_MODULE links, so make the setting explicit on both
+    // sides. This prevents i64 imports from failing instantiation with an
+    // "imported function does not match the expected type" LinkError.
+    let wasm_bigint_flag = dynamic_wasm_bigint_flag(&link_flags);
+    let side_module_link_flags = vec![wasm_bigint_flag.clone()];
     let mut hash_input = vec!["link-mode=dynamic".to_string()];
     hash_input.extend(link_flags.iter().cloned());
     hash_input.push("-sMAIN_MODULE=1".to_string());
     hash_input.push("-sSIDE_MODULE=1".to_string());
+    hash_input.push(format!("main-module:{wasm_bigint_flag}"));
+    hash_input.extend(
+        side_module_link_flags
+            .iter()
+            .map(|flag| format!("side-module:{flag}")),
+    );
     let current_flags_hash = format!("{:x}", Sha256::digest(hash_input.join("\n").as_bytes()));
     let flags_hash_path = sketch_cache_dir.join("link_flags.hash");
     let output_mtime = cached_js
@@ -353,6 +366,9 @@ fn link_wasm_dynamic(
     side_args.extend([
         "-pthread".to_string(),
         "-sSIDE_MODULE=1".to_string(),
+    ]);
+    side_args.extend(side_module_link_flags);
+    side_args.extend([
         "-o".to_string(),
         cached_sketch.display().to_string(),
     ]);
@@ -383,6 +399,7 @@ fn link_wasm_dynamic(
         "-sINCLUDE_FULL_LIBRARY=1".to_string(),
         "-sFILESYSTEM=1".to_string(),
         "-sAUTO_NATIVE_LIBRARIES=1".to_string(),
+        wasm_bigint_flag,
     ]);
 
     log("[WASM] Linking dynamic main WASM module...", "stdout");
@@ -390,6 +407,14 @@ fn link_wasm_dynamic(
     fs::write(flags_hash_path, current_flags_hash)?;
     copy_linked_output(sketch_cache_dir, output_js)?;
     Ok(())
+}
+
+fn dynamic_wasm_bigint_flag(link_flags: &[String]) -> String {
+    link_flags
+        .iter()
+        .find(|flag| flag.starts_with("-sWASM_BIGINT="))
+        .cloned()
+        .unwrap_or_else(|| "-sWASM_BIGINT=1".to_string())
 }
 
 /// Canonicalize and lexically normalize, stripping the Windows `\\?\`
@@ -1579,6 +1604,15 @@ mod tests {
         assert_eq!(BuildMode::Quick.as_str(), "quick");
         assert_eq!(BuildMode::Debug.as_str(), "debug");
         assert_eq!(BuildMode::Release.as_str(), "release");
+    }
+
+    #[test]
+    fn dynamic_linking_makes_wasm_bigint_abi_explicit() {
+        assert_eq!(
+            dynamic_wasm_bigint_flag(&["-sWASM_BIGINT=0".to_string()]),
+            "-sWASM_BIGINT=0"
+        );
+        assert_eq!(dynamic_wasm_bigint_flag(&[]), "-sWASM_BIGINT=1");
     }
 
     #[test]
