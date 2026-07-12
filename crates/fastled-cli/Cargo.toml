@@ -45,6 +45,7 @@ dirs = { workspace = true }
 toml = { workspace = true }
 tauri = { workspace = true, optional = true }
 tempfile = "3"
+zccache-fingerprint = { workspace = true }
 
 [build-dependencies]
 indexmap = { version = "1.9.3", features = ["std"] }

@@ -171,15 +171,31 @@ fn multipart_parts(version_info: &VersionInfo) -> Option<&[PartRef]> {
 }
 
 #[cfg(unix)]
-fn ensure_bin_executables(install_dir: &Path) -> Result<()> {
+fn ensure_toolchain_executables(install_dir: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
-    let bin_dir = install_dir.join("bin");
-    if !bin_dir.is_dir() {
-        return Ok(());
+    fn add_execute_bits(path: &Path) -> Result<()> {
+        let metadata =
+            fs::metadata(path).with_context(|| format!("read metadata for {}", path.display()))?;
+        if !metadata.is_file() {
+            return Ok(());
+        }
+        let mut permissions = metadata.permissions();
+        let mode = permissions.mode();
+        if mode & 0o111 == 0 {
+            permissions.set_mode(mode | 0o111);
+            fs::set_permissions(path, permissions)
+                .with_context(|| format!("set executable bit on {}", path.display()))?;
+        }
+        Ok(())
     }
 
-    let mut pending = vec![bin_dir];
+    let bin_dir = install_dir.join("bin");
+    let mut pending = if bin_dir.is_dir() {
+        vec![bin_dir]
+    } else {
+        Vec::new()
+    };
     while let Some(dir) = pending.pop() {
         for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
             let entry = entry.with_context(|| format!("read entry in {}", dir.display()))?;
@@ -194,13 +210,30 @@ fn ensure_bin_executables(install_dir: &Path) -> Result<()> {
                 continue;
             }
 
-            let mut permissions = metadata.permissions();
-            let mode = permissions.mode();
-            if mode & 0o111 == 0 {
-                permissions.set_mode(mode | 0o111);
-                fs::set_permissions(&path, permissions)
-                    .with_context(|| format!("set executable bit on {}", path.display()))?;
-            }
+            add_execute_bits(&path)?;
+        }
+    }
+
+    // Emscripten invokes these extensionless launchers directly while
+    // building system libraries. They live outside bin/, and some published
+    // archives lose their Unix mode bits.
+    for name in [
+        "em++",
+        "emar",
+        "embuilder",
+        "emcc",
+        "emcmake",
+        "emconfigure",
+        "emmake",
+        "emnm",
+        "emranlib",
+        "emrun",
+        "emsize",
+        "emstrip",
+    ] {
+        let launcher = install_dir.join("emscripten").join(name);
+        if launcher.exists() {
+            add_execute_bits(&launcher)?;
         }
     }
 
@@ -208,7 +241,7 @@ fn ensure_bin_executables(install_dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn ensure_bin_executables(_install_dir: &Path) -> Result<()> {
+fn ensure_toolchain_executables(_install_dir: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -236,6 +269,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let install_dir = install_base.join(&version);
     let done_file = install_dir.join("done.txt");
     if done_file.exists() {
+        ensure_toolchain_executables(&install_dir)?;
         return Ok(install_dir);
     }
 
@@ -274,7 +308,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     }
     fs::create_dir_all(&staging)?;
     archive::extract_tar_zst(&archive_path, &staging)?;
-    ensure_bin_executables(&staging)?;
+    ensure_toolchain_executables(&staging)?;
 
     fs::write(staging.join("done.txt"), "ok\n")?;
 
@@ -1271,7 +1305,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn ensure_bin_executables_restores_unix_execute_bits() {
+    fn ensure_toolchain_executables_restores_unix_execute_bits() {
         use std::os::unix::fs::PermissionsExt;
 
         let temp = tempfile::tempdir().expect("tempdir");
@@ -1280,14 +1314,23 @@ mod tests {
         let tool = bin_dir.join("llvm-ar");
         fs::write(&tool, b"#!/bin/sh\n").expect("write tool");
 
-        let mut permissions = fs::metadata(&tool).expect("metadata").permissions();
-        permissions.set_mode(0o644);
-        fs::set_permissions(&tool, permissions).expect("clear executable bit");
+        let emscripten_dir = temp.path().join("emscripten");
+        fs::create_dir_all(&emscripten_dir).expect("create emscripten");
+        let launcher = emscripten_dir.join("emcc");
+        fs::write(&launcher, b"#!/bin/sh\n").expect("write launcher");
 
-        ensure_bin_executables(temp.path()).expect("restore executable bits");
+        for path in [&tool, &launcher] {
+            let mut permissions = fs::metadata(path).expect("metadata").permissions();
+            permissions.set_mode(0o644);
+            fs::set_permissions(path, permissions).expect("clear executable bit");
+        }
 
-        let mode = fs::metadata(&tool).expect("metadata").permissions().mode();
-        assert_ne!(mode & 0o111, 0);
+        ensure_toolchain_executables(temp.path()).expect("restore executable bits");
+
+        for path in [&tool, &launcher] {
+            let mode = fs::metadata(path).expect("metadata").permissions().mode();
+            assert_ne!(mode & 0o111, 0);
+        }
     }
 
     /// Regression for issue #111: the win/x86_64 manifest publishes version

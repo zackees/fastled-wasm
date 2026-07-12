@@ -74,6 +74,27 @@ jobs:
           FASTLED_CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
         run: node ci/runtime_stack_smoke.mjs
 
+      - name: Dynamic runtime and loader smoke
+        env:
+          FASTLED_CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          fastled_bin="$PWD/target/release/fastled"
+          sketch_dir="$workdir/Blink"
+          "$fastled_bin" --init Blink --branch master --no-interactive "$workdir"
+          mkdir -p "$sketch_dir/data"
+          printf '{"dynamic":true}\n' > "$sketch_dir/data/config.json"
+
+          "$fastled_bin" --just-compile --quick --link-mode dynamic --no-interactive "$sketch_dir"
+          node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js"
+
+          mv "$sketch_dir/fastled_js/sketch_assets.json" "$sketch_dir/fastled_js/files.json"
+          node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js"
+
+          "$fastled_bin" --just-compile --quick --link-mode dynamic --no-app --no-interactive "$sketch_dir"
+          node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js" --no-app
+
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4

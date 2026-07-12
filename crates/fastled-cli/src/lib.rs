@@ -12,6 +12,9 @@ mod commands;
 mod compile_stream;
 pub mod debug_symbols;
 mod dwarf_smoke;
+mod dynamic_cache;
+#[cfg(test)]
+mod dynamic_cache_matrix_tests;
 pub mod frontend;
 pub mod install;
 mod install_unlock;
