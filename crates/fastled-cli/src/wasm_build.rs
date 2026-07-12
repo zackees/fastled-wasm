@@ -337,6 +337,40 @@ fn direct_cflags_key(toolchain_fingerprint: &str, driver_args: &[String]) -> Str
     dynamic_cache::fingerprint_values(values.iter().map(|value| value.as_bytes()))
 }
 
+/// Remove options consumed by the Emscripten Python driver before invoking
+/// clang. `em++ --cflags` supplies their backend effects; forwarding the
+/// original driver-only spelling as well makes direct clang reject otherwise
+/// valid configurations such as debug mode's `-gsource-map`.
+fn direct_clang_compile_args(args: &[String]) -> Vec<String> {
+    let mut output = Vec::with_capacity(args.len());
+    let mut skip_next = false;
+    for argument in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if argument == "-s" || argument == "--source-map-base" {
+            skip_next = true;
+            continue;
+        }
+        let emscripten_setting = argument
+            .strip_prefix("-s")
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|first| first.is_ascii_uppercase());
+        if emscripten_setting
+            || matches!(
+                argument.as_str(),
+                "-gsource-map" | "--profiling" | "--profiling-funcs"
+            )
+            || argument.starts_with("--source-map-base=")
+        {
+            continue;
+        }
+        output.push(argument.clone());
+    }
+    output
+}
+
 /// Ask the active Emscripten driver for the backend flags it would pass to
 /// clang, then persist them by toolchain + driver arguments. This keeps the
 /// supported `em++ --cflags` contract while removing Python startup from warm
@@ -1427,7 +1461,7 @@ fn compile_sketch(
             Ok(flags) => {
                 let identity =
                     dynamic_cache::fingerprint_values(flags.iter().map(|flag| flag.as_bytes()));
-                (Some(flags), None, format!("direct-clang-v1:{identity}"))
+                (Some(flags), None, format!("direct-clang-v2:{identity}"))
             }
             Err(error) => (
                 None,
@@ -1512,7 +1546,7 @@ fn compile_sketch(
         command
             .current_dir(fastled_dir)
             .args(backend_flags)
-            .args(&args);
+            .args(direct_clang_compile_args(&args));
         run_status(command, "clang++ sketch compile", log)
     } else {
         Err(anyhow::anyhow!(
@@ -2347,6 +2381,31 @@ mod tests {
         assert_ne!(
             baseline,
             direct_cflags_key("toolchain-a", &["-fPIC".to_string()])
+        );
+    }
+
+    #[test]
+    fn direct_clang_drops_driver_only_debug_and_setting_flags() {
+        let filtered = direct_clang_compile_args(&[
+            "-c".to_string(),
+            "wrapper.cpp".to_string(),
+            "-gsource-map".to_string(),
+            "-sASSERTIONS=1".to_string(),
+            "--profiling-funcs".to_string(),
+            "--source-map-base".to_string(),
+            "https://example.invalid/separate/".to_string(),
+            "--source-map-base=https://example.invalid/".to_string(),
+            "-std=c++20".to_string(),
+            "-fmodule-file=wasm_pch.h.pcm".to_string(),
+        ]);
+        assert_eq!(
+            filtered,
+            [
+                "-c",
+                "wrapper.cpp",
+                "-std=c++20",
+                "-fmodule-file=wasm_pch.h.pcm"
+            ]
         );
     }
 
