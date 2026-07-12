@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::cli::LinkMode;
@@ -83,6 +83,11 @@ struct ToolPaths {
     emcc: PathBuf,
     empp: PathBuf,
     emar: PathBuf,
+    clangpp: PathBuf,
+    wasm_ld: PathBuf,
+    llvm_objcopy: PathBuf,
+    wasm_finalize: PathBuf,
+    emscripten_version: String,
     python: PathBuf,
 }
 
@@ -91,6 +96,8 @@ struct BuildFingerprints {
     fastled_source: String,
     toolchain: String,
     library: String,
+    source_duration_secs: f64,
+    toolchain_duration_secs: f64,
 }
 
 #[derive(Debug)]
@@ -106,8 +113,26 @@ impl BuildFingerprints {
         mode: BuildMode,
         link_mode: LinkMode,
     ) -> Result<Self> {
-        let fastled_source = compute_source_file_hash(fastled_dir)?;
-        let toolchain = toolchain_fingerprint(tools)?;
+        let ((fastled_source, source_duration_secs), (toolchain, toolchain_duration_secs)) =
+            std::thread::scope(|scope| {
+                let source = scope.spawn(|| {
+                    let started = std::time::Instant::now();
+                    compute_source_file_hash(fastled_dir)
+                        .map(|value| (value, started.elapsed().as_secs_f64()))
+                });
+                let toolchain = scope.spawn(|| {
+                    let started = std::time::Instant::now();
+                    toolchain_fingerprint(tools)
+                        .map(|value| (value, started.elapsed().as_secs_f64()))
+                });
+                let source = source
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("FastLED fingerprint worker panicked"))??;
+                let toolchain = toolchain
+                    .join()
+                    .map_err(|_| anyhow::anyhow!("toolchain fingerprint worker panicked"))??;
+                Ok::<_, anyhow::Error>((source, toolchain))
+            })?;
         let mode_value = format!("mode={};link-mode={link_mode:?}", mode.as_str());
         let library = dynamic_cache::fingerprint_values([
             fastled_source.as_bytes(),
@@ -118,6 +143,8 @@ impl BuildFingerprints {
             fastled_source,
             toolchain,
             library,
+            source_duration_secs,
+            toolchain_duration_secs,
         })
     }
 }
@@ -190,6 +217,25 @@ fn resolve_tool_paths(install_dir: &Path) -> Result<ToolPaths> {
     let emcc = emscripten_dir.join("emcc.py");
     let empp = emscripten_dir.join("em++.py");
     let emar = emscripten_dir.join("emar.py");
+    let clangpp = install_dir.join("bin").join(if cfg!(windows) {
+        "clang++.exe"
+    } else {
+        "clang++"
+    });
+    let tool_name = |name: &str| {
+        install_dir.join("bin").join(if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        })
+    };
+    let wasm_ld = tool_name("wasm-ld");
+    let llvm_objcopy = tool_name("llvm-objcopy");
+    let wasm_finalize = tool_name("wasm-emscripten-finalize");
+    let emscripten_version = fs::read_to_string(emscripten_dir.join("emscripten-version.txt"))
+        .ok()
+        .and_then(|value| serde_json::from_str::<String>(value.trim()).ok())
+        .unwrap_or_default();
     if !emcc.is_file() {
         bail!("missing emcc.py at {}", emcc.display());
     }
@@ -199,11 +245,19 @@ fn resolve_tool_paths(install_dir: &Path) -> Result<ToolPaths> {
     if !emar.is_file() {
         bail!("missing emar.py at {}", emar.display());
     }
+    if !clangpp.is_file() {
+        bail!("missing clang++ at {}", clangpp.display());
+    }
     Ok(ToolPaths {
         emscripten_dir,
         emcc,
         empp,
         emar,
+        clangpp,
+        wasm_ld,
+        llvm_objcopy,
+        wasm_finalize,
+        emscripten_version,
         python: resolve_python_executable(),
     })
 }
@@ -257,6 +311,94 @@ fn command_with_env(program: impl AsRef<Path>, tools: &ToolPaths) -> Command {
         command.env(key, value);
     }
     command
+}
+
+const DIRECT_CFLAGS_SCHEMA: u32 = 1;
+const DIRECT_CFLAGS_FILE: &str = ".fastled-direct-cflags.json";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct DirectCflagsCache {
+    schema: u32,
+    entries: BTreeMap<String, Vec<String>>,
+}
+
+fn direct_cflags_key(toolchain_fingerprint: &str, driver_args: &[String]) -> String {
+    let mut values = vec![toolchain_fingerprint.to_string()];
+    values.extend(driver_args.iter().cloned());
+    let mut environment = std::env::vars_os()
+        .filter_map(|(key, value)| {
+            let key = key.to_string_lossy();
+            (key.starts_with("EMCC_") || matches!(key.as_ref(), "CFLAGS" | "CXXFLAGS"))
+                .then(|| format!("env:{key}={}", value.to_string_lossy()))
+        })
+        .collect::<Vec<_>>();
+    environment.sort();
+    values.extend(environment);
+    dynamic_cache::fingerprint_values(values.iter().map(|value| value.as_bytes()))
+}
+
+/// Ask the active Emscripten driver for the backend flags it would pass to
+/// clang, then persist them by toolchain + driver arguments. This keeps the
+/// supported `em++ --cflags` contract while removing Python startup from warm
+/// sketch compiles, including new CLI processes.
+fn direct_clang_cflags(
+    tools: &ToolPaths,
+    toolchain_fingerprint: &str,
+    driver_args: &[String],
+    current_dir: &Path,
+) -> Result<Vec<String>> {
+    let install_dir = tools
+        .emscripten_dir
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Emscripten directory has no install parent"))?;
+    let cache_path = install_dir.join(DIRECT_CFLAGS_FILE);
+    let lock_path = install_dir.join(format!("{DIRECT_CFLAGS_FILE}.lock"));
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("open direct cflags lock {}", lock_path.display()))?;
+    fs2::FileExt::lock_exclusive(&lock)
+        .with_context(|| format!("lock direct cflags cache {}", cache_path.display()))?;
+
+    let key = direct_cflags_key(toolchain_fingerprint, driver_args);
+    let mut cache = fs::read(&cache_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<DirectCflagsCache>(&bytes).ok())
+        .filter(|cache| cache.schema == DIRECT_CFLAGS_SCHEMA)
+        .unwrap_or_else(|| DirectCflagsCache {
+            schema: DIRECT_CFLAGS_SCHEMA,
+            entries: BTreeMap::new(),
+        });
+    if let Some(flags) = cache.entries.get(&key) {
+        return Ok(flags.clone());
+    }
+
+    let mut command = command_with_env(&tools.python, tools);
+    command
+        .current_dir(current_dir)
+        .arg(&tools.empp)
+        .args(driver_args)
+        .arg("--cflags");
+    let output = command.output().context("run em++ --cflags")?;
+    if !output.status.success() {
+        bail!(
+            "em++ --cflags failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let stdout = String::from_utf8(output.stdout).context("em++ --cflags returned non-UTF-8")?;
+    let flags = shell_words::split(stdout.trim()).context("parse em++ --cflags output")?;
+    if flags.is_empty() {
+        bail!("em++ --cflags returned no backend flags");
+    }
+    cache.entries.insert(key, flags.clone());
+    fs::write(&cache_path, serde_json::to_vec_pretty(&cache)?)
+        .with_context(|| format!("write direct cflags cache {}", cache_path.display()))?;
+    Ok(flags)
 }
 
 fn spawn_line_reader<R: std::io::Read + Send + 'static>(
@@ -527,6 +669,12 @@ fn link_wasm_dynamic(
 
     let sketch_object_record =
         fs::read(sketch_object).with_context(|| format!("read {}", sketch_object.display()))?;
+    let direct_side_link = direct_side_link_supported(tools, mode, &wasm_bigint_flag);
+    let side_link_strategy = if direct_side_link {
+        "direct-emscripten-4.0.19-v1"
+    } else {
+        "empp-driver-v1"
+    };
     let sketch_fingerprint = dynamic_cache::fingerprint_values([
         runtime_fingerprint.as_bytes(),
         toolchain_fingerprint.as_bytes(),
@@ -534,6 +682,7 @@ fn link_wasm_dynamic(
         sketch_object_record.as_slice(),
         side_module_link_flags.join("\n").as_bytes(),
         b"SIDE_MODULE=1",
+        side_link_strategy.as_bytes(),
     ]);
     let sketch_root = sketch_cache_dir.join("dynamic-sketch-cache");
     let sketch_entry = dynamic_cache::entry_path(&sketch_root, &sketch_fingerprint);
@@ -571,8 +720,34 @@ fn link_wasm_dynamic(
                 side_args.extend(["-pthread".to_string(), "-sSIDE_MODULE=1".to_string()]);
                 side_args.extend(side_module_link_flags);
                 side_args.extend(["-o".to_string(), cached_sketch.display().to_string()]);
-                log("[WASM] Linking cached sketch side module...", "stdout");
-                run_em_link_with_retries(fastled_dir, tools, &side_args, log)?;
+                if direct_side_link {
+                    log(
+                        "[WASM] Linking sketch side module directly (Emscripten 4.0.19 quick plan)...",
+                        "stdout",
+                    );
+                    if let Err(error) = run_direct_side_link_4019(
+                        tools,
+                        sketch_object,
+                        &cached_sketch,
+                        fastled_dir,
+                        log,
+                    ) {
+                        log(
+                            &format!(
+                                "[WASM] Direct side link failed ({error:#}); falling back to em++"
+                            ),
+                            "stderr",
+                        );
+                        fs::remove_file(&cached_sketch).ok();
+                        run_em_link_with_retries(fastled_dir, tools, &side_args, log)?;
+                    }
+                } else {
+                    log(
+                        "[WASM] Linking cached sketch side module with em++...",
+                        "stdout",
+                    );
+                    run_em_link_with_retries(fastled_dir, tools, &side_args, log)?;
+                }
                 dynamic_cache::write_metadata(
                     staging.path(),
                     &sketch_fingerprint,
@@ -610,7 +785,15 @@ fn link_wasm_dynamic(
         }
     }
 
-    copy_dynamic_output(&runtime_entry, &sketch_entry, output_js)?;
+    let output_phase_start = std::time::Instant::now();
+    let copied = copy_dynamic_output(&runtime_entry, &sketch_entry, output_js)?;
+    log(
+        &format!(
+            "[WASM] Dynamic output publication: {copied} changed artifact(s) ({:.2}s)",
+            output_phase_start.elapsed().as_secs_f64()
+        ),
+        "stdout",
+    );
     Ok(())
 }
 
@@ -1230,8 +1413,28 @@ fn compile_sketch(
     fingerprints: &BuildFingerprints,
     log: LogSink,
 ) -> Result<CompiledSketch> {
+    let compile_phase_start = std::time::Instant::now();
     let fastled_dir = &dwarf_roots.fastled_dir;
     let compile_flags = get_sketch_compile_flags(fastled_dir, mode, Some(dwarf_roots))?;
+    let fastled_fingerprint = &fingerprints.fastled_source;
+    let toolchain_fingerprint = &fingerprints.toolchain;
+    let mut driver_args = compile_flags.clone();
+    if link_mode == LinkMode::Dynamic {
+        driver_args.push("-fPIC".to_string());
+    }
+    let (direct_backend_flags, direct_cflags_error, backend_identity) =
+        match direct_clang_cflags(tools, toolchain_fingerprint, &driver_args, fastled_dir) {
+            Ok(flags) => {
+                let identity =
+                    dynamic_cache::fingerprint_values(flags.iter().map(|flag| flag.as_bytes()));
+                (Some(flags), None, format!("direct-clang-v1:{identity}"))
+            }
+            Err(error) => (
+                None,
+                Some(format!("{error:#}")),
+                "empp-fallback-v1".to_string(),
+            ),
+        };
     let source_fingerprint = dynamic_cache::fingerprint_tree(
         example_dir,
         &[
@@ -1239,8 +1442,6 @@ fn compile_sketch(
         ],
         &[".git/**", ".build/**", "fastled_js/**"],
     )?;
-    let fastled_fingerprint = &fingerprints.fastled_source;
-    let toolchain_fingerprint = &fingerprints.toolchain;
     let wrapper_contents = fs::read(wrapper)
         .with_context(|| format!("read generated wrapper {}", wrapper.display()))?;
     let compile_flag_blob = compile_flags.join("\n");
@@ -1252,6 +1453,7 @@ fn compile_sketch(
         compile_flag_blob.as_bytes(),
         link_mode_value.as_bytes(),
         wrapper_contents.as_slice(),
+        backend_identity.as_bytes(),
     ]);
     let object_root = sketch_cache_dir.join("object-cache");
     let object_entry = dynamic_cache::entry_path(&object_root, &object_fingerprint);
@@ -1260,8 +1462,9 @@ fn compile_sketch(
     if dynamic_cache::validate_entry(&object_entry, &object_fingerprint, &["sketch.o"]).is_ok() {
         log(
             &format!(
-                "[WASM] Sketch object cache hit: {}",
-                &object_fingerprint[..12]
+                "[WASM] Sketch object cache hit: {} ({:.2}s)",
+                &object_fingerprint[..12],
+                compile_phase_start.elapsed().as_secs_f64()
             ),
             "stdout",
         );
@@ -1280,7 +1483,7 @@ fn compile_sketch(
         "-o".to_string(),
         staging_object.display().to_string(),
     ];
-    args.extend(compile_flags);
+    args.extend(compile_flags.iter().cloned());
     if link_mode == LinkMode::Dynamic {
         args.push("-fPIC".to_string());
     }
@@ -1304,16 +1507,46 @@ fn compile_sketch(
         &format!("[WASM] Compiling sketch: {}", wrapper.display()),
         "stdout",
     );
-    let mut command = command_with_env(&tools.python, tools);
-    command
-        .current_dir(fastled_dir)
-        .arg(&tools.empp)
-        .args(&args);
-    run_status(command, "em++ sketch compile", log)?;
+    let direct_result = if let Some(backend_flags) = direct_backend_flags {
+        let mut command = command_with_env(&tools.clangpp, tools);
+        command
+            .current_dir(fastled_dir)
+            .args(backend_flags)
+            .args(&args);
+        run_status(command, "clang++ sketch compile", log)
+    } else {
+        Err(anyhow::anyhow!(
+            "{}",
+            direct_cflags_error.unwrap_or_else(|| "em++ --cflags unavailable".to_string())
+        ))
+    };
+    if let Err(direct_error) = direct_result {
+        log(
+            &format!(
+                "[WASM] Direct clang compile unavailable ({direct_error:#}); falling back to em++"
+            ),
+            "stderr",
+        );
+        fs::remove_file(&staging_object).ok();
+        let mut command = command_with_env(&tools.python, tools);
+        command
+            .current_dir(fastled_dir)
+            .arg(&tools.empp)
+            .args(&args);
+        run_status(command, "em++ sketch compile fallback", log)?;
+    }
     dynamic_cache::write_metadata(staging.path(), &object_fingerprint, &["sketch.o"])?;
     dynamic_cache::publish_staging(staging, &object_entry)?;
     dynamic_cache::validate_entry(&object_entry, &object_fingerprint, &["sketch.o"])
         .map_err(anyhow::Error::msg)?;
+    log(
+        &format!(
+            "[WASM] Sketch compile published: {} ({:.2}s)",
+            &object_fingerprint[..12],
+            compile_phase_start.elapsed().as_secs_f64()
+        ),
+        "stdout",
+    );
     Ok(CompiledSketch {
         object,
         fingerprint: object_fingerprint,
@@ -1450,6 +1683,97 @@ fn run_em_link_with_retries(
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("em++ wasm link failed")))
 }
 
+fn direct_side_link_supported(tools: &ToolPaths, mode: BuildMode, wasm_bigint: &str) -> bool {
+    mode == BuildMode::Quick
+        && wasm_bigint == "-sWASM_BIGINT=0"
+        && tools.emscripten_version == "4.0.19"
+        && tools.wasm_ld.is_file()
+        && tools.llvm_objcopy.is_file()
+        && tools.wasm_finalize.is_file()
+        && std::env::var_os("FASTLED_DISABLE_DIRECT_SIDE_LINK").is_none()
+}
+
+/// Version-pinned quick-mode side-link plan matching Emscripten 4.0.19's
+/// final (post metadata-discovery) SIDE_MODULE=1 wasm-ld invocation. Unknown
+/// versions and configurations never enter this path.
+fn direct_side_link_args(tools: &ToolPaths, object: &Path, output: &Path) -> Vec<String> {
+    let pic_lib = tools
+        .emscripten_dir
+        .join("cache/sysroot/lib/wasm32-emscripten/pic");
+    vec![
+        "-o".to_string(),
+        output.display().to_string(),
+        "--whole-archive".to_string(),
+        object.display().to_string(),
+        format!("-L{}", pic_lib.display()),
+        format!("-L{}", tools.emscripten_dir.join("src/lib").display()),
+        pic_lib.join("crtbegin.o").display().to_string(),
+        "--no-whole-archive".to_string(),
+        "-mllvm".to_string(),
+        "-combiner-global-alias-analysis=false".to_string(),
+        "-mllvm".to_string(),
+        "-enable-emscripten-sjlj".to_string(),
+        "-mllvm".to_string(),
+        "-disable-lsr".to_string(),
+        "--import-memory".to_string(),
+        "--shared-memory".to_string(),
+        "--strip-debug".to_string(),
+        "--export-dynamic".to_string(),
+        "--export=__wasm_call_ctors".to_string(),
+        "--export=_emscripten_tls_init".to_string(),
+        "--export-if-defined=__start_em_asm".to_string(),
+        "--export-if-defined=__stop_em_asm".to_string(),
+        "--export-if-defined=__start_em_lib_deps".to_string(),
+        "--export-if-defined=__stop_em_lib_deps".to_string(),
+        "--export-if-defined=__start_em_js".to_string(),
+        "--export-if-defined=__stop_em_js".to_string(),
+        "--export-if-defined=main".to_string(),
+        "--export-if-defined=__main_argc_argv".to_string(),
+        "--export-if-defined=fflush".to_string(),
+        "--experimental-pic".to_string(),
+        "--unresolved-symbols=import-dynamic".to_string(),
+        "--no-shlib-sigcheck".to_string(),
+        "-shared".to_string(),
+        "--stack-first".to_string(),
+    ]
+}
+
+fn run_direct_side_link_4019(
+    tools: &ToolPaths,
+    object: &Path,
+    output: &Path,
+    current_dir: &Path,
+    log: LogSink,
+) -> Result<()> {
+    let mut linker = command_with_env(&tools.wasm_ld, tools);
+    linker
+        .current_dir(current_dir)
+        .args(direct_side_link_args(tools, object, output));
+    run_status(linker, "direct wasm-ld side link", log)?;
+
+    let mut objcopy = command_with_env(&tools.llvm_objcopy, tools);
+    objcopy
+        .current_dir(current_dir)
+        .arg(output)
+        .arg(output)
+        .arg("--remove-section=.debug*")
+        .arg("--remove-section=producers")
+        .arg("--remove-section=name");
+    run_status(objcopy, "direct side-link strip", log)?;
+
+    let mut finalize = command_with_env(&tools.wasm_finalize, tools);
+    finalize
+        .current_dir(current_dir)
+        .arg("--dyncalls-i64")
+        .arg("--pass-arg=legalize-js-interface-export-originals")
+        .arg("--side-module")
+        .arg(output)
+        .arg("-o")
+        .arg(output)
+        .arg("--detect-features");
+    run_status(finalize, "direct side-link finalize", log)
+}
+
 fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
     let output_dir = output_js
         .parent()
@@ -1474,11 +1798,53 @@ fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_dynamic_output(runtime_entry: &Path, sketch_entry: &Path, output_js: &Path) -> Result<()> {
+fn files_equal(left: &Path, right: &Path) -> Result<bool> {
+    use std::io::Read;
+
+    let left_meta = fs::metadata(left)?;
+    let right_meta = match fs::metadata(right) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    if left_meta.len() != right_meta.len() {
+        return Ok(false);
+    }
+    let mut left = fs::File::open(left)?;
+    let mut right = fs::File::open(right)?;
+    let mut left_buffer = [0_u8; 64 * 1024];
+    let mut right_buffer = [0_u8; 64 * 1024];
+    loop {
+        let left_read = left.read(&mut left_buffer)?;
+        let right_read = right.read(&mut right_buffer)?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+fn copy_file_if_changed(source: &Path, target: &Path) -> Result<bool> {
+    if files_equal(source, target)? {
+        return Ok(false);
+    }
+    fs::copy(source, target)
+        .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
+    Ok(true)
+}
+
+fn copy_dynamic_output(
+    runtime_entry: &Path,
+    sketch_entry: &Path,
+    output_js: &Path,
+) -> Result<usize> {
     let output_dir = output_js
         .parent()
         .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
     fs::create_dir_all(output_dir)?;
+    let mut copied = 0;
     for (source_dir, name) in [
         (runtime_entry, "fastled.js"),
         (runtime_entry, "fastled.wasm"),
@@ -1489,14 +1855,15 @@ fn copy_dynamic_output(runtime_entry: &Path, sketch_entry: &Path, output_js: &Pa
         let source = source_dir.join(name);
         let target = output_dir.join(name);
         if source.is_file() {
-            fs::copy(&source, &target)
-                .with_context(|| format!("copy {} to {}", source.display(), target.display()))?;
+            if copy_file_if_changed(&source, &target)? {
+                copied += 1;
+            }
         } else if target.exists() {
             fs::remove_file(&target)
                 .with_context(|| format!("remove stale {}", target.display()))?;
         }
     }
-    Ok(())
+    Ok(copied)
 }
 
 fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
@@ -1688,8 +2055,10 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
         )?;
         log(
             &format!(
-                "[WASM] Build fingerprints computed ({:.2}s)",
-                fingerprint_start.elapsed().as_secs_f64()
+                "[WASM] Build fingerprints computed ({:.2}s; FastLED {:.2}s, toolchain {:.2}s, parallel)",
+                fingerprint_start.elapsed().as_secs_f64(),
+                fingerprints.source_duration_secs,
+                fingerprints.toolchain_duration_secs,
             ),
             "stdout",
         );
@@ -1961,6 +2330,164 @@ mod tests {
         assert_ne!(
             baseline,
             static_link_fingerprint(&["-O0".to_string()], "sketch-a", "library-b")
+        );
+    }
+
+    #[test]
+    fn direct_cflags_key_tracks_toolchain_and_driver_arguments() {
+        let baseline = direct_cflags_key("toolchain-a", &["-pthread".to_string()]);
+        assert_eq!(
+            baseline,
+            direct_cflags_key("toolchain-a", &["-pthread".to_string()])
+        );
+        assert_ne!(
+            baseline,
+            direct_cflags_key("toolchain-b", &["-pthread".to_string()])
+        );
+        assert_ne!(
+            baseline,
+            direct_cflags_key("toolchain-a", &["-fPIC".to_string()])
+        );
+    }
+
+    fn fake_tools_for_direct_link(root: &Path, version: &str) -> ToolPaths {
+        let emscripten_dir = root.join("emscripten");
+        let bin = root.join("bin");
+        fs::create_dir_all(&emscripten_dir).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        let wasm_ld = bin.join("wasm-ld");
+        let llvm_objcopy = bin.join("llvm-objcopy");
+        let wasm_finalize = bin.join("wasm-emscripten-finalize");
+        for path in [&wasm_ld, &llvm_objcopy, &wasm_finalize] {
+            fs::write(path, "tool").unwrap();
+        }
+        ToolPaths {
+            emscripten_dir,
+            emcc: root.join("emcc.py"),
+            empp: root.join("em++.py"),
+            emar: root.join("emar.py"),
+            clangpp: bin.join("clang++"),
+            wasm_ld,
+            llvm_objcopy,
+            wasm_finalize,
+            emscripten_version: version.to_string(),
+            python: PathBuf::from("python"),
+        }
+    }
+
+    #[test]
+    fn direct_side_link_is_strictly_version_mode_and_abi_gated() {
+        let temp = tempfile::tempdir().unwrap();
+        let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
+        assert!(direct_side_link_supported(
+            &tools,
+            BuildMode::Quick,
+            "-sWASM_BIGINT=0"
+        ));
+        assert!(!direct_side_link_supported(
+            &tools,
+            BuildMode::Debug,
+            "-sWASM_BIGINT=0"
+        ));
+        assert!(!direct_side_link_supported(
+            &tools,
+            BuildMode::Quick,
+            "-sWASM_BIGINT=1"
+        ));
+        let unknown = fake_tools_for_direct_link(&temp.path().join("unknown"), "4.0.20");
+        assert!(!direct_side_link_supported(
+            &unknown,
+            BuildMode::Quick,
+            "-sWASM_BIGINT=0"
+        ));
+    }
+
+    #[test]
+    fn direct_side_link_plan_preserves_side_module_one_contract() {
+        let temp = tempfile::tempdir().unwrap();
+        let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
+        let args = direct_side_link_args(&tools, Path::new("sketch.o"), Path::new("sketch.wasm"));
+        assert!(args.contains(&"--whole-archive".to_string()));
+        assert!(args.contains(&"--unresolved-symbols=import-dynamic".to_string()));
+        assert!(args.contains(&"-shared".to_string()));
+        assert!(!args.iter().any(|arg| arg.contains("SIDE_MODULE=2")));
+    }
+
+    #[test]
+    fn dynamic_output_does_not_recopy_unchanged_runtime() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime = temp.path().join("runtime");
+        let sketch = temp.path().join("sketch");
+        let output = temp.path().join("output");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&sketch).unwrap();
+        fs::write(runtime.join("fastled.js"), "loader").unwrap();
+        fs::write(runtime.join("fastled.wasm"), b"runtime-wasm").unwrap();
+        fs::write(sketch.join("sketch.wasm"), b"sketch-v1").unwrap();
+
+        assert_eq!(
+            copy_dynamic_output(&runtime, &sketch, &output.join("fastled.js")).unwrap(),
+            3
+        );
+        let js_mtime = output
+            .join("fastled.js")
+            .metadata()
+            .unwrap()
+            .modified()
+            .unwrap();
+        let wasm_mtime = output
+            .join("fastled.wasm")
+            .metadata()
+            .unwrap()
+            .modified()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        assert_eq!(
+            copy_dynamic_output(&runtime, &sketch, &output.join("fastled.js")).unwrap(),
+            0
+        );
+        assert_eq!(
+            output
+                .join("fastled.js")
+                .metadata()
+                .unwrap()
+                .modified()
+                .unwrap(),
+            js_mtime
+        );
+        assert_eq!(
+            output
+                .join("fastled.wasm")
+                .metadata()
+                .unwrap()
+                .modified()
+                .unwrap(),
+            wasm_mtime
+        );
+
+        fs::write(sketch.join("sketch.wasm"), b"sketch-v2").unwrap();
+        assert_eq!(
+            copy_dynamic_output(&runtime, &sketch, &output.join("fastled.js")).unwrap(),
+            1
+        );
+        assert_eq!(
+            output
+                .join("fastled.js")
+                .metadata()
+                .unwrap()
+                .modified()
+                .unwrap(),
+            js_mtime
+        );
+        assert_eq!(
+            output
+                .join("fastled.wasm")
+                .metadata()
+                .unwrap()
+                .modified()
+                .unwrap(),
+            wasm_mtime
         );
     }
 
