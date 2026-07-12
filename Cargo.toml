@@ -39,8 +39,10 @@ toml = "0.8"
 tauri = { version = "2", features = ["devtools"] }
 tauri-build = { version = "2", features = [] }
 windows-sys = "0.61"
-# Last zccache-fingerprint revision compatible with this workspace's Rust 1.85 MSRV.
-zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "7721650d587085de3dc5d4ca77399c7ee2fa4fff" }
+# Parallel content-authoritative walker/hasher; remains compatible with Rust 1.85.
+zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "1bd5b6387eff54695e37adbfacbb977079d6f174" }
+shell-words = "1"
+globset = "0.4"
 
 [profile.release]
 debug = "line-tables-only"

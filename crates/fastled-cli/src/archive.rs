@@ -258,6 +258,9 @@ pub fn write_emscripten_config(install_dir: &Path, node_path: &str) -> Result<()
     );
 
     let config_path = install_dir.join(".emscripten");
+    if fs::read_to_string(&config_path).ok().as_deref() == Some(config.as_str()) {
+        return Ok(());
+    }
     fs::write(&config_path, config)
         .with_context(|| format!("cannot write {}", config_path.display()))?;
 
@@ -504,6 +507,19 @@ mod tests {
             contents.contains(node),
             "config should contain the node path ({node}): {contents}"
         );
+    }
+
+    #[test]
+    fn test_write_emscripten_config_does_not_touch_unchanged_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_dir = dir.path().join("emscripten").join("4.0.19");
+        fs::create_dir_all(&install_dir).unwrap();
+        write_emscripten_config(&install_dir, "node").unwrap();
+        let path = install_dir.join(".emscripten");
+        let first = path.metadata().unwrap().modified().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        write_emscripten_config(&install_dir, "node").unwrap();
+        assert_eq!(first, path.metadata().unwrap().modified().unwrap());
     }
 
     // ------------------------------------------------------------------

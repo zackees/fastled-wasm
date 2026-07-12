@@ -89,6 +89,9 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         };
 
         // --- Initial compilation ------------------------------------------------
+        // This process stays alive for rebuilds. Keep authoritative startup
+        // fingerprints in memory and invalidate them from filesystem events.
+        std::env::set_var("FASTLED_PERSISTENT_FINGERPRINTS", "1");
         send_sse(
             &tx,
             r#"{"type":"status","status":"compiling","message":"Compiling..."}"#,

@@ -2,8 +2,12 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
+use globset::{Glob, GlobSet, GlobSetBuilder};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -14,14 +18,130 @@ const METADATA_FILE: &str = "cache-metadata.json";
 
 pub(crate) const DYNAMIC_LOADER_JS: &str = include_str!("../assets/dynamic_loader.js");
 
-/// Hash a selected source tree with zccache's content-authoritative scanner.
-/// Paths, file count, and bytes all participate, so additions, deletions, and
-/// same-size edits with restored mtimes cannot produce a false cache hit.
-pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct FingerprintSpec {
+    root: NormalizedPath,
+    include: Vec<String>,
+    exclude: Vec<String>,
+}
+
+struct WatchedFingerprint {
+    value: String,
+    observed_generation: u64,
+    generation: Arc<AtomicU64>,
+    _watcher: RecommendedWatcher,
+}
+
+static FINGERPRINT_CACHE: OnceLock<
+    Mutex<std::collections::HashMap<FingerprintSpec, WatchedFingerprint>>,
+> = OnceLock::new();
+
+fn build_glob_set(patterns: &[String], default_all: bool) -> Result<GlobSet> {
+    let mut builder = GlobSetBuilder::new();
+    if patterns.is_empty() && default_all {
+        builder.add(Glob::new("**/*")?);
+    } else {
+        for pattern in patterns {
+            builder.add(Glob::new(pattern)?);
+        }
+    }
+    Ok(builder.build()?)
+}
+
+fn mark_fingerprint_dirty(generation: &AtomicU64) {
+    generation.fetch_add(1, Ordering::Release);
+}
+
+fn create_fingerprint_watcher(
+    spec: &FingerprintSpec,
+    generation: Arc<AtomicU64>,
+) -> Result<RecommendedWatcher> {
+    let root = spec.root.clone();
+    let include = build_glob_set(&spec.include, true)?;
+    let exclude = build_glob_set(&spec.exclude, false)?;
+    let callback_generation = Arc::clone(&generation);
+    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+        let relevant = match result {
+            Err(_) => true, // overflow/backend uncertainty: force a full rescan
+            Ok(event) => {
+                matches!(
+                    event.kind,
+                    EventKind::Create(_)
+                        | EventKind::Modify(_)
+                        | EventKind::Remove(_)
+                        | EventKind::Any
+                ) && event.paths.iter().any(|path| {
+                    let relative = path.strip_prefix(root.as_path()).unwrap_or(path);
+                    include.is_match(relative) && !exclude.is_match(relative)
+                })
+            }
+        };
+        if relevant {
+            mark_fingerprint_dirty(&callback_generation);
+        }
+    })?;
+    watcher.watch(spec.root.as_path(), RecursiveMode::Recursive)?;
+    Ok(watcher)
+}
+
+fn compute_tree_fingerprint(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
     let files = zccache_fingerprint::walk_files_glob(root, include, exclude)
         .with_context(|| format!("scan fingerprint inputs under {}", root.display()))?;
     zccache_fingerprint::compute_aggregate_hash(&files)
         .with_context(|| format!("hash fingerprint inputs under {}", root.display()))
+}
+
+/// Hash a selected source tree with zccache's content-authoritative scanner.
+/// Paths, file count, and bytes all participate, so additions, deletions, and
+/// same-size edits with restored mtimes cannot produce a false cache hit.
+pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
+    if std::env::var_os("FASTLED_PERSISTENT_FINGERPRINTS").is_none() {
+        return compute_tree_fingerprint(root, include, exclude);
+    }
+
+    let spec = FingerprintSpec {
+        root: NormalizedPath::new(root),
+        include: include.iter().map(|value| (*value).to_string()).collect(),
+        exclude: exclude.iter().map(|value| (*value).to_string()).collect(),
+    };
+    let cache = FINGERPRINT_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
+    let mut cache = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+
+    if let Some(entry) = cache.get_mut(&spec) {
+        let current = entry.generation.load(Ordering::Acquire);
+        if current == entry.observed_generation {
+            return Ok(entry.value.clone());
+        }
+        // If writes continue during the scan, leave the generation stale so
+        // the next build performs another authoritative scan.
+        let before = current;
+        let value = compute_tree_fingerprint(root, include, exclude)?;
+        let after = entry.generation.load(Ordering::Acquire);
+        entry.value = value.clone();
+        entry.observed_generation = if before == after { after } else { before };
+        return Ok(value);
+    }
+
+    let generation = Arc::new(AtomicU64::new(0));
+    let watcher = match create_fingerprint_watcher(&spec, Arc::clone(&generation)) {
+        Ok(watcher) => watcher,
+        Err(_) => return compute_tree_fingerprint(root, include, exclude),
+    };
+    let before = generation.load(Ordering::Acquire);
+    let value = compute_tree_fingerprint(root, include, exclude)?;
+    let after = generation.load(Ordering::Acquire);
+    cache.insert(
+        spec,
+        WatchedFingerprint {
+            value: value.clone(),
+            observed_generation: if before == after { after } else { before },
+            generation,
+            _watcher: watcher,
+        },
+    );
+    Ok(value)
 }
 
 pub(crate) fn fingerprint_values<'a>(values: impl IntoIterator<Item = &'a [u8]>) -> String {
@@ -304,6 +424,24 @@ mod tests {
         fs::remove_file(temp.path().join("b.cpp")).unwrap();
         let second = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn watcher_error_or_overflow_marks_fingerprint_dirty() {
+        let generation = AtomicU64::new(7);
+        mark_fingerprint_dirty(&generation);
+        assert_eq!(generation.load(Ordering::Acquire), 8);
+    }
+
+    #[test]
+    fn watcher_globs_match_selected_files_and_ignore_build_outputs() {
+        let include = build_glob_set(&["emscripten/emcc.py".to_string()], false).unwrap();
+        assert!(include.is_match(Path::new("emscripten/emcc.py")));
+        if cfg!(windows) {
+            assert!(include.is_match(Path::new(r"emscripten\emcc.py")));
+        }
+        let exclude = build_glob_set(&[".build/**".to_string()], false).unwrap();
+        assert!(exclude.is_match(Path::new(".build/wasm/sketch.o")));
     }
 
     #[test]
