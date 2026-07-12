@@ -76,6 +76,16 @@ pub(crate) fn purge_fastled_cache(fastled_path: Option<&str>) {
                 if !name.starts_with("meson-wasm-") || !wasm_dir.is_dir() {
                     continue;
                 }
+                let runtime_cache = wasm_dir.join("dynamic-runtime-cache");
+                if runtime_cache.exists() {
+                    match std::fs::remove_dir_all(&runtime_cache) {
+                        Ok(()) => println!("Purged: {}", runtime_cache.display()),
+                        Err(err) => eprintln!(
+                            "fastled: failed to purge {}: {err}",
+                            runtime_cache.display()
+                        ),
+                    }
+                }
                 for stale in [
                     "wasm_ld_args.json",
                     "wasm_ld_args.key",
