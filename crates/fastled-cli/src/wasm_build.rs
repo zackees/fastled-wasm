@@ -95,7 +95,7 @@ struct BuildFingerprints {
 
 #[derive(Debug)]
 struct CompiledSketch {
-    object: PathBuf,
+    object: crate::path::NormalizedPath,
     fingerprint: String,
 }
 

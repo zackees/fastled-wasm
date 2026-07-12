@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -7,6 +7,7 @@ use anyhow::Result;
 use sha2::{Digest, Sha256};
 
 use crate::dynamic_cache;
+use crate::path::NormalizedPath;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Invocations {
@@ -27,9 +28,9 @@ struct OutputHashes {
 
 struct FakeRepository {
     _temp: tempfile::TempDir,
-    root: PathBuf,
-    fastled: PathBuf,
-    app: PathBuf,
+    root: NormalizedPath,
+    fastled: NormalizedPath,
+    app: NormalizedPath,
     mode: String,
     toolchain: String,
     abi: String,
@@ -39,7 +40,7 @@ struct FakeRepository {
 impl FakeRepository {
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().to_path_buf();
+        let root = NormalizedPath::new(temp.path());
         let fastled = root.join("FastLED");
         write(&fastled.join("src/core.cpp"), "core-v1");
         write(&fastled.join("src/core.h"), "header-v1");
@@ -75,11 +76,11 @@ impl FakeRepository {
         }
     }
 
-    fn sketch(&self, name: &str) -> PathBuf {
+    fn sketch(&self, name: &str) -> NormalizedPath {
         self.root.join(name)
     }
 
-    fn runtime_root(&self) -> PathBuf {
+    fn runtime_root(&self) -> NormalizedPath {
         self.fastled
             .join(".build")
             .join("fake-dynamic-runtime-cache")

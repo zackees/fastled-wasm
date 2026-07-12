@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+use crate::path::NormalizedPath;
 
 const CACHE_SCHEMA: u32 = 1;
 const METADATA_FILE: &str = "cache-metadata.json";
@@ -193,8 +195,8 @@ impl CacheLock {
     }
 }
 
-pub(crate) fn entry_path(cache_root: &Path, fingerprint: &str) -> PathBuf {
-    cache_root.join(fingerprint)
+pub(crate) fn entry_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
+    NormalizedPath::new(cache_root.join(fingerprint))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -204,8 +206,8 @@ struct AttemptMetadata {
     message: Option<String>,
 }
 
-fn attempt_path(cache_root: &Path, fingerprint: &str) -> PathBuf {
-    cache_root.join(format!("{fingerprint}.attempt.json"))
+fn attempt_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
+    NormalizedPath::new(cache_root.join(format!("{fingerprint}.attempt.json")))
 }
 
 pub(crate) fn previous_attempt(cache_root: &Path, fingerprint: &str) -> Option<String> {
