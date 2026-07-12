@@ -319,7 +319,9 @@ fn cold_noop_and_sketch_only_transitions_use_minimal_commands() {
 
 #[test]
 fn every_runtime_input_class_rebuilds_runtime_and_sketch() {
-    let mutations: Vec<(Box<dyn Fn(&mut FakeRepository)>, bool)> = vec![
+    type Mutation = (Box<dyn Fn(&mut FakeRepository)>, bool);
+
+    let mutations: Vec<Mutation> = vec![
         (
             Box::new(|repo| write(&repo.fastled.join("src/core.cpp"), "core-v2")),
             true,

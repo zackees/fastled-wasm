@@ -953,6 +953,7 @@ fn meson_quote(value: &str) -> String {
     format!("'{escaped}'")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn ensure_meson_configured(
     fastled_dir: &Path,
     tools: &ToolPaths,
@@ -1120,6 +1121,7 @@ fn collect_cpp_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_sketch_pch(
     fastled_dir: &Path,
     tools: &ToolPaths,
