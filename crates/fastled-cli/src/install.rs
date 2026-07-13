@@ -11,7 +11,6 @@ use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use ctcb_core::Target;
@@ -51,7 +50,6 @@ const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
     "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
 
 const ESBUILD_VERSION: &str = "0.28.0";
-const EMSCRIPTEN_MANIFEST_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const EMSCRIPTEN_VERSION_MARKER: &str = ".fastled-manifest-version";
 
 static EMSCRIPTEN_INSTALL_CACHE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -251,6 +249,60 @@ fn ensure_toolchain_executables(_install_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn required_emscripten_payload_files(install_dir: &Path) -> Vec<PathBuf> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    vec![
+        install_dir.join("emscripten/emcc.py"),
+        install_dir.join("emscripten/em++.py"),
+        install_dir.join("emscripten/emar.py"),
+        install_dir.join("emscripten/emscripten-version.txt"),
+        install_dir.join(format!("bin/clang++{suffix}")),
+        install_dir.join(format!("bin/wasm-ld{suffix}")),
+        install_dir.join(format!("bin/llvm-ar{suffix}")),
+        install_dir.join(format!("bin/llvm-objcopy{suffix}")),
+        install_dir.join(format!("bin/wasm-emscripten-finalize{suffix}")),
+    ]
+}
+
+fn validate_emscripten_payload(install_dir: &Path) -> Result<()> {
+    let missing = required_emscripten_payload_files(install_dir)
+        .into_iter()
+        .filter(|path| {
+            !fs::metadata(path)
+                .map(|metadata| metadata.is_file() && metadata.len() > 0)
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "Emscripten installation is incomplete; missing or empty files: {}",
+        missing
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+fn validate_complete_emscripten_install(install_dir: &Path) -> Result<()> {
+    validate_emscripten_payload(install_dir)?;
+    let done = install_dir.join("done.txt");
+    if !done.is_file()
+        || fs::metadata(&done)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0)
+            == 0
+    {
+        bail!(
+            "Emscripten installation is missing a complete marker: {}",
+            done.display()
+        );
+    }
+    Ok(())
+}
+
 /// Ensure the emscripten toolchain is installed at
 /// `~/.fastled/toolchains/emscripten/{platform}/{arch}/{version}/`.
 /// Returns the install directory path.
@@ -262,38 +314,40 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let mut cached = cache
         .lock()
         .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
-    if let Some(path) = cached
-        .as_ref()
-        .filter(|path| path.join("done.txt").is_file())
-    {
-        return Ok(path.clone());
+    if let Some(path) = cached.clone() {
+        if ensure_toolchain_executables(&path).is_ok()
+            && validate_complete_emscripten_install(&path).is_ok()
+        {
+            return Ok(path);
+        }
+        *cached = None;
     }
+    drop(cached);
     let installed = ensure_emscripten_installed_uncached()?;
+    let mut cached = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
     *cached = Some(installed.clone());
     Ok(installed)
 }
 
 fn cached_installed_toolchain(install_base: &Path) -> Option<PathBuf> {
     let marker = install_base.join(EMSCRIPTEN_VERSION_MARKER);
-    if marker.is_file()
-        && marker.metadata().ok()?.modified().ok()?.elapsed().ok()? <= EMSCRIPTEN_MANIFEST_TTL
-    {
-        let version = fs::read_to_string(&marker).ok()?;
-        let install = install_base.join(version.trim());
-        if install.join("done.txt").is_file() {
-            return Some(install);
+    if marker.is_file() {
+        if let Ok(version) = fs::read_to_string(&marker) {
+            let install = install_base.join(version.trim());
+            if validate_complete_emscripten_install(&install).is_ok() {
+                return Some(install);
+            }
         }
     }
 
-    // Existing installations predate the marker. Reuse the newest complete
-    // install immediately and begin the 24-hour refresh window; a warm build
-    // must not require the network merely to rediscover a local toolchain.
-    if !marker.exists() {
-        if let Some(install) = newest_complete_install(install_base) {
-            let version = install.file_name()?.to_string_lossy();
-            fs::write(&marker, format!("{version}\n")).ok()?;
-            return Some(install);
-        }
+    // A valid local installation always wins. Automatic version refresh is
+    // intentionally deferred to the explicit toolchain-policy work in #194.
+    if let Some(install) = newest_complete_install(install_base) {
+        let version = install.file_name()?.to_string_lossy();
+        let _ = fs::write(&marker, format!("{version}\n"));
+        return Some(install);
     }
     None
 }
@@ -302,7 +356,7 @@ fn newest_complete_install(install_base: &Path) -> Option<PathBuf> {
     let mut candidates = fs::read_dir(install_base)
         .ok()?
         .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().join("done.txt").is_file())
+        .filter(|entry| validate_complete_emscripten_install(&entry.path()).is_ok())
         .filter_map(|entry| {
             let modified = entry.metadata().ok()?.modified().ok()?;
             Some((modified, entry.path()))
@@ -329,19 +383,32 @@ fn ensure_emscripten_installed_uncached() -> Result<PathBuf> {
         .join(&platform)
         .join(&arch);
     let cache_dir = root.join("toolchains").join("archives");
-    fs::create_dir_all(&install_base)?;
-    fs::create_dir_all(&cache_dir)?;
+    ensure_emscripten_installed_at(&install_base, &cache_dir, &platform, &arch, fetch_manifest)
+}
 
-    if let Some(install_dir) = cached_installed_toolchain(&install_base) {
+fn ensure_emscripten_installed_at<F>(
+    install_base: &Path,
+    cache_dir: &Path,
+    platform: &str,
+    arch: &str,
+    fetch: F,
+) -> Result<PathBuf>
+where
+    F: Fn(&str) -> Result<PlatformManifest>,
+{
+    fs::create_dir_all(install_base)?;
+    fs::create_dir_all(cache_dir)?;
+
+    if let Some(install_dir) = cached_installed_toolchain(install_base) {
         ensure_toolchain_executables(&install_dir)?;
         return Ok(install_dir);
     }
 
     let manifest_url = format!("{EMSCRIPTEN_MANIFEST_BASE_URL}/{platform}/{arch}/manifest.json");
-    let manifest = match fetch_manifest(&manifest_url) {
+    let manifest = match fetch(&manifest_url) {
         Ok(manifest) => manifest,
         Err(error) => {
-            if let Some(install_dir) = newest_complete_install(&install_base) {
+            if let Some(install_dir) = newest_complete_install(install_base) {
                 ensure_toolchain_executables(&install_dir)?;
                 return Ok(install_dir);
             }
@@ -351,9 +418,9 @@ fn ensure_emscripten_installed_uncached() -> Result<PathBuf> {
     let version = manifest.latest.clone();
     let install_dir = install_base.join(&version);
     let done_file = install_dir.join("done.txt");
-    if done_file.exists() {
+    if done_file.exists() && validate_complete_emscripten_install(&install_dir).is_ok() {
         ensure_toolchain_executables(&install_dir)?;
-        record_manifest_version(&install_base, &version)?;
+        record_manifest_version(install_base, &version)?;
         return Ok(install_dir);
     }
 
@@ -393,6 +460,7 @@ fn ensure_emscripten_installed_uncached() -> Result<PathBuf> {
     fs::create_dir_all(&staging)?;
     archive::extract_tar_zst(&archive_path, &staging)?;
     ensure_toolchain_executables(&staging)?;
+    validate_emscripten_payload(&staging)?;
 
     fs::write(staging.join("done.txt"), "ok\n")?;
 
@@ -402,7 +470,8 @@ fn ensure_emscripten_installed_uncached() -> Result<PathBuf> {
     fs::rename(&staging, &install_dir)?;
 
     archive::write_emscripten_config(&install_dir, "node")?;
-    record_manifest_version(&install_base, &version)?;
+    validate_complete_emscripten_install(&install_dir)?;
+    record_manifest_version(install_base, &version)?;
 
     Ok(install_dir)
 }
@@ -1357,6 +1426,24 @@ mod tests {
   }
 }"#;
 
+    fn create_valid_emscripten_install(root: &Path) -> PathBuf {
+        let install = root.join("4.0.19");
+        for path in required_emscripten_payload_files(&install) {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(
+                &path,
+                if path.ends_with("emscripten-version.txt") {
+                    br#"\"4.0.19\"\n"#.as_slice()
+                } else {
+                    b"tool\n".as_slice()
+                },
+            )
+            .unwrap();
+        }
+        fs::write(install.join("done.txt"), "ok\n").unwrap();
+        install
+    }
+
     #[test]
     fn parses_nested_versions_manifest_without_parts() {
         let manifest: PlatformManifest =
@@ -1379,11 +1466,9 @@ mod tests {
     }
 
     #[test]
-    fn cached_install_avoids_manifest_fetch_until_ttl_expires() {
+    fn cached_install_uses_valid_local_even_with_old_marker() {
         let temp = tempfile::tempdir().unwrap();
-        let install = temp.path().join("4.0.19");
-        fs::create_dir_all(&install).unwrap();
-        fs::write(install.join("done.txt"), "ok\n").unwrap();
+        let install = create_valid_emscripten_install(temp.path());
 
         let found = cached_installed_toolchain(temp.path()).expect("installed toolchain");
         assert_eq!(found, install);
@@ -1392,6 +1477,58 @@ mod tests {
             "4.0.19\n"
         );
         assert_eq!(cached_installed_toolchain(temp.path()), Some(install));
+    }
+
+    #[test]
+    fn valid_local_install_skips_manifest_fetch() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = create_valid_emscripten_install(temp.path());
+        let archives = temp.path().join("archives");
+        let found = ensure_emscripten_installed_at(
+            temp.path(),
+            &archives,
+            "test-platform",
+            "test-arch",
+            |_| panic!("manifest fetch must not run for a valid local install"),
+        )
+        .unwrap();
+        assert_eq!(found, install);
+        assert!(archives.is_dir());
+    }
+
+    #[test]
+    fn invalid_marker_target_falls_back_to_valid_local_install() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = create_valid_emscripten_install(temp.path());
+        fs::write(
+            temp.path().join(EMSCRIPTEN_VERSION_MARKER),
+            "missing-version\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            cached_installed_toolchain(temp.path()),
+            Some(install.clone())
+        );
+        assert_eq!(
+            fs::read_to_string(temp.path().join(EMSCRIPTEN_VERSION_MARKER)).unwrap(),
+            "4.0.19\n"
+        );
+    }
+
+    #[test]
+    fn missing_required_tool_rejects_install() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = create_valid_emscripten_install(temp.path());
+        fs::remove_file(install.join(if cfg!(windows) {
+            "bin/wasm-ld.exe"
+        } else {
+            "bin/wasm-ld"
+        }))
+        .unwrap();
+
+        assert!(validate_complete_emscripten_install(&install).is_err());
+        assert_eq!(cached_installed_toolchain(temp.path()), None);
     }
 
     #[test]

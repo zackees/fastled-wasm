@@ -10,8 +10,10 @@ use crate::compile_stream::{
 };
 use crate::debug_symbols;
 use crate::dwarf_smoke::run_dwarf_source_smoke;
+use crate::dynamic_cache;
 use crate::install;
 use crate::keyboard;
+use crate::path::NormalizedPath;
 use crate::project;
 use crate::selection::prompt_for_example;
 use crate::server;
@@ -128,11 +130,42 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             }
 
             let should_rebuild = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
-                Ok(changed) => {
-                    println!("\nChanges detected in {changed:?}");
+                Ok(batch) => {
+                    println!(
+                        "\nChanges detected in {:?}{}",
+                        batch.paths,
+                        if batch.force_rescan {
+                            " (full rescan required)"
+                        } else {
+                            ""
+                        }
+                    );
+                    let changed_paths = batch
+                        .paths
+                        .iter()
+                        .map(NormalizedPath::new)
+                        .collect::<Vec<_>>();
+                    let invalidation = if batch.force_rescan {
+                        dynamic_cache::invalidate_all_persistent_fingerprints()
+                    } else {
+                        dynamic_cache::invalidate_persistent_fingerprints(&changed_paths)
+                    };
+                    if let Err(error) = invalidation {
+                        eprintln!("fastled: persistent fingerprint invalidation failed; falling back to full scans: {error:#}");
+                        std::env::remove_var("FASTLED_PERSISTENT_FINGERPRINTS");
+                    }
                     true
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => keyboard::check_for_space(),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    let manual = keyboard::check_for_space();
+                    if manual {
+                        if let Err(error) = dynamic_cache::invalidate_all_persistent_fingerprints() {
+                            eprintln!("fastled: persistent fingerprint invalidation failed; falling back to full scans: {error:#}");
+                            std::env::remove_var("FASTLED_PERSISTENT_FINGERPRINTS");
+                        }
+                    }
+                    manual
+                }
                 Err(_) => break,
             };
 
