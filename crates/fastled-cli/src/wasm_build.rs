@@ -2034,6 +2034,8 @@ pub fn run_build(request: &BuildRequest) -> Result<BuildResult> {
 /// Run the build, forwarding every output line (tool stdout/stderr plus
 /// `[WASM]` progress markers) to `log` as it is produced.
 pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<BuildResult> {
+    let effective_link_mode =
+        crate::build::effective_link_mode(request.build_mode, request.link_mode);
     let wall_start = std::time::Instant::now();
     let output_dir = mode_output_dir(&request.sketch_dir);
     if request.force_clean && output_dir.exists() {
@@ -2053,10 +2055,10 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
     let sketch_start = std::time::Instant::now();
     let strategy = if output_dir.join("fastled.js").is_file()
         && output_dir.join("fastled.wasm").is_file()
-        && (request.link_mode == LinkMode::Static || output_dir.join("sketch.wasm").is_file())
+        && (effective_link_mode == LinkMode::Static || output_dir.join("sketch.wasm").is_file())
         && !request.force_clean
     {
-        match request.link_mode {
+        match effective_link_mode {
             LinkMode::Static => "incremental-static",
             LinkMode::Dynamic => "incremental-dynamic",
         }
@@ -2066,7 +2068,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
     .to_string();
 
     let build_result = (|| -> Result<()> {
-        let build_dir = build_dir(&fastled_dir, request.build_mode, request.link_mode);
+        let build_dir = build_dir(&fastled_dir, request.build_mode, effective_link_mode);
         let sketch_cache = sketch_cache_dir(&example_dir);
         if request.force_clean {
             for cache in [
@@ -2085,7 +2087,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &fastled_dir,
             &tools,
             request.build_mode,
-            request.link_mode,
+            effective_link_mode,
         )?;
         log(
             &format!(
@@ -2101,7 +2103,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &tools,
             &build_dir,
             request.build_mode,
-            request.link_mode,
+            effective_link_mode,
             request.force_clean,
             &fingerprints.library,
             log,
@@ -2131,7 +2133,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &sketch_cache,
             &example_dir,
             request.build_mode,
-            request.link_mode,
+            effective_link_mode,
             &sketch_dwarf_roots,
             &fingerprints,
             log,
@@ -2145,7 +2147,7 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
             &sketch_cache,
             &output_js,
             request.build_mode,
-            request.link_mode,
+            effective_link_mode,
             &fingerprints,
             log,
         )?;
