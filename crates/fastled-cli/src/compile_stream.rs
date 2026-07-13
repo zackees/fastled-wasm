@@ -69,8 +69,6 @@ pub(crate) const DYNAMIC_RELEASE_WARNING: &str =
 fn migration_warning(cli: &Cli) -> Option<&'static str> {
     if build::dynamic_linking_release_fallback(selected_build_mode(cli), cli.link_mode) {
         Some(DYNAMIC_RELEASE_WARNING)
-    } else if cli.legacy_link_mode {
-        Some("warning: --link-mode is deprecated; use --link instead")
     } else {
         None
     }

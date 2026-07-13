@@ -38,8 +38,6 @@ const DEFAULT_EXAMPLE: &str = "wasm";
 /// Library entry point invoked by the `fastled` binary.
 pub fn run() -> ExitCode {
     let mut cli = cli::Cli::parse();
-    cli.legacy_link_mode = std::env::args_os()
-        .any(|arg| arg == "--link-mode" || arg.to_string_lossy().starts_with("--link-mode="));
 
     if let Err(message) = cli::validate_init_ref_flags(&cli) {
         eprintln!("fastled: {message}");
@@ -216,7 +214,6 @@ mod tests {
             just_compile: false,
             no_app: false,
             link_mode: crate::cli::LinkMode::Static,
-            legacy_link_mode: false,
             profile: false,
             install: false,
             dry_run: false,
