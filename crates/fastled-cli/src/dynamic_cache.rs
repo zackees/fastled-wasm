@@ -98,7 +98,10 @@ pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) 
     if std::env::var_os("FASTLED_PERSISTENT_FINGERPRINTS").is_none() {
         return compute_tree_fingerprint(root, include, exclude);
     }
+    fingerprint_tree_persistent(root, include, exclude)
+}
 
+fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
     let spec = FingerprintSpec {
         root: NormalizedPath::new(root),
         include: include.iter().map(|value| (*value).to_string()).collect(),
@@ -142,6 +145,59 @@ pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) 
         },
     );
     Ok(value)
+}
+
+fn fingerprint_spec_matches_path(spec: &FingerprintSpec, path: &Path) -> Result<bool> {
+    let path = NormalizedPath::new(path);
+    let root = spec.root.as_path();
+    if path.as_path() == root {
+        return Ok(true);
+    }
+    let Ok(relative) = path.as_path().strip_prefix(root) else {
+        return Ok(false);
+    };
+    let include = build_glob_set(&spec.include, true)?;
+    let exclude = build_glob_set(&spec.exclude, false)?;
+    Ok(include.is_match(relative) && !exclude.is_match(relative))
+}
+
+/// Mark cached fingerprints whose input set contains one of `paths` as dirty.
+///
+/// This is deliberately synchronous with the rebuild-triggering watcher batch;
+/// the per-fingerprint filesystem watchers remain only as a secondary safety
+/// net for changes that happen during a scan.
+pub(crate) fn invalidate_persistent_fingerprints(paths: &[NormalizedPath]) -> Result<usize> {
+    let Some(cache) = FINGERPRINT_CACHE.get() else {
+        return Ok(0);
+    };
+    let cache = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+    let mut invalidated = 0;
+    for (spec, entry) in cache.iter() {
+        if paths
+            .iter()
+            .any(|path| fingerprint_spec_matches_path(spec, path).unwrap_or(true))
+        {
+            mark_fingerprint_dirty(&entry.generation);
+            invalidated += 1;
+        }
+    }
+    Ok(invalidated)
+}
+
+/// Mark every persistent fingerprint as dirty before a manual or uncertain rebuild.
+pub(crate) fn invalidate_all_persistent_fingerprints() -> Result<usize> {
+    let Some(cache) = FINGERPRINT_CACHE.get() else {
+        return Ok(0);
+    };
+    let cache = cache
+        .lock()
+        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+    for entry in cache.values() {
+        mark_fingerprint_dirty(&entry.generation);
+    }
+    Ok(cache.len())
 }
 
 pub(crate) fn fingerprint_values<'a>(values: impl IntoIterator<Item = &'a [u8]>) -> String {
@@ -424,6 +480,79 @@ mod tests {
         fs::remove_file(temp.path().join("b.cpp")).unwrap();
         let second = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
         assert_ne!(first, second);
+    }
+
+    // Regression coverage for #193: the rebuild-triggering event must dirty
+    // the persistent fingerprint before the next lookup.
+    #[test]
+    fn explicit_invalidation_detects_immediate_same_size_edit_with_restored_mtime() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("sketch.ino");
+        fs::write(&source, "aaaa").unwrap();
+        let mut fingerprint = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
+        let normalized_source = NormalizedPath::new(&source);
+        let mut expected = "bbbb";
+        for _ in 0..1000 {
+            let original_mtime = source.metadata().unwrap().modified().unwrap();
+            fs::write(&source, expected).unwrap();
+            let file = OpenOptions::new().write(true).open(&source).unwrap();
+            file.set_modified(original_mtime).unwrap();
+            assert_eq!(
+                invalidate_persistent_fingerprints(std::slice::from_ref(&normalized_source))
+                    .unwrap(),
+                1
+            );
+            let next_fingerprint =
+                fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
+            assert_ne!(fingerprint, next_fingerprint);
+            fingerprint = next_fingerprint;
+            expected = if expected == "bbbb" { "aaaa" } else { "bbbb" };
+        }
+    }
+
+    #[test]
+    fn path_invalidation_dirties_only_matching_spec() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::write(first.path().join("one.cpp"), "one").unwrap();
+        fs::write(second.path().join("two.cpp"), "two").unwrap();
+        fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
+        fingerprint_tree_persistent(second.path(), &["**/*.cpp"], &[]).unwrap();
+        assert_eq!(
+            invalidate_persistent_fingerprints(&[NormalizedPath::new(
+                first.path().join("one.cpp")
+            )])
+            .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn invalidate_all_dirties_every_spec() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        fs::write(first.path().join("one.cpp"), "one").unwrap();
+        fs::write(second.path().join("two.cpp"), "two").unwrap();
+        fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
+        fingerprint_tree_persistent(second.path(), &["**/*.cpp"], &[]).unwrap();
+
+        assert!(invalidate_all_persistent_fingerprints().unwrap() >= 2);
+    }
+
+    #[test]
+    fn excluded_output_path_does_not_dirty_spec() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir_all(temp.path().join("fastled_js")).unwrap();
+        fs::write(temp.path().join("source.cpp"), "source").unwrap();
+        fingerprint_tree_persistent(temp.path(), &["**/*.cpp"], &["fastled_js/**"]).unwrap();
+        fs::write(temp.path().join("fastled_js/bundle.cpp"), "output").unwrap();
+        assert_eq!(
+            invalidate_persistent_fingerprints(&[NormalizedPath::new(
+                temp.path().join("fastled_js/bundle.cpp"),
+            )])
+            .unwrap(),
+            0
+        );
     }
 
     #[test]

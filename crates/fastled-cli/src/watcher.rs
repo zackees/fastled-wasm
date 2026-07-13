@@ -20,8 +20,7 @@ use std::{
 };
 
 use notify::{
-    event::{ModifyKind, RenameMode},
-    Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+    event::ModifyKind, Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
 use sha2::{Digest, Sha256};
 
@@ -43,6 +42,17 @@ pub const DEFAULT_IGNORED_SEGMENTS: &[&str] = &[
     ".pytest_cache",
     "target",
 ];
+
+/// A debounced batch of filesystem activity that may require a rebuild.
+///
+/// `force_rescan` is set when the watcher cannot provide a sufficiently precise
+/// path-level change (for example, an overflow/error or directory replacement).
+/// Consumers must invalidate all persistent fingerprints for such a batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WatchBatch {
+    pub(crate) paths: Vec<PathBuf>,
+    pub(crate) force_rescan: bool,
+}
 
 // ---------------------------------------------------------------------------
 // Helper: file hash
@@ -68,6 +78,8 @@ struct State {
     last_event: Option<Instant>,
     /// Per-path content hash cache (skip events where content didn't change).
     hashes: HashMap<PathBuf, String>,
+    /// Whether the watcher lost enough precision to require a full rescan.
+    force_rescan: bool,
 }
 
 impl State {
@@ -76,6 +88,7 @@ impl State {
             pending: Vec::new(),
             last_event: None,
             hashes: HashMap::new(),
+            force_rescan: false,
         }
     }
 }
@@ -127,14 +140,14 @@ impl FileWatcher {
         self
     }
 
-    /// Begin watching.  Returns an [`mpsc::Receiver`] that yields `Vec<PathBuf>`
-    /// batches after each debounce window expires.
+    /// Begin watching. Returns an [`mpsc::Receiver`] that yields debounced
+    /// [`WatchBatch`] values.
     ///
     /// Dropping the receiver stops the background debounce thread (it will
     /// notice the broken channel and exit).  Call [`stop`] to also shut down
     /// the notify watcher cleanly.
-    pub fn start(&mut self) -> std::sync::mpsc::Receiver<Vec<PathBuf>> {
-        let (tx, rx) = std::sync::mpsc::channel::<Vec<PathBuf>>();
+    pub fn start(&mut self) -> std::sync::mpsc::Receiver<WatchBatch> {
+        let (tx, rx) = std::sync::mpsc::channel::<WatchBatch>();
 
         let state = Arc::new(Mutex::new(State::new()));
         let state_for_cb = Arc::clone(&state);
@@ -144,39 +157,66 @@ impl FileWatcher {
         let notify_cb = move |res: notify::Result<Event>| {
             let event = match res {
                 Ok(e) => e,
-                Err(_) => return,
+                Err(_) => {
+                    let mut s = state_for_cb.lock().unwrap();
+                    s.force_rescan = true;
+                    s.last_event = Some(Instant::now());
+                    return;
+                }
             };
 
-            // Only act on create / modify / rename events (not access).
+            // Only act on create / modify / remove events (not access).
             let relevant = matches!(
                 event.kind,
-                EventKind::Create(_)
-                    | EventKind::Modify(ModifyKind::Data(_))
-                    | EventKind::Modify(ModifyKind::Name(RenameMode::To))
-                    | EventKind::Modify(ModifyKind::Any)
-                    | EventKind::Remove(_)
+                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) | EventKind::Any
             );
             if !relevant {
                 return;
             }
 
+            let is_remove = matches!(event.kind, EventKind::Remove(_));
+            let is_rename = matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
+
             for path in event.paths {
-                // Directories are skipped (we only care about file content).
-                if path.is_dir() {
-                    continue;
-                }
                 // Filter ignored segments.
                 if path_contains_ignored(&path, &ignored) {
+                    continue;
+                }
+
+                let mut s = state_for_cb.lock().unwrap();
+
+                // Deletions and rename events may refer to paths that no longer
+                // exist. Keep the lexical path so cache invalidation can match
+                // it without canonicalising or reading the file.
+                if is_remove || is_rename {
+                    s.hashes.remove(&path);
+                    s.pending.push(path.clone());
+                    s.last_event = Some(Instant::now());
+                    // A remove/rename path may be a directory that no longer
+                    // exists, so conservatively rescan for these event kinds.
+                    s.force_rescan = true;
+                    continue;
+                }
+
+                // Directory notifications are metadata noise on some backends
+                // (notably macOS FSEvents) and can point at the watched root
+                // after an ignored child changes. File-level events carry the
+                // useful invalidation, while removals above already force a
+                // rescan because their paths may no longer exist.
+                if path.is_dir() {
                     continue;
                 }
 
                 // Hash-based deduplication.
                 let new_hash = match file_hash(&path) {
                     Some(h) => h,
-                    None => continue, // deleted or unreadable
+                    None => {
+                        s.force_rescan = true;
+                        s.last_event = Some(Instant::now());
+                        continue;
+                    }
                 };
 
-                let mut s = state_for_cb.lock().unwrap();
                 let old_hash = s.hashes.get(&path).cloned().unwrap_or_default();
                 if new_hash == old_hash {
                     continue; // content unchanged
@@ -209,7 +249,9 @@ impl FileWatcher {
                 let should_flush = {
                     let s = state.lock().unwrap();
                     match s.last_event {
-                        Some(t) => !s.pending.is_empty() && t.elapsed() >= debounce,
+                        Some(t) => {
+                            (s.force_rescan || !s.pending.is_empty()) && t.elapsed() >= debounce
+                        }
                         None => false,
                     }
                 };
@@ -217,11 +259,16 @@ impl FileWatcher {
                 if should_flush {
                     let batch = {
                         let mut s = state.lock().unwrap();
-                        let mut batch: Vec<PathBuf> = s.pending.drain(..).collect();
+                        let mut paths: Vec<PathBuf> = s.pending.drain(..).collect();
+                        let force_rescan = s.force_rescan;
+                        s.force_rescan = false;
                         s.last_event = None;
-                        batch.sort();
-                        batch.dedup();
-                        batch
+                        paths.sort();
+                        paths.dedup();
+                        WatchBatch {
+                            paths,
+                            force_rescan,
+                        }
                     };
                     if tx.send(batch).is_err() {
                         // Receiver dropped — nothing left to do.
@@ -358,13 +405,37 @@ mod tests {
 
         watcher.stop();
 
-        assert!(!batch.is_empty(), "batch should contain the changed file");
         assert!(
-            batch.iter().any(|p| p == &file),
+            !batch.paths.is_empty(),
+            "batch should contain the changed file"
+        );
+        assert!(
+            batch.paths.iter().any(|p| p == &file),
             "expected {:?} in batch {:?}",
             file,
             batch
         );
+    }
+
+    #[test]
+    fn test_watcher_reports_deleted_file() {
+        let dir = temp_dir();
+        let canonical_dir = dir.path().canonicalize().unwrap();
+        let file = canonical_dir.join("deleted.ino");
+        fs::write(&file, b"void setup() {}").unwrap();
+
+        let mut watcher = FileWatcher::new(canonical_dir, DEFAULT_DEBOUNCE_MS).unwrap();
+        let rx = watcher.start();
+        std::thread::sleep(Duration::from_millis(200));
+        fs::remove_file(&file).unwrap();
+
+        let batch = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("expected a deletion event within 2 s");
+        watcher.stop();
+
+        assert!(batch.paths.iter().any(|path| path == &file));
+        assert!(batch.force_rescan);
     }
 
     /// Changes under ignored directories must not be reported.
@@ -413,7 +484,7 @@ mod tests {
         }
 
         // Collect all batches that arrive within a 2 s window.
-        let mut batches: Vec<Vec<PathBuf>> = Vec::new();
+        let mut batches: Vec<WatchBatch> = Vec::new();
         let deadline = Instant::now() + Duration::from_secs(2);
         while let Ok(batch) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             batches.push(batch);
