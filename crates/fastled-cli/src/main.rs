@@ -8,6 +8,7 @@ struct InternalViewerArgs {
     title: String,
     width: u32,
     height: u32,
+    inject_test_runtime: bool,
 }
 
 fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
@@ -26,6 +27,7 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
         title: "FastLED Viewer".to_string(),
         width: 800,
         height: 600,
+        inject_test_runtime: false,
     };
 
     while let Some(arg) = args.next() {
@@ -52,6 +54,8 @@ fn parse_internal_viewer_args() -> Option<Result<InternalViewerArgs, String>> {
                 Ok(height) => height,
                 Err(_) => return Some(Err("--viewer-height must be an integer".to_string())),
             };
+        } else if arg == "--viewer-inject-test-runtime" {
+            parsed.inject_test_runtime = true;
         } else {
             return Some(Err(format!(
                 "unknown internal viewer argument: {}",
@@ -79,6 +83,7 @@ fn run_internal_viewer(args: InternalViewerArgs) -> ExitCode {
             title: args.title,
             width: args.width,
             height: args.height,
+            inject_test_runtime: args.inject_test_runtime,
         })
     }
 

@@ -189,11 +189,13 @@ impl Drop for ViewerProcess {
 }
 
 #[cfg(any(not(windows), test))]
-fn viewer_command(binary: &Path, url: &str) -> Command {
+fn viewer_command(binary: &Path, url: &str, inject_test_runtime: bool) -> Command {
     let mut command = Command::new(binary);
+    command.arg("--internal-viewer").arg(url);
+    if inject_test_runtime {
+        command.arg("--viewer-inject-test-runtime");
+    }
     command
-        .arg("--internal-viewer")
-        .arg(url)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -241,14 +243,17 @@ fn quote_windows_arg(arg: &std::ffi::OsStr) -> String {
 }
 
 #[cfg(windows)]
-fn viewer_command_line(binary: &Path, url: &str) -> Vec<u16> {
+fn viewer_command_line(binary: &Path, url: &str, inject_test_runtime: bool) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
 
-    let args = [
+    let mut args = vec![
         binary.as_os_str(),
         std::ffi::OsStr::new("--internal-viewer"),
         std::ffi::OsStr::new(url),
     ];
+    if inject_test_runtime {
+        args.push(std::ffi::OsStr::new("--viewer-inject-test-runtime"));
+    }
     let command_line = args
         .iter()
         .map(|arg| quote_windows_arg(arg))
@@ -261,7 +266,11 @@ fn viewer_command_line(binary: &Path, url: &str) -> Vec<u16> {
 }
 
 #[cfg(windows)]
-fn spawn_hidden_viewer(binary: &Path, url: &str) -> Result<ViewerProcess> {
+fn spawn_hidden_viewer(
+    binary: &Path,
+    url: &str,
+    inject_test_runtime: bool,
+) -> Result<ViewerProcess> {
     use std::mem::{size_of, zeroed};
     use std::ptr::{null, null_mut};
 
@@ -305,7 +314,7 @@ fn spawn_hidden_viewer(binary: &Path, url: &str) -> Result<ViewerProcess> {
     startup_info.wShowWindow = 0; // SW_HIDE
 
     let mut process_info: PROCESS_INFORMATION = unsafe { zeroed() };
-    let mut command_line = viewer_command_line(binary, url);
+    let mut command_line = viewer_command_line(binary, url, inject_test_runtime);
     let flags = VIEWER_CREATION_FLAGS | CREATE_SUSPENDED;
     let create_ok = unsafe {
         CreateProcessW(
@@ -379,6 +388,14 @@ fn spawn_hidden_viewer(binary: &Path, url: &str) -> Result<ViewerProcess> {
 /// reloads on build completion); pointing it at a directory or `fastled://`
 /// path regresses to a dead "Not Found" page (issues #151/#160).
 pub fn launch_tauri_viewer(url: &str) -> Result<ViewerProcess> {
+    launch_tauri_viewer_with_options(url, false)
+}
+
+pub(crate) fn launch_tauri_test_viewer(url: &str) -> Result<ViewerProcess> {
+    launch_tauri_viewer_with_options(url, true)
+}
+
+fn launch_tauri_viewer_with_options(url: &str, inject_test_runtime: bool) -> Result<ViewerProcess> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         anyhow::bail!(
             "viewer must be launched with an http(s) URL pointing at the FastLED server, got: {url}"
@@ -390,14 +407,14 @@ pub fn launch_tauri_viewer(url: &str) -> Result<ViewerProcess> {
 
     #[cfg(windows)]
     {
-        spawn_hidden_viewer(&binary, url)
+        spawn_hidden_viewer(&binary, url, inject_test_runtime)
     }
 
     #[cfg(not(windows))]
     {
         let group =
             ContainedProcessGroup::new().context("failed to create viewer process group")?;
-        let mut command = viewer_command(&binary, url);
+        let mut command = viewer_command(&binary, url, inject_test_runtime);
         let stdio = SpawnStdio {
             stdin: StdioSource::Null,
             stdout: StdioSource::Null,
@@ -550,12 +567,37 @@ mod tests {
 
     #[test]
     fn test_viewer_command_uses_internal_viewer_flag() {
-        let command = viewer_command(Path::new(FASTLED_EXE_NAMES[0]), "http://127.0.0.1:8089");
+        let command = viewer_command(
+            Path::new(FASTLED_EXE_NAMES[0]),
+            "http://127.0.0.1:8089",
+            false,
+        );
         let args = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
         assert_eq!(args, vec!["--internal-viewer", "http://127.0.0.1:8089"]);
+    }
+
+    #[test]
+    fn test_viewer_command_can_inject_test_runtime() {
+        let command = viewer_command(
+            Path::new(FASTLED_EXE_NAMES[0]),
+            "http://127.0.0.1:8089",
+            true,
+        );
+        let args = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            vec![
+                "--internal-viewer",
+                "http://127.0.0.1:8089",
+                "--viewer-inject-test-runtime"
+            ]
+        );
     }
 
     #[test]

@@ -1,9 +1,13 @@
+use std::collections::{HashMap, HashSet};
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::build;
-use crate::cli::{requested_init_ref, validate_init_ref_flags, Cli};
+use crate::cli::{requested_init_ref, validate_init_ref_flags, Cli, LinkMode};
 use crate::compile_stream::{
     announce_link_mode, ensure_compile_prerequisites, purge_fastled_cache, report_build_outcome,
     run_native_compile_streaming, selected_build_mode, send_sse, write_build_status,
@@ -17,6 +21,7 @@ use crate::path::NormalizedPath;
 use crate::project;
 use crate::selection::prompt_for_example;
 use crate::server;
+use crate::test_mode::{self, TestOutcome};
 use crate::viewer;
 use crate::watcher;
 
@@ -71,6 +76,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             0,
             Some(tx.clone()),
             debug_symbols.clone(),
+            None,
         )
         .await
         {
@@ -193,6 +199,308 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         file_watcher.stop();
         ExitCode::SUCCESS
     })
+}
+
+/// Compile once, render in the shipped Tauri viewer, collect deterministic
+/// test artifacts, and tear the contained viewer/server processes down.
+pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
+    let started = Instant::now();
+    let plan = match test_mode::build_test_plan(cli) {
+        Ok(plan) => plan,
+        Err(message) => {
+            eprintln!("fastled: {message}");
+            return test_exit(TestOutcome::Failure);
+        }
+    };
+    let sketch_dir = PathBuf::from(dir);
+    if !sketch_dir.is_dir() {
+        eprintln!("fastled: sketch directory does not exist: {dir}");
+        return test_exit(TestOutcome::Failure);
+    }
+
+    announce_link_mode(cli, None, true);
+
+    let output_dir = sketch_dir.join("fastled_js");
+    if let Err(error) = std::fs::create_dir_all(&output_dir) {
+        eprintln!(
+            "fastled: could not create output directory {}: {error}",
+            output_dir.display()
+        );
+        return test_exit(TestOutcome::Failure);
+    }
+
+    let mut log_file = match open_test_log(plan.log_path.as_deref()) {
+        Ok(file) => file,
+        Err(error) => {
+            eprintln!("fastled: {error}");
+            return test_exit(TestOutcome::Failure);
+        }
+    };
+    let (build_tx, _build_rx) = tokio::sync::broadcast::channel::<String>(256);
+    let (test_tx, mut test_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut token_bytes = [0_u8; 32];
+    if let Err(error) = getrandom::fill(&mut token_bytes) {
+        eprintln!("fastled: could not create test capability: {error}");
+        return test_exit(TestOutcome::Failure);
+    }
+    let test_token = token_bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
+    let screenshot_paths = plan
+        .screenshots
+        .iter()
+        .map(|(name, path)| (name.clone(), path.clone().into_path_buf()))
+        .collect::<HashMap<_, _>>();
+    let runtime_config = server::TestRuntimeConfig {
+        wait_ms: plan.wait.as_secs_f64() * 1_000.0,
+        interval_ms: plan.interval.map(|value| value.as_secs_f64() * 1_000.0),
+        screenshot_names: plan
+            .screenshots
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect(),
+    };
+
+    write_build_status(&output_dir, "compiling", "Compiling...");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("fastled: could not create test runtime: {error}");
+            return test_exit(TestOutcome::Failure);
+        }
+    };
+    rt.block_on(async {
+        let addr = match server::start_server(
+            output_dir.clone(),
+            0,
+            Some(build_tx.clone()),
+            debug_symbols.clone(),
+            Some(server::TestServerOptions {
+                runtime: runtime_config,
+                screenshot_paths,
+                events: test_tx,
+                token: test_token.clone(),
+                sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+            }),
+        )
+        .await
+        {
+            Ok(addr) => addr,
+            Err(error) => {
+                eprintln!("fastled: failed to start test server: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
+
+        send_sse(
+            &build_tx,
+            r#"{"type":"status","status":"compiling","message":"Compiling..."}"#,
+        );
+        announce_link_mode(cli, Some(&build_tx), false);
+        let Some(compile_budget) = plan.total_timeout.checked_sub(started.elapsed()) else {
+            eprintln!("fastled: production test timed out before compilation");
+            return test_exit(TestOutcome::TotalTimeout);
+        };
+        let mut compile = match test_compile_command(cli, &sketch_dir) {
+            Ok(command) => command,
+            Err(error) => {
+                eprintln!("fastled: could not launch test compilation: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
+        let compile_result = match test_mode::run_contained_command(&mut compile, compile_budget).await
+        {
+            Ok(result) => result,
+            Err(error) => {
+                eprintln!("fastled: test compilation process failed: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
+        let success = matches!(compile_result, test_mode::TimedCommandResult::Exited(0));
+        let effective_success = report_build_outcome(&output_dir, &build_tx, success, true);
+        if matches!(compile_result, test_mode::TimedCommandResult::Interrupted) {
+            eprintln!("fastled: production test interrupted during compilation");
+            return test_exit(TestOutcome::Interrupted);
+        }
+        if matches!(compile_result, test_mode::TimedCommandResult::TimedOut) {
+            eprintln!("fastled: production test exceeded --test-timeout-secs during compilation");
+            return test_exit(TestOutcome::TotalTimeout);
+        }
+        if !effective_success {
+            eprintln!("fastled: test compilation failed");
+            return test_exit(TestOutcome::Failure);
+        }
+
+        let url = format!("http://{addr}/#fastled-test-token={test_token}");
+        let mut viewer = match viewer::launch_tauri_test_viewer(&url) {
+            Ok(process) => process,
+            Err(error) => {
+                eprintln!("fastled: Tauri test viewer failed: {error:#}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
+
+        let Some(remaining) = plan.total_timeout.checked_sub(started.elapsed()) else {
+            eprintln!("fastled: production test timed out while launching the viewer");
+            return test_exit(TestOutcome::TotalTimeout);
+        };
+        let deadline_origin = tokio::time::Instant::now();
+        let total_deadline = deadline_origin + remaining;
+        let ready_deadline = deadline_origin + plan.ready_timeout;
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+        let mut liveness = tokio::time::interval(std::time::Duration::from_millis(100));
+        let mut ready = false;
+        let mut page_error = false;
+        let mut saved = HashSet::new();
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = tokio::time::sleep_until(total_deadline) => {
+                    eprintln!("fastled: production test exceeded --test-timeout-secs");
+                    return test_exit(TestOutcome::TotalTimeout);
+                }
+                _ = tokio::time::sleep_until(ready_deadline), if !ready => {
+                    eprintln!("fastled: viewer did not render a canvas before --test-ready-timeout-secs");
+                    return test_exit(TestOutcome::ReadyTimeout);
+                }
+                _ = &mut ctrl_c => {
+                    eprintln!("fastled: production test interrupted");
+                    return test_exit(TestOutcome::Interrupted);
+                }
+                _ = liveness.tick() => {
+                    if !viewer.is_alive() {
+                        eprintln!("fastled: test viewer exited before completing");
+                        return test_exit(TestOutcome::Failure);
+                    }
+                }
+                event = test_rx.recv() => {
+                    match event {
+                        Some(server::TestEvent::Ready) => {
+                            if !ready {
+                                ready = true;
+                                if !write_test_log(&mut log_file, "[fastled-test] ready") {
+                                    return test_exit(TestOutcome::Failure);
+                                }
+                            }
+                        }
+                        Some(server::TestEvent::ViewerLog(line)) => {
+                            page_error |= test_mode::is_viewer_error_line(&line);
+                            if !write_test_log(&mut log_file, &line) {
+                                return test_exit(TestOutcome::Failure);
+                            }
+                        }
+                        Some(server::TestEvent::ScreenshotSaved { name, path }) => {
+                            saved.insert(name);
+                            let marker = format!("[fastled-test] screenshot={}", path.display());
+                            if !write_test_log(&mut log_file, &marker) {
+                                return test_exit(TestOutcome::Failure);
+                            }
+                        }
+                        Some(server::TestEvent::Failure(message)) => {
+                            eprintln!("fastled: {message}");
+                            return test_exit(TestOutcome::Failure);
+                        }
+                        Some(server::TestEvent::Done(code)) => {
+                            if !ready || code != 0 || saved.len() != plan.screenshots.len() {
+                                eprintln!(
+                                    "fastled: viewer test failed (ready={ready}, code {code}, saved {}/{})",
+                                    saved.len(),
+                                    plan.screenshots.len()
+                                );
+                                return test_exit(TestOutcome::Failure);
+                            }
+                            return test_exit(if plan.exit_on_error && page_error {
+                                TestOutcome::PageError
+                            } else {
+                                TestOutcome::Success
+                            });
+                        }
+                        None => {
+                            eprintln!("fastled: test event channel closed unexpectedly");
+                            return test_exit(TestOutcome::Failure);
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn test_exit(outcome: TestOutcome) -> ExitCode {
+    ExitCode::from(outcome.exit_code())
+}
+
+fn test_compile_command(
+    cli: &Cli,
+    sketch_dir: &std::path::Path,
+) -> std::io::Result<std::process::Command> {
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command
+        .arg(sketch_dir)
+        .arg("--just-compile")
+        .arg("--no-interactive");
+    if cli.debug {
+        command.arg("--debug");
+    } else if cli.release {
+        command.arg("--release");
+    } else {
+        command.arg("--quick");
+    }
+    command.arg(match cli.link_mode {
+        LinkMode::Static => "--link=static",
+        LinkMode::Dynamic => "--link=dynamic",
+    });
+    if cli.profile {
+        command.arg("--profile");
+    }
+    if cli.purge {
+        command.arg("--purge");
+    }
+    if cli.clangd {
+        command.arg("--clangd");
+    }
+    if let Some(path) = &cli.fastled_path {
+        command.arg("--fastled-path").arg(path);
+    }
+    Ok(command)
+}
+
+fn open_test_log(path: Option<&std::path::Path>) -> Result<Option<File>, String> {
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("could not create test log directory: {error}"))?;
+    }
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map(Some)
+        .map_err(|error| format!("could not open test log {}: {error}", path.display()))
+}
+
+fn write_test_log(file: &mut Option<File>, line: &str) -> bool {
+    let Some(file) = file else {
+        return true;
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    if let Err(error) = writeln!(file, "[{timestamp}] {line}").and_then(|_| file.flush()) {
+        eprintln!("fastled: could not write test log: {error}");
+        return false;
+    }
+    true
 }
 
 pub(crate) fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
@@ -395,7 +703,7 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
         let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
-        let addr = match server::start_server(path.clone(), 0, None, debug_symbols).await {
+        let addr = match server::start_server(path.clone(), 0, None, debug_symbols, None).await {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("fastled: failed to start server: {e}");

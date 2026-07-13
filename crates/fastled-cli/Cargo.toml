@@ -48,6 +48,7 @@ tempfile = "3"
 zccache-fingerprint = { workspace = true }
 shell-words = { workspace = true }
 globset = { workspace = true }
+getrandom = "0.3"
 
 [build-dependencies]
 indexmap = { version = "1.9.3", features = ["std"] }
