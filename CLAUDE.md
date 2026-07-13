@@ -51,6 +51,9 @@ Do not pipe pytest through `| tail -N` if you want streaming output; it buffers 
 - Test command: `bash test` or targeted subsets above.
 - Prefer native Rust implementations and fail-loud behavior over silent Python fallbacks.
 - Do not add backwards-compat hacks for code paths that no longer exist.
+- For deterministic in-product render checks, use `fastled <sketch> --test`
+  with the `--test-*` screenshot, interval, log, and timeout flags. This uses
+  the shipped Tauri viewer and exits automatically; no browser harness is needed.
 
 ## Common Gotchas
 

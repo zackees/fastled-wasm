@@ -5,18 +5,20 @@
 //! does not exist yet (compilation in progress) a built-in loading page
 //! is returned that polls `/build-status.json` for live updates.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use axum::extract::State;
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::body::Bytes;
+use axum::extract::{DefaultBodyLimit, Query, State};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
@@ -33,6 +35,32 @@ use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 /// `Arc<RwLock<Option<_>>>` lets the watch loop swap it in without bouncing
 /// the server.
 pub type DebugSymbolHandle = Arc<RwLock<Option<DebugSymbolResolver>>>;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TestRuntimeConfig {
+    pub(crate) wait_ms: f64,
+    pub(crate) interval_ms: Option<f64>,
+    pub(crate) screenshot_names: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct TestServerOptions {
+    pub(crate) runtime: TestRuntimeConfig,
+    pub(crate) screenshot_paths: HashMap<String, PathBuf>,
+    pub(crate) events: tokio::sync::mpsc::UnboundedSender<TestEvent>,
+    pub(crate) token: String,
+    pub(crate) sleep_permits: Arc<tokio::sync::Semaphore>,
+}
+
+#[derive(Debug)]
+pub(crate) enum TestEvent {
+    Ready,
+    ViewerLog(String),
+    ScreenshotSaved { name: String, path: PathBuf },
+    Failure(String),
+    Done(u8),
+}
 
 // ---------------------------------------------------------------------------
 // Loading page (shown while compilation is in progress)
@@ -188,6 +216,142 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
 <div id="log"></div>
 </body></html>"#;
 
+const TEST_WORKER_WEBGL_PREFIX: &str = r#"
+const __fastledOriginalOffscreenGetContext = OffscreenCanvas.prototype.getContext;
+let __fastledTestWebglReported = false;
+const __fastledTestContexts = [];
+
+const __fastledTestCaptureFrame = async (request) => {
+  const id = request.id;
+  try {
+    if (__fastledTestContexts.length === 0) throw new Error('FastLED WebGL context is unavailable');
+    let selected = null;
+    const manager = typeof workerState !== 'undefined' && workerState.graphicsManager;
+    if (manager) {
+      const freshFrameData = extractFrameData();
+      let nonzeroFrameValues = 0;
+      if (freshFrameData) {
+        for (const strip of freshFrameData) {
+          for (const value of strip.pixel_data || []) if (value > 0) nonzeroFrameValues += 1;
+        }
+        if (Object.keys(manager.screenMaps || {}).length === 0 && workerState.wasmFunctions) {
+          const Module = workerState.fastledModule;
+          const screenMapSizePtr = Module._malloc(4);
+          const screenMapDataPtr = workerState.wasmFunctions.getScreenMapData(screenMapSizePtr);
+          if (screenMapDataPtr) {
+            const screenMapSize = Module.getValue(screenMapSizePtr, 'i32');
+            const screenMaps = JSON.parse(Module.UTF8ToString(screenMapDataPtr, screenMapSize));
+            manager.updateScreenMap(screenMaps);
+            workerState.screenMaps = screenMaps;
+            workerState.wasmFunctions.freeFrameData(screenMapDataPtr);
+          }
+          Module._free(screenMapSizePtr);
+        }
+        manager.updateCanvas(freshFrameData);
+      }
+      postMessage({
+        type: 'stdout',
+        payload: { text: `[fastled-test] synchronous frame values=${nonzeroFrameValues} screenMaps=${Object.keys(manager.screenMaps || {}).length}` }
+      });
+    }
+    for (const entry of __fastledTestContexts) {
+      const width = entry.canvas.width;
+      const height = entry.canvas.height;
+      const pixels = new Uint8Array(width * height * 4);
+      const previousFramebuffer = entry.gl.getParameter(entry.gl.FRAMEBUFFER_BINDING);
+      let readError;
+      try {
+        entry.gl.bindFramebuffer(entry.gl.FRAMEBUFFER, null);
+        entry.gl.finish();
+        entry.gl.readPixels(0, 0, width, height, entry.gl.RGBA, entry.gl.UNSIGNED_BYTE, pixels);
+        readError = entry.gl.getError();
+      } finally {
+        entry.gl.bindFramebuffer(entry.gl.FRAMEBUFFER, previousFramebuffer);
+      }
+      if (readError !== entry.gl.NO_ERROR) {
+        throw new Error(`WebGL readPixels failed with error 0x${readError.toString(16)}`);
+      }
+      let nonBlackPixels = 0;
+      let varied = false;
+      const first = pixels.slice(0, 4);
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        if (pixels[offset] || pixels[offset + 1] || pixels[offset + 2]) nonBlackPixels += 1;
+        if (pixels[offset] !== first[0] || pixels[offset + 1] !== first[1]
+            || pixels[offset + 2] !== first[2] || pixels[offset + 3] !== first[3]) varied = true;
+      }
+      postMessage({
+        type: 'stdout',
+        payload: { text: `[fastled-test] context ${entry.kind} ${width}x${height} nonBlack=${nonBlackPixels} varied=${varied}` }
+      });
+      const candidate = { canvas: entry.canvas, gl: entry.gl, width, height, pixels, nonBlackPixels, varied };
+      if (!selected || candidate.nonBlackPixels > selected.nonBlackPixels
+          || (candidate.nonBlackPixels === selected.nonBlackPixels && candidate.varied && !selected.varied)
+          || (candidate.nonBlackPixels === selected.nonBlackPixels && candidate.varied === selected.varied
+              && candidate.width * candidate.height > selected.width * selected.height)) {
+        selected = candidate;
+      }
+    }
+    const { width, height, pixels, nonBlackPixels, varied } = selected;
+    const flipped = new Uint8ClampedArray(pixels.length);
+    const rowBytes = width * 4;
+    for (let y = 0; y < height; y += 1) {
+      const source = (height - y - 1) * rowBytes;
+      flipped.set(pixels.subarray(source, source + rowBytes), y * rowBytes);
+    }
+    const output = new OffscreenCanvas(width, height);
+    const context = output.getContext('2d');
+    if (!context) throw new Error('2D screenshot context is unavailable');
+    context.putImageData(new ImageData(flipped, width, height), 0, 0);
+    const blob = await output.convertToBlob({ type: 'image/png' });
+    const bytes = await blob.arrayBuffer();
+    postMessage({
+      type: 'fastled_test_capture_response',
+      id,
+      bytes,
+      stats: { width, height, nonBlackPixels, varied }
+    }, [bytes]);
+  } catch (error) {
+    postMessage({
+      type: 'fastled_test_capture_response',
+      id,
+      error: error && error.stack ? error.stack : String(error)
+    });
+  }
+};
+
+OffscreenCanvas.prototype.getContext = function(kind, attributes) {
+  if (kind === 'webgl' || kind === 'webgl2' || kind === 'experimental-webgl') {
+    attributes = Object.assign({}, attributes || {}, { preserveDrawingBuffer: true });
+    if (!__fastledTestWebglReported) {
+      __fastledTestWebglReported = true;
+      postMessage({
+        type: 'stdout',
+        payload: { text: '[fastled-test] OffscreenCanvas preserveDrawingBuffer enabled' }
+      });
+    }
+  }
+  const context = __fastledOriginalOffscreenGetContext.call(this, kind, attributes);
+  if (context && (kind === 'webgl' || kind === 'webgl2' || kind === 'experimental-webgl')) {
+    __fastledTestContexts.push({ gl: context, canvas: this, kind });
+    const effectiveAttributes = context.getContextAttributes();
+    postMessage({
+      type: 'stdout',
+      payload: { text: `[fastled-test] WebGL context ${kind} canvas=${this.width}x${this.height} preserveDrawingBuffer=${effectiveAttributes && effectiveAttributes.preserveDrawingBuffer}` }
+    });
+  }
+  return context;
+};
+self.addEventListener('message', (event) => {
+  if (!event.data || event.data.type !== 'fastled_test_capture') return;
+  event.stopImmediatePropagation();
+  void __fastledTestCaptureFrame({ id: event.data.id });
+  postMessage({
+    type: 'stdout',
+    payload: { text: '[fastled-test] capture requested' }
+  });
+});
+"#;
+
 // ---------------------------------------------------------------------------
 // Server state
 // ---------------------------------------------------------------------------
@@ -201,6 +365,7 @@ struct AppState {
     /// Shared resolver for DWARF source paths. Empty until a successful
     /// build populates it.
     debug_symbols: DebugSymbolHandle,
+    test: Option<Arc<TestServerOptions>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +415,12 @@ async fn serve_file(
     }
 
     match tokio::fs::read(&file_path).await {
-        Ok(data) => {
+        Ok(mut data) => {
+            if state.test.is_some() && path == "fastled_background_worker.js" {
+                let mut patched = TEST_WORKER_WEBGL_PREFIX.as_bytes().to_vec();
+                patched.extend_from_slice(&data);
+                data = patched;
+            }
             let mime = mime_for_path(&path);
             (StatusCode::OK, [(header::CONTENT_TYPE, mime)], data).into_response()
         }
@@ -301,10 +471,140 @@ async fn build_stream(State(state): State<AppState>) -> Response {
 /// `POST /viewer-log` — receive console/error lines forwarded from the Tauri
 /// viewer's injected logging script (enabled via `FASTLED_VIEWER_LOGS`) and
 /// echo them to stderr so viewer-side failures are diagnosable.
-async fn viewer_log(body: String) -> Response {
+fn test_request_authorized(test: &TestServerOptions, headers: &HeaderMap) -> bool {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|value| value == test.token)
+}
+
+async fn viewer_log(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
+    if let Some(test) = &state.test {
+        if !test_request_authorized(test, &headers) {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+    }
     for line in body.lines() {
         eprintln!("[viewer] {line}");
+        if let Some(test) = &state.test {
+            let _ = test.events.send(TestEvent::ViewerLog(line.to_string()));
+        }
     }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn test_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    match &state.test {
+        Some(test) if test_request_authorized(test, &headers) => {
+            Json(test.runtime.clone()).into_response()
+        }
+        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn test_ready(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    match &state.test {
+        Some(test) if test_request_authorized(test, &headers) => {
+            let _ = test.events.send(TestEvent::Ready);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct TestSleepQuery {
+    ms: f64,
+}
+
+async fn test_sleep(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TestSleepQuery>,
+) -> Response {
+    let Some(test) = &state.test else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !test_request_authorized(test, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Ok(duration) = std::time::Duration::try_from_secs_f64(query.ms / 1_000.0) else {
+        return (StatusCode::BAD_REQUEST, "invalid sleep duration").into_response();
+    };
+    let max_ms = test
+        .runtime
+        .interval_ms
+        .unwrap_or(0.0)
+        .max(test.runtime.wait_ms);
+    if query.ms > max_ms {
+        return (StatusCode::BAD_REQUEST, "sleep exceeds test schedule").into_response();
+    }
+    let Ok(_permit) = test.sleep_permits.clone().try_acquire_owned() else {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    };
+    tokio::time::sleep(duration).await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Deserialize)]
+struct ScreenshotQuery {
+    name: String,
+}
+
+async fn viewer_screenshot(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<ScreenshotQuery>,
+    body: Bytes,
+) -> Response {
+    let Some(test) = &state.test else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !test_request_authorized(test, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some(path) = test.screenshot_paths.get(&query.name) else {
+        return (StatusCode::BAD_REQUEST, "unknown screenshot name").into_response();
+    };
+    if body.len() < 8 || body[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
+        let message = format!("viewer returned invalid PNG data for {}", path.display());
+        let _ = test.events.send(TestEvent::Failure(message.clone()));
+        return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        if let Err(error) = tokio::fs::create_dir_all(parent).await {
+            let message = format!("could not create screenshot directory: {error}");
+            let _ = test.events.send(TestEvent::Failure(message.clone()));
+            return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
+        }
+    }
+    if let Err(error) = tokio::fs::write(path, &body).await {
+        let message = format!("could not write screenshot {}: {error}", path.display());
+        let _ = test.events.send(TestEvent::Failure(message.clone()));
+        return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
+    }
+    let _ = test.events.send(TestEvent::ScreenshotSaved {
+        name: query.name,
+        path: path.clone(),
+    });
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn test_done(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
+    let Some(test) = &state.test else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if !test_request_authorized(test, &headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let code = body.trim().parse::<u8>().unwrap_or(1);
+    let _ = test.events.send(TestEvent::Done(code));
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -422,11 +722,13 @@ pub async fn start_server(
     port: u16,
     build_tx: Option<broadcast::Sender<String>>,
     debug_symbols: DebugSymbolHandle,
+    test: Option<TestServerOptions>,
 ) -> anyhow::Result<SocketAddr> {
     let state = AppState {
         serve_dir: Arc::new(serve_dir),
         build_tx,
         debug_symbols,
+        test: test.map(Arc::new),
     };
 
     let app = Router::new()
@@ -434,6 +736,11 @@ pub async fn start_server(
         .route("/build-stream", get(build_stream))
         .route("/dwarfsource", post(dwarf_source))
         .route("/viewer-log", post(viewer_log))
+        .route("/test-config", get(test_config))
+        .route("/test-ready", post(test_ready))
+        .route("/test-sleep", post(test_sleep))
+        .route("/viewer-screenshot", post(viewer_screenshot))
+        .route("/test-done", post(test_done))
         .route("/debug/source-roots", get(debug_source_roots))
         .route("/{*path}", get(serve_file))
         .layer(SetResponseHeaderLayer::overriding(
@@ -460,6 +767,7 @@ pub async fn start_server(
                 ])
                 .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
         )
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
@@ -488,7 +796,7 @@ mod tests {
     /// Helper: create a temp dir, start the server, return (addr, dir).
     async fn setup_server() -> (SocketAddr, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let addr = start_server(dir.path().to_path_buf(), 0, None, empty_handle())
+        let addr = start_server(dir.path().to_path_buf(), 0, None, empty_handle(), None)
             .await
             .unwrap();
         // Give the server a moment to bind.
@@ -507,6 +815,117 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), 204);
+    }
+
+    #[tokio::test]
+    async fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("fastled_background_worker.js"),
+            "console.log('worker');",
+        )
+        .unwrap();
+        let screenshot = dir.path().join("artifacts").join("frame.png");
+        let (events, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let options = TestServerOptions {
+            runtime: TestRuntimeConfig {
+                wait_ms: 25.0,
+                interval_ms: Some(10.0),
+                screenshot_names: vec!["frame-0".to_string()],
+            },
+            screenshot_paths: HashMap::from([("frame-0".to_string(), screenshot.clone())]),
+            events,
+            token: "test-token".to_string(),
+            sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+        };
+        let addr = start_server(
+            dir.path().to_path_buf(),
+            0,
+            None,
+            empty_handle(),
+            Some(options),
+        )
+        .await
+        .unwrap();
+        let client = reqwest::Client::new();
+
+        let unauthorized = client
+            .get(format!("http://{addr}/test-config"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+        let config_response = client
+            .get(format!("http://{addr}/test-config"))
+            .bearer_auth("test-token")
+            .send()
+            .await
+            .unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&config_response.text().await.unwrap()).unwrap();
+        assert_eq!(config["waitMs"].as_f64(), Some(25.0));
+        assert_eq!(config["screenshotNames"][0], "frame-0");
+
+        let response = client
+            .post(format!("http://{addr}/test-sleep?ms=1"))
+            .bearer_auth("test-token")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let response = client
+            .post(format!("http://{addr}/test-sleep?ms=-1"))
+            .bearer_auth("test-token")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = client
+            .post(format!("http://{addr}/test-sleep?ms=26"))
+            .bearer_auth("test-token")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let worker = client
+            .get(format!("http://{addr}/fastled_background_worker.js"))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(worker.starts_with("\nconst __fastledOriginalOffscreenGetContext"));
+        assert!(worker.contains("preserveDrawingBuffer: true"));
+        assert!(worker.contains("console.log('worker');"));
+        assert!(worker.contains("gl.readPixels"));
+        assert!(worker.contains("fastled_test_capture_response"));
+
+        let response = client
+            .post(format!("http://{addr}/viewer-screenshot?name=..%2Fescape"))
+            .bearer_auth("test-token")
+            .body(vec![137, 80, 78, 71, 13, 10, 26, 10])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(!dir.path().join("escape").exists());
+
+        let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
+        let response = client
+            .post(format!("http://{addr}/viewer-screenshot?name=frame-0"))
+            .bearer_auth("test-token")
+            .body(png.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(fs::read(&screenshot).unwrap(), png);
+        assert!(matches!(
+            rx.recv().await,
+            Some(TestEvent::ScreenshotSaved { name, .. }) if name == "frame-0"
+        ));
     }
 
     #[tokio::test]
@@ -684,6 +1103,7 @@ mod tests {
             0,
             Some(tx.clone()),
             empty_handle(),
+            None,
         )
         .await
         .unwrap();
@@ -836,7 +1256,7 @@ mod tests {
         let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
         let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone())
+        let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -876,7 +1296,9 @@ mod tests {
         let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
         let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-        let addr = start_server(serve_dir, 0, None, handle).await.unwrap();
+        let addr = start_server(serve_dir, 0, None, handle, None)
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
@@ -923,7 +1345,9 @@ mod tests {
         let handle: DebugSymbolHandle =
             Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
 
-        let addr = start_server(serve_dir, 0, None, handle).await.unwrap();
+        let addr = start_server(serve_dir, 0, None, handle, None)
+            .await
+            .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
@@ -943,7 +1367,7 @@ mod tests {
         let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
         let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle)
+        let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;

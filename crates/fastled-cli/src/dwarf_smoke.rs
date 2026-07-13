@@ -29,7 +29,7 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize>
     let output_dir = output_dir.to_path_buf();
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async move {
-        let addr = server::start_server(output_dir, 0, None, debug_symbols).await?;
+        let addr = server::start_server(output_dir, 0, None, debug_symbols, None).await?;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let client = reqwest::Client::new();
         for path in &paths {

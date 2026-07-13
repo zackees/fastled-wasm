@@ -25,6 +25,7 @@ pub mod project;
 pub mod runtime;
 mod selection;
 mod server;
+mod test_mode;
 pub mod viewer;
 pub mod wasm_build;
 mod watcher;
@@ -38,6 +39,7 @@ const DEFAULT_EXAMPLE: &str = "wasm";
 /// Library entry point invoked by the `fastled` binary.
 pub fn run() -> ExitCode {
     let mut cli = cli::Cli::parse();
+    cli::apply_test_implications(&mut cli);
 
     if let Err(message) = cli::validate_init_ref_flags(&cli) {
         eprintln!("fastled: {message}");
@@ -147,6 +149,9 @@ pub fn run() -> ExitCode {
     //  - the user did NOT pass --just-compile
     //  - it's not a non-compile command (--init)
     if let Some(ref dir) = cli.directory {
+        if cli.test && cli.init.is_none() {
+            return commands::compile_and_test(dir, &cli);
+        }
         if (cli.just_compile || cli.no_app) && cli.init.is_none() {
             return commands::run_native_just_compile(&cli, dir);
         }
@@ -219,6 +224,16 @@ mod tests {
             dry_run: false,
             no_interactive: false,
             no_https: false,
+            test: false,
+            test_wait_secs: 1.0,
+            test_screenshot: None,
+            test_interval_secs: None,
+            test_count: None,
+            test_duration_secs: None,
+            test_log: None,
+            test_exit_on_error: false,
+            test_timeout_secs: 120.0,
+            test_ready_timeout_secs: 15.0,
             latest: false,
             branch: None,
             commit: None,

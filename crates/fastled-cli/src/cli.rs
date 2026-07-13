@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Clone, Debug, Subcommand)]
@@ -111,6 +113,82 @@ pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) no_https: bool,
 
+    /// Compile, render, collect requested test artifacts, and exit.
+    #[arg(long, conflicts_with_all = ["just_compile", "no_app"], help_heading = "Production testing")]
+    pub(crate) test: bool,
+
+    /// Seconds to wait after the sketch is ready before the first capture.
+    #[arg(
+        long,
+        default_value_t = 1.0,
+        requires = "test",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_wait_secs: f64,
+
+    /// PNG output path. Interval mode supports an unpadded index, {n:03}, and {ts}.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "test",
+        verbatim_doc_comment,
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_screenshot: Option<PathBuf>,
+
+    /// Target interval between scheduled capture starts; slow captures may delay later frames.
+    #[arg(long, requires = "test", help_heading = "Production testing")]
+    pub(crate) test_interval_secs: Option<f64>,
+
+    /// Number of screenshots to take in interval mode.
+    #[arg(
+        long,
+        requires = "test",
+        conflicts_with = "test_duration_secs",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_count: Option<u32>,
+
+    /// Total capture window in seconds for interval mode.
+    #[arg(
+        long,
+        requires = "test",
+        conflicts_with = "test_count",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_duration_secs: Option<f64>,
+
+    /// Append viewer console and error output to this file.
+    #[arg(
+        long,
+        value_name = "PATH",
+        requires = "test",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_log: Option<PathBuf>,
+
+    /// Exit with code 2 when the viewer reports a page-side error.
+    #[arg(long, requires = "test", help_heading = "Production testing")]
+    pub(crate) test_exit_on_error: bool,
+
+    /// Hard upper bound in seconds for compile, ready wait, and capture.
+    #[arg(
+        long,
+        default_value_t = 120.0,
+        requires = "test",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_timeout_secs: f64,
+
+    /// Seconds to wait for a rendered canvas after compilation succeeds.
+    #[arg(
+        long,
+        default_value_t = 15.0,
+        requires = "test",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_ready_timeout_secs: f64,
+
     /// Use the latest tagged FastLED release when initialising examples with --init.
     /// Defaults to `master`; tagged releases older than the meson migration cannot be built.
     #[arg(long)]
@@ -181,6 +259,12 @@ pub(crate) fn validate_init_ref_flags(cli: &Cli) -> Result<(), &'static str> {
     Ok(())
 }
 
+pub(crate) fn apply_test_implications(cli: &mut Cli) {
+    if cli.test {
+        cli.no_interactive = true;
+    }
+}
+
 pub(crate) fn requested_init_ref(cli: &Cli) -> Option<&str> {
     if cli.latest {
         // `--latest` opts into the most recent tagged FastLED release. The
@@ -202,6 +286,7 @@ pub(crate) fn requested_init_ref(cli: &Cli) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     #[test]
     fn clangd_emission_is_opt_in() {
@@ -234,5 +319,68 @@ mod tests {
                 action: ToolchainAction::Status
             })
         ));
+    }
+
+    #[test]
+    fn production_test_flags_parse_as_a_group() {
+        let cli = Cli::parse_from([
+            "fastled",
+            "sketch",
+            "--test",
+            "--test-wait-secs=2",
+            "--test-interval-secs=0.5",
+            "--test-count=10",
+            "--test-screenshot=out-{n:03}.png",
+            "--test-log=run.log",
+            "--test-exit-on-error",
+        ]);
+        assert!(cli.test);
+        assert_eq!(cli.test_wait_secs, 2.0);
+        assert_eq!(cli.test_interval_secs, Some(0.5));
+        assert_eq!(cli.test_count, Some(10));
+        assert_eq!(cli.test_screenshot, Some(PathBuf::from("out-{n:03}.png")));
+        assert_eq!(cli.test_log, Some(PathBuf::from("run.log")));
+        assert!(cli.test_exit_on_error);
+    }
+
+    #[test]
+    fn production_test_help_describes_filename_templates() {
+        let help = Cli::command().render_long_help().to_string();
+        assert!(help.contains("supports an unpadded index, {n:03}, and {ts}"));
+        assert!(help.contains("Target interval between scheduled capture starts"));
+    }
+
+    #[test]
+    fn test_mode_implies_non_interactive_before_directory_resolution() {
+        let mut cli = Cli::parse_from(["fastled", "--test"]);
+        assert!(!cli.no_interactive);
+        apply_test_implications(&mut cli);
+        assert!(cli.no_interactive);
+    }
+
+    #[test]
+    fn production_test_suboptions_require_master_switch() {
+        assert!(Cli::try_parse_from([
+            "fastled",
+            "sketch",
+            "--test-count=2",
+            "--test-interval-secs=.5",
+            "--test-screenshot=out-{n}.png"
+        ])
+        .is_err());
+    }
+
+    #[test]
+    fn production_test_count_and_duration_conflict() {
+        assert!(Cli::try_parse_from([
+            "fastled",
+            "sketch",
+            "--test",
+            "--test-count=2",
+            "--test-duration-secs=1",
+            "--test-interval-secs=.5",
+            "--test-screenshot=out-{n}.png"
+        ])
+        .is_err());
     }
 }

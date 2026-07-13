@@ -81,6 +81,28 @@ Useful flags:
 
 Set `FASTLED_VIEWER_LOGS=1` to forward the viewer window's browser console output (`console.*`, uncaught errors, failed fetches) to the terminal's stderr, prefixed with `[viewer]` — useful when diagnosing a blank or broken viewer.
 
+### Testing your sketch from CI or an agent
+
+The shipped viewer can render a sketch, capture its canvas, collect browser
+logs, and exit without Playwright or a separate browser installation:
+
+```bash
+fastled examples/Blink --test --test-wait-secs=2 \
+  --test-screenshot=out/blink.png --test-log=out/blink.viewer.log \
+  --test-exit-on-error
+```
+
+For a frame sequence, add
+`--test-interval-secs=0.5 --test-count=10` and use a path such as
+`out/blink-{n:03}.png`. The interval is the target between scheduled capture
+starts; slow canvas readback or uploads can delay later frames. The wait begins
+only after the compiled page has a canvas and two animation frames have
+elapsed. Exit codes are `0` for success,
+`1` for compile/viewer/I/O failure, `2` for a captured page error when
+`--test-exit-on-error` is enabled, `124` for the total timeout, and `125` for
+the ready timeout. An interrupted run exits `130`. The viewer and local server
+are stopped automatically.
+
 ## Features
 
 ### Browser Compatibility
