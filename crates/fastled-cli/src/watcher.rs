@@ -198,11 +198,12 @@ impl FileWatcher {
                     continue;
                 }
 
-                // Directory replacement cannot be represented by one file path;
-                // require an authoritative scan instead of silently dropping it.
+                // Directory notifications are metadata noise on some backends
+                // (notably macOS FSEvents) and can point at the watched root
+                // after an ignored child changes. File-level events carry the
+                // useful invalidation, while removals above already force a
+                // rescan because their paths may no longer exist.
                 if path.is_dir() {
-                    s.force_rescan = true;
-                    s.last_event = Some(Instant::now());
                     continue;
                 }
 
