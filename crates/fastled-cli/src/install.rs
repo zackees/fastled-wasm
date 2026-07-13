@@ -5,15 +5,18 @@
 //! Public entry points are intended to be called once at the top of the
 //! compile flow; results are cached on disk via a `done.txt` marker.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(test)]
+use std::collections::BTreeMap;
+
 use anyhow::{bail, Context, Result};
 use ctcb_core::Target;
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -26,12 +29,14 @@ use crate::archive;
 /// the published manifests use a `"versions": { … }` map, while older
 /// `ctcb-manifest` releases expected version keys at the top level. Keeping
 /// the schema local insulates the CLI from upstream crate drift.
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PlatformManifest {
     latest: String,
     versions: BTreeMap<String, VersionInfo>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VersionInfo {
     href: String,
@@ -40,14 +45,12 @@ struct VersionInfo {
     parts: Option<Vec<PartRef>>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PartRef {
     href: String,
     sha256: String,
 }
-
-const EMSCRIPTEN_MANIFEST_BASE_URL: &str =
-    "https://raw.githubusercontent.com/zackees/clang-tool-chain-bins/main/assets/emscripten";
 
 const ESBUILD_VERSION: &str = "0.28.0";
 const EMSCRIPTEN_VERSION_MARKER: &str = ".fastled-manifest-version";
@@ -68,27 +71,11 @@ fn detect_platform_arch() -> Result<(String, String)> {
     Ok((target.platform.to_string(), target.arch.to_string()))
 }
 
-/// Fetch and parse the platform manifest JSON.
-fn fetch_manifest(url: &str) -> Result<PlatformManifest> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .context("failed to build HTTP client for manifest fetch")?;
-    let response = client
-        .get(url)
-        .send()
-        .with_context(|| format!("GET {url} failed"))?
-        .error_for_status()
-        .with_context(|| format!("manifest fetch returned error for {url}"))?;
-    let text = response.text().context("read manifest body")?;
-    parse_platform_manifest(&text).with_context(|| format!("parse manifest JSON from {url}"))
-}
-
 /// Parse a platform manifest, accepting both the current schema (`versions`
 /// sub-map) and the historical layout where version keys live at the top
 /// level next to `latest`. The two formats coexist on the assets server
 /// today, so the CLI has to handle both.
+#[cfg(test)]
 fn parse_platform_manifest(text: &str) -> Result<PlatformManifest> {
     if let Ok(parsed) = serde_json::from_str::<PlatformManifest>(text) {
         return Ok(parsed);
@@ -125,48 +112,7 @@ fn parse_platform_manifest(text: &str) -> Result<PlatformManifest> {
     Ok(PlatformManifest { latest, versions })
 }
 
-/// Download each part to `parts_dir`, verify its SHA256, then concatenate the
-/// parts into `merged_path`. Existing parts whose checksum still matches are
-/// reused (no re-download).
-fn download_multipart(parts: &[PartRef], parts_dir: &Path, merged_path: &Path) -> Result<()> {
-    fs::create_dir_all(parts_dir)
-        .with_context(|| format!("create parts dir {}", parts_dir.display()))?;
-    let merged_file = fs::File::create(merged_path)
-        .with_context(|| format!("create merged archive {}", merged_path.display()))?;
-    let mut merged_writer = BufWriter::new(merged_file);
-
-    for (index, part) in parts.iter().enumerate() {
-        let part_path = parts_dir.join(format!("part-{:02}", index));
-        if !part_path.exists() {
-            archive::download(&part.href, &part_path)
-                .with_context(|| format!("download part {}", part.href))?;
-        }
-        if !archive::verify_sha256(&part_path, &part.sha256)? {
-            let actual = archive::sha256_file(&part_path).unwrap_or_default();
-            let _ = fs::remove_file(&part_path);
-            bail!(
-                "checksum mismatch for {}: got {}, expected {}",
-                part.href,
-                actual,
-                part.sha256
-            );
-        }
-        let mut part_reader = BufReader::new(
-            fs::File::open(&part_path)
-                .with_context(|| format!("open part {}", part_path.display()))?,
-        );
-        std::io::copy(&mut part_reader, &mut merged_writer).with_context(|| {
-            format!(
-                "concatenate part {} into {}",
-                part_path.display(),
-                merged_path.display()
-            )
-        })?;
-    }
-    merged_writer.flush()?;
-    Ok(())
-}
-
+#[cfg(test)]
 fn multipart_parts(version_info: &VersionInfo) -> Option<&[PartRef]> {
     version_info
         .parts
@@ -303,177 +249,689 @@ fn validate_complete_emscripten_install(install_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Ensure the emscripten toolchain is installed at
-/// `~/.fastled/toolchains/emscripten/{platform}/{arch}/{version}/`.
-/// Returns the install directory path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolchainSpec {
+    pub platform: &'static str,
+    pub arch: &'static str,
+    pub package_id: &'static str,
+    pub archive_url: &'static str,
+    pub archive_sha256: &'static str,
+    pub archive_parts: &'static [ToolchainPart],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolchainPart {
+    pub url: &'static str,
+    pub sha256: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct ToolchainReceipt {
+    schema_version: u32,
+    #[serde(default)]
+    catalog_commit: String,
+    platform: String,
+    arch: String,
+    package_id: String,
+    archive_url: String,
+    archive_sha256: String,
+    health_checked: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+struct ActiveToolchainState {
+    schema_version: u32,
+    active: Option<String>,
+    previous_known_good: Option<String>,
+}
+
+const TOOLCHAIN_STATE_SCHEMA: u32 = 1;
+const TOOLCHAIN_RECEIPT_SCHEMA: u32 = 1;
+const TOOLCHAIN_CATALOG_COMMIT: &str = "ef4a0e4a767c46528776105815033fb870ec337a";
+const TOOLCHAIN_STATE_FILE: &str = ".fastled-active-toolchain.json";
+const TOOLCHAIN_RECEIPT_FILE: &str = ".fastled-toolchain.json";
+
+pub fn release_default_toolchain() -> Result<ToolchainSpec> {
+    let (platform, arch) = detect_platform_arch()?;
+    catalog_toolchain(&platform, &arch)
+}
+
+fn catalog_toolchain(platform: &str, arch: &str) -> Result<ToolchainSpec> {
+    let commit = TOOLCHAIN_CATALOG_COMMIT;
+    match (platform, arch) {
+        ("win", "x86_64") => Ok(ToolchainSpec {
+            platform: "win",
+            arch: "x86_64",
+            package_id: "4.0.19",
+            archive_url: "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/ef4a0e4a767c46528776105815033fb870ec337a/assets/emscripten/win/x86_64/emscripten-latest-win-x86_64.tar.zst",
+            archive_sha256: "b19c2e35b863eb17866034f917d7957514645e179e9d22800729b0dcbb2aa2e2",
+            archive_parts: &[],
+        }),
+        ("linux", "x86_64") => Ok(ToolchainSpec {
+            platform: "linux",
+            arch: "x86_64",
+            package_id: "4.0.21",
+            archive_url: "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/ef4a0e4a767c46528776105815033fb870ec337a/assets/emscripten/linux/x86_64/emscripten-4.0.21-linux-x86_64.tar.zst",
+            archive_sha256: "5cd3cbe0316d37c9b39bdc63691c014f136a5d82a9f08ed29bb7ad62f7a83655",
+            archive_parts: &[],
+        }),
+        ("linux", "arm64") => Ok(ToolchainSpec {
+            platform: "linux",
+            arch: "arm64",
+            package_id: "4.0.21",
+            archive_url: "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/ef4a0e4a767c46528776105815033fb870ec337a/assets/emscripten/linux/arm64/emscripten-4.0.21-linux-arm64.tar.zst",
+            archive_sha256: "610375cc8e88fabe47a1675e747e8aade31279eb1e6ec2bad6a355e6376af16f",
+            archive_parts: &[],
+        }),
+        ("darwin", "x86_64") => Ok(ToolchainSpec {
+            platform: "darwin",
+            arch: "x86_64",
+            package_id: "releases-d70a5da89b3e673bf6a482724478fc17e81e575e",
+            archive_url: "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/ef4a0e4a767c46528776105815033fb870ec337a/assets/emscripten/darwin/x86_64/emscripten-releases-d70a5da89b3e673bf6a482724478fc17e81e575e-darwin-x86_64.tar.zst",
+            archive_sha256: "6ba74e00642568383798a7ccd3b643ce3c5cd5606789bbe824aa9971f0d8894f",
+            archive_parts: &[],
+        }),
+        ("darwin", "arm64") => Ok(ToolchainSpec {
+            platform: "darwin",
+            arch: "arm64",
+            package_id: "releases-d70a5da89b3e673bf6a482724478fc17e81e575e",
+            archive_url: "https://media.githubusercontent.com/media/zackees/clang-tool-chain-bins/ef4a0e4a767c46528776105815033fb870ec337a/assets/emscripten/darwin/arm64/emscripten-releases-d70a5da89b3e673bf6a482724478fc17e81e575e-darwin-arm64.tar.zst",
+            archive_sha256: "6af749f0d44927c7d4c93c9e407e195257ed690b8e3bd3a43d7a3f4badc52082",
+            archive_parts: &[],
+        }),
+        _ => bail!(
+            "unsupported Emscripten target {platform}/{arch} in catalog commit {commit}"
+        ),
+    }
+}
+
+fn toolchain_root() -> Result<PathBuf> {
+    Ok(fastled_root()?.join("toolchains").join("emscripten"))
+}
+
+fn install_base(spec: ToolchainSpec) -> Result<PathBuf> {
+    Ok(toolchain_root()?.join(spec.platform).join(spec.arch))
+}
+
+fn package_key(spec: ToolchainSpec) -> String {
+    format!("{}-{}", spec.package_id, &spec.archive_sha256[..12])
+}
+
+fn package_dir(base: &Path, spec: ToolchainSpec) -> PathBuf {
+    base.join(package_key(spec))
+}
+
+fn state_path(base: &Path) -> PathBuf {
+    base.join(TOOLCHAIN_STATE_FILE)
+}
+
+fn receipt_path(install: &Path) -> PathBuf {
+    install.join(TOOLCHAIN_RECEIPT_FILE)
+}
+
+fn read_state(base: &Path) -> Result<ActiveToolchainState> {
+    let path = state_path(base);
+    if !path.is_file() {
+        return Ok(ActiveToolchainState {
+            schema_version: TOOLCHAIN_STATE_SCHEMA,
+            ..ActiveToolchainState::default()
+        });
+    }
+    let state: ActiveToolchainState = serde_json::from_str(
+        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
+    )
+    .with_context(|| format!("parse {}", path.display()))?;
+    if state.schema_version != TOOLCHAIN_STATE_SCHEMA {
+        bail!(
+            "unsupported toolchain state schema {}",
+            state.schema_version
+        );
+    }
+    Ok(state)
+}
+
+fn write_state(base: &Path, state: &ActiveToolchainState) -> Result<()> {
+    let path = state_path(base);
+    let temp = base.join(format!(".toolchain-state-{}.tmp", std::process::id()));
+    fs::write(&temp, serde_json::to_vec_pretty(state)?)?;
+    if path.exists() {
+        let backup = base.join(format!(".toolchain-state-{}.bak", std::process::id()));
+        fs::rename(&path, &backup).with_context(|| format!("backup {}", path.display()))?;
+        if let Err(error) = fs::rename(&temp, &path) {
+            let _ = fs::rename(&backup, &path);
+            return Err(error).with_context(|| format!("publish {}", path.display()));
+        }
+        let _ = fs::remove_file(backup);
+    } else {
+        fs::rename(&temp, &path).with_context(|| format!("publish {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn write_receipt(install: &Path, spec: ToolchainSpec, health_checked: bool) -> Result<()> {
+    let receipt = ToolchainReceipt {
+        schema_version: TOOLCHAIN_RECEIPT_SCHEMA,
+        catalog_commit: TOOLCHAIN_CATALOG_COMMIT.to_string(),
+        platform: spec.platform.to_string(),
+        arch: spec.arch.to_string(),
+        package_id: spec.package_id.to_string(),
+        archive_url: spec.archive_url.to_string(),
+        archive_sha256: spec.archive_sha256.to_string(),
+        health_checked,
+    };
+    fs::write(receipt_path(install), serde_json::to_vec_pretty(&receipt)?)?;
+    Ok(())
+}
+
+fn read_receipt(install: &Path) -> Result<ToolchainReceipt> {
+    let path = receipt_path(install);
+    serde_json::from_str(
+        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
+    )
+    .with_context(|| format!("parse {}", path.display()))
+}
+
+fn validate_managed_install(install: &Path, spec: ToolchainSpec) -> Result<()> {
+    validate_complete_emscripten_install(install)?;
+    let receipt = read_receipt(install)?;
+    if receipt.platform != spec.platform
+        || receipt.arch != spec.arch
+        || receipt.package_id != spec.package_id
+        || receipt.archive_sha256 != spec.archive_sha256
+    {
+        bail!(
+            "toolchain receipt does not match catalog package {}",
+            spec.package_id
+        );
+    }
+    Ok(())
+}
+
+fn has_install_history(base: &Path) -> bool {
+    fs::read_dir(base)
+        .ok()
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            entry.path().is_dir() || name == EMSCRIPTEN_VERSION_MARKER
+        })
+}
+
+fn migrate_legacy_install(base: &Path, spec: ToolchainSpec) -> Result<Option<PathBuf>> {
+    let mut candidates = Vec::new();
+    let marker = base.join(EMSCRIPTEN_VERSION_MARKER);
+    if let Ok(version) = fs::read_to_string(&marker) {
+        candidates.push(base.join(version.trim()));
+    }
+    candidates.push(base.join(spec.package_id));
+    candidates.push(base.join(spec.package_id.split('-').next().unwrap_or(spec.package_id)));
+
+    for candidate in candidates {
+        if candidate.is_dir()
+            && validate_complete_emscripten_install(&candidate).is_ok()
+            && candidate.file_name().is_some_and(|name| {
+                name == spec.package_id || name == spec.package_id.split('-').next().unwrap_or("")
+            })
+        {
+            write_receipt(&candidate, spec, false)?;
+            let state = ActiveToolchainState {
+                schema_version: TOOLCHAIN_STATE_SCHEMA,
+                active: Some(
+                    candidate
+                        .strip_prefix(base)
+                        .unwrap_or(&candidate)
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+                previous_known_good: None,
+            };
+            write_state(base, &state)?;
+            fs::remove_file(marker).ok();
+            return Ok(Some(candidate));
+        }
+    }
+    Ok(None)
+}
+
+fn resolve_active_install(base: &Path, spec: ToolchainSpec) -> Result<Option<PathBuf>> {
+    fs::create_dir_all(base)?;
+    let mut state = read_state(base)?;
+    if state.active.is_none() {
+        if let Some(legacy) = migrate_legacy_install(base, spec)? {
+            return Ok(Some(legacy));
+        }
+        return Ok(None);
+    }
+
+    let active = base.join(state.active.as_deref().unwrap_or_default());
+    if validate_managed_install(&active, spec).is_ok() {
+        return Ok(Some(active));
+    }
+    if let Some(previous_key) = state.previous_known_good.take() {
+        let previous = base.join(&previous_key);
+        if validate_managed_install(&previous, spec).is_ok() {
+            return Ok(Some(previous));
+        }
+    }
+    bail!("active Emscripten toolchain is missing or invalid; run `fastled toolchain repair`")
+}
+
+fn atomic_download(url: &str, destination: &Path) -> Result<()> {
+    let partial = destination.with_extension("partial");
+    if partial.exists() {
+        fs::remove_file(&partial).ok();
+    }
+    archive::download(url, &partial).with_context(|| format!("download archive {url}"))?;
+    fs::rename(&partial, destination)
+        .with_context(|| format!("publish downloaded archive {}", destination.display()))?;
+    Ok(())
+}
+
+fn download_multipart(
+    parts: &[ToolchainPart],
+    cache_dir: &Path,
+    archive_path: &Path,
+) -> Result<()> {
+    let merged_partial = archive_path.with_extension("partial");
+    let merged_file = fs::File::create(&merged_partial)
+        .with_context(|| format!("create partial archive {}", merged_partial.display()))?;
+    let mut merged_writer = BufWriter::new(merged_file);
+    for (index, part) in parts.iter().enumerate() {
+        let part_path = cache_dir.join(format!(
+            "{}.part-{index:02}",
+            package_key_for_archive(archive_path)
+        ));
+        if !part_path.is_file() || !archive::verify_sha256(&part_path, part.sha256).unwrap_or(false)
+        {
+            if part_path.exists() {
+                fs::remove_file(&part_path).ok();
+            }
+            atomic_download(part.url, &part_path)?;
+        }
+        if !archive::verify_sha256(&part_path, part.sha256)? {
+            fs::remove_file(&part_path).ok();
+            bail!("checksum mismatch for multipart package part {}", index);
+        }
+        let mut reader = BufReader::new(fs::File::open(&part_path)?);
+        std::io::copy(&mut reader, &mut merged_writer)?;
+    }
+    merged_writer.flush()?;
+    fs::rename(&merged_partial, archive_path)
+        .with_context(|| format!("publish multipart archive {}", archive_path.display()))?;
+    Ok(())
+}
+
+fn package_key_for_archive(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("emscripten")
+        .to_string()
+}
+
+fn resolve_node() -> Option<String> {
+    if cfg!(windows) {
+        Some("node.exe".to_string())
+    } else {
+        Some("node".to_string())
+    }
+}
+
+fn run_health_checks(install: &Path) -> Result<()> {
+    let temp =
+        std::env::temp_dir().join(format!("fastled-toolchain-health-{}", std::process::id()));
+    if temp.exists() {
+        fs::remove_dir_all(&temp).ok();
+    }
+    fs::create_dir_all(&temp)?;
+    let result = (|| -> Result<()> {
+        let empp = install.join("emscripten").join("em++.py");
+        let python = if cfg!(windows) {
+            "python.exe"
+        } else {
+            "python3"
+        };
+        let run = |args: &[&str]| -> Result<()> {
+            let status = Command::new(python)
+                .arg(&empp)
+                .args(args)
+                .env("EM_CONFIG", install.join(".emscripten"))
+                .env("EMSCRIPTEN", install.join("emscripten"))
+                .current_dir(&temp)
+                .status()
+                .context("run Emscripten health check")?;
+            if !status.success() {
+                bail!(
+                    "Emscripten health-check command failed: em++ {}",
+                    args.join(" ")
+                );
+            }
+            Ok(())
+        };
+        fs::write(temp.join("static.cpp"), "int main() { return 0; }\n")?;
+        run(&[
+            "static.cpp",
+            "-O0",
+            "-sWASM_BIGINT=1",
+            "-sEXIT_RUNTIME=1",
+            "-o",
+            "static.js",
+        ])?;
+        let node = resolve_node().context("Node.js is required for Emscripten health checks")?;
+        let static_status = Command::new(&node)
+            .arg(temp.join("static.js"))
+            .current_dir(&temp)
+            .status()
+            .context("run static Emscripten health check")?;
+        if !static_status.success() {
+            bail!("static Emscripten health check failed");
+        }
+
+        fs::write(temp.join("side.cpp"), "int side_value() { return 42; }\n")?;
+        fs::write(
+            temp.join("main.cpp"),
+            "extern int side_value(); int main() { return side_value() == 42 ? 0 : 1; }\n",
+        )?;
+        run(&[
+            "side.cpp",
+            "-O0",
+            "-sSIDE_MODULE=1",
+            "-sWASM_BIGINT=1",
+            "-o",
+            "side.wasm",
+        ])?;
+        run(&[
+            "main.cpp",
+            "side.wasm",
+            "-O0",
+            "-sMAIN_MODULE=2",
+            "-sWASM_BIGINT=1",
+            "-sEXIT_RUNTIME=1",
+            "-o",
+            "dynamic.js",
+        ])?;
+        let dynamic_status = Command::new(&node)
+            .arg(temp.join("dynamic.js"))
+            .current_dir(&temp)
+            .status()
+            .context("run dynamic Emscripten health check")?;
+        if !dynamic_status.success() {
+            bail!("dynamic Emscripten health check failed");
+        }
+        Ok(())
+    })();
+    fs::remove_dir_all(&temp).ok();
+    result
+}
+
+fn install_spec(
+    spec: ToolchainSpec,
+    health_check: bool,
+    replace_invalid: bool,
+    force_redownload: bool,
+) -> Result<PathBuf> {
+    let base = install_base(spec)?;
+    let root = fastled_root()?;
+    let cache_dir = root.join("toolchains").join("archives");
+    fs::create_dir_all(&base)?;
+    fs::create_dir_all(&cache_dir)?;
+    let destination = package_dir(&base, spec);
+    if !force_redownload && validate_managed_install(&destination, spec).is_ok() {
+        if health_check {
+            run_health_checks(&destination)?;
+        }
+        return Ok(destination);
+    }
+    let archive_path = cache_dir.join(format!("emscripten-{}.tar.zst", package_key(spec)));
+    if force_redownload && archive_path.exists() {
+        fs::remove_file(&archive_path).ok();
+    }
+    if !archive_path.is_file()
+        || !archive::verify_sha256(&archive_path, spec.archive_sha256).unwrap_or(false)
+    {
+        if archive_path.exists() {
+            fs::remove_file(&archive_path).ok();
+        }
+        if spec.archive_parts.is_empty() {
+            atomic_download(spec.archive_url, &archive_path)?;
+        } else {
+            download_multipart(spec.archive_parts, &cache_dir, &archive_path)?;
+        }
+    }
+    if !archive::verify_sha256(&archive_path, spec.archive_sha256)? {
+        fs::remove_file(&archive_path).ok();
+        bail!("checksum mismatch for catalog package {}", spec.package_id);
+    }
+
+    let staging = base.join(format!(
+        ".{}.staging-{}",
+        package_key(spec),
+        std::process::id()
+    ));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    let result = (|| -> Result<()> {
+        archive::extract_tar_zst(&archive_path, &staging)?;
+        ensure_toolchain_executables(&staging)?;
+        validate_emscripten_payload(&staging)?;
+        archive::write_emscripten_config(&staging, "node")?;
+        fs::write(staging.join("done.txt"), "ok\n")?;
+        write_receipt(&staging, spec, false)?;
+        validate_complete_emscripten_install(&staging)?;
+        if health_check {
+            run_health_checks(&staging)?;
+            write_receipt(&staging, spec, true)?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        fs::remove_dir_all(&staging).ok();
+        return Err(error);
+    }
+    if destination.exists() {
+        if !replace_invalid {
+            fs::remove_dir_all(&staging).ok();
+            bail!(
+                "catalog package {} is present but invalid; run repair",
+                spec.package_id
+            );
+        }
+        let quarantine = base.join(format!(
+            ".{}.invalid-{}",
+            package_key(spec),
+            std::process::id()
+        ));
+        fs::rename(&destination, &quarantine)
+            .with_context(|| format!("quarantine invalid toolchain {}", destination.display()))?;
+    }
+    fs::rename(&staging, &destination)
+        .with_context(|| format!("publish toolchain {}", destination.display()))?;
+    Ok(destination)
+}
+
+fn activate_install(base: &Path, install: &Path, spec: ToolchainSpec) -> Result<()> {
+    validate_managed_install(install, spec)?;
+    let mut state = read_state(base)?;
+    let key = install
+        .strip_prefix(base)
+        .unwrap_or(install)
+        .to_string_lossy()
+        .into_owned();
+    if state.active.as_deref() != Some(key.as_str()) {
+        state.previous_known_good = state.active.take();
+        state.active = Some(key);
+    }
+    state.schema_version = TOOLCHAIN_STATE_SCHEMA;
+    write_state(base, &state)
+}
+
+fn find_installed_package(base: &Path, package_id: &str, spec: ToolchainSpec) -> Result<PathBuf> {
+    for entry in fs::read_dir(base)? {
+        let path = entry?.path();
+        if path.is_dir()
+            && read_receipt(&path).is_ok_and(|receipt| receipt.package_id == package_id)
+            && validate_managed_install(&path, spec).is_ok()
+        {
+            return Ok(path);
+        }
+    }
+    bail!("supported package {package_id} is not installed; run `fastled toolchain install`")
+}
+
+fn with_toolchain_lock<T>(base: &Path, action: impl FnOnce() -> Result<T>) -> Result<T> {
+    let lock_path = base.join(".fastled-toolchain.lock");
+    let lock = fs::File::create(&lock_path)
+        .with_context(|| format!("create toolchain lock {}", lock_path.display()))?;
+    lock.lock_exclusive()
+        .with_context(|| format!("lock toolchain state {}", lock_path.display()))?;
+    let result = action();
+    drop(lock);
+    result
+}
+
+fn run_toolchain_action_locked(
+    action: crate::cli::ToolchainAction,
+    spec: ToolchainSpec,
+    base: &Path,
+) -> Result<()> {
+    match action {
+        crate::cli::ToolchainAction::Status => {
+            let active_result = resolve_active_install(base, spec);
+            let state = read_state(base)?;
+            println!("target: {}/{}", spec.platform, spec.arch);
+            println!("release default: {}", spec.package_id);
+            println!("active: {}", state.active.as_deref().unwrap_or("none"));
+            println!(
+                "previous known-good: {}",
+                state.previous_known_good.as_deref().unwrap_or("none")
+            );
+            match active_result {
+                Ok(Some(path)) => println!("active state: healthy ({})", path.display()),
+                Ok(None) => println!("active state: not installed"),
+                Err(error) => println!("active state: invalid ({error:#})"),
+            }
+        }
+        crate::cli::ToolchainAction::Install { package_id } => {
+            if package_id
+                .as_deref()
+                .is_some_and(|id| id != spec.package_id)
+            {
+                bail!(
+                    "package is not in this CLI release catalog: {}",
+                    package_id.unwrap()
+                );
+            }
+            let path = install_spec(spec, false, false, false)?;
+            println!("installed {} at {}", spec.package_id, path.display());
+        }
+        crate::cli::ToolchainAction::Activate { package_id } => {
+            if package_id != spec.package_id {
+                bail!("package is not in this CLI release catalog: {package_id}");
+            }
+            let path = find_installed_package(base, &package_id, spec)?;
+            run_health_checks(&path)?;
+            activate_install(base, &path, spec)?;
+            println!("activated {}", package_id);
+        }
+        crate::cli::ToolchainAction::Update => {
+            let path = install_spec(spec, true, true, false)?;
+            activate_install(base, &path, spec)?;
+            println!("updated and activated {}", spec.package_id);
+        }
+        crate::cli::ToolchainAction::Repair { package_id } => {
+            if package_id
+                .as_deref()
+                .is_some_and(|id| id != spec.package_id)
+            {
+                bail!(
+                    "package is not in this CLI release catalog: {}",
+                    package_id.unwrap()
+                );
+            }
+            let path = install_spec(spec, true, true, true)?;
+            activate_install(base, &path, spec)?;
+            println!("repaired and activated {}", spec.package_id);
+        }
+        crate::cli::ToolchainAction::Rollback => {
+            let mut state = read_state(base)?;
+            let previous = state
+                .previous_known_good
+                .clone()
+                .context("no previous known-good toolchain is recorded")?;
+            let path = base.join(&previous);
+            validate_managed_install(&path, spec)?;
+            let old_active = state.active.take();
+            state.active = Some(previous);
+            state.previous_known_good = old_active;
+            write_state(base, &state)?;
+            println!("rolled back toolchain");
+        }
+        crate::cli::ToolchainAction::Prune => {
+            let state = read_state(base)?;
+            let keep = [
+                state.active.as_deref(),
+                state.previous_known_good.as_deref(),
+            ];
+            let mut removed = 0;
+            for entry in fs::read_dir(base)? {
+                let path = entry?.path();
+                let key = path.file_name().and_then(|name| name.to_str());
+                if path.is_dir() && key.is_some() && !keep.contains(&key) {
+                    fs::remove_dir_all(path)?;
+                    removed += 1;
+                }
+            }
+            println!("pruned {removed} inactive toolchain installation(s)");
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn run_toolchain_action(action: crate::cli::ToolchainAction) -> Result<()> {
+    let spec = release_default_toolchain()?;
+    let base = install_base(spec)?;
+    fs::create_dir_all(&base)?;
+    with_toolchain_lock(&base, || run_toolchain_action_locked(action, spec, &base))
+}
+
+/// Ensure the catalog-selected Emscripten toolchain is active.
 ///
-/// The layout intentionally matches the Python implementation so a previously
-/// Python-installed toolchain is picked up without re-downloading.
+/// Normal compilation never consults a remote manifest. The only implicit
+/// download is a first-run bootstrap when no installation history exists.
 pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let cache = EMSCRIPTEN_INSTALL_CACHE.get_or_init(|| Mutex::new(None));
     let mut cached = cache
         .lock()
         .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
     if let Some(path) = cached.clone() {
-        if ensure_toolchain_executables(&path).is_ok()
-            && validate_complete_emscripten_install(&path).is_ok()
-        {
+        if validate_complete_emscripten_install(&path).is_ok() {
             return Ok(path);
         }
         *cached = None;
     }
     drop(cached);
-    let installed = ensure_emscripten_installed_uncached()?;
+
+    let spec = release_default_toolchain()?;
+    let base = install_base(spec)?;
+    let installed = with_toolchain_lock(&base, || match resolve_active_install(&base, spec)? {
+        Some(path) => Ok(path),
+        None if !has_install_history(&base) => {
+            let path = install_spec(spec, true, false, false)?;
+            activate_install(&base, &path, spec)?;
+            Ok(path)
+        }
+        None => {
+            bail!("no supported Emscripten toolchain is active; run `fastled toolchain update`")
+        }
+    })?;
     let mut cached = cache
         .lock()
         .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
     *cached = Some(installed.clone());
     Ok(installed)
-}
-
-fn cached_installed_toolchain(install_base: &Path) -> Option<PathBuf> {
-    let marker = install_base.join(EMSCRIPTEN_VERSION_MARKER);
-    if marker.is_file() {
-        if let Ok(version) = fs::read_to_string(&marker) {
-            let install = install_base.join(version.trim());
-            if validate_complete_emscripten_install(&install).is_ok() {
-                return Some(install);
-            }
-        }
-    }
-
-    // A valid local installation always wins. Automatic version refresh is
-    // intentionally deferred to the explicit toolchain-policy work in #194.
-    if let Some(install) = newest_complete_install(install_base) {
-        let version = install.file_name()?.to_string_lossy();
-        let _ = fs::write(&marker, format!("{version}\n"));
-        return Some(install);
-    }
-    None
-}
-
-fn newest_complete_install(install_base: &Path) -> Option<PathBuf> {
-    let mut candidates = fs::read_dir(install_base)
-        .ok()?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| validate_complete_emscripten_install(&entry.path()).is_ok())
-        .filter_map(|entry| {
-            let modified = entry.metadata().ok()?.modified().ok()?;
-            Some((modified, entry.path()))
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by_key(|(modified, _)| *modified);
-    candidates.pop().map(|(_, path)| path)
-}
-
-fn record_manifest_version(install_base: &Path, version: &str) -> Result<()> {
-    fs::write(
-        install_base.join(EMSCRIPTEN_VERSION_MARKER),
-        format!("{version}\n"),
-    )?;
-    Ok(())
-}
-
-fn ensure_emscripten_installed_uncached() -> Result<PathBuf> {
-    let (platform, arch) = detect_platform_arch()?;
-    let root = fastled_root()?;
-    let install_base = root
-        .join("toolchains")
-        .join("emscripten")
-        .join(&platform)
-        .join(&arch);
-    let cache_dir = root.join("toolchains").join("archives");
-    ensure_emscripten_installed_at(&install_base, &cache_dir, &platform, &arch, fetch_manifest)
-}
-
-fn ensure_emscripten_installed_at<F>(
-    install_base: &Path,
-    cache_dir: &Path,
-    platform: &str,
-    arch: &str,
-    fetch: F,
-) -> Result<PathBuf>
-where
-    F: Fn(&str) -> Result<PlatformManifest>,
-{
-    fs::create_dir_all(install_base)?;
-    fs::create_dir_all(cache_dir)?;
-
-    if let Some(install_dir) = cached_installed_toolchain(install_base) {
-        ensure_toolchain_executables(&install_dir)?;
-        return Ok(install_dir);
-    }
-
-    let manifest_url = format!("{EMSCRIPTEN_MANIFEST_BASE_URL}/{platform}/{arch}/manifest.json");
-    let manifest = match fetch(&manifest_url) {
-        Ok(manifest) => manifest,
-        Err(error) => {
-            if let Some(install_dir) = newest_complete_install(install_base) {
-                ensure_toolchain_executables(&install_dir)?;
-                return Ok(install_dir);
-            }
-            return Err(error);
-        }
-    };
-    let version = manifest.latest.clone();
-    let install_dir = install_base.join(&version);
-    let done_file = install_dir.join("done.txt");
-    if done_file.exists() && validate_complete_emscripten_install(&install_dir).is_ok() {
-        ensure_toolchain_executables(&install_dir)?;
-        record_manifest_version(install_base, &version)?;
-        return Ok(install_dir);
-    }
-
-    let version_info = manifest
-        .versions
-        .get(&version)
-        .with_context(|| format!("manifest has no entry for version {version}"))?;
-
-    let archive_path = cache_dir.join(format!("emscripten-{platform}-{arch}-{version}.tar.zst"));
-    let parts_subdir = cache_dir.join(format!("emscripten-{platform}-{arch}-{version}.parts"));
-
-    if !archive_path.exists() {
-        if let Some(parts) = multipart_parts(version_info) {
-            download_multipart(parts, &parts_subdir, &archive_path)?;
-        } else {
-            archive::download(&version_info.href, &archive_path)
-                .with_context(|| format!("download archive {}", version_info.href))?;
-        }
-    }
-
-    if !archive::verify_sha256(&archive_path, &version_info.sha256)? {
-        let actual = archive::sha256_file(&archive_path).unwrap_or_default();
-        let _ = fs::remove_file(&archive_path);
-        bail!(
-            "archive checksum mismatch for {}: got {}, expected {}",
-            version_info.href,
-            actual,
-            version_info.sha256
-        );
-    }
-
-    // Atomic-ish install via staging directory.
-    let staging = install_base.join(format!("{version}.staging"));
-    if staging.exists() {
-        fs::remove_dir_all(&staging)?;
-    }
-    fs::create_dir_all(&staging)?;
-    archive::extract_tar_zst(&archive_path, &staging)?;
-    ensure_toolchain_executables(&staging)?;
-    validate_emscripten_payload(&staging)?;
-
-    fs::write(staging.join("done.txt"), "ok\n")?;
-
-    if install_dir.exists() {
-        fs::remove_dir_all(&install_dir)?;
-    }
-    fs::rename(&staging, &install_dir)?;
-
-    archive::write_emscripten_config(&install_dir, "node")?;
-    validate_complete_emscripten_install(&install_dir)?;
-    record_manifest_version(install_base, &version)?;
-
-    Ok(install_dir)
 }
 
 // ---------------------------------------------------------------------------
@@ -1426,8 +1884,20 @@ mod tests {
   }
 }"#;
 
+    fn test_spec() -> ToolchainSpec {
+        ToolchainSpec {
+            platform: "test-platform",
+            arch: "test-arch",
+            package_id: "4.0.19",
+            archive_url: "https://example.com/emscripten.tar.zst",
+            archive_sha256: "b19c2e35b863eb17866034f917d7957514645e179e9d22800729b0dcbb2aa2e2",
+            archive_parts: &[],
+        }
+    }
+
     fn create_valid_emscripten_install(root: &Path) -> PathBuf {
-        let install = root.join("4.0.19");
+        let spec = test_spec();
+        let install = package_dir(root, spec);
         for path in required_emscripten_payload_files(&install) {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(
@@ -1441,6 +1911,7 @@ mod tests {
             .unwrap();
         }
         fs::write(install.join("done.txt"), "ok\n").unwrap();
+        write_receipt(&install, spec, true).unwrap();
         install
     }
 
@@ -1466,59 +1937,83 @@ mod tests {
     }
 
     #[test]
-    fn cached_install_uses_valid_local_even_with_old_marker() {
+    // Regression coverage for issue #194: a valid active install must not
+    // fall through to manifest discovery or an implicit replacement.
+    fn active_install_is_selected_without_network_or_manifest_state() {
         let temp = tempfile::tempdir().unwrap();
+        let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
-
-        let found = cached_installed_toolchain(temp.path()).expect("installed toolchain");
-        assert_eq!(found, install);
-        assert_eq!(
-            fs::read_to_string(temp.path().join(EMSCRIPTEN_VERSION_MARKER)).unwrap(),
-            "4.0.19\n"
-        );
-        assert_eq!(cached_installed_toolchain(temp.path()), Some(install));
-    }
-
-    #[test]
-    fn valid_local_install_skips_manifest_fetch() {
-        let temp = tempfile::tempdir().unwrap();
-        let install = create_valid_emscripten_install(temp.path());
-        let archives = temp.path().join("archives");
-        let found = ensure_emscripten_installed_at(
+        write_state(
             temp.path(),
-            &archives,
-            "test-platform",
-            "test-arch",
-            |_| panic!("manifest fetch must not run for a valid local install"),
-        )
-        .unwrap();
-        assert_eq!(found, install);
-        assert!(archives.is_dir());
-    }
-
-    #[test]
-    fn invalid_marker_target_falls_back_to_valid_local_install() {
-        let temp = tempfile::tempdir().unwrap();
-        let install = create_valid_emscripten_install(temp.path());
-        fs::write(
-            temp.path().join(EMSCRIPTEN_VERSION_MARKER),
-            "missing-version\n",
+            &ActiveToolchainState {
+                schema_version: TOOLCHAIN_STATE_SCHEMA,
+                active: Some(package_key(spec)),
+                previous_known_good: None,
+            },
         )
         .unwrap();
 
         assert_eq!(
-            cached_installed_toolchain(temp.path()),
+            resolve_active_install(temp.path(), spec).unwrap(),
+            Some(install)
+        );
+    }
+
+    #[test]
+    fn legacy_marker_migrates_to_receipt_and_active_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = test_spec();
+        let install = temp.path().join(spec.package_id);
+        for path in required_emscripten_payload_files(&install) {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, b"tool\n").unwrap();
+        }
+        fs::write(install.join("done.txt"), "ok\n").unwrap();
+        fs::write(temp.path().join(EMSCRIPTEN_VERSION_MARKER), "4.0.19\n").unwrap();
+
+        assert_eq!(
+            resolve_active_install(temp.path(), spec).unwrap(),
             Some(install.clone())
         );
+        assert!(receipt_path(&install).is_file());
         assert_eq!(
-            fs::read_to_string(temp.path().join(EMSCRIPTEN_VERSION_MARKER)).unwrap(),
-            "4.0.19\n"
+            read_state(temp.path()).unwrap().active,
+            Some("4.0.19".to_string())
         );
     }
 
     #[test]
-    fn missing_required_tool_rejects_install() {
+    fn existing_history_never_bootstraps_implicitly() {
         let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join("4.0.18")).unwrap();
+        assert!(has_install_history(temp.path()));
+    }
+
+    #[test]
+    fn invalid_active_uses_previous_known_good_without_rewriting_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = test_spec();
+        let install = create_valid_emscripten_install(temp.path());
+        let broken = temp.path().join("broken");
+        fs::create_dir(&broken).unwrap();
+        let state = ActiveToolchainState {
+            schema_version: TOOLCHAIN_STATE_SCHEMA,
+            active: Some("broken".to_string()),
+            previous_known_good: Some(package_key(spec)),
+        };
+        write_state(temp.path(), &state).unwrap();
+
+        assert_eq!(
+            resolve_active_install(temp.path(), spec).unwrap(),
+            Some(install)
+        );
+        assert_eq!(read_state(temp.path()).unwrap(), state);
+    }
+
+    #[test]
+    fn missing_required_tool_rejects_managed_install() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         fs::remove_file(install.join(if cfg!(windows) {
             "bin/wasm-ld.exe"
@@ -1528,7 +2023,7 @@ mod tests {
         .unwrap();
 
         assert!(validate_complete_emscripten_install(&install).is_err());
-        assert_eq!(cached_installed_toolchain(temp.path()), None);
+        assert!(validate_managed_install(&install, spec).is_err());
     }
 
     #[test]
