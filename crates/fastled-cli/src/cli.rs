@@ -88,7 +88,7 @@ pub(crate) struct Cli {
     pub(crate) no_app: bool,
 
     /// Select static linking (the default) or Emscripten side-module linking.
-    #[arg(long, value_enum, default_value_t = LinkMode::Static)]
+    #[arg(long = "link", value_enum, default_value_t = LinkMode::Static)]
     pub(crate) link_mode: LinkMode,
 
     /// Enable profiling of the C++ build system used for WASM compilation.
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn api_and_dynamic_linking_flags_parse_together() {
-        let cli = Cli::parse_from(["fastled", "sketch", "--no-app", "--link-mode=dynamic"]);
+        let cli = Cli::parse_from(["fastled", "sketch", "--no-app", "--link=dynamic"]);
         assert!(cli.no_app);
         assert_eq!(cli.link_mode, LinkMode::Dynamic);
     }

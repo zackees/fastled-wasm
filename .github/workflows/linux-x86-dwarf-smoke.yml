@@ -86,13 +86,13 @@ jobs:
           mkdir -p "$sketch_dir/data"
           printf '{"dynamic":true}\n' > "$sketch_dir/data/config.json"
 
-          "$fastled_bin" --just-compile --quick --link-mode dynamic --no-interactive "$sketch_dir"
+          "$fastled_bin" --just-compile --quick --link dynamic --no-interactive "$sketch_dir"
           node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js"
 
           mv "$sketch_dir/fastled_js/sketch_assets.json" "$sketch_dir/fastled_js/files.json"
           node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js"
 
-          "$fastled_bin" --just-compile --quick --link-mode dynamic --no-app --no-interactive "$sketch_dir"
+          "$fastled_bin" --just-compile --quick --link dynamic --no-app --no-interactive "$sketch_dir"
           node ci/dynamic_runtime_smoke.mjs "$fastled_bin" "$sketch_dir/fastled_js" --no-app
 
       - name: Upload failure logs

@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use crate::build;
 use crate::cli::{requested_init_ref, validate_init_ref_flags, Cli};
 use crate::compile_stream::{
-    ensure_compile_prerequisites, purge_fastled_cache, report_build_outcome,
+    announce_link_mode, ensure_compile_prerequisites, purge_fastled_cache, report_build_outcome,
     run_native_compile_streaming, selected_build_mode, send_sse, write_build_status,
 };
 use crate::debug_symbols;
@@ -34,6 +34,8 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         eprintln!("fastled: sketch directory does not exist: {dir}");
         return ExitCode::FAILURE;
     }
+
+    announce_link_mode(cli, None, true);
 
     // Ensure the emscripten + esbuild toolchains are installed before invoking
     // the native Rust build backend. The backend consumes the Rust-installed
@@ -98,6 +100,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             &tx,
             r#"{"type":"status","status":"compiling","message":"Compiling..."}"#,
         );
+        announce_link_mode(cli, Some(&tx), false);
 
         let success =
             run_native_compile_streaming(cli, &sketch_dir, cli.purge, &tx, &debug_symbols);
@@ -320,6 +323,7 @@ pub(crate) fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
 }
 
 pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
+    announce_link_mode(cli, None, true);
     if let Err(message) = ensure_compile_prerequisites(!cli.no_app) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
@@ -337,7 +341,7 @@ pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
         force_clean: cli.purge,
         emit_clangd: cli.clangd,
         no_app: cli.no_app,
-        link_mode: cli.link_mode,
+        link_mode: crate::compile_stream::effective_link_mode(cli),
     };
 
     let result = match build::run_build(&request) {

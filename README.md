@@ -71,7 +71,7 @@ Useful flags:
 |------|-------------|
 | `--just-compile` | Compile and exit without opening a browser or watching files |
 | `--no-app` | Emit the JavaScript API/WASM artifacts without the default `index.js` application |
-| `--link-mode <static|dynamic>` | Static linking is the default; dynamic mode emits and load-links `sketch.wasm` |
+| `--link <static|dynamic>` | Static linking is the default; dynamic mode emits and load-links `sketch.wasm` |
 | `--debug` | Build with debug-friendly compiler settings |
 | `--quick` | Default build mode |
 | `--release` | Optimized build (~1/3 smaller binary) |

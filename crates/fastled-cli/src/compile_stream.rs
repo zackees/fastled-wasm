@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::build;
@@ -46,6 +47,66 @@ pub(crate) fn selected_build_mode(cli: &Cli) -> build::BuildMode {
         build::BuildMode::Release
     } else {
         build::BuildMode::Quick
+    }
+}
+
+pub(crate) fn effective_link_mode(cli: &Cli) -> crate::cli::LinkMode {
+    build::effective_link_mode(selected_build_mode(cli), cli.link_mode)
+}
+
+pub(crate) fn link_mode_announcement(mode: crate::cli::LinkMode) -> &'static str {
+    match mode {
+        crate::cli::LinkMode::Static => "Link mode: static (sketch linked into fastled.wasm)",
+        crate::cli::LinkMode::Dynamic => {
+            "Link mode: dynamic (sketch emitted as sketch.wasm side module)"
+        }
+    }
+}
+
+pub(crate) const DYNAMIC_RELEASE_WARNING: &str =
+    "warning: dynamic linking is unavailable in release mode; using --link static instead";
+
+fn migration_warning(cli: &Cli) -> Option<&'static str> {
+    if build::dynamic_linking_release_fallback(selected_build_mode(cli), cli.link_mode) {
+        Some(DYNAMIC_RELEASE_WARNING)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn announce_link_mode(
+    cli: &Cli,
+    tx: Option<&tokio::sync::broadcast::Sender<String>>,
+    terminal: bool,
+) {
+    let mode = effective_link_mode(cli);
+    if terminal {
+        println!("{}", link_mode_announcement(mode));
+        if let Some(warning) = migration_warning(cli) {
+            if std::io::stderr().is_terminal() {
+                eprintln!("{}", crossterm::style::Stylize::yellow(warning));
+            } else {
+                eprintln!("{warning}");
+            }
+        }
+    }
+    if let Some(tx) = tx {
+        send_sse(
+            tx,
+            &format!(
+                r#"{{"type":"log","line":"{}","stream":"stdout"}}"#,
+                link_mode_announcement(mode)
+            ),
+        );
+        if let Some(warning) = migration_warning(cli) {
+            send_sse(
+                tx,
+                &format!(
+                    r#"{{"type":"log","line":"{}","stream":"stderr"}}"#,
+                    json_escape(warning)
+                ),
+            );
+        }
     }
 }
 
@@ -241,7 +302,7 @@ pub(crate) fn run_native_compile_streaming(
         force_clean,
         emit_clangd: cli.clangd,
         no_app: cli.no_app,
-        link_mode: cli.link_mode,
+        link_mode: effective_link_mode(cli),
     };
 
     let log = |line: &str, stream: &str| emit_build_log(tx, line, stream);
@@ -291,6 +352,7 @@ pub(crate) fn update_debug_symbol_resolver(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     fn read_status(dir: &Path) -> String {
         std::fs::read_to_string(dir.join("build-status.json")).unwrap()
@@ -334,5 +396,18 @@ mod tests {
         assert!(read_status(dir.path()).contains("\"success\""));
         let event = rx.try_recv().unwrap();
         assert!(event.contains("\"status\":\"success\""), "got: {event}");
+    }
+
+    #[test]
+    fn release_dynamic_report_uses_static_mode_and_exact_warning() {
+        let cli = Cli::parse_from(["fastled", "sketch", "--release", "--link", "dynamic"]);
+        assert_eq!(effective_link_mode(&cli), crate::cli::LinkMode::Static);
+        assert_eq!(migration_warning(&cli), Some(DYNAMIC_RELEASE_WARNING));
+    }
+
+    #[test]
+    fn static_mode_has_no_release_warning() {
+        let cli = Cli::parse_from(["fastled", "sketch", "--release", "--link", "static"]);
+        assert_eq!(migration_warning(&cli), None);
     }
 }
