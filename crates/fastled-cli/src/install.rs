@@ -916,6 +916,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
 
     let spec = release_default_toolchain()?;
     let base = install_base(spec)?;
+    fs::create_dir_all(&base)?;
     let installed = with_toolchain_lock(&base, || match resolve_active_install(&base, spec)? {
         Some(path) => Ok(path),
         None if !has_install_history(&base) => {
