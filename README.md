@@ -83,6 +83,10 @@ Set `FASTLED_VIEWER_LOGS=1` to forward the viewer window's browser console outpu
 
 ## Features
 
+### Browser Compatibility
+
+Safari is a required production target. Release builds must not depend on Emscripten's JavaScript Promise Integration (JSPI), including `-sJSPI`, `WebAssembly.Suspending`, or `WebAssembly.promising`. Emscripten upgrades must preserve a non-JSPI async path and pass a real Safari smoke test before becoming the default toolchain.
+
 ### Hot Reload
 
 Once launched, the compiler remains open and watches for file changes. Edits to your sketch are automatically recompiled and the browser reloads with the updated output. Build output is streamed to the browser in real time via SSE.
