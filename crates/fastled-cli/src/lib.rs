@@ -44,6 +44,16 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    if let Some(cli::Command::Toolchain { action }) = cli.command.clone() {
+        return match install::run_toolchain_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: toolchain command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     // Hidden plumbing for the Python side: download the FastLED repo and
     // print the local path. No further work.
     if let Some(ref ref_str) = cli.internal_ensure_fastled_repo {
@@ -197,6 +207,7 @@ mod tests {
 
     fn base_cli() -> Cli {
         Cli {
+            command: None,
             directory: None,
             serve_dir: None,
             init: None,

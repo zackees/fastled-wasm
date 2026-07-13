@@ -1,4 +1,41 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Clone, Debug, Subcommand)]
+pub(crate) enum Command {
+    /// Inspect and explicitly manage the installed Emscripten toolchain.
+    Toolchain {
+        #[command(subcommand)]
+        action: ToolchainAction,
+    },
+}
+
+#[derive(Clone, Debug, Subcommand)]
+pub(crate) enum ToolchainAction {
+    /// Show the active package and local installation state.
+    Status,
+    /// Install the current release default without activating it.
+    Install {
+        /// Install a specific catalog package ID.
+        #[arg(long)]
+        package_id: Option<String>,
+    },
+    /// Health-check and activate an installed catalog package.
+    Activate {
+        /// Catalog package ID to activate.
+        package_id: String,
+    },
+    /// Install, health-check, and activate the current release default.
+    Update,
+    /// Reinstall and activate the current release default explicitly.
+    Repair {
+        /// Catalog package ID to repair, defaulting to the release default.
+        package_id: Option<String>,
+    },
+    /// Reactivate the previous known-good package without network access.
+    Rollback,
+    /// Remove inactive package installations.
+    Prune,
+}
 
 /// How the sketch code is linked into the generated WASM program.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -26,6 +63,9 @@ pub(crate) enum LinkMode {
     // a strict mirror, so every flag is declared explicitly.
 )]
 pub(crate) struct Cli {
+    #[command(subcommand)]
+    pub(crate) command: Option<Command>,
+
     /// Directory containing the FastLED sketch to compile.
     pub(crate) directory: Option<String>,
 
@@ -183,5 +223,16 @@ mod tests {
         let cli = Cli::parse_from(["fastled", "sketch"]);
         assert!(!cli.no_app);
         assert_eq!(cli.link_mode, LinkMode::Static);
+    }
+
+    #[test]
+    fn toolchain_status_is_a_subcommand() {
+        let cli = Cli::parse_from(["fastled", "toolchain", "status"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Toolchain {
+                action: ToolchainAction::Status
+            })
+        ));
     }
 }
