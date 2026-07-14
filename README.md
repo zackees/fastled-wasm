@@ -103,6 +103,29 @@ elapsed. Exit codes are `0` for success,
 the ready timeout. An interrupted run exits `130`. The viewer and local server
 are stopped automatically.
 
+To run trusted host checks after the first rendered frame, repeat
+`--test-cmd` options. They execute sequentially from the sketch directory,
+and the test succeeds only after both the viewer schedule and all commands
+finish:
+
+```bash
+fastled examples/Blink --test --test-log=out/run.log \
+  --test-cmd="python scripts/check_ready.py" \
+  --test-cmd="python scripts/check_runtime_state.py"
+```
+
+Commands use `/bin/sh -c` on Unix and `%COMSPEC% /D /S /C` (normally
+`cmd.exe`) on Windows, with null stdin and no extra console window. Pipes,
+redirection, `&&`, and quoting follow the platform shell; invoke
+`powershell -NoProfile -Command ...` explicitly for PowerShell syntax.
+Command stdout and stderr are drained and mirrored to the terminal. With
+`--test-log`, timestamped stream markers are appended, such as
+`[fastled-test-cmd 0 stdout] ...` and `[fastled-test-cmd 0] exit=0`.
+Commands are trusted input and inherit the user's environment and filesystem
+permissions. A spawn failure or nonzero command exit returns `1`; the total
+timeout (`124`) and interrupt (`130`) also terminate the active command and
+its descendants.
+
 ## Features
 
 ### Browser Compatibility

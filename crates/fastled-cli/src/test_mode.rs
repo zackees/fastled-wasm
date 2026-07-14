@@ -1,5 +1,8 @@
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc;
 
 use crate::cli::Cli;
 use crate::path::NormalizedPath;
@@ -41,6 +44,163 @@ pub(crate) struct TestPlan {
     pub(crate) screenshots: Vec<(String, NormalizedPath)>,
     pub(crate) log_path: Option<NormalizedPath>,
     pub(crate) exit_on_error: bool,
+    pub(crate) commands: Vec<String>,
+}
+
+#[derive(Debug)]
+pub(crate) enum TestCommandEvent {
+    Start {
+        index: usize,
+    },
+    Output {
+        index: usize,
+        stream: CommandStream,
+        line: String,
+    },
+    Exit {
+        index: usize,
+        code: i32,
+    },
+    Done(Result<(), String>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CommandStream {
+    Stdout,
+    Stderr,
+}
+
+pub(crate) fn shell_command(command: &str, sketch_dir: &Path) -> Command {
+    #[cfg(windows)]
+    let mut process = {
+        let shell = std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into());
+        let mut c = Command::new(shell);
+        c.args(["/D", "/S", "/C", command]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut process = {
+        let mut c = Command::new("/bin/sh");
+        c.args(["-c", command]);
+        c
+    };
+    process.current_dir(sketch_dir);
+    process
+}
+
+pub(crate) async fn run_test_commands(
+    commands: Vec<String>,
+    sketch_dir: NormalizedPath,
+    tx: mpsc::Sender<TestCommandEvent>,
+) {
+    let result = run_test_commands_inner(commands, sketch_dir, &tx).await;
+    let _ = tx.send(TestCommandEvent::Done(result)).await;
+}
+
+async fn run_test_commands_inner(
+    commands: Vec<String>,
+    sketch_dir: NormalizedPath,
+    tx: &mpsc::Sender<TestCommandEvent>,
+) -> Result<(), String> {
+    for (index, command_text) in commands.iter().enumerate() {
+        if tx.send(TestCommandEvent::Start { index }).await.is_err() {
+            return Ok(());
+        }
+        let mut command = shell_command(command_text, sketch_dir.as_path());
+        let group = running_process::ContainedProcessGroup::with_originator("FASTLED_TEST_CMD")
+            .map_err(|e| format!("could not create command process group: {e}"))?;
+        let mut child = group
+            .spawn(
+                &mut command,
+                running_process::SpawnStdio {
+                    stdin: running_process::StdioSource::Null,
+                    stdout: running_process::StdioSource::Pipe,
+                    stderr: running_process::StdioSource::Pipe,
+                    drain_timeout: Some(std::time::Duration::from_secs(2)),
+                    show_console: false,
+                },
+            )
+            .map_err(|e| format!("could not spawn test command {index}: {e}"))?;
+        let (output_tx, mut output_rx) = mpsc::channel::<(CommandStream, String)>(256);
+        let mut readers = 0usize;
+        if let Some(stdout) = child.stdout.take() {
+            readers += 1;
+            spawn_reader(stdout, CommandStream::Stdout, output_tx.clone());
+        }
+        if let Some(stderr) = child.stderr.take() {
+            readers += 1;
+            spawn_reader(stderr, CommandStream::Stderr, output_tx.clone());
+        }
+        drop(output_tx);
+        let mut exit = None;
+        let mut closed_readers = 0usize;
+        let mut drain_deadline = None;
+        while exit.is_none() || closed_readers < readers {
+            if drain_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                break;
+            }
+            tokio::select! {
+                item = output_rx.recv() => match item {
+                    Some((stream, line)) => {
+                        if tx.send(TestCommandEvent::Output { index, stream, line }).await.is_err() { return Ok(()); }
+                    }
+                    None => { closed_readers = readers; }
+                },
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)), if exit.is_none() => {
+                    if let Some(code) = child.try_wait().map_err(|e| format!("test command {index} wait failed: {e}"))? {
+                        exit = Some(code);
+                        drain_deadline = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(2));
+                    }
+                },
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)), if exit.is_some() => {}
+            }
+            if exit.is_some() && closed_readers < readers && output_rx.is_closed() {
+                break;
+            }
+        }
+        let code = exit.unwrap_or_else(|| child.try_wait().ok().flatten().unwrap_or(1));
+        if tx
+            .send(TestCommandEvent::Exit { index, code })
+            .await
+            .is_err()
+        {
+            return Ok(());
+        }
+        if code != 0 {
+            return Err(format!("test command {index} exited with code {code}"));
+        }
+    }
+    Ok(())
+}
+
+fn spawn_reader<R: std::io::Read + Send + 'static>(
+    reader: R,
+    stream: CommandStream,
+    tx: mpsc::Sender<(CommandStream, String)>,
+) {
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(reader);
+        let mut bytes = Vec::new();
+        loop {
+            bytes.clear();
+            let Ok(count) = reader.read_until(b'\n', &mut bytes) else {
+                break;
+            };
+            if count == 0 {
+                break;
+            }
+            while bytes
+                .last()
+                .is_some_and(|byte| *byte == b'\n' || *byte == b'\r')
+            {
+                bytes.pop();
+            }
+            let line = String::from_utf8_lossy(&bytes).into_owned();
+            if tx.blocking_send((stream, line)).is_err() {
+                break;
+            }
+        }
+    });
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +268,10 @@ pub(crate) fn build_test_plan(cli: &Cli) -> Result<TestPlan, String> {
         None => None,
     };
 
+    if cli.test_cmd.iter().any(|command| command.trim().is_empty()) {
+        return Err("--test-cmd values must not be empty or whitespace-only".to_string());
+    }
+
     if matches!(cli.test_count, Some(0)) {
         return Err("--test-count must be greater than zero".to_string());
     }
@@ -167,6 +331,7 @@ pub(crate) fn build_test_plan(cli: &Cli) -> Result<TestPlan, String> {
         screenshots,
         log_path: cli.test_log.as_deref().map(NormalizedPath::new),
         exit_on_error: cli.test_exit_on_error,
+        commands: cli.test_cmd.clone(),
     })
 }
 
@@ -361,6 +526,14 @@ mod tests {
         assert!(build_test_plan(&huge_count).is_err());
     }
 
+    #[test]
+    fn empty_test_commands_are_rejected() {
+        for value in ["", "   ", "\t"] {
+            let cli = Cli::parse_from(["fastled", "sketch", "--test", "--test-cmd", value]);
+            assert!(build_test_plan(&cli).is_err(), "accepted {value:?}");
+        }
+    }
+
     #[tokio::test]
     async fn contained_command_is_stopped_at_the_hard_deadline() {
         #[cfg(windows)]
@@ -381,5 +554,95 @@ mod tests {
             .unwrap();
         assert_eq!(result, TimedCommandResult::TimedOut);
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn issue_200_commands_run_sequentially_and_capture_both_streams() {
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let commands = vec![
+            "echo A>order.txt".to_string(),
+            "echo B>>order.txt & echo out & echo err 1>&2".to_string(),
+        ];
+        #[cfg(not(windows))]
+        let commands = vec![
+            "printf A >> order.txt".to_string(),
+            "printf B >> order.txt; printf out; printf err >&2".to_string(),
+        ];
+        let (tx, mut rx) = mpsc::channel(256);
+        let task = tokio::spawn(run_test_commands(
+            commands,
+            NormalizedPath::new(temp.path()),
+            tx,
+        ));
+        let mut outputs = Vec::new();
+        while let Some(event) = rx.recv().await {
+            let done = matches!(event, TestCommandEvent::Done(_));
+            if let TestCommandEvent::Output { stream, line, .. } = event {
+                outputs.push((stream, line));
+            }
+            if done {
+                break;
+            }
+        }
+        task.await.unwrap();
+        let order = std::fs::read_to_string(temp.path().join("order.txt")).unwrap();
+        assert_eq!(order.split_whitespace().collect::<String>(), "AB");
+        assert!(outputs
+            .iter()
+            .any(|(stream, line)| *stream == CommandStream::Stdout && line.contains("out")));
+        assert!(outputs
+            .iter()
+            .any(|(stream, line)| *stream == CommandStream::Stderr && line.contains("err")));
+    }
+
+    #[tokio::test]
+    async fn issue_200_nonzero_command_stops_the_sequence() {
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let commands = vec![
+            "exit /b 7".to_string(),
+            "echo SHOULD_NOT_RUN > later.txt".to_string(),
+        ];
+        #[cfg(not(windows))]
+        let commands = vec![
+            "exit 7".to_string(),
+            "echo SHOULD_NOT_RUN > later.txt".to_string(),
+        ];
+        let (tx, mut rx) = mpsc::channel(256);
+        tokio::spawn(run_test_commands(
+            commands,
+            NormalizedPath::new(temp.path()),
+            tx,
+        ));
+        let mut result = None;
+        while let Some(event) = rx.recv().await {
+            if let TestCommandEvent::Done(value) = event {
+                result = Some(value);
+                break;
+            }
+        }
+        assert!(result.unwrap().is_err());
+        assert!(!temp.path().join("later.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn issue_200_cancelling_runner_kills_the_contained_shell() {
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let command = "ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt";
+        #[cfg(not(windows))]
+        let command = "sleep 2; echo LATE > late.txt";
+        let (tx, _rx) = mpsc::channel(256);
+        let task = tokio::spawn(run_test_commands(
+            vec![command.to_string()],
+            NormalizedPath::new(temp.path()),
+            tx,
+        ));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        task.abort();
+        let _ = task.await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(!temp.path().join("late.txt").exists());
     }
 }

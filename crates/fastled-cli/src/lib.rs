@@ -234,6 +234,7 @@ mod tests {
             test_exit_on_error: false,
             test_timeout_secs: 120.0,
             test_ready_timeout_secs: 15.0,
+            test_cmd: Vec::new(),
             latest: false,
             branch: None,
             commit: None,

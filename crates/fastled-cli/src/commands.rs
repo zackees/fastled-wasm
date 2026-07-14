@@ -355,6 +355,11 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         let mut ready = false;
         let mut page_error = false;
         let mut saved = HashSet::new();
+        let mut viewer_done: Option<u8> = None;
+        let mut commands_done = plan.commands.is_empty();
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(256);
+        let mut command_tx = Some(command_tx);
+        let mut _command_task: Option<CommandTaskGuard> = None;
 
         loop {
             tokio::select! {
@@ -385,6 +390,19 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                                 if !write_test_log(&mut log_file, "[fastled-test] ready") {
                                     return test_exit(TestOutcome::Failure);
                                 }
+                                if !plan.commands.is_empty() {
+                                    let Some(command_sender) = command_tx.take() else {
+                                        eprintln!("fastled: command runner was already started");
+                                        return test_exit(TestOutcome::Failure);
+                                    };
+                                    _command_task = Some(CommandTaskGuard(tokio::spawn(
+                                        test_mode::run_test_commands(
+                                            plan.commands.clone(),
+                                            NormalizedPath::new(&sketch_dir),
+                                            command_sender,
+                                        ),
+                                    )));
+                                }
                             }
                         }
                         Some(server::TestEvent::ViewerLog(line)) => {
@@ -413,11 +431,12 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                                 );
                                 return test_exit(TestOutcome::Failure);
                             }
-                            return test_exit(if plan.exit_on_error && page_error {
-                                TestOutcome::PageError
-                            } else {
-                                TestOutcome::Success
-                            });
+                            viewer_done = Some(code);
+                            if commands_done {
+                                return test_exit(if plan.exit_on_error && page_error {
+                                    TestOutcome::PageError
+                                } else { TestOutcome::Success });
+                            }
                         }
                         None => {
                             eprintln!("fastled: test event channel closed unexpectedly");
@@ -425,9 +444,51 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                         }
                     }
                 }
+                command_event = command_rx.recv(), if !commands_done => {
+                    match command_event {
+                        Some(test_mode::TestCommandEvent::Start { index }) => {
+                            let marker = format!("[fastled-test-cmd {index}] start");
+                            println!("{marker}");
+                            if !write_test_log(&mut log_file, &marker) { return test_exit(TestOutcome::Failure); }
+                        }
+                        Some(test_mode::TestCommandEvent::Output { index, stream, line }) => {
+                            let stream_name = match stream { test_mode::CommandStream::Stdout => "stdout", test_mode::CommandStream::Stderr => "stderr" };
+                            let marker = format!("[fastled-test-cmd {index} {stream_name}] {line}");
+                            match stream { test_mode::CommandStream::Stdout => println!("{line}"), test_mode::CommandStream::Stderr => eprintln!("{line}") }
+                            if !write_test_log(&mut log_file, &marker) { return test_exit(TestOutcome::Failure); }
+                        }
+                        Some(test_mode::TestCommandEvent::Exit { index, code }) => {
+                            let marker = format!("[fastled-test-cmd {index}] exit={code}");
+                            println!("{marker}");
+                            if !write_test_log(&mut log_file, &marker) { return test_exit(TestOutcome::Failure); }
+                        }
+                        Some(test_mode::TestCommandEvent::Done(result)) => {
+                            commands_done = true;
+                            if let Err(message) = result {
+                                eprintln!("fastled: {message}");
+                                return test_exit(TestOutcome::Failure);
+                            }
+                            if viewer_done.is_some() {
+                                return test_exit(if plan.exit_on_error && page_error { TestOutcome::PageError } else { TestOutcome::Success });
+                            }
+                        }
+                        None => {
+                            eprintln!("fastled: command task ended without a completion result");
+                            return test_exit(TestOutcome::Failure);
+                        }
+                    }
+                }
             }
         }
     })
+}
+
+struct CommandTaskGuard(tokio::task::JoinHandle<()>);
+
+impl Drop for CommandTaskGuard {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 fn test_exit(outcome: TestOutcome) -> ExitCode {
