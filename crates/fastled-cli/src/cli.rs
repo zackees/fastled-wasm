@@ -189,6 +189,15 @@ pub(crate) struct Cli {
     )]
     pub(crate) test_ready_timeout_secs: f64,
 
+    /// Run a trusted host command after the first rendered frame. May be repeated.
+    #[arg(
+        long,
+        requires = "test",
+        value_name = "COMMAND",
+        help_heading = "Production testing"
+    )]
+    pub(crate) test_cmd: Vec<String>,
+
     /// Use the latest tagged FastLED release when initialising examples with --init.
     /// Defaults to `master`; tagged releases older than the meson migration cannot be built.
     #[arg(long)]
@@ -341,6 +350,25 @@ mod tests {
         assert_eq!(cli.test_screenshot, Some(PathBuf::from("out-{n:03}.png")));
         assert_eq!(cli.test_log, Some(PathBuf::from("run.log")));
         assert!(cli.test_exit_on_error);
+        assert!(cli.test_cmd.is_empty());
+    }
+
+    #[test]
+    fn repeated_test_commands_preserve_declaration_order() {
+        let cli = Cli::parse_from([
+            "fastled",
+            "sketch",
+            "--test",
+            "--test-cmd=first",
+            "--test-cmd",
+            "second",
+        ]);
+        assert_eq!(cli.test_cmd, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn test_commands_require_master_switch() {
+        assert!(Cli::try_parse_from(["fastled", "sketch", "--test-cmd=echo hi"]).is_err());
     }
 
     #[test]
