@@ -1,0 +1,7 @@
+[
+  {
+    "directory": ".",
+    "file": "@FIXTURE_CPP@",
+    "arguments": ["clang++", "-std=c++20", "-target", "wasm32-wasi", "-nostdinc++", "-fsyntax-only", "@FIXTURE_CPP@"]
+  }
+]

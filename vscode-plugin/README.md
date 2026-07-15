@@ -2,6 +2,31 @@
 
 A VS Code extension for the FastLED WASM compiler that allows you to compile and run FastLED sketches directly in your browser.
 
+## Bundled clangd
+
+Target-specific VSIX packages contain a verified native clangd server for
+Windows x64/ARM64, Linux x64/ARM64, and macOS x64/ARM64. The universal VSIX is
+intentionally offline-only: it contains no server and reports a structured
+`universal-package` result to the extension API. No package downloads clangd,
+searches `PATH`, or modifies dynamic-library environment variables at runtime.
+
+To reproduce a package locally (Node 22 and `uv` required):
+
+```sh
+cd vscode-plugin
+npm ci
+python scripts/package_extension.py --target win32-x64 --out dist
+python scripts/package_extension.py --target universal --out dist
+```
+
+Use **FastLED: Show Bundled clangd Diagnostics** to see the resolved target,
+version and path, or a non-sensitive structured failure reason. Delete
+`resources/clangd` (or run `python scripts/ingest_clangd.py --clean --output
+resources/clangd`) if an interrupted local package needs to be reset. The
+artifact lock is intentionally pinned to `clang-tool-chain-bins` 0.4.6;
+updating clangd requires changing that reviewed lock rather than resolving a
+latest version.
+
 ## Features
 
 - **One-click compilation**: Compile and run FastLED sketches with a single command
@@ -150,4 +175,3 @@ This project is licensed under the MIT License - see the [LICENSE](../LICENSE) f
 - [FastLED WASM Compiler](https://github.com/zackees/fastled-wasm)
 - [FastLED Library](https://github.com/FastLED/FastLED)
 - [Online Demo](https://zackees.github.io/fastled-wasm/)
-

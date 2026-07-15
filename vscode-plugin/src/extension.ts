@@ -2,11 +2,12 @@ import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import { FastLedExtensionApi, resolveBundledClangd } from './clangdBundle';
 
 let serverProcess: cp.ChildProcess | undefined;
 let outputChannel: vscode.OutputChannel;
 
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext): FastLedExtensionApi {
     outputChannel = vscode.window.createOutputChannel('FastLED WASM');
     
     // Register all commands
@@ -20,7 +21,17 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('fastled.stopServer', () => stopServer()),
         vscode.commands.registerCommand('fastled.update', () => updateCompiler()),
         vscode.commands.registerCommand('fastled.purge', () => purgeContainers()),
-        vscode.commands.registerCommand('fastled.openBrowser', () => openBrowser())
+        vscode.commands.registerCommand('fastled.openBrowser', () => openBrowser()),
+        vscode.commands.registerCommand('fastled.showBundledClangdDiagnostics', async () => {
+            const result = await resolveBundledClangd(context);
+            outputChannel.show(true);
+            outputChannel.appendLine(`Bundled clangd: ${JSON.stringify(result)}`);
+            if (result.kind === 'ready') {
+                vscode.window.showInformationMessage(`Bundled clangd ${result.version}: ${result.target}`);
+            } else {
+                vscode.window.showWarningMessage(`Bundled clangd unavailable: ${result.kind === 'invalid' ? result.reason : result.reason}`);
+            }
+        })
     ];
 
     commands.forEach(cmd => context.subscriptions.push(cmd));
@@ -47,6 +58,7 @@ export function activate(context: vscode.ExtensionContext) {
             });
         }
     }
+    return { resolveBundledClangd: () => resolveBundledClangd(context) };
 }
 
 export function deactivate() {
@@ -307,4 +319,4 @@ function isSketchDirectory(dirPath: string): boolean {
     } catch {
         return false;
     }
-} 
+}

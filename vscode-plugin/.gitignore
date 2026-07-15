@@ -5,3 +5,6 @@ out/
 .vscode-test/
 .DS_Store
 Thumbs.db
+/resources/clangd/
+/dist/
+/.ctcb-cache/

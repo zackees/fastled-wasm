@@ -1,0 +1,90 @@
+name: VS Code extension
+
+on:
+  workflow_call:
+  pull_request:
+    paths: ["vscode-plugin/**", ".github/workflows/vscode-extension.yml"]
+  push:
+    branches: [main]
+    paths: ["vscode-plugin/**", ".github/workflows/vscode-extension.yml"]
+
+jobs:
+  native:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: win32-x64, runner: windows-2025 }
+          - { target: win32-arm64, runner: windows-11-arm }
+          - { target: linux-x64, runner: ubuntu-24.04 }
+          - { target: linux-arm64, runner: ubuntu-24.04-arm }
+          - { target: darwin-x64, runner: macos-15-intel }
+          - { target: darwin-arm64, runner: macos-15 }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: vscode-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: vscode-plugin/package-lock.json }
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/cache@v4
+        with:
+          path: vscode-plugin/.ctcb-cache
+          key: ctcb-0.4.6-${{ matrix.target }}-${{ hashFiles('vscode-plugin/clangd-artifacts.json') }}
+      - run: npm ci
+      - run: uv run --no-project --with pytest pytest scripts/tests -q
+      - run: python scripts/package_extension.py --target ${{ matrix.target }} --out dist --ctcb-home .ctcb-cache
+      - shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, pathlib, zipfile
+          file = next(pathlib.Path('dist').glob('*-${{ matrix.target }}.vsix'))
+          with zipfile.ZipFile(file) as z: manifest = z.read('extension/resources/clangd/manifest.json')
+          pathlib.Path('dist/${{ matrix.target }}.manifest.json').write_bytes(manifest)
+          pathlib.Path('dist/${{ matrix.target }}.sha256').write_text(hashlib.sha256(file.read_bytes()).hexdigest() + '  ' + file.name + '\n')
+          pathlib.Path('dist/${{ matrix.target }}.size').write_text(str(file.stat().st_size) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-${{ matrix.target }}
+          path: vscode-plugin/dist/
+          if-no-files-found: error
+
+  universal:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: vscode-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: vscode-plugin/package-lock.json }
+      - uses: astral-sh/setup-uv@v5
+      - run: npm ci
+      - run: uv run --no-project --with pytest pytest scripts/tests -q
+      - run: python scripts/package_extension.py --target universal --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vscode-universal
+          path: vscode-plugin/dist/
+          if-no-files-found: error
+
+  aggregate:
+    needs: [native, universal]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - name: Require seven exact, same-version VSIX packages
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          files = list(pathlib.Path('artifacts').glob('*.vsix'))
+          expected = {'win32-x64','win32-arm64','linux-x64','linux-arm64','darwin-x64','darwin-arm64','universal'}
+          found = {re.match(r'fastled-wasm-(.+)-(win32-x64|win32-arm64|linux-x64|linux-arm64|darwin-x64|darwin-arm64|universal)\.vsix$', p.name) for p in files}
+          if len(files) != 7 or None in found or {x.group(2) for x in found} != expected or len({x.group(1) for x in found}) != 1:
+              raise SystemExit(f'expected exact seven same-version VSIX files, got {[p.name for p in files]}')
+          PY
