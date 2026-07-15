@@ -28,6 +28,8 @@
     "onLanguage:c",
     "workspaceContains:**/*.ino"
   ],
+  "extensionKind": ["workspace"],
+  "fastledBundledClangd": {"packageKind": "universal"},
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -91,6 +93,11 @@
         "category": "FastLED",
         "icon": "$(preview)"
       }
+      ,{
+        "command": "fastled.showBundledClangdDiagnostics",
+        "title": "Show Bundled clangd Diagnostics",
+        "category": "FastLED"
+      }
     ],
     "menus": {
       "explorer/context": [
@@ -137,6 +144,9 @@
         },
         {
           "command": "fastled.openBrowser"
+        },
+        {
+          "command": "fastled.showBundledClangdDiagnostics"
         }
       ]
     },
@@ -200,11 +210,16 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "node out/test/runTest.js"
   },
   "devDependencies": {
     "@types/node": "16.x",
     "@types/vscode": "^1.74.0",
-    "typescript": "^4.9.4"
+    "typescript": "^4.9.4",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "@types/mocha": "^10.0.10",
+    "mocha": "^11.7.1"
   }
 }

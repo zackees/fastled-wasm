@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "provider": {
+    "package": "clang-tool-chain-bins",
+    "package_version": "0.4.6",
+    "component": "clang-extra"
+  },
+  "targets": {
+    "win32-x64": {"platform":"win","arch":"x86_64","llvm_version":"21.1.5","llvm_commit":"8e2cd28cd4ba46613a46467b0c91b1cabead26cd","provenance_method":"extracted","archive_filename":"clang-extra-21.1.5-win-x86_64.tar.zst","archive_sha256":"342b91b880a52c47223ac25a5a9652c56c6460fee93738ffd069b62ba07837c7","binary_path":"bin/clangd.exe","binary_size":45101568,"binary_sha256":"ceef318729b3e3f75925d3cadd232cc52a679b77112e3f2f883733d3b9348f7f","resource_include_path":"lib/clang/21/include"},
+    "win32-arm64": {"platform":"win","arch":"arm64","llvm_version":"21.1.5","llvm_commit":"8e2cd28cd4ba46613a46467b0c91b1cabead26cd","provenance_method":"extracted","archive_filename":"clang-extra-21.1.5-win-arm64.tar.zst","archive_sha256":"00f220603612c22a063159745e2834508b6278bcd575dbe8e1ddf4b4784c81ef","binary_path":"bin/clangd.exe","binary_size":41637376,"binary_sha256":"38534a0e6ad32512ef8f57ee640b8f30da19137c7deb43a25d7d1bb3488f7441","resource_include_path":"lib/clang/21/include"},
+    "linux-x64": {"platform":"linux","arch":"x86_64","llvm_version":"21.1.5","llvm_commit":"8e2cd28cd4ba46613a46467b0c91b1cabead26cd","provenance_method":"extracted","archive_filename":"clang-extra-21.1.5-linux-x86_64.tar.zst","archive_sha256":"e02a9fbf7e0ef2ae466ef90f7ac1fff03a165dfb707ddf3f4249e4be7360933e","binary_path":"bin/clangd","binary_size":100539280,"binary_sha256":"26a89213310f41bc4b63184726aa1f1995703aef69de1d00b41a562d7e6afe69","resource_include_path":"lib/clang/21/include"},
+    "linux-arm64": {"platform":"linux","arch":"arm64","llvm_version":"21.1.5","llvm_commit":"8e2cd28cd4ba46613a46467b0c91b1cabead26cd","provenance_method":"extracted","archive_filename":"clang-extra-21.1.5-linux-arm64.tar.zst","archive_sha256":"fa48034cf7e29879ee3f0d89925aa3ef6d5dc068fb5e4d0af32af8a92f0f5643","binary_path":"bin/clangd","binary_size":95086552,"binary_sha256":"5f450cf0a2f9fbb66aca2bd9bdc43fb75f1ff9eae208328e8bab1cfc0e7e7af8","resource_include_path":"lib/clang/21/include"},
+    "darwin-x64": {"platform":"darwin","arch":"x86_64","llvm_version":"21.1.6","llvm_commit":"a832a5222e489298337fbb5876f8dcaf072c5cca","provenance_method":"forge","archive_filename":"clang-extra-21.1.6-darwin-x86_64.tar.zst","archive_sha256":"9b87a73523cc9d9e9fb1781b552418fc48f4f77616f44d092a074d62a13c1934","binary_path":"bin/clangd","binary_size":58535376,"binary_sha256":"9f4ff95171aa35a0e89815eb1a22de0059dd6c52da15d3ba1a66a5d0dc9b64c3","resource_include_path":"lib/clang/21/include"},
+    "darwin-arm64": {"platform":"darwin","arch":"arm64","llvm_version":"21.1.6","llvm_commit":"a832a5222e489298337fbb5876f8dcaf072c5cca","provenance_method":"extracted","archive_filename":"clang-extra-21.1.6-darwin-arm64.tar.zst","archive_sha256":"a668593eada9da5222b4c9d40fb84f72772cf4db1e9ca1cc91d82b38ec73a7a0","binary_path":"bin/clangd","binary_size":58428896,"binary_sha256":"b03fb31978f7238229e29004f6f8a366d2009cbe9c2086d0d6abb5d7b297a88b","resource_include_path":"lib/clang/21/include"}
+  }
+}

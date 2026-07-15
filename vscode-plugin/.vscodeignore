@@ -8,4 +8,10 @@ vsc-extension-quickstart.md
 **/.eslintrc.json
 **/*.map
 **/*.ts
+scripts/**
+test/**
+out/test/**
+dist/**
+.ctcb-cache/**
+/third_party/**
 extension.js

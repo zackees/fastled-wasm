@@ -1,0 +1,46 @@
+name: Release VS Code extension
+
+on:
+  push:
+    tags: ["vscode-v*"]
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        run: |
+          VERSION=$(node -p "require('./vscode-plugin/package.json').version")
+          test "${GITHUB_REF_NAME}" = "vscode-v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+  build:
+    needs: validate-tag
+    uses: ./.github/workflows/vscode-extension.yml
+  publish:
+    needs: [validate-tag, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - name: Produce checksums
+        run: |
+          cd artifacts
+          sha256sum *.vsix > SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/*.vsix
+      - name: Create GitHub release from the verified package bytes
+        env: { GH_TOKEN: ${{ github.token }} }
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --title "FastLED VS Code ${{ needs.validate-tag.outputs.version }}" --generate-notes
+      - name: Publish those same prebuilt VSIX files to Marketplace
+        env: { VSCE_PAT: ${{ secrets.VSCE_PAT }} }
+        run: |
+          test -n "$VSCE_PAT"
+          for vsix in artifacts/*.vsix; do npx --yes @vscode/vsce@3.6.2 publish --packagePath "$vsix" --pat "$VSCE_PAT"; done
