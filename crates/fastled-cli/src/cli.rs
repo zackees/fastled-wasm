@@ -231,6 +231,11 @@ pub(crate) struct Cli {
     #[arg(long, value_name = "DIR", num_args = 0..=1, default_missing_value = "__cwd__")]
     pub(crate) write_clangd: Option<String>,
 
+    /// Read a versioned JSON document snapshot from stdin and atomically
+    /// refresh the ignored IntelliSense cache. Used by the VS Code extension.
+    #[arg(long, hide = true)]
+    pub(crate) write_intellisense_snapshot: bool,
+
     /// Internal plumbing flag: ensure the FastLED repo for the given ref
     /// (defaults to latest release) is downloaded and extracted, print the
     /// local path to stdout, and exit. Used by the Python `Api.project_init`
@@ -303,6 +308,12 @@ mod tests {
         assert!(!cli.clangd);
         let cli = Cli::parse_from(["fastled", "--clangd", "sketch"]);
         assert!(cli.clangd);
+    }
+
+    #[test]
+    fn parses_stdin_intellisense_snapshot_command() {
+        let cli = Cli::parse_from(["fastled", "--write-intellisense-snapshot"]);
+        assert!(cli.write_intellisense_snapshot);
     }
 
     #[test]

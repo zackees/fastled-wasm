@@ -932,33 +932,6 @@ pub(crate) fn sketch_cache_dir(example_dir: &Path) -> PathBuf {
     example_dir.join(".build").join("wasm")
 }
 
-pub(crate) fn sketch_ino_file(example_dir: &Path) -> Result<PathBuf> {
-    let sketch_name = example_dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("sketch");
-    let expected = example_dir.join(format!("{sketch_name}.ino"));
-    if expected.is_file() {
-        return Ok(expected);
-    }
-
-    let mut candidates = Vec::new();
-    for entry in fs::read_dir(example_dir)
-        .with_context(|| format!("read sketch directory {}", example_dir.display()))?
-    {
-        let path = entry?.path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("ino") {
-            candidates.push(path);
-        }
-    }
-    candidates.sort();
-    match candidates.as_slice() {
-        [single] => Ok(single.clone()),
-        [] => bail!("example has no .ino file: {}", example_dir.display()),
-        _ => bail!("example has multiple .ino files: {}", example_dir.display()),
-    }
-}
-
 fn wrapper_stem(example_name: &str) -> String {
     example_name.replace(['\\', '/'], "_")
 }
@@ -1292,30 +1265,22 @@ pub(crate) fn create_wrapper(
     example_name: &str,
     sketch_cache_dir: &Path,
 ) -> Result<PathBuf> {
-    let ino_file = sketch_ino_file(example_dir)?;
+    // The compiler and editor both consume this exact preprocessor rather
+    // than compiling a raw `.ino` include wrapper (see #206).
+    let preprocessed = crate::sketch_preprocessor::preprocess_disk(example_dir)?;
     fs::create_dir_all(sketch_cache_dir)?;
-    let mut lines = vec![
-        format!("// Auto-generated wrapper for {example_name}.ino"),
-        "// C++20 header unit import; the .ino FastLED include is then a no-op.".to_string(),
-        "import \"wasm_pch.h\";".to_string(),
-        format!(
-            "#include \"{}\"",
-            ino_file.to_string_lossy().replace('\\', "/")
-        ),
-    ];
+    let mut content = preprocessed.translation_unit;
+    content.push_str(&format!("// Additional C++ files for {example_name}.\n"));
     let mut extras = Vec::new();
     collect_cpp_files(example_dir, &mut extras)?;
     extras.sort();
     for cpp in extras {
-        if cpp != ino_file {
-            lines.push(format!(
-                "#include \"{}\"",
-                cpp.to_string_lossy().replace('\\', "/")
-            ));
-        }
+        content.push_str(&format!(
+            "#include \"{}\"\n",
+            cpp.to_string_lossy().replace('\\', "/")
+        ));
     }
     let wrapper = sketch_cache_dir.join(format!("{}_wrapper.cpp", wrapper_stem(example_name)));
-    let content = lines.join("\n") + "\n";
     if fs::read_to_string(&wrapper).unwrap_or_default() != content {
         fs::write(&wrapper, content)?;
     }
@@ -2171,7 +2136,8 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
         // an otherwise successful build.
         if request.emit_clangd {
             let clangd_result = (|| -> Result<()> {
-                let ino_file = sketch_ino_file(&example_dir)?;
+                let (snapshot, prototype_header) =
+                    crate::sketch_preprocessor::write_disk_snapshot(&example_dir)?;
                 let compile_flags = get_sketch_compile_flags(
                     &fastled_dir,
                     request.build_mode,
@@ -2185,7 +2151,12 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
                         tools_emcc_path: crate::path::NormalizedPath::new(&tools.emcc),
                         tools_empp_path: crate::path::NormalizedPath::new(&tools.empp),
                         wrapper_source: crate::path::NormalizedPath::new(&wrapper),
-                        ino_file: crate::path::NormalizedPath::new(ino_file),
+                        ino_files: snapshot
+                            .documents
+                            .iter()
+                            .map(|document| crate::path::NormalizedPath::new(&document.path))
+                            .collect(),
+                        prototype_header: crate::path::NormalizedPath::new(prototype_header),
                         compile_flags,
                         build_mode: request.build_mode,
                     },
@@ -2764,5 +2735,24 @@ link_flags = []
         assert!(!output.join("files.json").exists());
         let manifest = fs::read_to_string(output.join("sketch_assets.json")).unwrap();
         assert!(manifest.contains("config.json"));
+    }
+
+    #[test]
+    fn wrapper_compiles_canonical_multi_tab_ino_translation_unit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sketch = tmp.path().join("Blink");
+        fs::create_dir_all(&sketch).unwrap();
+        fs::write(
+            sketch.join("Blink.ino"),
+            "void setup() { helper(); }\nvoid loop() {}\n",
+        )
+        .unwrap();
+        fs::write(sketch.join("Helpers.ino"), "void helper() {}\n").unwrap();
+
+        let wrapper = create_wrapper(&sketch, "Blink", &sketch_cache_dir(&sketch)).unwrap();
+        let source = fs::read_to_string(wrapper).unwrap();
+        assert!(source.contains("void helper();"));
+        assert!(source.contains("#line 1 \""));
+        assert!(!source.contains("#include \""));
     }
 }

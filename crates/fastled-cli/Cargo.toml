@@ -49,6 +49,8 @@ zccache-fingerprint = { workspace = true }
 shell-words = { workspace = true }
 globset = { workspace = true }
 getrandom = "0.3"
+tree-sitter = { workspace = true }
+tree-sitter-cpp = { workspace = true }
 
 [build-dependencies]
 indexmap = { version = "1.9.3", features = ["std"] }
