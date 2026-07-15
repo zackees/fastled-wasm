@@ -620,7 +620,9 @@ mod tests {
         assert!(clangd_text.contains("- --target=wasm32-unknown-emscripten"));
         assert!(clangd_text.contains("- -D__EMSCRIPTEN__=1"));
         assert!(clangd_text.contains("- -DSKETCH_COMPILE=1"));
-        assert!(clangd_text.contains("- -isystem") && clangd_text.contains("sysroot/include/compat"));
+        assert!(
+            clangd_text.contains("- -isystem") && clangd_text.contains("sysroot/include/compat")
+        );
         assert!(clangd_text.contains("- -fmodule-file=*"));
         assert!(!clangd_text.contains("\\\\?\\"));
 
