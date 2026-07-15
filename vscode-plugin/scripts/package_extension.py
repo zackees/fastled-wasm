@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(command: list[str]) -> None:
+    if os.name == "nt" and command[0] in {"npm", "npx"}:
+        command = [command[0] + ".cmd", *command[1:]]
     subprocess.run(command, cwd=ROOT, check=True)
 
 
