@@ -29,6 +29,10 @@
     "workspaceContains:**/*.ino"
   ],
   "extensionKind": ["workspace"],
+  "extensionPack": [
+    "ms-vscode.cpptools",
+    "llvm-vs-code-extensions.vscode-clangd"
+  ],
   "fastledBundledClangd": {"packageKind": "universal"},
   "main": "./out/extension.js",
   "contributes": {
@@ -94,6 +98,12 @@
         "icon": "$(preview)"
       }
       ,{
+        "command": "fastled.refreshIntelliSense",
+        "title": "Refresh IntelliSense Configuration",
+        "category": "FastLED",
+        "icon": "$(refresh)"
+      }
+      ,{
         "command": "fastled.showBundledClangdDiagnostics",
         "title": "Show Bundled clangd Diagnostics",
         "category": "FastLED"
@@ -146,6 +156,9 @@
           "command": "fastled.openBrowser"
         },
         {
+          "command": "fastled.refreshIntelliSense"
+        },
+        {
           "command": "fastled.showBundledClangdDiagnostics"
         }
       ]
@@ -178,6 +191,13 @@
           "type": "boolean",
           "default": true,
           "description": "Enable file watching for automatic recompilation"
+        },
+        "fastled.intelliSenseEngine": {
+          "type": "string",
+          "enum": ["auto", "clangd", "cpptools", "off"],
+          "default": "auto",
+          "scope": "window",
+          "description": "Select the one FastLED C/C++ language engine for this VS Code window. Auto uses bundled clangd when available, otherwise Microsoft C/C++."
         }
       }
     },

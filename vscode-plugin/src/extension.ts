@@ -4,12 +4,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { FastLedExtensionApi, resolveBundledClangd } from './clangdBundle';
 import { IntelliSenseSnapshotController } from './intellisense';
+import { EngineController, registerEngineLifecycle, VscodeEngineRuntime } from './intellisenseEngine';
 
 let serverProcess: cp.ChildProcess | undefined;
 let outputChannel: vscode.OutputChannel;
+let intelliSenseEngines: EngineController | undefined;
 
 export function activate(context: vscode.ExtensionContext): FastLedExtensionApi {
     outputChannel = vscode.window.createOutputChannel('FastLED WASM');
+    intelliSenseEngines = new EngineController(new VscodeEngineRuntime(context, outputChannel));
+    registerEngineLifecycle(context, intelliSenseEngines, outputChannel);
     
     // Register all commands
     const commands = [
@@ -23,6 +27,7 @@ export function activate(context: vscode.ExtensionContext): FastLedExtensionApi 
         vscode.commands.registerCommand('fastled.update', () => updateCompiler()),
         vscode.commands.registerCommand('fastled.purge', () => purgeContainers()),
         vscode.commands.registerCommand('fastled.openBrowser', () => openBrowser()),
+        vscode.commands.registerCommand('fastled.refreshIntelliSense', () => refreshIntelliSense('manual refresh')),
         vscode.commands.registerCommand('fastled.showBundledClangdDiagnostics', async () => {
             const result = await resolveBundledClangd(context);
             outputChannel.show(true);
@@ -39,7 +44,11 @@ export function activate(context: vscode.ExtensionContext): FastLedExtensionApi 
 
     // Keep the generated Arduino prototype prelude in sync with live VS Code
     // buffers. This never saves or rewrites a user sketch.
-    new IntelliSenseSnapshotController(outputChannel).start(context);
+    new IntelliSenseSnapshotController(
+        outputChannel,
+        undefined,
+        () => refreshIntelliSense('workspace activation'),
+    ).start(context);
 
     // Register status bar item
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -103,11 +112,24 @@ async function compile(args: string[] = []): Promise<void> {
 
     try {
         await runFastLEDCommand(commandArgs);
+        await refreshIntelliSense('successful compile');
         vscode.window.showInformationMessage('FastLED compilation completed successfully!');
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         vscode.window.showErrorMessage(`FastLED compilation failed: ${errorMessage}`);
         outputChannel.appendLine(`Error: ${errorMessage}`);
+    }
+}
+
+async function refreshIntelliSense(reason: string): Promise<void> {
+    if (!intelliSenseEngines) { return; }
+    try {
+        await intelliSenseEngines.refresh(reason);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        outputChannel.appendLine(`IntelliSense refresh failed: ${message}`);
+        vscode.window.showErrorMessage(`FastLED IntelliSense: ${message}`);
+        throw error;
     }
 }
 

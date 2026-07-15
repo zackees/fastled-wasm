@@ -6,6 +6,7 @@ export type SnapshotDocument = { path: string; version: number; text: string };
 export type SnapshotRequest = { sketch_dir: string; generation: number; documents: SnapshotDocument[] };
 
 type SnapshotRunner = (request: SnapshotRequest) => Promise<void>;
+type ConfigurationRunner = () => Promise<void>;
 
 /**
  * A tiny generation gate used by the controller and its Extension Development
@@ -42,6 +43,7 @@ export class IntelliSenseSnapshotController implements vscode.Disposable {
     public constructor(
         private readonly output: vscode.OutputChannel,
         private readonly runSnapshot: SnapshotRunner = runSnapshotCommand,
+        private readonly refreshConfiguration: ConfigurationRunner | undefined = undefined,
     ) {
         this.scheduler = new VersionedSnapshotScheduler(350, generation => this.publish(generation));
     }
@@ -76,7 +78,7 @@ export class IntelliSenseSnapshotController implements vscode.Disposable {
         if (!this.configurationReady) {
             const sketchDir = currentSketchDirectory();
             this.configurationReady = sketchDir
-                ? runFastled(['--write-clangd', sketchDir]).catch(error => {
+                ? (this.refreshConfiguration ? this.refreshConfiguration() : runFastled(['--write-clangd', sketchDir])).catch(error => {
                     this.output.appendLine(`IntelliSense configuration was not refreshed: ${error.message}`);
                 })
                 : Promise.resolve();
@@ -123,7 +125,7 @@ function runSnapshotCommand(request: SnapshotRequest): Promise<void> {
     return runFastled(['--write-intellisense-snapshot'], JSON.stringify(request));
 }
 
-function runFastled(args: string[], input?: string): Promise<void> {
+export function runFastled(args: string[], input?: string): Promise<void> {
     return new Promise((resolve, reject) => {
         const child = cp.spawn('fastled', args, { stdio: ['pipe', 'pipe', 'pipe'] });
         let stderr = '';

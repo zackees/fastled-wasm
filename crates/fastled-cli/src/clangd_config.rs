@@ -128,6 +128,7 @@ struct ResolvedPaths {
     sysroot: String,
     libcxx_include: String,
     sysroot_include: String,
+    sysroot_compat_include: String,
     system_include: String,
     fastled_src: String,
     fastled_wasm_compiler: String,
@@ -149,6 +150,14 @@ fn resolve_paths(inputs: &ClangdConfigInputs) -> ResolvedPaths {
             .to_string_lossy()
             .replace('\\', "/"),
         sysroot_include: sysroot.join("include").to_string_lossy().replace('\\', "/"),
+        // libc++ selects the BSD-like locale implementation for the wasm
+        // target. Emscripten supplies its xlocale.h compatibility shim here;
+        // em++ adds it implicitly, while a native clangd must receive it.
+        sysroot_compat_include: sysroot
+            .join("include")
+            .join("compat")
+            .to_string_lossy()
+            .replace('\\', "/"),
         system_include: emsdk
             .join("emscripten")
             .join("system")
@@ -195,6 +204,8 @@ fn compile_arguments(
         paths.libcxx_include.clone(),
         "-isystem".to_string(),
         paths.sysroot_include.clone(),
+        "-isystem".to_string(),
+        paths.sysroot_compat_include.clone(),
         "-isystem".to_string(),
         paths.system_include.clone(),
         "-I".to_string(),
@@ -251,6 +262,7 @@ fn write_clangd_file(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Resu
          \x20   - --target=wasm32-unknown-emscripten\n\
          \x20   - --sysroot={sysroot}\n\
          \x20   - -isystem{libcxx}\n\
+         \x20   - -isystem{sysroot_compat}\n\
          \x20   - -I{fastled_src}\n\
          \x20   - -I{fastled_wasm_compiler}\n\
          \x20   - -D__EMSCRIPTEN__=1\n\
@@ -264,6 +276,7 @@ fn write_clangd_file(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Resu
         emcc = display_path(&inputs.tools_emcc_path),
         sysroot = paths.sysroot,
         libcxx = paths.libcxx_include,
+        sysroot_compat = paths.sysroot_compat_include,
         fastled_src = paths.fastled_src,
         fastled_wasm_compiler = paths.fastled_wasm_compiler,
     );
@@ -298,6 +311,7 @@ fn write_vscode_settings(paths: &ResolvedPaths, sketch_dir: &Path) -> Result<()>
             format!("-I{}", paths.fastled_src),
             format!("-I{}", paths.fastled_wasm_compiler),
             format!("-isystem{}", paths.libcxx_include),
+            format!("-isystem{}", paths.sysroot_compat_include),
             "-D__EMSCRIPTEN__=1",
         ]),
     );
@@ -579,6 +593,10 @@ mod tests {
             assert!(include_dirs
                 .iter()
                 .any(|d| d.ends_with("src/platforms/wasm/compiler")));
+            assert!(args.windows(2).any(|pair| {
+                pair[0] == "-isystem"
+                    && pair[1].ends_with("emscripten/cache/sysroot/include/compat")
+            }));
             // directory is the FastLED checkout (build cwd).
             let directory = entry["directory"].as_str().unwrap();
             assert!(directory.ends_with("fastled"));
@@ -602,6 +620,9 @@ mod tests {
         assert!(clangd_text.contains("- --target=wasm32-unknown-emscripten"));
         assert!(clangd_text.contains("- -D__EMSCRIPTEN__=1"));
         assert!(clangd_text.contains("- -DSKETCH_COMPILE=1"));
+        assert!(
+            clangd_text.contains("- -isystem") && clangd_text.contains("sysroot/include/compat")
+        );
         assert!(clangd_text.contains("- -fmodule-file=*"));
         assert!(!clangd_text.contains("\\\\?\\"));
 
