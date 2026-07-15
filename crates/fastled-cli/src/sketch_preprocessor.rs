@@ -403,7 +403,11 @@ fn has_skipped_context(node: Node<'_>) -> bool {
             | "class_specifier"
             | "struct_specifier"
             | "union_specifier"
-            | "field_declaration_list" => return true,
+            | "field_declaration_list"
+            // Arduino sketches occasionally expose WASM/browser hooks with
+            // `extern \"C\"`. A generated C++ declaration would change the
+            // function's language linkage and make the later definition fail.
+            | "linkage_specification" => return true,
             _ => current = parent.parent(),
         }
     }
@@ -720,5 +724,22 @@ mod tests {
                 .unwrap()
                 .contains("disk")
         );
+    }
+
+    #[test]
+    fn does_not_generate_cxx_prototypes_for_extern_c_definitions() {
+        let source = r#"
+            extern "C" {
+                __attribute__((noinline, used)) void browser_hook() {}
+            }
+            void helper() {}
+        "#;
+        let prototypes = extract_function_prototypes(source).unwrap();
+        assert!(prototypes
+            .iter()
+            .any(|prototype| prototype.contains("helper")));
+        assert!(!prototypes
+            .iter()
+            .any(|prototype| prototype.contains("browser_hook")));
     }
 }
