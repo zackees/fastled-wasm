@@ -27,6 +27,28 @@ artifact lock is intentionally pinned to `clang-tool-chain-bins` 0.4.6;
 updating clangd requires changing that reviewed lock rather than resolving a
 latest version.
 
+## IntelliSense and navigation
+
+FastLED configures one C/C++ language engine for the whole VS Code window.
+The extension pack installs both the LLVM clangd and Microsoft C/C++
+extensions, but it deliberately never leaves both language services active
+for the same sketch:
+
+- `auto` (default) uses the native clangd bundled in a platform VSIX when the
+  clangd VS Code extension is available; otherwise it uses Microsoft C/C++.
+- `clangd`, `cpptools`, and `off` are explicit choices in the
+  `fastled.intelliSenseEngine` setting.
+- **FastLED: Refresh IntelliSense Configuration** regenerates the
+  `compile_commands.json`, `.clangd`, `.vscode/settings.json`, and
+  `.vscode/c_cpp_properties.json` files for every FastLED sketch folder.
+
+The generated settings associate `.ino` files with C++, while FastLED keeps a
+preprocessed live snapshot and prototype prelude current for unsaved Arduino
+tabs. After opening a Blink sketch, use Go to Definition on `CRGB`, `FastLED`,
+or `FastLED.addLeds`; the result should open the materialized FastLED headers.
+Use **View: Output** → **FastLED WASM** to inspect engine selection and setup
+failures.
+
 ## Features
 
 - **One-click compilation**: Compile and run FastLED sketches with a single command

@@ -31,6 +31,15 @@ def main() -> None:
         package = json.loads(archive.read("extension/package.json"))
         if package.get("extensionKind") != ["workspace"]:
             raise ValueError("extension is not workspace-only")
+        required_pack = {
+            "ms-vscode.cpptools",
+            "llvm-vs-code-extensions.vscode-clangd",
+        }
+        if not required_pack.issubset(set(package.get("extensionPack", []))):
+            raise ValueError("VSIX does not install both FastLED IntelliSense integrations")
+        engine_setting = package.get("contributes", {}).get("configuration", {}).get("properties", {}).get("fastled.intelliSenseEngine", {})
+        if engine_setting.get("default") != "auto" or engine_setting.get("scope") != "window":
+            raise ValueError("VSIX does not expose window-scoped FastLED engine selection")
         clangd_names = [name for name in names if name.startswith("extension/resources/clangd/")]
         if args.target == "universal":
             if clangd_names:
