@@ -3,6 +3,7 @@ import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { FastLedExtensionApi, resolveBundledClangd } from './clangdBundle';
+import { IntelliSenseSnapshotController } from './intellisense';
 
 let serverProcess: cp.ChildProcess | undefined;
 let outputChannel: vscode.OutputChannel;
@@ -35,6 +36,10 @@ export function activate(context: vscode.ExtensionContext): FastLedExtensionApi 
     ];
 
     commands.forEach(cmd => context.subscriptions.push(cmd));
+
+    // Keep the generated Arduino prototype prelude in sync with live VS Code
+    // buffers. This never saves or rewrites a user sketch.
+    new IntelliSenseSnapshotController(outputChannel).start(context);
 
     // Register status bar item
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);

@@ -39,8 +39,12 @@ pub struct ClangdConfigInputs {
     pub tools_empp_path: NormalizedPath,
     /// The generated wrapper `.cpp` that is actually compiled.
     pub wrapper_source: NormalizedPath,
-    /// The sketch `.ino` file, so clangd treats it as a translation unit.
-    pub ino_file: NormalizedPath,
+    /// Every top-level sketch `.ino` tab, so clangd sees each user buffer as
+    /// a translation unit with the same generated declaration prelude.
+    pub ino_files: Vec<NormalizedPath>,
+    /// The generated Arduino declaration prelude force-included for raw `.ino`
+    /// buffers. It is shared by clangd and Microsoft C/C++ IntelliSense.
+    pub prototype_header: NormalizedPath,
     /// Result of `get_sketch_compile_flags()` for the active build mode.
     pub compile_flags: Vec<String>,
     /// The active build mode.
@@ -168,12 +172,17 @@ fn compile_arguments(
     paths: &ResolvedPaths,
     file: &str,
     force_cpp: bool,
+    force_include: Option<&str>,
 ) -> Vec<String> {
     let mut args = vec![paths.clangxx.clone()];
     if force_cpp {
         // The `.ino` extension is unknown to clang; force C++.
         args.push("-x".to_string());
         args.push("c++".to_string());
+    }
+    if let Some(header) = force_include {
+        args.push("-include".to_string());
+        args.push(header.to_string());
     }
     args.extend([
         "-c".to_string(),
@@ -205,23 +214,31 @@ fn compile_arguments(
 }
 
 fn write_compile_commands(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Result<()> {
-    let ino = display_path(&inputs.ino_file);
     let wrapper = display_path(&inputs.wrapper_source);
+    let prelude = display_path(&inputs.prototype_header);
     // `directory` must be the FastLED checkout because the real build runs
     // with `current_dir(fastled_dir)`.
-    let entries = json!([
-        {
-            "directory": paths.fastled_dir,
-            "file": ino,
-            "arguments": compile_arguments(inputs, paths, &ino, true),
-        },
-        {
-            "directory": paths.fastled_dir,
-            "file": wrapper,
-            "arguments": compile_arguments(inputs, paths, &wrapper, false),
-        },
-    ]);
-    install::write_json_file(&inputs.sketch_dir.join("compile_commands.json"), &entries)
+    let mut entries = inputs
+        .ino_files
+        .iter()
+        .map(|ino_file| {
+            let ino = display_path(ino_file);
+            json!({
+                "directory": paths.fastled_dir,
+                "file": ino,
+                "arguments": compile_arguments(inputs, paths, &ino, true, Some(&prelude)),
+            })
+        })
+        .collect::<Vec<_>>();
+    entries.push(json!({
+        "directory": paths.fastled_dir,
+        "file": wrapper,
+        "arguments": compile_arguments(inputs, paths, &wrapper, false, None),
+    }));
+    install::write_json_file(
+        &inputs.sketch_dir.join("compile_commands.json"),
+        &serde_json::Value::Array(entries),
+    )
 }
 
 fn write_clangd_file(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Result<()> {
@@ -284,10 +301,6 @@ fn write_vscode_settings(paths: &ResolvedPaths, sketch_dir: &Path) -> Result<()>
             "-D__EMSCRIPTEN__=1",
         ]),
     );
-    object.insert("C_Cpp.intelliSenseEngine".to_string(), json!("disabled"));
-    object.insert("C_Cpp.autocomplete".to_string(), json!("disabled"));
-    object.insert("C_Cpp.errorSquiggles".to_string(), json!("disabled"));
-
     let associations = object
         .entry("files.associations")
         .or_insert_with(|| json!({}));
@@ -302,6 +315,33 @@ fn write_vscode_settings(paths: &ResolvedPaths, sketch_dir: &Path) -> Result<()>
     install::write_json_file(&settings_path, &settings)
 }
 
+/// Emit the same compile database and forced declaration prelude for the
+/// Microsoft C/C++ extension. #203 decides which engine is active; neither
+/// engine gets a different Arduino sketch model.
+fn write_cpptools_config(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Result<()> {
+    let path = inputs
+        .sketch_dir
+        .join(".vscode")
+        .join("c_cpp_properties.json");
+    let mut properties = install::read_json_file(&path, json!({}));
+    if !properties.is_object() {
+        properties = json!({});
+    }
+    let root = properties.as_object_mut().expect("properties root object");
+    root.insert(
+        "configurations".to_string(),
+        json!([{
+            "name": "FastLED WASM",
+            "compilerPath": paths.clangxx,
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "cppStandard": "c++20",
+            "includePath": [paths.sketch_dir, paths.fastled_src, paths.fastled_wasm_compiler],
+            "forcedInclude": [display_path(&inputs.prototype_header)],
+        }]),
+    );
+    install::write_json_file(&path, &properties)
+}
+
 /// Write `compile_commands.json`, `.clangd`, and `.vscode/settings.json`
 /// into the sketch directory. All emitted paths are absolute, use forward
 /// slashes, and carry no Windows `\\?\` prefix.
@@ -310,6 +350,7 @@ pub fn write_clangd_config(inputs: &ClangdConfigInputs) -> Result<()> {
     write_compile_commands(inputs, &paths)?;
     write_clangd_file(inputs, &paths)?;
     write_vscode_settings(&paths, &inputs.sketch_dir)?;
+    write_cpptools_config(inputs, &paths)?;
     Ok(())
 }
 
@@ -327,8 +368,6 @@ pub fn run_write_clangd(dir_arg: &str) -> Result<()> {
     if !sketch_dir.is_dir() {
         anyhow::bail!("sketch directory does not exist: {}", sketch_dir.display());
     }
-    let ino_file = NormalizedPath::new(crate::wasm_build::sketch_ino_file(&sketch_dir)?);
-
     let emsdk_install_dir = NormalizedPath::new(install::ensure_emscripten_installed()?);
     let tools_emcc_path = emsdk_install_dir.join("emscripten").join("emcc.py");
     let tools_empp_path = emsdk_install_dir.join("emscripten").join("em++.py");
@@ -340,6 +379,8 @@ pub fn run_write_clangd(dir_arg: &str) -> Result<()> {
         crate::wasm_build::resolve_example_name(&sketch_dir, &fastled_dir);
     let example_dir = NormalizedPath::new(example_dir);
     let sketch_cache = crate::wasm_build::sketch_cache_dir(&example_dir);
+    let (snapshot, prototype_header) =
+        crate::sketch_preprocessor::write_disk_snapshot(&example_dir)?;
     let wrapper_source = NormalizedPath::new(crate::wasm_build::create_wrapper(
         &example_dir,
         &example_name,
@@ -357,13 +398,18 @@ pub fn run_write_clangd(dir_arg: &str) -> Result<()> {
         tools_emcc_path,
         tools_empp_path,
         wrapper_source,
-        ino_file,
+        ino_files: snapshot
+            .documents
+            .iter()
+            .map(|document| NormalizedPath::new(&document.path))
+            .collect(),
+        prototype_header: NormalizedPath::new(prototype_header),
         compile_flags,
         build_mode,
     })?;
 
     println!(
-        "Wrote clangd configuration (compile_commands.json, .clangd, .vscode/settings.json) to {}",
+        "Wrote IntelliSense configuration (compile_commands.json, .clangd, .vscode settings) to {}",
         example_dir.display()
     );
     Ok(())
@@ -381,6 +427,12 @@ mod tests {
         fs::create_dir_all(&cache).unwrap();
         let ino_file = sketch_dir.join("Blink.ino");
         fs::write(&ino_file, "void setup() {}\nvoid loop() {}\n").unwrap();
+        let prototype_header = sketch_dir
+            .join(".fastled")
+            .join("intellisense")
+            .join("prototypes.hpp");
+        fs::create_dir_all(prototype_header.parent().unwrap()).unwrap();
+        fs::write(&prototype_header, "#pragma once\n").unwrap();
         let wrapper_source = cache.join("Blink_wrapper.cpp");
         fs::write(&wrapper_source, "// wrapper\n").unwrap();
 
@@ -421,7 +473,8 @@ mod tests {
             tools_emcc_path: NormalizedPath::new(emsdk.join("emscripten").join("emcc.py")),
             tools_empp_path: NormalizedPath::new(emsdk.join("emscripten").join("em++.py")),
             wrapper_source: NormalizedPath::new(wrapper_source),
-            ino_file: NormalizedPath::new(ino_file),
+            ino_files: vec![NormalizedPath::new(ino_file)],
+            prototype_header: NormalizedPath::new(prototype_header),
             compile_flags: vec![
                 "-DFASTLED_FORCE_NAMESPACE=1".to_string(),
                 "-DSKETCH_COMPILE=1".to_string(),
@@ -540,6 +593,8 @@ mod tests {
             .collect();
         assert!(entries[0]["file"].as_str().unwrap().ends_with("Blink.ino"));
         assert_eq!(&ino_args[1..3], ["-x", "c++"]);
+        assert!(ino_args.windows(2).any(|pair| pair[0] == "-include"
+            && pair[1].ends_with(".fastled/intellisense/prototypes.hpp")));
 
         // .clangd
         let clangd_text = fs::read_to_string(inputs.sketch_dir.join(".clangd")).unwrap();
@@ -564,8 +619,26 @@ mod tests {
         assert!(clangd_args
             .iter()
             .any(|a| a.starts_with("--query-driver=") && a.contains("clang++")));
-        assert_eq!(settings["C_Cpp.intelliSenseEngine"], "disabled");
         assert_eq!(settings["files.associations"]["*.ino"], "cpp");
+
+        let cpptools: Value = serde_json::from_str(
+            &fs::read_to_string(
+                inputs
+                    .sketch_dir
+                    .join(".vscode")
+                    .join("c_cpp_properties.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            cpptools["configurations"][0]["compileCommands"],
+            "${workspaceFolder}/compile_commands.json"
+        );
+        assert!(cpptools["configurations"][0]["forcedInclude"][0]
+            .as_str()
+            .unwrap()
+            .ends_with(".fastled/intellisense/prototypes.hpp"));
     }
 
     #[test]
@@ -599,5 +672,35 @@ mod tests {
         write_clangd_config(&inputs).unwrap();
         let second = fs::read_to_string(inputs.sketch_dir.join("compile_commands.json")).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn emits_a_forced_prelude_entry_for_every_ino_tab() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut inputs = stub_inputs(tmp.path());
+        let utility = inputs.sketch_dir.join("Utility.ino");
+        fs::write(&utility, "void utility() {}\n").unwrap();
+        inputs.ino_files.push(NormalizedPath::new(utility));
+
+        write_clangd_config(&inputs).unwrap();
+        let commands: Value = serde_json::from_str(
+            &fs::read_to_string(inputs.sketch_dir.join("compile_commands.json")).unwrap(),
+        )
+        .unwrap();
+        let entries = commands.as_array().unwrap();
+        assert_eq!(
+            entries.len(),
+            3,
+            "two visible tabs plus generated C++ source"
+        );
+        for entry in &entries[..2] {
+            let arguments = entry["arguments"].as_array().unwrap();
+            assert!(arguments.windows(2).any(|pair| {
+                pair[0].as_str() == Some("-include")
+                    && pair[1]
+                        .as_str()
+                        .is_some_and(|value| value.ends_with("prototypes.hpp"))
+            }));
+        }
     }
 }

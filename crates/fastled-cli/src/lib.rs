@@ -25,6 +25,7 @@ pub mod project;
 pub mod runtime;
 mod selection;
 mod server;
+mod sketch_preprocessor;
 mod test_mode;
 pub mod viewer;
 pub mod wasm_build;
@@ -109,6 +110,16 @@ pub fn run() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
                 eprintln!("fastled: failed to write clangd config: {err:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if cli.write_intellisense_snapshot {
+        return match sketch_preprocessor::run_stdin_snapshot() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("fastled: failed to write IntelliSense snapshot: {err:#}");
                 ExitCode::FAILURE
             }
         };
@@ -242,6 +253,7 @@ mod tests {
             purge: false,
             clangd: false,
             write_clangd: None,
+            write_intellisense_snapshot: false,
             internal_ensure_fastled_repo: None,
             internal_dwarf_smoke: false,
             internal_serve_dir_headless: None,
