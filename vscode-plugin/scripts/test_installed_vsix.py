@@ -28,7 +28,13 @@ def main() -> None:
         env['FASTLED_EXPECT_BUNDLED_CLANGD'] = args.expected
         # The extension process gets this empty PATH through runTests; retaining
         # the launcher PATH here is necessary to start Node and VS Code.
-        subprocess.run(['node', 'out/test/runTest.js'], cwd=ROOT, env=env, check=True)
+        command = ['node', 'out/test/runTest.js']
+        if os.name != 'nt' and os.uname().sysname == 'Linux':
+            # Hosted Linux runners have no desktop session.  VS Code's
+            # Extension Development Host still needs an X server even though
+            # the test itself is non-interactive.
+            command = ['xvfb-run', '--auto-servernum', *command]
+        subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
 if __name__ == '__main__':
