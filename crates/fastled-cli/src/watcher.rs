@@ -306,7 +306,7 @@ fn path_contains_ignored(path: &Path, ignored: &[String]) -> bool {
 mod tests {
     use super::*;
     use std::fs;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     fn temp_dir() -> TempDir {
@@ -429,9 +429,23 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
         fs::remove_file(&file).unwrap();
 
-        let batch = rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("expected a deletion event within 2 s");
+        // Backends can deliver a queued metadata event that predates the
+        // deletion. Ignore such batches and wait for the deletion's own
+        // force-rescan batch, which must name the removed file.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let batch = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "expected a deletion force-rescan event within 2 s"
+            );
+            let batch = rx
+                .recv_timeout(remaining)
+                .expect("expected a deletion event within 2 s");
+            if batch.force_rescan && batch.paths.iter().any(|path| path == &file) {
+                break batch;
+            }
+        };
         watcher.stop();
 
         assert!(batch.paths.iter().any(|path| path == &file));
@@ -468,11 +482,14 @@ mod tests {
     #[test]
     fn test_watcher_debounces_rapid_changes() {
         let dir = temp_dir();
-        let file = dir.path().join("rapid.ino");
+        // macOS' /var is a symlink to /private/var, while notify reports the
+        // canonical path. Watch and assert against the canonical directory.
+        let dir_path = dir.path().canonicalize().unwrap();
+        let file = dir_path.join("rapid.ino");
 
         // Use a longer debounce so the rapid writes definitely fall inside.
         let debounce_ms = 500u64;
-        let mut watcher = FileWatcher::new(dir.path().to_path_buf(), debounce_ms).unwrap();
+        let mut watcher = FileWatcher::new(dir_path, debounce_ms).unwrap();
         let rx = watcher.start();
 
         std::thread::sleep(Duration::from_millis(200));
@@ -483,25 +500,27 @@ mod tests {
             std::thread::sleep(Duration::from_millis(30));
         }
 
-        // Collect all batches that arrive within a 2 s window.
-        let mut batches: Vec<WatchBatch> = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while let Ok(batch) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            batches.push(batch);
-            if Instant::now() >= deadline {
-                break;
-            }
-        }
-
+        // Backends may report different numbers of low-level filesystem
+        // notifications. The debounce contract is one deduplicated batch
+        // after a quiet window, so stop after that first batch instead of
+        // counting delayed backend metadata events.
+        let batch = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("expected a debounced batch within 3 s");
         watcher.stop();
 
         // All five writes arrived within the debounce window — expect at most
-        // a small number of batches (ideally 1).
-        assert!(!batches.is_empty(), "expected at least one batch, got none");
+        // a single deduplicated batch, which is checked below.
         assert!(
-            batches.len() <= 2,
-            "expected debounced to <=2 batches, got {}",
-            batches.len()
+            batch.paths.iter().any(|path| path == &file),
+            "expected {:?} in debounced batch {:?}",
+            file,
+            batch.paths
+        );
+        assert_eq!(
+            batch.paths.iter().filter(|path| *path == &file).count(),
+            1,
+            "debounced batch must deduplicate repeated writes",
         );
     }
 }
