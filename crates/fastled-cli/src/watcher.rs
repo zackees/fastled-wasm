@@ -468,11 +468,14 @@ mod tests {
     #[test]
     fn test_watcher_debounces_rapid_changes() {
         let dir = temp_dir();
-        let file = dir.path().join("rapid.ino");
+        // macOS' /var is a symlink to /private/var, while notify reports the
+        // canonical path. Watch and assert against the canonical directory.
+        let dir_path = dir.path().canonicalize().unwrap();
+        let file = dir_path.join("rapid.ino");
 
         // Use a longer debounce so the rapid writes definitely fall inside.
         let debounce_ms = 500u64;
-        let mut watcher = FileWatcher::new(dir.path().to_path_buf(), debounce_ms).unwrap();
+        let mut watcher = FileWatcher::new(dir_path, debounce_ms).unwrap();
         let rx = watcher.start();
 
         std::thread::sleep(Duration::from_millis(200));

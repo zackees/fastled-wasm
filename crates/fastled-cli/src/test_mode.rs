@@ -138,7 +138,17 @@ async fn run_test_commands_inner(
             tokio::select! {
                 item = output_rx.recv(), if output_open => match item {
                     Some((stream, line)) => {
-                        if tx.send(TestCommandEvent::Output { index, stream, line }).await.is_err() { return Ok(()); }
+                        if tx
+                            .send(TestCommandEvent::Output {
+                                index,
+                                stream,
+                                line,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
                     }
                     None => { output_open = false; }
                 },
@@ -165,7 +175,17 @@ async fn run_test_commands_inner(
             }
             match tokio::time::timeout(remaining, output_rx.recv()).await {
                 Ok(Some((stream, line))) => {
-                    if tx.send(TestCommandEvent::Output { index, stream, line }).await.is_err() { return Ok(()); }
+                    if tx
+                        .send(TestCommandEvent::Output {
+                            index,
+                            stream,
+                            line,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
                 }
                 Ok(None) => output_open = false,
                 Err(_) => {
