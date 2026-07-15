@@ -306,7 +306,7 @@ fn path_contains_ignored(path: &Path, ignored: &[String]) -> bool {
 mod tests {
     use super::*;
     use std::fs;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     fn temp_dir() -> TempDir {
@@ -429,9 +429,23 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
         fs::remove_file(&file).unwrap();
 
-        let batch = rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("expected a deletion event within 2 s");
+        // Backends can deliver a queued metadata event that predates the
+        // deletion. Ignore such batches and wait for the deletion's own
+        // force-rescan batch, which must name the removed file.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let batch = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            assert!(
+                !remaining.is_zero(),
+                "expected a deletion force-rescan event within 2 s"
+            );
+            let batch = rx
+                .recv_timeout(remaining)
+                .expect("expected a deletion event within 2 s");
+            if batch.force_rescan && batch.paths.iter().any(|path| path == &file) {
+                break batch;
+            }
+        };
         watcher.stop();
 
         assert!(batch.paths.iter().any(|path| path == &file));
