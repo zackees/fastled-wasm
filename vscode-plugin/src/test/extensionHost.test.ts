@@ -1,5 +1,6 @@
 /* CI executes this in an Extension Development Host after installing a VSIX. */
 import * as assert from 'assert';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { FastLedExtensionApi } from '../clangdBundle';
 
@@ -13,7 +14,8 @@ export async function verifyInstalledBundledClangd(expected: 'native' | 'univers
     } else {
         assert.strictEqual(result.kind, 'ready');
         if (result.kind === 'ready') {
-            assert.ok(result.path.startsWith(extension.extensionPath), 'clangd is inside the installed extension');
+            const relative = path.relative(extension.extensionPath, result.path);
+            assert.ok(relative && !relative.startsWith('..') && !path.isAbsolute(relative), 'clangd is inside the installed extension');
         }
     }
 }
