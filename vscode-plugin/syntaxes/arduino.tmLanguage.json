@@ -1,0 +1,54 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Arduino",
+    "scopeName": "source.arduino",
+    "patterns": [
+        {
+            "include": "source.cpp"
+        },
+        {
+            "include": "#arduino-keywords"
+        },
+        {
+            "include": "#fastled-keywords"
+        }
+    ],
+    "repository": {
+        "arduino-keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.arduino",
+                    "match": "\\b(setup|loop)\\b"
+                },
+                {
+                    "name": "constant.language.arduino",
+                    "match": "\\b(HIGH|LOW|INPUT|OUTPUT|INPUT_PULLUP|LED_BUILTIN|A0|A1|A2|A3|A4|A5|A6|A7|A8|A9|A10|A11|A12|A13|A14|A15)\\b"
+                },
+                {
+                    "name": "support.function.arduino",
+                    "match": "\\b(pinMode|digitalWrite|digitalRead|analogRead|analogWrite|delay|delayMicroseconds|millis|micros|Serial|print|println|begin|available|read|write|flush|peek|find|findUntil|parseInt|parseFloat|setTimeout|readBytes|readBytesUntil|readString|readStringUntil)\\b"
+                }
+            ]
+        },
+        "fastled-keywords": {
+            "patterns": [
+                {
+                    "name": "support.type.fastled",
+                    "match": "\\b(CRGB|CHSV|CRGBPalette16|CRGBPalette256|CHSVPalette16|CHSVPalette256|TBlendType|LINEARBLEND|NOBLEND)\\b"
+                },
+                {
+                    "name": "support.function.fastled",
+                    "match": "\\b(FastLED|addLeds|show|clear|setBrightness|setMaxPowerInVoltsAndMilliamps|setCorrection|setTemperature|setDither|delay|EVERY_N_MILLISECONDS|EVERY_N_SECONDS|beatsin8|beatsin16|beat8|beat16|sin8|cos8|sin16|cos16|inoise8|inoise16|random8|random16|map8|scale8|scale16|qadd8|qsub8|qmul8|qdiv8|blend|nblend|fill_solid|fill_gradient|fill_rainbow|fadeToBlackBy|fadeLightBy|blur1d|blur2d)\\b"
+                },
+                {
+                    "name": "constant.language.fastled",
+                    "match": "\\b(WS2812|WS2812B|WS2811|APA102|SK9822|LPD8806|WS2801|SM16716|P9813|DOTSTAR|NEOPIXEL|RGB|GRB|BRG|RBG|GBR|BGR|DATA_PIN|CLOCK_PIN|COLOR_ORDER)\\b"
+                },
+                {
+                    "name": "constant.numeric.fastled",
+                    "match": "\\b(CRGB::(Red|Green|Blue|White|Black|Yellow|Cyan|Magenta|Orange|Purple|Pink|Brown|Gray|Grey|AliceBlue|Amethyst|AntiqueWhite|Aqua|Aquamarine|Azure|Beige|Bisque|BlanchedAlmond|BlueViolet|BurlyWood|CadetBlue|Chartreuse|Chocolate|Coral|CornflowerBlue|Cornsilk|Crimson|DarkBlue|DarkCyan|DarkGoldenrod|DarkGray|DarkGrey|DarkGreen|DarkKhaki|DarkMagenta|DarkOliveGreen|DarkOrange|DarkOrchid|DarkRed|DarkSalmon|DarkSeaGreen|DarkSlateBlue|DarkSlateGray|DarkSlateGrey|DarkTurquoise|DarkViolet|DeepPink|DeepSkyBlue|DimGray|DimGrey|DodgerBlue|FireBrick|FloralWhite|ForestGreen|Fuchsia|Gainsboro|GhostWhite|Gold|Goldenrod|GreenYellow|Honeydew|HotPink|IndianRed|Indigo|Ivory|Khaki|Lavender|LavenderBlush|LawnGreen|LemonChiffon|LightBlue|LightCoral|LightCyan|LightGoldenrodYellow|LightGreen|LightGrey|LightPink|LightSalmon|LightSeaGreen|LightSkyBlue|LightSlateGray|LightSlateGrey|LightSteelBlue|LightYellow|Lime|LimeGreen|Linen|Maroon|MediumAquamarine|MediumBlue|MediumOrchid|MediumPurple|MediumSeaGreen|MediumSlateBlue|MediumSpringGreen|MediumTurquoise|MediumVioletRed|MidnightBlue|MintCream|MistyRose|Moccasin|NavajoWhite|Navy|OldLace|Olive|OliveDrab|OrangeRed|Orchid|PaleGoldenrod|PaleGreen|PaleTurquoise|PaleVioletRed|PapayaWhip|PeachPuff|Peru|Plaid|Plum|PowderBlue|RosyBrown|RoyalBlue|SaddleBrown|Salmon|SandyBrown|SeaGreen|Seashell|Sienna|Silver|SkyBlue|SlateBlue|SlateGray|SlateGrey|Snow|SpringGreen|SteelBlue|Tan|Teal|Thistle|Tomato|Turquoise|Violet|Wheat|WhiteSmoke|YellowGreen))\\b"
+                }
+            ]
+        }
+    }
+} 
