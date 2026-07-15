@@ -11,6 +11,7 @@ use crate::server::TestEvent;
 
 const MAX_TEST_SCREENSHOTS: usize = 100_000;
 const MAX_TEST_DURATION: Duration = Duration::from_millis(i32::MAX as u64);
+const COMMAND_OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TestOutcome {
@@ -132,33 +133,49 @@ async fn run_test_commands_inner(
             spawn_reader(stderr, CommandStream::Stderr, output_tx.clone());
         }
         drop(output_tx);
-        let mut exit = None;
-        let mut closed_readers = 0usize;
-        let mut drain_deadline = None;
-        while exit.is_none() || closed_readers < readers {
-            if drain_deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
-                break;
-            }
+        let mut output_open = readers != 0;
+        let code = loop {
             tokio::select! {
-                item = output_rx.recv() => match item {
+                item = output_rx.recv(), if output_open => match item {
                     Some((stream, line)) => {
                         if tx.send(TestCommandEvent::Output { index, stream, line }).await.is_err() { return Ok(()); }
                     }
-                    None => { closed_readers = readers; }
+                    None => { output_open = false; }
                 },
-                _ = tokio::time::sleep(std::time::Duration::from_millis(10)), if exit.is_none() => {
+                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
                     if let Some(code) = child.try_wait().map_err(|e| format!("test command {index} wait failed: {e}"))? {
-                        exit = Some(code);
-                        drain_deadline = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(2));
+                        break code;
                     }
-                },
-                _ = tokio::time::sleep(std::time::Duration::from_millis(10)), if exit.is_some() => {}
+                }
             }
-            if exit.is_some() && closed_readers < readers && output_rx.is_closed() {
-                break;
+        };
+
+        // Release the contained process group after the shell exits. This
+        // closes inherited writers held by descendants, then lets every reader
+        // deliver final bytes before Exit and Done are emitted.
+        drop(child);
+        let drain_deadline = tokio::time::Instant::now() + COMMAND_OUTPUT_DRAIN_TIMEOUT;
+        while output_open {
+            let remaining = drain_deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "test command {index} exited with code {code}, but {readers} output reader(s) did not close within {} ms",
+                    COMMAND_OUTPUT_DRAIN_TIMEOUT.as_millis(),
+                ));
+            }
+            match tokio::time::timeout(remaining, output_rx.recv()).await {
+                Ok(Some((stream, line))) => {
+                    if tx.send(TestCommandEvent::Output { index, stream, line }).await.is_err() { return Ok(()); }
+                }
+                Ok(None) => output_open = false,
+                Err(_) => {
+                    return Err(format!(
+                        "test command {index} exited with code {code}, but {readers} output reader(s) did not close within {} ms",
+                        COMMAND_OUTPUT_DRAIN_TIMEOUT.as_millis(),
+                    ));
+                }
             }
         }
-        let code = exit.unwrap_or_else(|| child.try_wait().ok().flatten().unwrap_or(1));
         if tx
             .send(TestCommandEvent::Exit { index, code })
             .await
@@ -436,6 +453,15 @@ mod tests {
     use super::*;
     use clap::Parser;
 
+    const COMMAND_TEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+    async fn next_command_event(rx: &mut mpsc::Receiver<TestCommandEvent>) -> TestCommandEvent {
+        tokio::time::timeout(COMMAND_TEST_TIMEOUT, rx.recv())
+            .await
+            .expect("command runner did not emit an event before the test deadline")
+            .expect("command runner closed its event channel before Done")
+    }
+
     #[test]
     fn filename_template_expands_padded_indices_and_timestamps() {
         assert_eq!(
@@ -576,16 +602,23 @@ mod tests {
             tx,
         ));
         let mut outputs = Vec::new();
-        while let Some(event) = rx.recv().await {
-            let done = matches!(event, TestCommandEvent::Done(_));
-            if let TestCommandEvent::Output { stream, line, .. } = event {
-                outputs.push((stream, line));
+        let done = loop {
+            let event = next_command_event(&mut rx).await;
+            match event {
+                TestCommandEvent::Output { stream, line, .. } => outputs.push((stream, line)),
+                TestCommandEvent::Done(result) => break result,
+                TestCommandEvent::Start { .. } | TestCommandEvent::Exit { .. } => {}
             }
-            if done {
-                break;
-            }
-        }
-        task.await.unwrap();
+        };
+        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+            .await
+            .expect("command runner task did not complete before the test deadline")
+            .unwrap();
+        assert!(done.is_ok());
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
         let order = std::fs::read_to_string(temp.path().join("order.txt")).unwrap();
         assert_eq!(order.split_whitespace().collect::<String>(), "AB");
         assert!(outputs
@@ -610,20 +643,55 @@ mod tests {
             "echo SHOULD_NOT_RUN > later.txt".to_string(),
         ];
         let (tx, mut rx) = mpsc::channel(256);
-        tokio::spawn(run_test_commands(
+        let task = tokio::spawn(run_test_commands(
             commands,
             NormalizedPath::new(temp.path()),
             tx,
         ));
-        let mut result = None;
-        while let Some(event) = rx.recv().await {
+        let result = loop {
+            let event = next_command_event(&mut rx).await;
             if let TestCommandEvent::Done(value) = event {
-                result = Some(value);
-                break;
+                break value;
             }
-        }
-        assert!(result.unwrap().is_err());
+        };
+        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+            .await
+            .expect("command runner task did not complete before the test deadline")
+            .unwrap();
+        assert!(result.is_err());
+        assert!(matches!(
+            rx.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
         assert!(!temp.path().join("later.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn issue_208_runner_finishes_after_closing_descendant_pipe_writers() {
+        let temp = tempfile::tempdir().unwrap();
+        #[cfg(windows)]
+        let command = "start /B cmd /C \"ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt\"";
+        #[cfg(not(windows))]
+        let command = "(sleep 20; echo LATE > late.txt) &";
+        let (tx, mut rx) = mpsc::channel(256);
+        let task = tokio::spawn(run_test_commands(
+            vec![command.to_string()],
+            NormalizedPath::new(temp.path()),
+            tx,
+        ));
+
+        let result = loop {
+            if let TestCommandEvent::Done(value) = next_command_event(&mut rx).await {
+                break value;
+            }
+        };
+        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+            .await
+            .expect("command runner task did not complete before the test deadline")
+            .unwrap();
+        assert!(result.is_ok());
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(!temp.path().join("late.txt").exists());
     }
 
     #[tokio::test]
