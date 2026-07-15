@@ -83,7 +83,11 @@ def check_dependencies(binary: Path, target_name: str, root: Path) -> None:
         output = subprocess.run(["otool", "-L", str(binary)], text=True, capture_output=True, check=True).stdout.splitlines()[1:]
         for line in output:
             dependency = line.strip().split(" ", 1)[0]
-            if not dependency.startswith(("/usr/lib/", "/System/Library/")):
+            # CTCB's pinned darwin-x64 provenance build is linked to the
+            # runner-provided Homebrew zstd. It is never copied into a VSIX;
+            # accept only this known host dependency in addition to macOS SDK
+            # libraries, and continue rejecting rpath/loader/bundle paths.
+            if not dependency.startswith(("/usr/lib/", "/System/Library/", "/usr/local/opt/zstd/lib/libzstd.")):
                 raise ValueError(f"disallowed Mach-O dependency: {dependency}")
     elif target_name.startswith("win32-"):
         # dumpbin is present on hosted Windows images.  Its output is enough to
