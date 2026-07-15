@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import { FastLedExtensionApi, resolveBundledClangd } from './clangdBundle';
 import { IntelliSenseSnapshotController } from './intellisense';
 import { EngineController, registerEngineLifecycle, VscodeEngineRuntime } from './intellisenseEngine';
+import { InoLanguageController } from './inoLanguage';
 
 let serverProcess: cp.ChildProcess | undefined;
 let outputChannel: vscode.OutputChannel;
@@ -14,6 +15,9 @@ export function activate(context: vscode.ExtensionContext): FastLedExtensionApi 
     outputChannel = vscode.window.createOutputChannel('FastLED WASM');
     intelliSenseEngines = new EngineController(new VscodeEngineRuntime(context, outputChannel));
     registerEngineLifecycle(context, intelliSenseEngines, outputChannel);
+    // The clangd client only registers navigation providers for C++ document
+    // language IDs. Bind already-open Arduino tabs before configuring it.
+    const inoLanguageReady = new InoLanguageController(outputChannel).start(context);
     
     // Register all commands
     const commands = [
@@ -47,7 +51,10 @@ export function activate(context: vscode.ExtensionContext): FastLedExtensionApi 
     new IntelliSenseSnapshotController(
         outputChannel,
         undefined,
-        () => refreshIntelliSense('workspace activation'),
+        async () => {
+            await inoLanguageReady;
+            await refreshIntelliSense('workspace activation');
+        },
     ).start(context);
 
     // Register status bar item
