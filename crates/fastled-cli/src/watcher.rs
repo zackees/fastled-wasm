@@ -259,7 +259,7 @@ impl FileWatcher {
                 if should_flush {
                     let batch = {
                         let mut s = state.lock().unwrap();
-                        let mut paths: Vec<PathBuf> = s.pending.drain(..).collect();
+                        let mut paths = std::mem::take(&mut s.pending);
                         let force_rescan = s.force_rescan;
                         s.force_rescan = false;
                         s.last_event = None;
