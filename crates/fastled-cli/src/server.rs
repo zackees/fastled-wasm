@@ -745,7 +745,7 @@ pub async fn start_server(
         .route("/{*path}", get(serve_file))
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::HeaderName::from_static("cross-origin-embedder-policy"),
-            HeaderValue::from_static("credentialless"),
+            HeaderValue::from_static("require-corp"),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::HeaderName::from_static("cross-origin-opener-policy"),
@@ -1016,7 +1016,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_coop_coep_headers() {
+    async fn test_safari_compatible_coop_coep_headers() {
         let (addr, _dir) = setup_server().await;
         let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
         let coep = resp
@@ -1031,7 +1031,7 @@ mod tests {
             .unwrap()
             .to_str()
             .unwrap();
-        assert_eq!(coep, "credentialless");
+        assert_eq!(coep, "require-corp");
         assert_eq!(coop, "same-origin");
     }
 
