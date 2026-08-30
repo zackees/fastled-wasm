@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import version
 from pathlib import Path
 
 
@@ -32,10 +32,7 @@ def _installed_or_source_version() -> str:
     source_version = _workspace_package_version()
     if source_version:
         return source_version
-    try:
-        return version("fastled")
-    except PackageNotFoundError:
-        raise
+    return version("fastled")
 
 
 __version__ = _installed_or_source_version()

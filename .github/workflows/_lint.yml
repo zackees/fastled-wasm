@@ -76,14 +76,17 @@ jobs:
         run: rustup toolchain install nightly-2026-03-26 --profile minimal --component llvm-tools-preview,rust-src,rustc-dev
 
       # Building cargo-dylint / dylint-link from source is the dominant fixed
-      # cost of every lint job (10+ min per platform). setup-soldr's native
-      # dylint-cache (inputs above) restores the binaries on warm runs; skip
-      # the installs on a cache hit (#170).
+      # cost of every lint job (10+ min per platform). A restored cache should
+      # expose both binaries, but verify the commands themselves: a cache hit
+      # without a PATH-visible binary must not make the lint job fail.
       - name: Install Dylint tools
-        if: steps.soldr.outputs.dylint-cache-hit != 'true'
         run: |
-          soldr cargo install cargo-dylint --version 6.0.1 --locked --force
-          soldr cargo install dylint-link --version 6.0.1 --locked --force
+          if ! command -v cargo-dylint >/dev/null 2>&1; then
+            soldr cargo install cargo-dylint --version 6.0.1 --locked --force
+          fi
+          if ! command -v dylint-link >/dev/null 2>&1; then
+            soldr cargo install dylint-link --version 6.0.1 --locked --force
+          fi
 
       - name: Lint
         run: ./lint
