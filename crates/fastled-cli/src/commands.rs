@@ -45,7 +45,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     // Ensure the emscripten + esbuild toolchains are installed before invoking
     // the native Rust build backend. The backend consumes the Rust-installed
     // directories via these environment variables.
-    if let Err(message) = ensure_compile_prerequisites(true) {
+    if let Err(message) = ensure_compile_prerequisites(true, cli.fastled_path.as_deref()) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }
@@ -693,7 +693,7 @@ pub(crate) fn run_native_init(cli: &Cli, example: Option<&str>) -> ExitCode {
 
 pub(crate) fn run_native_just_compile(cli: &Cli, dir: &str) -> ExitCode {
     announce_link_mode(cli, None, true);
-    if let Err(message) = ensure_compile_prerequisites(!cli.no_app) {
+    if let Err(message) = ensure_compile_prerequisites(!cli.no_app, cli.fastled_path.as_deref()) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }
@@ -827,7 +827,7 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
         eprintln!("fastled: --internal-dwarf-smoke must be run with --debug");
         return ExitCode::FAILURE;
     }
-    if let Err(message) = ensure_compile_prerequisites(true) {
+    if let Err(message) = ensure_compile_prerequisites(true, cli.fastled_path.as_deref()) {
         eprintln!("fastled: {message}");
         return ExitCode::FAILURE;
     }

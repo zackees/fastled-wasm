@@ -73,11 +73,29 @@ def find_rust_fastled_cli() -> Path | None:
     return None
 
 
+def _packaged_frontend_dir() -> Path:
+    """Return the absolute frontend directory bundled with this package."""
+    return Path(__file__).resolve().parent / "frontend"
+
+
+def _managed_uv_executable() -> Path | None:
+    """Locate uv beside the interpreter installed with the FastLED wheel."""
+    scripts = Path(sys.executable).resolve().parent
+    candidate = scripts / ("uv.exe" if sys.platform == "win32" else "uv")
+    return candidate if candidate.is_file() else None
+
+
 def invoke_rust_fastled_cli(argv: list[str] | None = None) -> int:
     """Run the Rust FastLED CLI and return its exit code."""
     args = list(argv or [])
     env = os.environ.copy()
     env.setdefault("FASTLED_PYTHON_EXECUTABLE", sys.executable)
+    if uv := _managed_uv_executable():
+        env.setdefault("FASTLED_UV_EXECUTABLE", str(uv))
+    # A wheel's Rust binary must never depend on the build machine's
+    # CARGO_MANIFEST_DIR. Keep this absolute so the binary can be launched
+    # from any working directory after installation.
+    env["FASTLED_FRONTEND_DIR"] = str(_packaged_frontend_dir())
 
     cli = find_rust_fastled_cli()
     if cli is not None:

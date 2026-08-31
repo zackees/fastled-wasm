@@ -5,6 +5,7 @@
 //! Emscripten path resolution are owned by this Rust binary.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -15,14 +16,18 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::cli::LinkMode;
-use crate::{archive, debug_symbols, dynamic_cache, frontend, install};
+use crate::{archive, debug_symbols, dynamic_cache, frontend, install, source};
 
 /// Receives one build-output line at a time. The second argument is the
 /// originating stream: `"stdout"` or `"stderr"`. Called on the build thread.
 pub type LogSink<'a> = &'a (dyn Fn(&str, &str) + 'a);
 
 fn stdio_log(line: &str, stream: &str) {
-    if stream == "stderr" {
+    use std::io::IsTerminal;
+
+    if stream == "warning" && std::io::stderr().is_terminal() {
+        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+    } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {
         println!("{line}");
@@ -89,6 +94,8 @@ struct ToolPaths {
     wasm_finalize: PathBuf,
     emscripten_version: String,
     python: PathBuf,
+    node: PathBuf,
+    runtime_bin: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -189,30 +196,71 @@ pub(crate) struct DwarfPathRoots {
     emsdk_root: Option<PathBuf>,
 }
 
-fn resolve_python_executable() -> PathBuf {
-    if let Some(path) = std::env::var_os("FASTLED_PYTHON_EXECUTABLE").map(PathBuf::from) {
-        if path.is_file() {
-            return path;
+/// Create a private PATH directory for child build tools.  This is deliberately
+/// inside the managed Emscripten install rather than the user's shell or the
+/// FastLED checkout.  Older FastLED revisions call bare `python`; exposing
+/// both spellings makes them use the interpreter selected by the wheel/venv.
+fn replace_runtime_alias(bin_dir: &Path, name: &str, target: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        let alias = bin_dir.join(name);
+        if alias.symlink_metadata().is_ok() {
+            if alias.is_dir() {
+                bail!("managed runtime alias {} is a directory", alias.display());
+            }
+            fs::remove_file(&alias)
+                .with_context(|| format!("remove managed runtime alias {}", alias.display()))?;
         }
+        symlink(target, &alias).with_context(|| {
+            format!(
+                "create managed runtime alias {} -> {}",
+                alias.display(),
+                target.display()
+            )
+        })?;
     }
-    if let Some(venv) = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from) {
-        let candidate = if cfg!(windows) {
-            venv.join("Scripts").join("python.exe")
-        } else {
-            venv.join("bin").join("python")
-        };
-        if candidate.is_file() {
-            return candidate;
-        }
+    #[cfg(windows)]
+    {
+        // Windows resolves .cmd through PATHEXT.  A command wrapper avoids
+        // requiring symlink privileges while preserving the absolute target.
+        let alias = bin_dir.join(format!("{name}.cmd"));
+        let escaped_target = target.to_string_lossy().replace('"', "\"\"");
+        fs::write(&alias, format!("@\"{escaped_target}\" %*\r\n"))
+            .with_context(|| format!("write managed runtime alias {}", alias.display()))?;
     }
-    PathBuf::from(if cfg!(windows) {
-        "python.exe"
-    } else {
-        "python3"
-    })
+    Ok(())
 }
 
-fn resolve_tool_paths(install_dir: &Path) -> Result<ToolPaths> {
+fn prepare_runtime_bin(install_dir: &Path, python: &Path, node: &Path) -> Result<PathBuf> {
+    let bin_dir = install_dir.join(".fastled-runtime-bin");
+    fs::create_dir_all(&bin_dir)
+        .with_context(|| format!("create managed runtime directory {}", bin_dir.display()))?;
+    replace_runtime_alias(&bin_dir, "python", python)?;
+    replace_runtime_alias(&bin_dir, "python3", python)?;
+    replace_runtime_alias(&bin_dir, "node", node)?;
+    Ok(bin_dir)
+}
+
+fn runtime_path_value(
+    runtime_bin: &Path,
+    managed_project_bin: Option<&Path>,
+    caller_path: Option<&OsStr>,
+) -> Result<String> {
+    let mut entries = Vec::new();
+    if let Some(managed_project_bin) = managed_project_bin {
+        entries.push(managed_project_bin.to_path_buf());
+    }
+    entries.push(runtime_bin.to_path_buf());
+    if let Some(caller_path) = caller_path {
+        entries.extend(std::env::split_paths(caller_path));
+    }
+    let path = std::env::join_paths(entries).context("construct managed build PATH")?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn resolve_tool_paths(install_dir: &Path, fastled_dir: &Path) -> Result<ToolPaths> {
     let emscripten_dir = install_dir.join("emscripten");
     let emcc = emscripten_dir.join("emcc.py");
     let empp = emscripten_dir.join("em++.py");
@@ -248,6 +296,9 @@ fn resolve_tool_paths(install_dir: &Path) -> Result<ToolPaths> {
     if !clangpp.is_file() {
         bail!("missing clang++ at {}", clangpp.display());
     }
+    let python = install::resolve_fastled_python(fastled_dir)?;
+    let node = install::resolve_managed_node(Some(fastled_dir))?;
+    let runtime_bin = prepare_runtime_bin(install_dir, &python, &node)?;
     Ok(ToolPaths {
         emscripten_dir,
         emcc,
@@ -258,7 +309,9 @@ fn resolve_tool_paths(install_dir: &Path) -> Result<ToolPaths> {
         llvm_objcopy,
         wasm_finalize,
         emscripten_version,
-        python: resolve_python_executable(),
+        python,
+        node,
+        runtime_bin,
     })
 }
 
@@ -285,6 +338,19 @@ fn build_env(tools: &ToolPaths) -> Vec<(String, String)> {
         (
             "EMSDK_PYTHON".to_string(),
             tools.python.display().to_string(),
+        ),
+        (
+            "FASTLED_PYTHON_EXECUTABLE".to_string(),
+            tools.python.display().to_string(),
+        ),
+        (
+            "PATH".to_string(),
+            runtime_path_value(
+                &tools.runtime_bin,
+                tools.node.parent(),
+                std::env::var_os("PATH").as_deref(),
+            )
+            .unwrap_or_else(|_| tools.runtime_bin.display().to_string()),
         ),
         ("EMCC_SKIP_SANITY_CHECK".to_string(), "1".to_string()),
         // Build tools are Python-driven; without this their stdout is
@@ -852,6 +918,7 @@ fn toolchain_fingerprint(tools: &ToolPaths) -> Result<String> {
     let mut values = vec![
         format!("content={content}"),
         format!("python={}", tools.python.display()),
+        format!("node={}", tools.node.display()),
         format!("clang={}", clang.display()),
         format!("wasm-ld={}", wasm_ld.display()),
         format!("llvm-ar={}", llvm_ar.display()),
@@ -1955,7 +2022,11 @@ fn resolve_fastled_dir(request: &BuildRequest) -> Result<(PathBuf, Option<PathBu
         return Ok((repo, None));
     }
     let marker = short_dir.join(".fastled-source");
-    let source_key = repo.to_string_lossy().into_owned();
+    let mut source_key = repo.to_string_lossy().into_owned();
+    if let Ok(receipt) = fs::read_to_string(source::receipt_path(&repo)) {
+        source_key.push('\n');
+        source_key.push_str(&receipt);
+    }
     if short_dir.join("library.json").is_file()
         && fs::read_to_string(&marker).unwrap_or_default() == source_key
     {
@@ -1979,7 +2050,10 @@ fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
         let path = entry.path();
         let target = dst.join(entry.file_name());
         if path.is_dir() {
-            if entry.file_name().to_string_lossy() == ".git" {
+            if matches!(
+                entry.file_name().to_string_lossy().as_ref(),
+                ".git" | ".venv"
+            ) {
                 continue;
             }
             copy_dir(&path, &target)?;
@@ -2008,11 +2082,25 @@ pub fn run_build_streaming(request: &BuildRequest, log: LogSink) -> Result<Build
     }
     fs::create_dir_all(&output_dir)?;
 
-    let emscripten_install = install::ensure_emscripten_installed()?;
-    archive::write_emscripten_config(&emscripten_install, "node")?;
-    let tools = resolve_tool_paths(&emscripten_install)?;
+    if request.fastled_path.is_none() {
+        let requested_ref = crate::project::read_fastled_json_ref(&request.sketch_dir)
+            .unwrap_or_else(|| "master".to_string());
+        let is_local_ref = Path::new(&requested_ref).join("library.json").is_file();
+        if !is_local_ref && requested_ref == "master" {
+            let cache = source::default_cache_base()?;
+            let status = source::source_status(&cache, "master", std::time::SystemTime::now())?;
+            if let Some(warning) = source::master_stale_warning(&status) {
+                log(&warning, "warning");
+            }
+        }
+    }
+
     let (fastled_dir, _cleanup) = resolve_fastled_dir(request)?;
     let fastled_dir = normalize_path(&fastled_dir);
+    install::ensure_fastled_uv_environment(&fastled_dir)?;
+    let emscripten_install = install::ensure_emscripten_installed()?;
+    let tools = resolve_tool_paths(&emscripten_install, &fastled_dir)?;
+    archive::write_emscripten_config(&emscripten_install, &tools.node)?;
     let emsdk_root = Some(emscripten_install.clone());
     let (example_name, example_dir, _is_in_tree) =
         resolve_example_name(&normalize_path(&request.sketch_dir), &fastled_dir);
@@ -2291,6 +2379,60 @@ mod tests {
     }
 
     #[test]
+    fn managed_runtime_bin_exposes_python_spellings_and_node() {
+        let temp = tempfile::tempdir().unwrap();
+        let install = temp.path().join("toolchain");
+        let tools = temp.path().join("tools");
+        fs::create_dir_all(&tools).unwrap();
+        let python = tools.join(if cfg!(windows) {
+            "python.exe"
+        } else {
+            "python"
+        });
+        let node = tools.join(if cfg!(windows) { "node.exe" } else { "node" });
+        fs::write(&python, "tool").unwrap();
+        fs::write(&node, "tool").unwrap();
+
+        let runtime_bin = prepare_runtime_bin(&install, &python, &node).unwrap();
+        #[cfg(unix)]
+        {
+            assert_eq!(fs::read_link(runtime_bin.join("python")).unwrap(), python);
+            assert_eq!(fs::read_link(runtime_bin.join("python3")).unwrap(), python);
+            assert_eq!(fs::read_link(runtime_bin.join("node")).unwrap(), node);
+        }
+        #[cfg(windows)]
+        {
+            for name in ["python", "python3", "node"] {
+                let wrapper = fs::read_to_string(runtime_bin.join(format!("{name}.cmd"))).unwrap();
+                assert!(wrapper.contains("%*"), "wrapper must forward arguments");
+            }
+        }
+    }
+
+    #[test]
+    fn managed_runtime_path_prepends_without_dropping_caller_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let runtime_bin = temp.path().join("runtime-bin");
+        let managed_bin = temp.path().join("managed-bin");
+        let caller_bin = temp.path().join("caller-bin");
+        let caller_path = std::env::join_paths([caller_bin.clone()]).unwrap();
+
+        let path = runtime_path_value(
+            &runtime_bin,
+            Some(&managed_bin),
+            Some(caller_path.as_os_str()),
+        )
+        .unwrap();
+        let entries = std::env::split_paths(OsStr::new(&path)).collect::<Vec<_>>();
+        assert_eq!(entries.first(), Some(&managed_bin));
+        assert_eq!(entries.get(1), Some(&runtime_bin));
+        assert!(
+            entries.contains(&caller_bin),
+            "caller PATH entry was dropped"
+        );
+    }
+
+    #[test]
     fn resolve_example_maps_external_to_examples_leaf() {
         let root = PathBuf::from("/tmp/FastLED");
         let sketch = PathBuf::from("/tmp/MySketch");
@@ -2404,6 +2546,8 @@ mod tests {
             wasm_finalize,
             emscripten_version: version.to_string(),
             python: PathBuf::from("python"),
+            node: PathBuf::from("node"),
+            runtime_bin: PathBuf::from("runtime-bin"),
         }
     }
 

@@ -148,7 +148,7 @@ const LOADING_PAGE: &str = r#"<!DOCTYPE html>
       if (l.includes('error:') || l.includes('fatal error') ||
           l.includes('undefined symbol') ||
           (stream === 'stderr' && l.includes('failed'))) { return 'err'; }
-      if (l.includes('warning:')) { return 'warn'; }
+      if (l.includes('warning:') || stream === 'warning') { return 'warn'; }
       return '';
     }
     function appendLog(line, stream) {

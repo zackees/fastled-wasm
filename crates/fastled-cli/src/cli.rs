@@ -9,6 +9,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: ToolchainAction,
     },
+    /// Inspect and explicitly manage cached FastLED source checkouts.
+    Source {
+        #[command(subcommand)]
+        action: SourceAction,
+    },
 }
 
 #[derive(Clone, Debug, Subcommand)]
@@ -37,6 +42,29 @@ pub(crate) enum ToolchainAction {
     Rollback,
     /// Remove inactive package installations.
     Prune,
+}
+
+/// Explicit management actions for the cached FastLED source checkout.
+#[derive(Clone, Debug, Subcommand)]
+pub(crate) enum SourceAction {
+    /// Show the cached source revision, fetch time, and freshness state.
+    Status {
+        /// Cached FastLED ref to inspect.
+        #[arg(long = "ref", default_value = "master")]
+        reference: String,
+    },
+    /// Download a fresh source checkout while preserving the old checkout on failure.
+    Update {
+        /// Cached FastLED ref to refresh.
+        #[arg(long = "ref", default_value = "master")]
+        reference: String,
+    },
+    /// Remove one cached FastLED source checkout.
+    Purge {
+        /// Cached FastLED ref to remove.
+        #[arg(long = "ref", default_value = "master")]
+        reference: String,
+    },
 }
 
 /// How the sketch code is linked into the generated WASM program.
@@ -338,6 +366,33 @@ mod tests {
             Some(Command::Toolchain {
                 action: ToolchainAction::Status
             })
+        ));
+    }
+
+    #[test]
+    fn source_commands_are_explicit_subcommands() {
+        let cli = Cli::parse_from(["fastled", "source", "status"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Source {
+                action: SourceAction::Status { reference }
+            }) if reference == "master"
+        ));
+
+        let cli = Cli::parse_from(["fastled", "source", "update", "--ref", "main"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Source {
+                action: SourceAction::Update { reference }
+            }) if reference == "main"
+        ));
+
+        let cli = Cli::parse_from(["fastled", "source", "purge", "--ref", "3.10.0"]);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Source {
+                action: SourceAction::Purge { reference }
+            }) if reference == "3.10.0"
         ));
     }
 

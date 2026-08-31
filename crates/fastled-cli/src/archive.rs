@@ -236,12 +236,19 @@ pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Res
 /// (not a staging directory), matching the Python implementation's post-rename
 /// behaviour.
 ///
-/// `node_path` is the path to the Node.js executable.  Pass the result of
-/// `which("node")` or a literal `"node"` when the executable is on `PATH`.
+/// `node_path` is the absolute path to the Node.js executable.  Emscripten
+/// invokes this program from child processes, so a bare `node` name would
+/// accidentally depend on the caller's shell PATH.
 ///
 /// # Errors
 /// Returns an error if the file cannot be written.
-pub fn write_emscripten_config(install_dir: &Path, node_path: &str) -> Result<()> {
+pub fn write_emscripten_config(install_dir: &Path, node_path: &Path) -> Result<()> {
+    if !node_path.is_absolute() {
+        anyhow::bail!(
+            "NODE_JS must be an absolute path, got {}",
+            node_path.display()
+        );
+    }
     let bin_dir = install_dir.join("bin");
     // Normalise to forward-slash paths (the Python side does the same).
     let llvm_root = path_to_forward_slash(&bin_dir);
@@ -253,8 +260,9 @@ pub fn write_emscripten_config(install_dir: &Path, node_path: &str) -> Result<()
          \n\
          LLVM_ROOT = {llvm_root:?}\n\
          BINARYEN_ROOT = {binaryen_root:?}\n\
-         NODE_JS = {node_path:?}\n\
-         "
+         NODE_JS = {:?}\n\
+         ",
+        path_to_forward_slash(node_path),
     );
 
     let config_path = install_dir.join(".emscripten");
@@ -441,7 +449,8 @@ mod tests {
         let install_dir = dir.path().join("emscripten").join("3.1.50");
         fs::create_dir_all(&install_dir).unwrap();
 
-        write_emscripten_config(&install_dir, "node").expect("write_emscripten_config");
+        let node = install_dir.join("managed-node");
+        write_emscripten_config(&install_dir, &node).expect("write_emscripten_config");
 
         let config_path = install_dir.join(".emscripten");
         assert!(config_path.exists(), ".emscripten file should exist");
@@ -481,7 +490,8 @@ mod tests {
         let install_dir = dir.path().join("emscripten").join("3.1.50");
         fs::create_dir_all(&install_dir).unwrap();
 
-        write_emscripten_config(&install_dir, "/usr/bin/node").expect("write_emscripten_config");
+        let node = dir.path().join("node");
+        write_emscripten_config(&install_dir, &node).expect("write_emscripten_config");
 
         let config_path = install_dir.join(".emscripten");
         let contents = fs::read_to_string(&config_path).unwrap();
@@ -499,13 +509,14 @@ mod tests {
         let install_dir = dir.path().join("emscripten").join("3.1.50");
         fs::create_dir_all(&install_dir).unwrap();
 
-        let node = "/custom/path/to/node";
-        write_emscripten_config(&install_dir, node).expect("write_emscripten_config");
+        let node = dir.path().join("custom").join("path").join("node");
+        write_emscripten_config(&install_dir, &node).expect("write_emscripten_config");
 
         let contents = fs::read_to_string(install_dir.join(".emscripten")).unwrap();
         assert!(
-            contents.contains(node),
-            "config should contain the node path ({node}): {contents}"
+            contents.contains(&path_to_forward_slash(&node)),
+            "config should contain the node path ({}): {contents}",
+            node.display()
         );
     }
 
@@ -514,12 +525,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let install_dir = dir.path().join("emscripten").join("4.0.19");
         fs::create_dir_all(&install_dir).unwrap();
-        write_emscripten_config(&install_dir, "node").unwrap();
+        let node = install_dir.join("managed-node");
+        write_emscripten_config(&install_dir, &node).unwrap();
         let path = install_dir.join(".emscripten");
         let first = path.metadata().unwrap().modified().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
-        write_emscripten_config(&install_dir, "node").unwrap();
+        write_emscripten_config(&install_dir, &node).unwrap();
         assert_eq!(first, path.metadata().unwrap().modified().unwrap());
+    }
+
+    #[test]
+    fn test_write_emscripten_config_rejects_relative_node_path() {
+        let dir = temp_dir();
+        let install_dir = dir.path().join("emscripten").join("4.0.19");
+        fs::create_dir_all(&install_dir).unwrap();
+
+        let error = write_emscripten_config(&install_dir, Path::new("node"))
+            .expect_err("bare node must be rejected")
+            .to_string();
+        assert!(error.contains("absolute path"), "got: {error}");
     }
 
     // ------------------------------------------------------------------

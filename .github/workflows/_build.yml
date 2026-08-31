@@ -10,6 +10,10 @@ on:
         required: false
         type: string
         default: ""
+      wheel-smoke:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -111,6 +115,82 @@ jobs:
           else
             uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel
           fi
+
+      # This deliberately runs the packaged console script outside this
+      # checkout. It exercises the wheel's bundled Rust binary and frontend,
+      # rather than development fallbacks such as CARGO_MANIFEST_DIR.
+      - name: Smoke test installed wheel in shipped viewer
+        if: inputs.wheel-smoke
+        env:
+          FASTLED_VIEWER_LOGS: "1"
+        run: |
+          set -euo pipefail
+          SMOKE_ROOT="$RUNNER_TEMP/fastled-wheel-smoke"
+          rm -rf "$SMOKE_ROOT"
+          mkdir -p "$SMOKE_ROOT/home" "$SMOKE_ROOT/bin" "$SMOKE_ROOT/sketch" "$SMOKE_ROOT/artifacts"
+          uv venv "$SMOKE_ROOT/venv" --python "$UV_PYTHON"
+          uv pip install --python "$SMOKE_ROOT/venv/bin/python" dist/*.whl
+          ln -s "$(command -v uv)" "$SMOKE_ROOT/bin/uv"
+
+          cat > "$SMOKE_ROOT/sketch/wheel_smoke.ino" <<'EOF'
+          #include <FastLED.h>
+
+          #define LED_PIN 3
+          #define WIDTH 16
+          #define HEIGHT 16
+          #define NUM_LEDS (WIDTH * HEIGHT)
+
+          using namespace fl;
+
+          CRGB leds[NUM_LEDS];
+          XYMap screenMap = XYMap::constructRectangularGrid(WIDTH, HEIGHT);
+
+          void setup() {
+            FastLED.addLeds<WS2812B, LED_PIN, GRB>(leds, NUM_LEDS)
+                .setScreenMap(screenMap);
+          }
+
+          void loop() {
+            static uint8_t hue = 0;
+            fill_rainbow(leds, NUM_LEDS, hue++, 7);
+            FastLED.show();
+            delay(20);
+          }
+          EOF
+
+          # Keep uv available for the managed FastLED environment but omit
+          # ambient node and bare python. The installed launcher supplies its
+          # own absolute Python and frontend paths to the Rust binary.
+          cd "$SMOKE_ROOT"
+          env -i \
+            HOME="$SMOKE_ROOT/home" \
+            PATH="$SMOKE_ROOT/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+            FASTLED_VIEWER_LOGS="$FASTLED_VIEWER_LOGS" \
+            "$SMOKE_ROOT/venv/bin/fastled" "$SMOKE_ROOT/sketch" \
+              --test \
+              --test-wait-secs=2 \
+              --test-timeout-secs=240 \
+              --test-ready-timeout-secs=45 \
+              --test-screenshot="$SMOKE_ROOT/artifacts/screenmap.png" \
+              --test-log="$SMOKE_ROOT/artifacts/viewer.log" \
+              --test-exit-on-error
+          test -s "$SMOKE_ROOT/artifacts/screenmap.png"
+
+      - name: Upload installed wheel viewer screenshot
+        if: always() && inputs.wheel-smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-smoke-screenshot-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/*.png
+          if-no-files-found: error
+
+      - name: Upload installed wheel viewer log
+        if: always() && inputs.wheel-smoke
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-smoke-log-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/viewer.log
+          if-no-files-found: warn
 
       - name: Upload wheel
         uses: actions/upload-artifact@v4
