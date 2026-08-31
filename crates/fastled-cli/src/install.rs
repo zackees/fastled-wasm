@@ -648,6 +648,18 @@ pub(crate) fn resolve_managed_python() -> Result<PathBuf> {
 /// Resolve Python from the selected FastLED uv environment while preserving
 /// the virtual-environment path. Canonicalizing this symlink would produce the
 /// base interpreter path and silently discard the environment's dependencies.
+fn fastled_venv_executable(fastled_dir: &Path, program: &str) -> Option<PathBuf> {
+    let candidate = if cfg!(windows) {
+        fastled_dir
+            .join(".venv")
+            .join("Scripts")
+            .join(format!("{program}.exe"))
+    } else {
+        fastled_dir.join(".venv").join("bin").join(program)
+    };
+    (candidate.is_file() && candidate.is_absolute()).then_some(candidate)
+}
+
 pub(crate) fn resolve_fastled_python(fastled_dir: &Path) -> Result<PathBuf> {
     let mut roots = vec![fastled_dir.to_path_buf()];
     if let Ok(root) = fastled_root() {
@@ -655,13 +667,8 @@ pub(crate) fn resolve_fastled_python(fastled_dir: &Path) -> Result<PathBuf> {
         roots.push(root.join("cache").join("fastled-master"));
     }
     for root in roots {
-        let candidate = if cfg!(windows) {
-            root.join(".venv").join("Scripts").join("python.exe")
-        } else {
-            root.join(".venv").join("bin").join("python")
-        };
-        if candidate.is_file() && candidate.is_absolute() {
-            return Ok(candidate);
+        if let Some(python) = fastled_venv_executable(&root, "python") {
+            return Ok(python);
         }
     }
     resolve_managed_python()
@@ -705,7 +712,15 @@ pub(crate) fn resolve_managed_node(fastled_dir: Option<&Path>) -> Result<PathBuf
 /// its Meson helpers and Emscripten. This is intentionally project-local and
 /// never modifies the user's global Python, Node, or shell PATH.
 pub(crate) fn ensure_fastled_uv_environment(fastled_dir: &Path) -> Result<()> {
-    if resolve_managed_node(Some(fastled_dir)).is_ok() {
+    if fastled_venv_executable(fastled_dir, "python").is_some()
+        && fastled_venv_executable(fastled_dir, "node").is_some()
+    {
+        return Ok(());
+    }
+    if !fastled_dir.join("pyproject.toml").is_file() {
+        // Older pinned FastLED releases predate the uv project. They can still
+        // use an explicitly supplied or ambient Node runtime.
+        resolve_managed_node(Some(fastled_dir))?;
         return Ok(());
     }
     let uv = resolve_managed_uv()?;
@@ -723,12 +738,14 @@ pub(crate) fn ensure_fastled_uv_environment(fastled_dir: &Path) -> Result<()> {
     if !status.success() {
         bail!("uv failed to provision FastLED runtime with {status}");
     }
-    resolve_managed_node(Some(fastled_dir)).with_context(|| {
-        format!(
-            "uv completed but did not provide Node in {}",
-            fastled_dir.join(".venv").display()
-        )
-    })?;
+    for program in ["python", "node"] {
+        fastled_venv_executable(fastled_dir, program).with_context(|| {
+            format!(
+                "uv completed but did not provide {program} in {}",
+                fastled_dir.join(".venv").display()
+            )
+        })?;
+    }
     Ok(())
 }
 
