@@ -1935,6 +1935,24 @@ fn copy_dynamic_output(
 fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
     let mut files = Vec::<serde_json::Value>::new();
     collect_data_files(example_dir, example_dir, &mut files)?;
+    for file in &files {
+        let relative = file
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("generated asset manifest entry has no path"))?;
+        let source = example_dir.join(relative);
+        let target = output_dir.join(relative);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(&source, &target).with_context(|| {
+            format!(
+                "copy sketch asset {} to {}",
+                source.display(),
+                target.display()
+            )
+        })?;
+    }
     let legacy = output_dir.join("files.json");
     if legacy.is_file() {
         fs::remove_file(&legacy)
@@ -2180,7 +2198,8 @@ fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>)
                 continue;
             }
             collect_data_files(root, &path, out)?;
-        } else if path != root.join("data").join("assets.json")
+        } else if path != root.join("fastled.json")
+            && path != root.join("data").join("assets.json")
             && matches!(
                 path.extension()
                     .and_then(|ext| ext.to_str())
@@ -3093,6 +3112,7 @@ link_flags = []
         fs::create_dir_all(example.join("data")).unwrap();
         fs::create_dir_all(&output).unwrap();
         fs::write(example.join("data").join("config.json"), "{}").unwrap();
+        fs::write(example.join("fastled.json"), r#"{"ref":"master"}"#).unwrap();
         fs::write(output.join("files.json"), "legacy").unwrap();
 
         generate_manifest(&example, &output).unwrap();
@@ -3100,6 +3120,12 @@ link_flags = []
         assert!(!output.join("files.json").exists());
         let manifest = fs::read_to_string(output.join("sketch_assets.json")).unwrap();
         assert!(manifest.contains("config.json"));
+        assert!(!manifest.contains("fastled.json"));
+        assert_eq!(
+            fs::read_to_string(output.join("data/config.json")).unwrap(),
+            "{}"
+        );
+        assert!(!output.join("fastled.json").exists());
     }
 
     #[test]
