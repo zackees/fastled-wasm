@@ -6,6 +6,7 @@ use clap::Parser;
 
 mod archive;
 mod build;
+mod cache_upgrade;
 mod clangd_config;
 mod cli;
 mod commands;
@@ -40,6 +41,11 @@ const DEFAULT_EXAMPLE: &str = "wasm";
 
 /// Library entry point invoked by the `fastled` binary.
 pub fn run() -> ExitCode {
+    if let Err(error) = cache_upgrade::enforce_current_cache_version() {
+        eprintln!("fastled: cache upgrade cleanup failed: {error:#}");
+        return ExitCode::FAILURE;
+    }
+
     let mut cli = cli::Cli::parse();
     cli::apply_test_implications(&mut cli);
 
