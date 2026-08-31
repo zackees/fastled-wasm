@@ -80,7 +80,10 @@ def _packaged_frontend_dir() -> Path:
 
 def _managed_uv_executable() -> Path | None:
     """Locate uv beside the interpreter installed with the FastLED wheel."""
-    scripts = Path(sys.executable).resolve().parent
+    # A virtualenv's interpreter is commonly a symlink to its base Python.
+    # Keep its lexical scripts directory so wheel-provided sibling tools are
+    # located inside that virtualenv, while still returning an absolute path.
+    scripts = Path(sys.executable).absolute().parent
     candidate = scripts / ("uv.exe" if sys.platform == "win32" else "uv")
     return candidate if candidate.is_file() else None
 

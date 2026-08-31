@@ -53,8 +53,8 @@ jobs:
           # expensive cargo installs below (#170).
           dylint-cache: true
           dylint-toolchain: nightly-2026-03-26
-          cargo-dylint-version: "6.0.1"
-          dylint-link-version: "6.0.1"
+          cargo-dylint-version: "6.0.3"
+          dylint-link-version: "6.0.3"
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -82,10 +82,10 @@ jobs:
       - name: Install Dylint tools
         run: |
           if ! command -v cargo-dylint >/dev/null 2>&1; then
-            soldr cargo install cargo-dylint --version 6.0.1 --locked --force
+            soldr cargo install cargo-dylint --version 6.0.3 --locked --force
           fi
           if ! command -v dylint-link >/dev/null 2>&1; then
-            soldr cargo install dylint-link --version 6.0.1 --locked --force
+            soldr cargo install dylint-link --version 6.0.3 --locked --force
           fi
 
       - name: Lint

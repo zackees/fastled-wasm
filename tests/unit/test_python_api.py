@@ -1,8 +1,11 @@
 import importlib.util
 import re
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 import fastled
 from fastled import _rust_cli
@@ -37,6 +40,27 @@ def test_python_version_matches_cargo_workspace_version() -> None:
 
 def test_native_extension_is_not_packaged() -> None:
     assert importlib.util.find_spec("fastled._native") is None
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows virtual environments use copied launchers rather than symlinks",
+)
+def test_managed_uv_preserves_virtualenv_scripts_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    base_python = tmp_path / "base-python"
+    base_python.touch()
+    scripts = tmp_path / "venv" / "bin"
+    scripts.mkdir(parents=True)
+    venv_python = scripts / "python"
+    venv_python.symlink_to(base_python)
+    venv_uv = scripts / "uv"
+    venv_uv.touch()
+
+    monkeypatch.setattr(sys, "executable", str(venv_python))
+
+    assert _rust_cli._managed_uv_executable() == venv_uv.absolute()
 
 
 def test_rust_launcher_exports_absolute_packaged_frontend_dir() -> None:
