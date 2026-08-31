@@ -469,8 +469,8 @@ async fn build_stream(State(state): State<AppState>) -> Response {
 }
 
 /// `POST /viewer-log` — receive console/error lines forwarded from the Tauri
-/// viewer's injected logging script (enabled via `FASTLED_VIEWER_LOGS`) and
-/// echo them to stderr so viewer-side failures are diagnosable.
+/// viewer's injected logging script and echo them to stderr so viewer-side
+/// failures are always diagnosable.
 fn test_request_authorized(test: &TestServerOptions, headers: &HeaderMap) -> bool {
     headers
         .get(header::AUTHORIZATION)

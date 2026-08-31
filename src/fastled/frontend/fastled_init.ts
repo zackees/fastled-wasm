@@ -21,13 +21,80 @@ import {
 } from './modules/core/fastled_debug_logger.ts';
 
 import { state, DEFAULT_FRAME_RATE_60FPS } from './state.ts';
-import {
-  jsAppendFileUint8,
-  partition,
-  getFileManifestJson,
-} from './vfs_bridge.ts';
+import { fastLEDWorkerManager } from './modules/core/fastled_worker_manager.ts';
 import { customPrintFunction } from './logging_setup.ts';
 import { toggleFastLED } from './debug_api.ts';
+
+const ASSET_FETCH_TIMEOUT_MS = 30000;
+
+async function sha256Hex(bytes) {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) return '';
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function fetchAssetBytes(path, spec) {
+  const urls = [spec.url, spec.fallback].filter(Boolean);
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(ASSET_FETCH_TIMEOUT_MS) });
+      if (!response.ok) {
+        console.warn(`Asset '${path}': ${response.status} from ${url}`);
+        continue;
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (url !== spec.url) {
+        console.log(`Asset '${path}': primary failed, served from fallback ${url}`);
+      }
+      return bytes;
+    } catch (error) {
+      const reason = error && error.name === 'TimeoutError'
+        ? `timed out after ${ASSET_FETCH_TIMEOUT_MS}ms`
+        : String(error);
+      console.warn(`Asset '${path}' from ${url}: ${reason}`);
+    }
+  }
+  return null;
+}
+
+export async function resolveManifestAssets(manifest) {
+  const entries = Object.entries(manifest || {});
+  const resolved = await Promise.all(entries.map(async ([path, spec]) => {
+    if (!spec || !spec.url) {
+      console.error(`Asset '${path}' has no url; skipping`);
+      return null;
+    }
+    const bytes = await fetchAssetBytes(path, spec);
+    if (!bytes) {
+      console.error(`Asset '${path}' could not be fetched; the sketch will see no such file`);
+      return null;
+    }
+    if (spec.sha256) {
+      const actual = await sha256Hex(bytes);
+      if (actual && actual !== String(spec.sha256).toLowerCase()) {
+        console.error(
+          `Asset '${path}' failed integrity check: declared ${spec.sha256}, got ${actual}. Dropping it.`,
+        );
+        return null;
+      }
+      if (actual) console.log(`Asset '${path}' sha256 verified`);
+      else console.warn(`Asset '${path}': no SubtleCrypto, sha256 not verified`);
+    } else {
+      console.warn(`Asset '${path}' declares no sha256; contents are unverified`);
+    }
+    if (spec.size !== undefined && spec.size !== null && Number(spec.size) !== bytes.length) {
+      console.error(
+        `Asset '${path}' is incomplete: declared size ${spec.size} but received ${bytes.length} bytes. Dropping it.`,
+      );
+      return null;
+    }
+    console.log(`Asset '${path}' -> ${spec.url} (${bytes.length} bytes)`);
+    return { path, size: bytes.length, bytes, embedded: true };
+  }));
+  return resolved.filter(Boolean);
+}
 
 /**
  * Main setup and loop execution function for FastLED programs (Pure JavaScript Architecture)
@@ -36,7 +103,7 @@ import { toggleFastLED } from './debug_api.ts';
  * @param {number} frame_rate - Target frame rate for the animation loop
  * @returns {Promise<void>} Promise that resolves when setup is complete and loop is started
  */
-export async function FastLED_SetupAndLoop(moduleInstance, frame_rate) {
+export async function FastLED_SetupAndLoop(moduleInstance, frame_rate, beforeStart) {
   FASTLED_DEBUG_TRACE('INDEX_JS', 'FastLED_SetupAndLoop', 'ENTER', { frame_rate });
 
   try {
@@ -93,6 +160,12 @@ export async function FastLED_SetupAndLoop(moduleInstance, frame_rate) {
       maxRetries: 3
     });
     FASTLED_DEBUG_LOG('INDEX_JS', 'Web Worker mode initialized successfully');
+
+    // PROXY_TO_PTHREAD starts the C++ runtime asynchronously. Injecting files
+    // before worker initialization races its static constructors, which can
+    // reset the VFS registry after JavaScript populated it. Mount only after
+    // the worker reports ready, but still before the first extern_setup().
+    if (beforeStart) await beforeStart();
 
     // Start the async animation loop in worker mode
     await state.fastLEDController.startWithWorkerSupport();
@@ -221,97 +294,28 @@ export async function fastledLoadSetupLoop(
 ) {
   console.log('Calling setup function...');
 
-  const fileManifest = getFileManifestJson(filesJson, frame_rate);
-  moduleInstance.cwrap('fastled_declare_files', null, ['string'])(JSON.stringify(fileManifest));
-  console.log('Files JSON:', filesJson);
-
-  /**
-   * Processes a single file by streaming it to the WASM module
-   * @async
-   * @param {Object} file - File object with path and data
-   * @param {string} file.path - File path in the virtual filesystem
-   * @param {number} file.size - File size in bytes
-   */
-  const processFile = async (file) => {
-    try {
-      const response = await fetch(file.path);
-      const reader = response.body.getReader();
-
-      console.log(`File fetched: ${file.path}, size: ${file.size}`);
-
-      while (true) {
-        // deno-lint-ignore no-await-in-loop
-        const { value, done } = await reader.read();
-        if (done) break;
-        // Allocate and copy chunk data
-        jsAppendFileUint8(moduleInstance, file.path, value);
-      }
-    } catch (error) {
-      console.error(`Error processing file ${file.path}:`, error);
-    }
-  };
-
-  /**
-   * Fetches all files in parallel and calls completion callback
-   * @async
-   * @param {Array<Object>} filesJson - Array of file objects to fetch
-   * @param {Function} [onComplete] - Optional callback when all files are loaded
-   */
-  const fetchAllFiles = async (filesJson, onComplete) => {
-    const promises = filesJson.map(async (file) => {
-      await processFile(file);
-    });
-    await Promise.all(promises);
-    if (onComplete) {
-      onComplete();
-    }
-  };
-
-  // NOTE: Callback functions are now automatically registered by importing fastled_callbacks.js
-  // No need to manually bind them here - they're pure JavaScript functions
-
-  // Verify that the pure JavaScript callbacks are properly loaded
-  console.log('FastLED Pure JavaScript callbacks verified:', {
-    FastLED_onUiElementsAdded: typeof globalThis.FastLED_onUiElementsAdded,
-    FastLED_onFrame: typeof globalThis.FastLED_onFrame,
-    FastLED_onStripAdded: typeof globalThis.FastLED_onStripAdded,
-    FastLED_onStripUpdate: typeof globalThis.FastLED_onStripUpdate,
-    FastLED_processUiUpdates: typeof globalThis.FastLED_processUiUpdates,
-    FastLED_onError: typeof globalThis.FastLED_onError,
-  });
-
-  // Initialize event system integration
-  if (fastLEDEvents) {
-    console.log('FastLED Event System ready with stats:', fastLEDEvents.getEventStats());
+  const manifestFiles = await resolveManifestAssets(window.fastledAssetManifest);
+  if (manifestFiles.length > 0) {
+    console.log(`Injecting ${manifestFiles.length} manifest asset(s) into the filesystem`);
+    filesJson = (filesJson || []).concat(manifestFiles);
   }
 
-  // Come back to this later - we want to partition the files into immediate and streaming files
-  // so that large projects don't try to download ALL the large files BEFORE setup/loop is called.
-  const [immediateFiles, streamingFiles] = partition(filesJson, ['.json', '.csv', '.txt', '.cfg']);
-  console.log(
-    'The following files will be immediatly available and can be read during setup():',
-    immediateFiles,
-  );
-  console.log('The following files will be streamed in during loop():', streamingFiles);
-
-  const promiseImmediateFiles = fetchAllFiles(immediateFiles, () => {
-    if (immediateFiles.length !== 0) {
-      console.log('All immediate files downloaded to FastLED.');
-    }
-  });
-  await promiseImmediateFiles;
-  if (streamingFiles.length > 0) {
-    const streamingFilesPromise = fetchAllFiles(streamingFiles, () => {
-      console.log('All streaming files downloaded to FastLED.');
+  const loadFiles = async () => {
+    const response = await fastLEDWorkerManager.sendMessageWithResponse({
+      type: 'load_files',
+      payload: {
+        frameRate: frame_rate,
+        files: filesJson || [],
+      },
     });
-    const delay = new Promise((r) => { setTimeout(r, 250); });
-    // Wait for either the time delay or the streaming files to be processed, whichever
-    // happens first.
-    await Promise.any([delay, streamingFilesPromise]);
-  }
+    if (!response || response.success !== true) {
+      throw new Error(response && response.error ? response.error : 'worker failed to load files');
+    }
+    console.log(`All ${response.count} filesystem asset(s) loaded completely before setup().`);
+  };
 
   console.log('Starting fastled with Asyncify support');
-  await FastLED_SetupAndLoop(moduleInstance, frame_rate);
+  await FastLED_SetupAndLoop(moduleInstance, frame_rate, loadFiles);
 }
 
 /**
@@ -359,6 +363,7 @@ export function onModuleLoaded(fastLedLoader) {
   // New builds call this manifest sketch_assets.json. Keep files.json as a
   // fallback so previously generated sketches remain runnable.
   const filesJsonPromise = fetchJson('sketch_assets.json').catch(() => fetchJson('files.json'));
+  const assetManifestPromise = fetchJson('asset_manifest.json').catch(() => ({}));
   try {
     if (typeof fastLedLoader === 'function') {
       // Load the module
@@ -379,8 +384,14 @@ export function onModuleLoaded(fastLedLoader) {
         // Wait for the sketch asset manifest to load.
         let filesJson = null;
         try {
-          filesJson = await filesJsonPromise;
+          [filesJson, window.fastledAssetManifest] = await Promise.all([
+            filesJsonPromise,
+            assetManifestPromise,
+          ]);
           console.log('Files JSON:', filesJson);
+          console.log(
+            `Loaded fastledAssetManifest with ${Object.keys(window.fastledAssetManifest).length} entries`,
+          );
         } catch (error) {
           console.error('Error fetching sketch asset manifest:', error);
           filesJson = {};

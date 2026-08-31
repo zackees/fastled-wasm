@@ -253,6 +253,7 @@ mod tests {
             no_interactive: false,
             no_https: false,
             test: false,
+            check: false,
             test_wait_secs: 1.0,
             test_screenshot: None,
             test_interval_secs: None,

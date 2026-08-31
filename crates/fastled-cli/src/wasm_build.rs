@@ -1944,7 +1944,226 @@ fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
         output_dir.join("sketch_assets.json"),
         serde_json::to_string_pretty(&files)?,
     )?;
+    let remote_assets = scan_remote_assets(example_dir)?;
+    fs::write(
+        output_dir.join("asset_manifest.json"),
+        format!("{}\n", serde_json::to_string_pretty(&remote_assets)?),
+    )?;
     Ok(())
+}
+
+fn remote_asset_record(
+    url: String,
+    fallback: Option<String>,
+    sha256: Option<String>,
+    size: Option<u64>,
+    storage: Option<String>,
+) -> serde_json::Value {
+    let mut record = serde_json::Map::new();
+    record.insert("url".into(), url.into());
+    record.insert(
+        "sha256".into(),
+        sha256.map_or(serde_json::Value::Null, serde_json::Value::String),
+    );
+    record.insert(
+        "fallback".into(),
+        fallback.map_or(serde_json::Value::Null, serde_json::Value::String),
+    );
+    if let Some(size) = size {
+        record.insert("size".into(), size.into());
+    }
+    if let Some(storage) = storage {
+        record.insert("storage".into(), storage.into());
+    }
+    record.into()
+}
+
+fn normalized_storage(value: Option<&serde_json::Value>) -> Option<String> {
+    let direct = value.and_then(serde_json::Value::as_str);
+    direct
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
+}
+
+fn storage_from_spec(
+    spec: &serde_json::Map<String, serde_json::Value>,
+    default: Option<&str>,
+) -> Option<String> {
+    normalized_storage(spec.get("storage")).or_else(|| {
+        spec.get("dest")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|dest| normalized_storage(dest.get("target")))
+            .or_else(|| default.map(ToOwned::to_owned))
+    })
+}
+
+fn urls_from_spec(spec: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+    let value = spec.get("urls").or_else(|| spec.get("url"));
+    match value {
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect(),
+        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+            vec![value.trim().to_owned()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn parse_json_asset(
+    spec: &serde_json::Map<String, serde_json::Value>,
+    default_storage: Option<&str>,
+) -> Option<serde_json::Value> {
+    let urls = urls_from_spec(spec);
+    let url = urls.first()?.clone();
+    let fallback = urls
+        .get(1)
+        .cloned()
+        .or_else(|| spec.get("fallback")?.as_str().map(ToOwned::to_owned));
+    let sha256 = spec
+        .get("sha256")
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let size = spec
+        .get("size_bytes")
+        .or_else(|| spec.get("size"))
+        .and_then(serde_json::Value::as_u64);
+    Some(remote_asset_record(
+        url,
+        fallback,
+        sha256,
+        size,
+        storage_from_spec(spec, default_storage),
+    ))
+}
+
+fn parse_lnk(content: &str) -> Option<serde_json::Value> {
+    let first = content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with('#'))?;
+    if first.starts_with('{') {
+        let value: serde_json::Value = serde_json::from_str(content).ok()?;
+        return parse_json_asset(value.as_object()?, None);
+    }
+
+    let mut urls = Vec::new();
+    let mut sha256 = None;
+    let mut fallback = None;
+    let mut size = None;
+    let mut storage = None;
+    for line in content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    {
+        if let Some((key, value)) = line.split_once('=') {
+            let value = value.trim();
+            match key.trim() {
+                "url" if !value.is_empty() => urls.push(value.to_owned()),
+                "fallback" if !value.is_empty() => fallback = Some(value.to_owned()),
+                "sha256" if !value.is_empty() => sha256 = Some(value.to_owned()),
+                "size" | "size_bytes" => size = value.parse().ok(),
+                "storage" if !value.is_empty() => storage = Some(value.to_ascii_lowercase()),
+                _ => {}
+            }
+        } else if urls.is_empty() {
+            urls.push(line.to_owned());
+        }
+    }
+    let url = urls.first()?.clone();
+    let fallback = fallback.or_else(|| urls.get(1).cloned());
+    Some(remote_asset_record(url, fallback, sha256, size, storage))
+}
+
+fn safe_manifest_name(name: &str) -> Option<String> {
+    let normalized = name.replace('\\', "/");
+    let path = Path::new(&normalized);
+    if normalized.is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(normalized)
+}
+
+fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
+    let data_dir = example_dir.join("data");
+    let mut manifest = BTreeMap::new();
+    if !data_dir.is_dir() {
+        return Ok(manifest);
+    }
+
+    let assets_json = data_dir.join("assets.json");
+    if assets_json.is_file() {
+        let value: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&assets_json)
+                .with_context(|| format!("read {}", assets_json.display()))?,
+        )
+        .with_context(|| format!("parse {}", assets_json.display()))?;
+        let root = value.as_object().ok_or_else(|| {
+            anyhow::anyhow!("{} must contain a JSON object", assets_json.display())
+        })?;
+        let default_storage = root
+            .get("defaults")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|defaults| storage_from_spec(defaults, None));
+        if let Some(assets) = root.get("assets").and_then(serde_json::Value::as_object) {
+            for (name, spec) in assets {
+                let Some(name) = safe_manifest_name(name) else {
+                    eprintln!(
+                        "fastled: ignoring unsafe asset path in {}: {name}",
+                        assets_json.display()
+                    );
+                    continue;
+                };
+                let Some(record) = spec
+                    .as_object()
+                    .and_then(|spec| parse_json_asset(spec, default_storage.as_deref()))
+                else {
+                    eprintln!(
+                        "fastled: ignoring asset without a URL in {}: {name}",
+                        assets_json.display()
+                    );
+                    continue;
+                };
+                manifest.insert(format!("data/{name}"), record);
+            }
+        }
+    }
+
+    let mut pending = vec![data_dir];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let path = entry?.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension() == Some(OsStr::new("lnk")) {
+                let content = fs::read_to_string(&path)
+                    .with_context(|| format!("read {}", path.display()))?;
+                let Some(record) = parse_lnk(&content) else {
+                    eprintln!(
+                        "fastled: ignoring asset link without a URL: {}",
+                        path.display()
+                    );
+                    continue;
+                };
+                let relative = path.strip_prefix(example_dir).unwrap_or(&path);
+                let mut name = relative.to_string_lossy().replace('\\', "/");
+                name.truncate(name.len() - ".lnk".len());
+                manifest.insert(name, record);
+            }
+        }
+    }
+    Ok(manifest)
 }
 
 fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>) -> Result<()> {
@@ -1961,13 +2180,15 @@ fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>)
                 continue;
             }
             collect_data_files(root, &path, out)?;
-        } else if matches!(
-            path.extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.to_ascii_lowercase())
-                .as_deref(),
-            Some("json" | "csv" | "txt" | "cfg" | "bin" | "dat" | "mp3" | "wav")
-        ) {
+        } else if path != root.join("data").join("assets.json")
+            && matches!(
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.to_ascii_lowercase())
+                    .as_deref(),
+                Some("json" | "csv" | "txt" | "cfg" | "bin" | "dat" | "mp3" | "wav")
+            )
+        {
             let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
             out.push(serde_json::json!({
                 "path": rel.replace('\\', "/"),
@@ -2879,6 +3100,87 @@ link_flags = []
         assert!(!output.join("files.json").exists());
         let manifest = fs::read_to_string(output.join("sketch_assets.json")).unwrap();
         assert!(manifest.contains("config.json"));
+    }
+
+    #[test]
+    fn generate_manifest_resolves_lnk_and_assets_json_for_the_wasm_vfs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let example = tmp.path().join("Sketch");
+        let data = example.join("data");
+        let output = example.join("fastled_js");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(&output).unwrap();
+        fs::write(
+            data.join("track.mp3.lnk"),
+            "https://cdn.example/track.mp3\nsha256=abc123\nfallback=https://mirror.example/track.mp3\nstorage=littlefs\nunknown=ignored\n",
+        )
+        .unwrap();
+        fs::write(
+            data.join("assets.json"),
+            r#"{
+              "defaults": {"storage": "vfs"},
+              "assets": {
+                "video.rgb": {
+                  "urls": ["https://cdn.example/video.rgb", "https://mirror.example/video.rgb"],
+                  "sha256": "def456",
+                  "size_bytes": 42
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+
+        generate_manifest(&example, &output).unwrap();
+
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(output.join("asset_manifest.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            manifest["data/track.mp3"]["url"],
+            "https://cdn.example/track.mp3"
+        );
+        assert_eq!(manifest["data/track.mp3"]["sha256"], "abc123");
+        assert_eq!(
+            manifest["data/track.mp3"]["fallback"],
+            "https://mirror.example/track.mp3"
+        );
+        assert_eq!(manifest["data/track.mp3"]["storage"], "littlefs");
+        assert_eq!(
+            manifest["data/video.rgb"]["url"],
+            "https://cdn.example/video.rgb"
+        );
+        assert_eq!(
+            manifest["data/video.rgb"]["fallback"],
+            "https://mirror.example/video.rgb"
+        );
+        assert_eq!(manifest["data/video.rgb"]["size"], 42);
+        assert_eq!(manifest["data/video.rgb"]["storage"], "vfs");
+
+        let local: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(output.join("sketch_assets.json")).unwrap())
+                .unwrap();
+        assert_eq!(local, serde_json::json!([]));
+    }
+
+    #[test]
+    fn lnk_parser_accepts_keyed_urls_and_json_descriptors() {
+        let keyed = parse_lnk(
+            "url=https://cdn.example/a.bin\nurl=https://mirror.example/a.bin\nsize_bytes=7\n",
+        )
+        .unwrap();
+        assert_eq!(keyed["url"], "https://cdn.example/a.bin");
+        assert_eq!(keyed["fallback"], "https://mirror.example/a.bin");
+        assert_eq!(keyed["size"], 7);
+
+        let json = parse_lnk(
+            r#"{"v":1,"url":["https://cdn.example/b.bin","https://mirror.example/b.bin"],"sha256":"abc","size":9,"storage":"VFS"}"#,
+        )
+        .unwrap();
+        assert_eq!(json["url"], "https://cdn.example/b.bin");
+        assert_eq!(json["fallback"], "https://mirror.example/b.bin");
+        assert_eq!(json["sha256"], "abc");
+        assert_eq!(json["size"], 9);
+        assert_eq!(json["storage"], "vfs");
     }
 
     #[test]

@@ -214,6 +214,10 @@ self.onmessage = async function(event) {
         response = await handleStart(payload);
         break;
 
+      case 'load_files':
+        response = await handleLoadFiles(payload);
+        break;
+
       case 'stop':
         response = await handleStop(payload);
         break;
@@ -478,6 +482,54 @@ async function initializeFastLEDModule() {
     workerLog('ERROR', 'BACKGROUND_WORKER', 'Failed to load FastLED WASM module', error);
     throw error;
   }
+}
+
+async function handleLoadFiles(payload) {
+  if (!workerState.initialized || !workerState.fastledModule) {
+    throw new Error('Worker WASM module is not initialized');
+  }
+  const Module = workerState.fastledModule;
+  const files = Array.isArray(payload && payload.files) ? payload.files : [];
+  const manifest = {
+    files: files.map((file) => ({ path: file.path, size: file.size })),
+    frameRate: payload && payload.frameRate,
+  };
+  Module.cwrap('fastled_declare_files', null, ['string'])(JSON.stringify(manifest));
+
+  for (const file of files) {
+    let bytes;
+    if (file.bytes) {
+      bytes = new Uint8Array(file.bytes);
+    } else {
+      const response = await fetch(file.path);
+      if (!response.ok) throw new Error(`Asset '${file.path}' returned HTTP ${response.status}`);
+      bytes = new Uint8Array(await response.arrayBuffer());
+    }
+    if (bytes.length !== Number(file.size)) {
+      throw new Error(
+        `Asset '${file.path}' is incomplete: expected ${file.size}, received ${bytes.length}`,
+      );
+    }
+    const pathLength = Module.lengthBytesUTF8(file.path) + 1;
+    const pathPtr = Module._malloc(pathLength);
+    const bytesPtr = Module._malloc(bytes.length);
+    try {
+      Module.stringToUTF8(file.path, pathPtr, pathLength);
+      Module.HEAPU8.set(bytes, bytesPtr);
+      const appended = Module.ccall(
+        'jsAppendFile',
+        'number',
+        ['number', 'number', 'number'],
+        [pathPtr, bytesPtr, bytes.length],
+      );
+      if (!appended) throw new Error(`WASM VFS rejected asset '${file.path}'`);
+    } finally {
+      Module._free(bytesPtr);
+      Module._free(pathPtr);
+    }
+    workerLog('LOG', 'BACKGROUND_WORKER', `File fetched: ${file.path}, size: ${bytes.length}`);
+  }
+  return { success: true, count: files.length };
 }
 
 /**
