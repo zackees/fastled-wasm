@@ -577,6 +577,25 @@ fn absolute_executable(candidate: &Path) -> Option<PathBuf> {
         .filter(|path| path.is_file())
 }
 
+/// Return an existing absolute executable without resolving symlinks.
+///
+/// Virtual-environment Python launchers are commonly symlinks to a base
+/// interpreter. Callers that need a sibling tool must retain the launcher
+/// path so they remain in the selected virtual environment.
+fn preserved_absolute_executable(candidate: &Path) -> Option<PathBuf> {
+    (candidate.is_absolute() && candidate.is_file()).then(|| candidate.to_path_buf())
+}
+
+/// Build the path to the `uv` launcher next to a selected Python launcher.
+///
+/// This is deliberately a path-only helper: canonicalizing `python` first
+/// would turn a virtual-environment symlink into its base interpreter and
+/// cause us to look for `uv` outside the selected environment.
+fn sibling_uv_executable(python: &Path) -> Option<PathBuf> {
+    let uv = if cfg!(windows) { "uv.exe" } else { "uv" };
+    python.parent().map(|parent| parent.join(uv))
+}
+
 /// Resolve `program` from the process PATH without ever returning a bare
 /// program name.  Child tools must receive concrete paths so their behaviour
 /// does not change when they spawn another process with a narrower PATH.
@@ -601,8 +620,7 @@ fn resolve_managed_uv() -> Result<PathBuf> {
         }
     }
     if let Ok(python) = resolve_managed_python() {
-        if let Some(parent) = python.parent() {
-            let candidate = parent.join(if cfg!(windows) { "uv.exe" } else { "uv" });
+        if let Some(candidate) = sibling_uv_executable(&python) {
             if let Some(path) = absolute_executable(&candidate) {
                 return Ok(path);
             }
@@ -618,7 +636,7 @@ fn resolve_managed_uv() -> Result<PathBuf> {
 /// an absolute path, not a shell-dependent `python` token.
 pub(crate) fn resolve_managed_python() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("FASTLED_PYTHON_EXECUTABLE").map(PathBuf::from) {
-        if let Some(path) = absolute_executable(&path) {
+        if let Some(path) = preserved_absolute_executable(&path) {
             return Ok(path);
         }
     }
@@ -628,7 +646,7 @@ pub(crate) fn resolve_managed_python() -> Result<PathBuf> {
         } else {
             venv.join("bin").join("python")
         };
-        if let Some(path) = absolute_executable(&candidate) {
+        if let Some(path) = preserved_absolute_executable(&candidate) {
             return Ok(path);
         }
     }
@@ -2196,6 +2214,28 @@ mod tests {
             resolve_fastled_python(&temp.path().join("FastLED")).unwrap(),
             venv_python
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_virtualenv_python_keeps_sibling_uv_path() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let base_python = temp.path().join("base/bin/python");
+        fs::create_dir_all(base_python.parent().unwrap()).unwrap();
+        fs::write(&base_python, "python").unwrap();
+
+        let venv_bin = temp.path().join("venv/bin");
+        fs::create_dir_all(&venv_bin).unwrap();
+        let venv_python = venv_bin.join("python");
+        symlink(&base_python, &venv_python).unwrap();
+        let venv_uv = venv_bin.join("uv");
+        fs::write(&venv_uv, "uv").unwrap();
+
+        let selected = preserved_absolute_executable(&venv_python).unwrap();
+        assert_eq!(selected, venv_python);
+        assert_eq!(sibling_uv_executable(&selected), Some(venv_uv));
     }
 
     #[test]
