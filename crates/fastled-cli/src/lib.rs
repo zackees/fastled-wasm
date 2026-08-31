@@ -26,6 +26,7 @@ pub mod runtime;
 mod selection;
 mod server;
 mod sketch_preprocessor;
+mod source;
 mod test_mode;
 pub mod viewer;
 pub mod wasm_build;
@@ -52,6 +53,16 @@ pub fn run() -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("fastled: toolchain command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if let Some(cli::Command::Source { action }) = cli.command.clone() {
+        return match source::run_source_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: source command failed: {error:#}");
                 ExitCode::FAILURE
             }
         };

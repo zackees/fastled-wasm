@@ -34,6 +34,10 @@ dependencies = [
     # emcc.py/em++.py/emar.py entry points directly.
     "meson>=1.4",
     "ninja>=1.11",
+    # The native CLI uses uv to provision FastLED's project-local Python and
+    # Node runtimes. Keeping uv in the wheel environment makes first-run WASM
+    # builds independent of Homebrew or a user-managed shell installation.
+    "uv>=0.5",
     "typeguard>=4.4.4",
     "zcmds_win32; sys_platform == 'win32'",
 ]

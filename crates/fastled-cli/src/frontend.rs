@@ -29,22 +29,65 @@ fn workspace_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
 }
 
+fn validate_source_dir(candidate: PathBuf, origin: &str) -> Result<PathBuf> {
+    if !candidate.is_dir() {
+        anyhow::bail!("{origin} is not a directory: {}", candidate.display());
+    }
+
+    // These are the source inputs that build_dist requires. Validate all of
+    // them up front so a wheel installation fails with an actionable path
+    // error instead of a later, unrelated esbuild or file-copy failure.
+    for relative in [
+        "app.ts",
+        "index.html",
+        "index.css",
+        "modules/core/fastled_background_worker.ts",
+        "modules/audio/audio_worklet_processor.js",
+    ] {
+        let required = candidate.join(relative);
+        if !required.is_file() {
+            anyhow::bail!(
+                "{origin} does not contain required frontend file {}",
+                required.display()
+            );
+        }
+    }
+    Ok(candidate)
+}
+
+/// Resolve the frontend directory embedded in an installed Python wheel.
+/// The Python launcher supplies this absolute path. It intentionally takes
+/// priority over source-tree discovery because a packaged native binary has a
+/// `CARGO_MANIFEST_DIR` from the machine that built it, not the user's host.
+fn packaged_source_dir() -> Result<Option<PathBuf>> {
+    let Ok(value) = std::env::var("FASTLED_FRONTEND_DIR") else {
+        return Ok(None);
+    };
+    if value.trim().is_empty() {
+        anyhow::bail!("FASTLED_FRONTEND_DIR is set but empty");
+    }
+    validate_source_dir(PathBuf::from(value), "FASTLED_FRONTEND_DIR").map(Some)
+}
+
 /// Walk up from `CARGO_MANIFEST_DIR` looking for the workspace's
 /// `src/fastled/frontend` directory.
 fn default_source_dir() -> Result<PathBuf> {
+    if let Some(packaged) = packaged_source_dir()? {
+        return Ok(packaged);
+    }
     let candidate = workspace_root()
         .join("src")
         .join("fastled")
         .join("frontend");
     if candidate.is_dir() {
-        return Ok(candidate);
+        return validate_source_dir(candidate, "frontend relative to CARGO_MANIFEST_DIR");
     }
     // Fall back to walking parents (defensive: layout may shift).
     let mut current = Some(workspace_root());
     while let Some(dir) = current {
         let candidate = dir.join("src").join("fastled").join("frontend");
         if candidate.is_dir() {
-            return Ok(candidate);
+            return validate_source_dir(candidate, "frontend relative to CARGO_MANIFEST_DIR");
         }
         current = dir.parent().map(Path::to_path_buf);
     }
@@ -408,6 +451,7 @@ pub fn remove_app_from_output(output_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
     use std::thread;
     use std::time::Duration;
     use tempfile::TempDir;
@@ -417,6 +461,34 @@ mod tests {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, content).unwrap();
+    }
+
+    fn frontend_env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn write_frontend_source(root: &Path) {
+        write(&root.join("app.ts"), b"// app");
+        write(
+            &root.join("index.html"),
+            b"<!doctype html><title>test</title>",
+        );
+        write(&root.join("index.css"), b"body {}");
+        write(
+            &root
+                .join("modules")
+                .join("core")
+                .join("fastled_background_worker.ts"),
+            b"// worker",
+        );
+        write(
+            &root
+                .join("modules")
+                .join("audio")
+                .join("audio_worklet_processor.js"),
+            b"// worklet",
+        );
     }
 
     #[test]
@@ -522,6 +594,49 @@ mod tests {
             app_js_meta_before, app_js_meta_after,
             "files must not be re-copied when the hash marker already matches"
         );
+    }
+
+    #[test]
+    fn installed_wheel_frontend_overrides_build_machine_manifest_dir() {
+        // Wheels embed the build machine's CARGO_MANIFEST_DIR, which is not a
+        // usable path on the host. The installed Python launcher must provide
+        // the packaged frontend through FASTLED_FRONTEND_DIR instead.
+        let _guard = frontend_env_lock().lock().unwrap();
+        let package = TempDir::new().unwrap();
+        let frontend = package.path().join("site-packages/fastled/frontend");
+        write_frontend_source(&frontend);
+
+        let old = std::env::var_os("FASTLED_FRONTEND_DIR");
+        std::env::set_var("FASTLED_FRONTEND_DIR", &frontend);
+        let resolved = default_source_dir().expect("wheel frontend must resolve");
+        if let Some(value) = old {
+            std::env::set_var("FASTLED_FRONTEND_DIR", value);
+        } else {
+            std::env::remove_var("FASTLED_FRONTEND_DIR");
+        }
+
+        assert_eq!(resolved, frontend);
+        assert!(resolved.is_absolute());
+    }
+
+    #[test]
+    fn installed_wheel_frontend_must_be_complete() {
+        let _guard = frontend_env_lock().lock().unwrap();
+        let package = TempDir::new().unwrap();
+        let frontend = package.path().join("site-packages/fastled/frontend");
+        fs::create_dir_all(&frontend).unwrap();
+
+        let old = std::env::var_os("FASTLED_FRONTEND_DIR");
+        std::env::set_var("FASTLED_FRONTEND_DIR", &frontend);
+        let error = default_source_dir().expect_err("incomplete wheel frontend must fail");
+        if let Some(value) = old {
+            std::env::set_var("FASTLED_FRONTEND_DIR", value);
+        } else {
+            std::env::remove_var("FASTLED_FRONTEND_DIR");
+        }
+
+        assert!(error.to_string().contains("FASTLED_FRONTEND_DIR"));
+        assert!(error.to_string().contains("app.ts"));
     }
 
     #[test]

@@ -7,7 +7,28 @@ use crate::debug_symbols;
 use crate::install;
 use crate::server;
 
-pub(crate) fn ensure_compile_prerequisites(include_app: bool) -> Result<(), String> {
+pub(crate) fn ensure_compile_prerequisites(
+    include_app: bool,
+    fastled_path: Option<&str>,
+) -> Result<(), String> {
+    // Bootstrap the runtime before Emscripten's first-install health check.
+    // In particular, macOS does not provide bare `python` or `node` commands.
+    // Preserve the concrete paths so every later health check and child process
+    // uses the same uv-managed executables instead of consulting ambient PATH.
+    let fastled_dir = match fastled_path {
+        Some(path) => PathBuf::from(path),
+        None => install::ensure_fastled_repo(Some("master"))
+            .map_err(|e| format!("FastLED source bootstrap failed: {e:#}"))?,
+    };
+    install::ensure_fastled_uv_environment(&fastled_dir)
+        .map_err(|e| format!("FastLED runtime bootstrap failed: {e:#}"))?;
+    let python = install::resolve_fastled_python(&fastled_dir)
+        .map_err(|e| format!("Python runtime resolution failed: {e:#}"))?;
+    let node = install::resolve_managed_node(Some(&fastled_dir))
+        .map_err(|e| format!("Node.js runtime resolution failed: {e:#}"))?;
+    std::env::set_var("FASTLED_PYTHON_EXECUTABLE", &python);
+    std::env::set_var("FASTLED_NODE_EXECUTABLE", &node);
+
     match install::ensure_emscripten_installed() {
         Ok(install_dir) => {
             std::env::set_var("FASTLED_EMSCRIPTEN_DIR", &install_dir);
@@ -208,7 +229,9 @@ pub(crate) fn emit_build_log(
     line: &str,
     stream: &str,
 ) {
-    if stream == "stderr" {
+    if stream == "warning" && std::io::stderr().is_terminal() {
+        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+    } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {
         println!("{line}");

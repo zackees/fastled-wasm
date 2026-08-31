@@ -570,11 +570,198 @@ fn package_key_for_archive(path: &Path) -> String {
         .to_string()
 }
 
-fn resolve_node() -> Option<String> {
-    if cfg!(windows) {
-        Some("node.exe".to_string())
+/// Return an absolute executable path when `candidate` names a file.
+fn absolute_executable(candidate: &Path) -> Option<PathBuf> {
+    fs::canonicalize(candidate)
+        .ok()
+        .filter(|path| path.is_file())
+}
+
+/// Resolve `program` from the process PATH without ever returning a bare
+/// program name.  Child tools must receive concrete paths so their behaviour
+/// does not change when they spawn another process with a narrower PATH.
+fn executable_from_path(program: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    let suffixes: &[&str] = if cfg!(windows) {
+        &[".exe", ".cmd", ".bat", ""]
     } else {
-        Some("node".to_string())
+        &[""]
+    };
+    std::env::split_paths(&path).find_map(|directory| {
+        suffixes
+            .iter()
+            .find_map(|suffix| absolute_executable(&directory.join(format!("{program}{suffix}"))))
+    })
+}
+
+fn resolve_managed_uv() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("FASTLED_UV_EXECUTABLE").map(PathBuf::from) {
+        if let Some(path) = absolute_executable(&path) {
+            return Ok(path);
+        }
+    }
+    if let Ok(python) = resolve_managed_python() {
+        if let Some(parent) = python.parent() {
+            let candidate = parent.join(if cfg!(windows) { "uv.exe" } else { "uv" });
+            if let Some(path) = absolute_executable(&candidate) {
+                return Ok(path);
+            }
+        }
+    }
+    executable_from_path("uv")
+        .context("uv is required to provision FastLED's managed Python and Node environment")
+}
+
+/// Resolve the exact Python interpreter that Emscripten child processes use.
+/// The wheel launcher supplies `FASTLED_PYTHON_EXECUTABLE`; a virtual
+/// environment is the next best source.  Falling back to PATH still returns
+/// an absolute path, not a shell-dependent `python` token.
+pub(crate) fn resolve_managed_python() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("FASTLED_PYTHON_EXECUTABLE").map(PathBuf::from) {
+        if let Some(path) = absolute_executable(&path) {
+            return Ok(path);
+        }
+    }
+    if let Some(venv) = std::env::var_os("VIRTUAL_ENV").map(PathBuf::from) {
+        let candidate = if cfg!(windows) {
+            venv.join("Scripts").join("python.exe")
+        } else {
+            venv.join("bin").join("python")
+        };
+        if let Some(path) = absolute_executable(&candidate) {
+            return Ok(path);
+        }
+    }
+    let names: &[&str] = if cfg!(windows) {
+        &["python"]
+    } else {
+        &["python3", "python"]
+    };
+    names
+        .iter()
+        .find_map(|name| executable_from_path(name))
+        .context(
+            "Python is required; set FASTLED_PYTHON_EXECUTABLE or activate a virtual environment",
+        )
+}
+
+/// Resolve Python from the selected FastLED uv environment while preserving
+/// the virtual-environment path. Canonicalizing this symlink would produce the
+/// base interpreter path and silently discard the environment's dependencies.
+fn fastled_venv_executable(fastled_dir: &Path, program: &str) -> Option<PathBuf> {
+    let candidate = if cfg!(windows) {
+        fastled_dir
+            .join(".venv")
+            .join("Scripts")
+            .join(format!("{program}.exe"))
+    } else {
+        fastled_dir.join(".venv").join("bin").join(program)
+    };
+    (candidate.is_file() && candidate.is_absolute()).then_some(candidate)
+}
+
+pub(crate) fn resolve_fastled_python(fastled_dir: &Path) -> Result<PathBuf> {
+    let mut roots = vec![fastled_dir.to_path_buf()];
+    if let Ok(root) = fastled_root() {
+        roots.push(root.join("cache").join("fl").join("repo"));
+        roots.push(root.join("cache").join("fastled-master"));
+    }
+    for root in roots {
+        if let Some(python) = fastled_venv_executable(&root, "python") {
+            return Ok(python);
+        }
+    }
+    resolve_managed_python()
+}
+
+/// Resolve Node from the FastLED uv environment before considering the
+/// caller's PATH. `fastled_dir` is normally the short cached checkout at
+/// `~/.fastled/cache/fl/repo`; the cache fallback keeps toolchain health
+/// checks aligned with normal builds.
+pub(crate) fn resolve_managed_node(fastled_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("FASTLED_NODE_EXECUTABLE").map(PathBuf::from) {
+        if let Some(path) = absolute_executable(&path) {
+            return Ok(path);
+        }
+    }
+
+    let mut roots = Vec::new();
+    if let Some(fastled_dir) = fastled_dir {
+        roots.push(fastled_dir.to_path_buf());
+    }
+    if let Ok(root) = fastled_root() {
+        roots.push(root.join("cache").join("fl").join("repo"));
+        roots.push(root.join("cache").join("fastled-master"));
+    }
+    for root in roots {
+        let candidate = if cfg!(windows) {
+            root.join(".venv").join("Scripts").join("node.exe")
+        } else {
+            root.join(".venv").join("bin").join("node")
+        };
+        if let Some(path) = absolute_executable(&candidate) {
+            return Ok(path);
+        }
+    }
+
+    executable_from_path("node")
+        .context("Node.js is required; FastLED's uv environment did not provide .venv/bin/node and node was not found on PATH")
+}
+
+/// Ensure the selected FastLED checkout has the uv-managed runtime required by
+/// its Meson helpers and Emscripten. This is intentionally project-local and
+/// never modifies the user's global Python, Node, or shell PATH.
+pub(crate) fn ensure_fastled_uv_environment(fastled_dir: &Path) -> Result<()> {
+    if fastled_venv_executable(fastled_dir, "python").is_some()
+        && fastled_venv_executable(fastled_dir, "node").is_some()
+    {
+        return Ok(());
+    }
+    if !fastled_dir.join("pyproject.toml").is_file() {
+        // Older pinned FastLED releases predate the uv project. They can still
+        // use an explicitly supplied or ambient Node runtime.
+        resolve_managed_node(Some(fastled_dir))?;
+        return Ok(());
+    }
+    let uv = resolve_managed_uv()?;
+    let python = resolve_managed_python()?;
+    let mut command = Command::new(&uv);
+    command
+        .args(["sync", "--no-dev", "--project"])
+        .arg(fastled_dir)
+        .arg("--python")
+        .arg(&python)
+        .env("FASTLED_PYTHON_EXECUTABLE", &python);
+    let status = command
+        .status()
+        .with_context(|| format!("provision FastLED runtime with {}", uv.display()))?;
+    if !status.success() {
+        bail!("uv failed to provision FastLED runtime with {status}");
+    }
+    for program in ["python", "node"] {
+        fastled_venv_executable(fastled_dir, program).with_context(|| {
+            format!(
+                "uv completed but did not provide {program} in {}",
+                fastled_dir.join(".venv").display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn prepend_runtime_path(command: &mut Command, python: &Path, node: &Path) {
+    let mut entries = Vec::new();
+    if let Some(parent) = python.parent() {
+        entries.push(parent.to_path_buf());
+    }
+    if let Some(parent) = node.parent() {
+        entries.push(parent.to_path_buf());
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        entries.extend(std::env::split_paths(&path));
+    }
+    if let Ok(path) = std::env::join_paths(entries) {
+        command.env("PATH", path);
     }
 }
 
@@ -587,20 +774,20 @@ fn run_health_checks(install: &Path) -> Result<()> {
     fs::create_dir_all(&temp)?;
     let result = (|| -> Result<()> {
         let empp = install.join("emscripten").join("em++.py");
-        let python = if cfg!(windows) {
-            "python.exe"
-        } else {
-            "python3"
-        };
+        let python = resolve_managed_python()?;
+        let node = resolve_managed_node(None)?;
         let run = |args: &[&str]| -> Result<()> {
-            let status = Command::new(python)
+            let mut command = Command::new(&python);
+            command
                 .arg(&empp)
                 .args(args)
                 .env("EM_CONFIG", install.join(".emscripten"))
                 .env("EMSCRIPTEN", install.join("emscripten"))
-                .current_dir(&temp)
-                .status()
-                .context("run Emscripten health check")?;
+                .env("EMSDK_PYTHON", &python)
+                .env("FASTLED_PYTHON_EXECUTABLE", &python)
+                .current_dir(&temp);
+            prepend_runtime_path(&mut command, &python, &node);
+            let status = command.status().context("run Emscripten health check")?;
             if !status.success() {
                 bail!(
                     "Emscripten health-check command failed: em++ {}",
@@ -618,7 +805,6 @@ fn run_health_checks(install: &Path) -> Result<()> {
             "-o",
             "static.js",
         ])?;
-        let node = resolve_node().context("Node.js is required for Emscripten health checks")?;
         let static_status = Command::new(&node)
             .arg(temp.join("static.js"))
             .current_dir(&temp)
@@ -717,7 +903,8 @@ fn install_spec(
         archive::extract_tar_zst(&archive_path, &staging)?;
         ensure_toolchain_executables(&staging)?;
         validate_emscripten_payload(&staging)?;
-        archive::write_emscripten_config(&staging, "node")?;
+        let node = resolve_managed_node(None)?;
+        archive::write_emscripten_config(&staging, &node)?;
         fs::write(staging.join("done.txt"), "ok\n")?;
         write_receipt(&staging, spec, false)?;
         validate_complete_emscripten_install(&staging)?;
@@ -891,6 +1078,16 @@ fn run_toolchain_action_locked(
 }
 
 pub(crate) fn run_toolchain_action(action: crate::cli::ToolchainAction) -> Result<()> {
+    if matches!(
+        &action,
+        crate::cli::ToolchainAction::Install { .. }
+            | crate::cli::ToolchainAction::Activate { .. }
+            | crate::cli::ToolchainAction::Update
+            | crate::cli::ToolchainAction::Repair { .. }
+    ) {
+        let fastled_dir = ensure_fastled_repo(Some("master"))?;
+        ensure_fastled_uv_environment(&fastled_dir)?;
+    }
     let spec = release_default_toolchain()?;
     let base = install_base(spec)?;
     fs::create_dir_all(&base)?;
@@ -1120,6 +1317,64 @@ fn find_fastled_extract_root(dir: &Path) -> Result<PathBuf> {
     anyhow::bail!("no FastLED* directory found inside {}", dir.display())
 }
 
+/// Remove the derived short-path checkout when it represents `reference`.
+/// The authoritative source checkout remains untouched.
+pub(crate) fn invalidate_short_fastled_copy(reference: &str) -> Result<()> {
+    let cache_base = fastled_root()?.join("cache");
+    let authoritative = crate::source::repo_dir(&cache_base, reference)?;
+    let short_root = cache_base.join("fl");
+    let marker = short_root.join("repo").join(".fastled-source");
+    let matches = fs::read_to_string(&marker)
+        .map(|value| value.lines().next() == Some(authoritative.to_string_lossy().as_ref()))
+        .unwrap_or(false);
+    if matches && short_root.exists() {
+        fs::remove_dir_all(&short_root).with_context(|| {
+            format!(
+                "invalidate derived FastLED checkout {}",
+                short_root.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Force-refresh one explicitly named FastLED ref using staged publication.
+pub(crate) fn refresh_fastled_repo(reference: &str) -> Result<PathBuf> {
+    let (ref_name, url) = resolve_fastled_ref(Some(reference));
+    if ref_name != reference {
+        bail!("requested FastLED ref {reference:?} resolved unexpectedly as {ref_name:?}");
+    }
+    let cache_base = fastled_root()?.join("cache");
+    let archive_cache = cache_base.join("archives");
+    fs::create_dir_all(&archive_cache)?;
+    let download_dir = tempfile::Builder::new()
+        .prefix("fastled-source-download-")
+        .tempdir_in(&archive_cache)
+        .context("create temporary FastLED download directory")?;
+    let archive_path = download_dir.path().join("FastLED.zip");
+    archive::download(&url, &archive_path)
+        .with_context(|| format!("download FastLED archive from {url}"))?;
+    let receipt =
+        crate::source::SourceReceipt::new(&ref_name, &url, None, std::time::SystemTime::now())?;
+    let repo = crate::source::update_checkout(&cache_base, &receipt, |staging| {
+        let unpacked = staging.join(".unpacked");
+        archive::extract_zip(&archive_path, &unpacked)?;
+        let extracted_root = find_fastled_extract_root(&unpacked)?;
+        for entry in fs::read_dir(&extracted_root)? {
+            let entry = entry?;
+            fs::rename(entry.path(), staging.join(entry.file_name())).with_context(|| {
+                format!("promote FastLED archive entry {}", entry.path().display())
+            })?;
+        }
+        fs::remove_dir_all(&unpacked)?;
+        Ok(())
+    })?;
+    // A prior short checkout has the same authoritative path in its marker;
+    // remove it so the next build cannot silently reuse old source bytes.
+    invalidate_short_fastled_copy(&ref_name)?;
+    Ok(repo.into_path_buf())
+}
+
 /// Ensure the FastLED repo for `ref_opt` is downloaded and extracted under
 /// `~/.fastled/cache/fastled-{ref}/`. Returns the resolved local repo root.
 ///
@@ -1134,6 +1389,10 @@ pub fn ensure_fastled_repo(ref_opt: Option<&str>) -> Result<PathBuf> {
 
     if repo_dir.join("library.json").is_file() {
         return Ok(repo_dir);
+    }
+
+    if ref_name == "master" {
+        return refresh_fastled_repo("master");
     }
 
     let archive_cache = cache_base.join("archives");
@@ -1160,6 +1419,10 @@ pub fn ensure_fastled_repo(ref_opt: Option<&str>) -> Result<PathBuf> {
     }
     fs::rename(&extracted_root, &repo_dir)?;
     fs::remove_dir_all(&staging).ok();
+
+    let receipt =
+        crate::source::SourceReceipt::new(&ref_name, &url, None, std::time::SystemTime::now())?;
+    crate::source::write_receipt(&repo_dir, &receipt)?;
 
     Ok(repo_dir)
 }
@@ -1914,6 +2177,25 @@ mod tests {
         fs::write(install.join("done.txt"), "ok\n").unwrap();
         write_receipt(&install, spec, true).unwrap();
         install
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fastled_python_keeps_virtual_environment_symlink_path() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let base_python = temp.path().join("base-python");
+        fs::write(&base_python, "python").unwrap();
+        let venv_bin = temp.path().join("FastLED/.venv/bin");
+        fs::create_dir_all(&venv_bin).unwrap();
+        let venv_python = venv_bin.join("python");
+        symlink(&base_python, &venv_python).unwrap();
+
+        assert_eq!(
+            resolve_fastled_python(&temp.path().join("FastLED")).unwrap(),
+            venv_python
+        );
     }
 
     #[test]
