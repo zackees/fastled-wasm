@@ -81,12 +81,14 @@ jobs:
       # without a PATH-visible binary must not make the lint job fail.
       - name: Install Dylint tools
         run: |
-          if ! command -v cargo-dylint >/dev/null 2>&1; then
-            soldr cargo install cargo-dylint --version 6.0.3 --locked --force
+          DYLINT_VERSION="6.0.3"
+          if ! uv run python ci/lint_python/dylint_version_checker.py cargo-dylint "$DYLINT_VERSION"; then
+            soldr cargo install cargo-dylint --version "$DYLINT_VERSION" --locked --force
           fi
           if ! command -v dylint-link >/dev/null 2>&1; then
-            soldr cargo install dylint-link --version 6.0.3 --locked --force
+            soldr cargo install dylint-link --version "$DYLINT_VERSION" --locked --force
           fi
+          uv run python ci/lint_python/dylint_version_checker.py cargo-dylint "$DYLINT_VERSION"
 
       - name: Lint
         run: ./lint
