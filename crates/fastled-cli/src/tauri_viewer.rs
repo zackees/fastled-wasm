@@ -19,9 +19,8 @@ const TEST_CAPABILITY_SCRIPT: &str = r#"
 })();
 "#;
 
-/// Injected when `FASTLED_VIEWER_LOGS` is enabled: forwards `console.*`,
-/// uncaught errors, unhandled rejections, and failed fetches to the FastLED
-/// HTTP server's `POST /viewer-log` endpoint, which echoes them to stderr.
+/// Forwards `console.*`, uncaught errors, unhandled rejections, and failed
+/// fetches to the FastLED HTTP server, which echoes them to stderr.
 const LOG_FORWARD_SCRIPT: &str = r#"
 (() => {
   const pending = window.__fastled_test_pending_logs = new Set();
@@ -317,15 +316,6 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
 })();
 "#;
 
-fn env_flag_enabled(value: Option<&str>) -> bool {
-    matches!(value, Some(v) if !v.is_empty() && v != "0")
-}
-
-fn viewer_logs_enabled() -> bool {
-    let value = std::env::var("FASTLED_VIEWER_LOGS").ok();
-    env_flag_enabled(value.as_deref())
-}
-
 pub fn run(options: ViewerOptions) -> ExitCode {
     let ViewerOptions {
         url,
@@ -345,9 +335,7 @@ pub fn run(options: ViewerOptions) -> ExitCode {
             if inject_test_runtime {
                 builder = builder.initialization_script(TEST_CAPABILITY_SCRIPT);
             }
-            if viewer_logs_enabled() || inject_test_runtime {
-                builder = builder.initialization_script(LOG_FORWARD_SCRIPT);
-            }
+            builder = builder.initialization_script(LOG_FORWARD_SCRIPT);
             if inject_test_runtime {
                 builder = builder.initialization_script(TEST_RUNTIME_SCRIPT);
             }
@@ -379,15 +367,6 @@ pub fn run(options: ViewerOptions) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn viewer_logs_flag_parsing() {
-        assert!(!env_flag_enabled(None));
-        assert!(!env_flag_enabled(Some("")));
-        assert!(!env_flag_enabled(Some("0")));
-        assert!(env_flag_enabled(Some("1")));
-        assert!(env_flag_enabled(Some("true")));
-    }
 
     #[test]
     fn log_forward_script_targets_server_endpoint() {

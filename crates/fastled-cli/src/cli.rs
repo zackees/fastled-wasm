@@ -89,6 +89,7 @@ pub(crate) enum LinkMode {
     version,
     about = "FastLED WASM compilation CLI",
     long_about = None,
+    group(clap::ArgGroup::new("production_test").args(["test", "check"]).multiple(false)),
     // Stop Rust clap from eating flags it doesn't recognise; we want to be
     // a strict mirror, so every flag is declared explicitly.
 )]
@@ -145,11 +146,15 @@ pub(crate) struct Cli {
     #[arg(long, conflicts_with_all = ["just_compile", "no_app"], help_heading = "Production testing")]
     pub(crate) test: bool,
 
+    /// Compile and render one frame, failing on browser-side errors.
+    #[arg(long, conflicts_with_all = ["just_compile", "no_app"], help_heading = "Production testing")]
+    pub(crate) check: bool,
+
     /// Seconds to wait after the sketch is ready before the first capture.
     #[arg(
         long,
         default_value_t = 1.0,
-        requires = "test",
+        requires = "production_test",
         help_heading = "Production testing"
     )]
     pub(crate) test_wait_secs: f64,
@@ -158,20 +163,24 @@ pub(crate) struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        requires = "test",
+        requires = "production_test",
         verbatim_doc_comment,
         help_heading = "Production testing"
     )]
     pub(crate) test_screenshot: Option<PathBuf>,
 
     /// Target interval between scheduled capture starts; slow captures may delay later frames.
-    #[arg(long, requires = "test", help_heading = "Production testing")]
+    #[arg(
+        long,
+        requires = "production_test",
+        help_heading = "Production testing"
+    )]
     pub(crate) test_interval_secs: Option<f64>,
 
     /// Number of screenshots to take in interval mode.
     #[arg(
         long,
-        requires = "test",
+        requires = "production_test",
         conflicts_with = "test_duration_secs",
         help_heading = "Production testing"
     )]
@@ -180,7 +189,7 @@ pub(crate) struct Cli {
     /// Total capture window in seconds for interval mode.
     #[arg(
         long,
-        requires = "test",
+        requires = "production_test",
         conflicts_with = "test_count",
         help_heading = "Production testing"
     )]
@@ -190,20 +199,24 @@ pub(crate) struct Cli {
     #[arg(
         long,
         value_name = "PATH",
-        requires = "test",
+        requires = "production_test",
         help_heading = "Production testing"
     )]
     pub(crate) test_log: Option<PathBuf>,
 
     /// Exit with code 2 when the viewer reports a page-side error.
-    #[arg(long, requires = "test", help_heading = "Production testing")]
+    #[arg(
+        long,
+        requires = "production_test",
+        help_heading = "Production testing"
+    )]
     pub(crate) test_exit_on_error: bool,
 
     /// Hard upper bound in seconds for compile, ready wait, and capture.
     #[arg(
         long,
         default_value_t = 120.0,
-        requires = "test",
+        requires = "production_test",
         help_heading = "Production testing"
     )]
     pub(crate) test_timeout_secs: f64,
@@ -212,7 +225,7 @@ pub(crate) struct Cli {
     #[arg(
         long,
         default_value_t = 15.0,
-        requires = "test",
+        requires = "production_test",
         help_heading = "Production testing"
     )]
     pub(crate) test_ready_timeout_secs: f64,
@@ -220,7 +233,7 @@ pub(crate) struct Cli {
     /// Run a trusted host command after the first rendered frame. May be repeated.
     #[arg(
         long,
-        requires = "test",
+        requires = "production_test",
         value_name = "COMMAND",
         help_heading = "Production testing"
     )]
@@ -302,6 +315,10 @@ pub(crate) fn validate_init_ref_flags(cli: &Cli) -> Result<(), &'static str> {
 }
 
 pub(crate) fn apply_test_implications(cli: &mut Cli) {
+    if cli.check {
+        cli.test = true;
+        cli.test_exit_on_error = true;
+    }
     if cli.test {
         cli.no_interactive = true;
     }
@@ -450,6 +467,19 @@ mod tests {
         assert!(!cli.no_interactive);
         apply_test_implications(&mut cli);
         assert!(cli.no_interactive);
+    }
+
+    #[test]
+    fn check_is_a_strict_one_frame_test() {
+        let mut cli = Cli::parse_from(["fastled", "sketch", "--check", "--test-timeout-secs=30"]);
+        assert!(!cli.test);
+        assert!(!cli.test_exit_on_error);
+        apply_test_implications(&mut cli);
+        assert!(cli.test);
+        assert!(cli.test_exit_on_error);
+        assert!(cli.no_interactive);
+        assert!(cli.test_screenshot.is_none());
+        assert_eq!(cli.test_timeout_secs, 30.0);
     }
 
     #[test]
