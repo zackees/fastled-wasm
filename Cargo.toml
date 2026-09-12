@@ -40,7 +40,7 @@ tauri = { version = "2", features = ["devtools"] }
 tauri-build = { version = "2", features = [] }
 windows-sys = "0.61"
 # Parallel content-authoritative walker/hasher; remains compatible with Rust 1.85.
-zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "1bd5b6387eff54695e37adbfacbb977079d6f174" }
+zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "a7c84de53105ce41b2060bd9dd7730ef226e78a1" }
 shell-words = "1"
 globset = "0.4"
 tree-sitter = "0.26.9"

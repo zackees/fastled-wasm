@@ -20,6 +20,8 @@ pub mod frontend;
 pub mod install;
 mod install_unlock;
 mod keyboard;
+#[cfg(target_os = "linux")]
+pub mod linux_graphics;
 pub mod path;
 mod paths_util;
 pub mod project;

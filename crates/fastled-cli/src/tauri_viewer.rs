@@ -325,6 +325,10 @@ pub fn run(options: ViewerOptions) -> ExitCode {
         inject_test_runtime,
     } = options;
 
+    // Must run before the webview (and its WebKit processes) exist.
+    #[cfg(target_os = "linux")]
+    fastled_cli::linux_graphics::apply();
+
     let result = tauri::Builder::default()
         .setup(move |app| {
             let url = tauri::WebviewUrl::External(url.parse()?);
