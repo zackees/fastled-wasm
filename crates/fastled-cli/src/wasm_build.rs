@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
-use serde::{Deserialize, Serialize};
+use kernal_api::json::{self, Layout, Value};
 
 use crate::cli::LinkMode;
 use crate::{archive, debug_symbols, dynamic_cache, frontend, install, source};
@@ -472,10 +472,84 @@ fn command_with_env(program: impl AsRef<Path>, tools: &ToolPaths) -> Command {
 const DIRECT_CFLAGS_SCHEMA: u32 = 1;
 const DIRECT_CFLAGS_FILE: &str = ".fastled-direct-cflags.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default)]
 struct DirectCflagsCache {
     schema: u32,
     entries: BTreeMap<String, Vec<String>>,
+}
+
+impl DirectCflagsCache {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let (schema, entries) = match json::parse_members(bytes)? {
+            Value::ObjectMembers(members) => {
+                let mut schema = None;
+                let mut entries = None;
+                for (key, value) in members {
+                    let field = match key.as_str() {
+                        "schema" => &mut schema,
+                        "entries" => &mut entries,
+                        _ => continue,
+                    };
+                    if field.replace(value).is_some() {
+                        bail!("duplicate direct cflags cache field");
+                    }
+                }
+                (
+                    schema.context("missing direct cflags cache schema")?,
+                    entries.context("missing direct cflags cache entries")?,
+                )
+            }
+            Value::Array(mut fields) if fields.len() == 2 => {
+                let entries = fields.remove(1);
+                (fields.remove(0), entries)
+            }
+            _ => bail!("invalid direct cflags cache record"),
+        };
+        let schema = match schema {
+            Value::Signed(value) => u32::try_from(value)?,
+            Value::Unsigned(value) => u32::try_from(value)?,
+            _ => bail!("invalid direct cflags cache schema"),
+        };
+        let Value::ObjectMembers(members) = entries else {
+            bail!("invalid direct cflags cache entries");
+        };
+        let mut entries = BTreeMap::new();
+        for (key, value) in members {
+            let Value::Array(values) = value else {
+                bail!("invalid direct cflags cache flags");
+            };
+            let flags = values
+                .into_iter()
+                .map(|value| match value {
+                    Value::String(value) => Ok(value),
+                    _ => bail!("invalid direct cflags cache flag"),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            // Validate every occurrence before applying the map's last-key policy.
+            entries.insert(key, flags);
+        }
+        Ok(Self { schema, entries })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        let entries = self
+            .entries
+            .iter()
+            .map(|(key, flags)| {
+                (
+                    key.clone(),
+                    Value::Array(flags.iter().cloned().map(Value::String).collect()),
+                )
+            })
+            .collect();
+        Ok(json::encode(
+            &Value::ObjectMembers(vec![
+                ("schema".into(), Value::Unsigned(u64::from(self.schema))),
+                ("entries".into(), Value::Object(entries)),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
 }
 
 fn direct_cflags_key(toolchain_fingerprint: &str, driver_args: &[String]) -> String {
@@ -556,7 +630,7 @@ fn direct_clang_cflags(
     let key = direct_cflags_key(toolchain_fingerprint, driver_args);
     let mut cache = fs::read(&cache_path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<DirectCflagsCache>(&bytes).ok())
+        .and_then(|bytes| DirectCflagsCache::parse(&bytes).ok())
         .filter(|cache| cache.schema == DIRECT_CFLAGS_SCHEMA)
         .unwrap_or_else(|| DirectCflagsCache {
             schema: DIRECT_CFLAGS_SCHEMA,
@@ -587,7 +661,7 @@ fn direct_clang_cflags(
         bail!("em++ --cflags returned no backend flags");
     }
     cache.entries.insert(key, flags.clone());
-    fs::write(&cache_path, serde_json::to_vec_pretty(&cache)?)
+    fs::write(&cache_path, cache.encode()?)
         .with_context(|| format!("write direct cflags cache {}", cache_path.display()))?;
     Ok(flags)
 }
@@ -2848,6 +2922,72 @@ mod tests {
             baseline,
             static_link_fingerprint(&["-O0".to_string()], "sketch-a", "library-b")
         );
+    }
+
+    #[test]
+    fn direct_cflags_cache_preserves_typed_schema_policy() {
+        for source in [
+            r#"{"schema":1,"entries":{"a":["-O1","λ"]},"unknown":null}"#,
+            r#"[1,{"a":["-O1","λ"]}]"#,
+            r#"{"schema":1,"entries":{"a":["old"],"a":["-O1","λ"]}}"#,
+        ] {
+            let cache = DirectCflagsCache::parse(source.as_bytes()).unwrap();
+            assert_eq!(cache.schema, 1);
+            assert_eq!(cache.entries["a"], ["-O1", "λ"]);
+        }
+        for source in [
+            r#"{"entries":{}}"#,
+            r#"{"schema":1,"schema":1,"entries":{}}"#,
+            r#"{"schema":1,"entries":{},"entries":{}}"#,
+            r#"{"schema":1,"entries":{"a":null,"a":[]}}"#,
+            r#"{"schema":1,"entries":{"a":[1]}}"#,
+            r#"{"schema":1.0,"entries":{}}"#,
+            r#"{"schema":-1,"entries":{}}"#,
+            r#"{"schema":4294967296,"entries":{}}"#,
+            r#"[1,{},null]"#,
+            r#"[1]"#,
+        ] {
+            assert!(
+                DirectCflagsCache::parse(source.as_bytes()).is_err(),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            DirectCflagsCache::parse(br#"{"schema":4294967295,"entries":{}}"#)
+                .unwrap()
+                .schema,
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn direct_cflags_cache_encoding_is_stable_and_bounded() {
+        let mut cache = DirectCflagsCache {
+            schema: 1,
+            entries: BTreeMap::from([("key".into(), vec!["-O1".into(), "λ".into()])]),
+        };
+        let encoded = cache.encode().unwrap();
+        assert_eq!(
+            String::from_utf8(encoded.clone()).unwrap(),
+            "{\n  \"schema\": 1,\n  \"entries\": {\n    \"key\": [\n      \"-O1\",\n      \"λ\"\n    ]\n  }\n}"
+        );
+        assert_eq!(
+            DirectCflagsCache::parse(&encoded).unwrap().entries,
+            cache.entries
+        );
+        cache
+            .entries
+            .insert("large".into(), vec!["x".repeat(json::MAX_OUTPUT_BYTES)]);
+        assert!(matches!(
+            cache.encode().unwrap_err().downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        assert!(matches!(
+            DirectCflagsCache::parse(&vec![b' '; json::MAX_INPUT_BYTES + 1])
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
     }
 
     #[test]

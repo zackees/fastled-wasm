@@ -82,6 +82,19 @@ def test_project_json_uses_kernel():
     assert "kernal_api::json" in source
 
 
+def test_direct_cflags_cache_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/wasm_build.rs").read_text()
+    cache_code = source.split("const DIRECT_CFLAGS_SCHEMA", 1)[1].split(
+        "fn spawn_line_reader", 1
+    )[0]
+    assert "serde_json::" not in cache_code
+    assert "Serialize" not in cache_code
+    assert "Deserialize" not in cache_code
+    assert "json::parse_members" in cache_code
+    assert "json::encode" in cache_code
+
+
 def test_dwarf_smoke_json_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     source = (root / "crates/fastled-cli/src/dwarf_smoke.rs").read_text()
