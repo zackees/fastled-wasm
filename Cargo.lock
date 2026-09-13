@@ -1159,7 +1159,6 @@ dependencies = [
  "portable-pty",
  "kernal-api",
  "reqwest 0.12.28",
- "running-process",
  "serde",
  "serde_json",
  "sha2",
@@ -1176,7 +1175,6 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-cpp",
  "webkit2gtk",
- "windows-sys 0.61.2",
  "zip",
  "zstd",
 ]
