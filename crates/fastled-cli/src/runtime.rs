@@ -154,7 +154,7 @@ impl RuntimePaths {
         let root = if let Some(root) = std::env::var_os(ROOT_ENV_VAR) {
             PathBuf::from(root)
         } else {
-            dirs::home_dir()
+            kernal_api::platform::fs::user_home_dir()
                 .context("could not determine home directory")?
                 .join(".fastled")
         };

@@ -61,7 +61,8 @@ const FASTLED_LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/FastLED/FastLED/releases/latest";
 
 fn fastled_root() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("cannot resolve home directory")?;
+    let home =
+        kernal_api::platform::fs::user_home_dir().context("cannot resolve home directory")?;
     Ok(home.join(".fastled"))
 }
 

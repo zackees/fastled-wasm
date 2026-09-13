@@ -81,7 +81,8 @@ impl SourceStatus {
 
 /// Resolve the `~/.fastled/cache` directory.
 pub(crate) fn default_cache_base() -> Result<NormalizedPath> {
-    let home = dirs::home_dir().context("cannot resolve home directory")?;
+    let home =
+        kernal_api::platform::fs::user_home_dir().context("cannot resolve home directory")?;
     Ok(NormalizedPath::new(home.join(".fastled").join("cache")))
 }
 

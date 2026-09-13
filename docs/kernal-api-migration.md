@@ -16,7 +16,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 | Advisory locks | fs2 | #230: all six call sites migrated to kernal-api guards; headless Rust suite passes |
 | Glob matching and watchers | globset, notify | #231/#232: migrated to filesystem patterns and fs-watch; lost watches trigger recovery and rescan |
 | Tree fingerprints | zccache-fingerprint | #233 / kernal-api#157: moved content hashing and generic tests upstream; removed the zccache dependency graph |
-| Paths | dirs | Adapt existing filesystem facade while preserving FastLED directory layout |
+| Paths | dirs | #236 / kernal-api#163: filesystem user-home capability preserves account fallback; five callers migrated without changing layout |
 | Process lifecycle and native containment | running-process, windows-sys | #234: command runner and viewer use kernel-owned contained children; removed direct backend dependencies and native handle code |
 | Async runtime, channels, clocks | tokio, tokio-stream | Use async_engine types and operations; coordinate HTTP/SSE consumer types |
 | HTTP download, archive extraction, hashes | reqwest, zip, tar, zstd, flate2, sha2 | #235 tracks SHA-256 facade migration; add shared streaming APIs and move generic archive tests upstream; retain toolchain URLs/configuration here |
@@ -142,6 +142,23 @@ preserved compiler diagnostics and required sequential retries.
 
 Tree PR #158 has now merged after all CI checks passed. Cleanup PR #160 targets
 main. Exact published release consumption remains pending for all slices.
+
+### User-home slice
+
+Tracking: https://github.com/zackees/fastled-wasm/issues/236 and
+https://github.com/zackees/kernal-api/issues/163.
+
+Kernel `platform::fs::user_home_dir` uses the existing private directory backend
+and preserves native account fallback; the environment-only host fact API is
+unchanged. FastLED's five callers retain all overrides, product path components,
+and caller fallback policies. The direct `dirs` dependency is removed. The
+lockfile drops its version-5 directory stack and obsolete Windows bindings.
+Kernel tests cover native backend parity and nonempty/empty/missing `HOME`,
+isolated in child test processes. The application suite passes (251 library,
+two binary, one integration, one doctest) and Python passes (24, one skipped).
+The full kernel `fs,fs-watch,hash-sha256` suite and strict Clippy in both
+repositories pass. One-agent pre-push review found no actionable issues.
+Archive extraction migration is next, tracked in application issue #237.
 
 ### Final migration audit
 

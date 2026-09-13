@@ -132,7 +132,7 @@ pub(crate) fn announce_link_mode(
 }
 
 pub(crate) fn purge_fastled_cache(fastled_path: Option<&str>) {
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = kernal_api::platform::fs::user_home_dir() {
         let cache_dir = home.join(".fastled").join("cache");
         if cache_dir.exists() {
             match std::fs::remove_dir_all(&cache_dir) {
