@@ -75,6 +75,18 @@ def test_toml_configuration_uses_kernel():
         assert "toml::" not in source.read_text(), source
 
 
+def test_cpp_source_analysis_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    for path in (root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"):
+        data = tomllib.loads(path.read_text())
+        for name in ("tree-sitter", "tree-sitter-cpp"):
+            assert name not in data.get("dependencies", {})
+            assert name not in data.get("workspace", {}).get("dependencies", {})
+    for source in (root / "crates/fastled-cli/src").rglob("*.rs"):
+        for backend in ("tree_sitter::", "tree_sitter_cpp::"):
+            assert backend not in source.read_text(), source
+
+
 def test_viewer_backend_is_owned_by_kernel():
     root = Path(__file__).resolve().parents[2]
     manifests = [root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"]

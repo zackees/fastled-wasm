@@ -1,9 +1,8 @@
 //! Arduino `.ino` preprocessing shared by the WASM build and editor support.
 //!
-//! This is deliberately adapted from FastLED/fbuild's source scanner at
-//! `1e75ccf5a4ca922b4d922a6da286b965fac8832d`. Keep generic parser fixes in
-//! fbuild: this local adapter is transitional until fbuild publishes a stable
-//! preprocessor crate/API that fastled-wasm can depend on directly (see #206).
+//! Product integration retains FastLED/fbuild source-scanner provenance at
+//! `1e75ccf5a4ca922b4d922a6da286b965fac8832d` (see #206). Generic C++ analysis
+//! now lives in kernal-api; Arduino selection and editor publication stay here.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -13,7 +12,6 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
 use serde::{Deserialize, Serialize};
-use tree_sitter::{Node, Parser};
 
 use crate::path::NormalizedPath;
 
@@ -330,218 +328,45 @@ fn render_prototype_declarations(prototypes: &[String]) -> String {
     declarations
 }
 
-/// Tree-sitter based prototype collection copied/adapted from fbuild's
-/// `source_scanner.rs`; regex-only prototype generation is intentionally not
-/// used because Arduino sketches routinely use attributes/default arguments.
+/// Select Arduino prototypes from kernel-owned C++ syntax analysis.
 fn extract_function_prototypes(source: &str) -> Result<Vec<String>> {
-    let mut parser = Parser::new();
-    let language = tree_sitter_cpp::LANGUAGE.into();
-    parser.set_language(&language).context("load C++ parser")?;
-    let tree = parser.parse(source, None).context("parse Arduino sketch")?;
-    if tree.root_node().has_error() {
-        bail!("sketch has incomplete C++ syntax; retaining the last good IntelliSense prelude");
-    }
-    let mut candidates = Vec::new();
-    collect_function_prototypes(tree.root_node(), source, &mut candidates);
+    use kernal_api::source::{analyze_cpp, AnalysisError};
+    let candidates = match analyze_cpp(source) {
+        Err(AnalysisError::InvalidSyntax) => {
+            bail!("sketch has incomplete C++ syntax; retaining the last good IntelliSense prelude");
+        }
+        result => result.context("analyze Arduino sketch")?,
+    };
     let mut seen = HashSet::new();
-    Ok(candidates
-        .into_iter()
-        .filter(|prototype| seen.insert(prototype.clone()))
-        .collect())
-}
-
-fn collect_function_prototypes(node: Node<'_>, source: &str, output: &mut Vec<String>) {
-    if node.kind() == "function_definition" {
-        if let Some(prototype) = prototype_from_definition(node, source) {
-            output.push(prototype);
-        }
-        return;
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_function_prototypes(child, source, output);
-    }
-}
-
-fn prototype_from_definition(node: Node<'_>, source: &str) -> Option<String> {
-    if has_skipped_context(node) {
-        return None;
-    }
-    let signature_node = node
-        .parent()
-        .filter(|parent| parent.kind() == "template_declaration")
-        .unwrap_or(node);
-    let body = node.child_by_field_name("body")?;
-    let start = signature_node.start_byte();
-    let signature = source.get(start..body.start_byte())?;
-    let parameters = find_descendant(node, "parameter_list")?;
-    let parameters_start = parameters.start_byte().checked_sub(start)?;
-    let parameters_end = parameters.end_byte().checked_sub(start)?;
-    let signature = normalize_signature(&strip_default_arguments(
-        signature,
-        parameters_start,
-        parameters_end,
-    ))?;
-    if signature.contains("::")
-        || signature.starts_with('#')
-        || matches!(
-            signature.trim(),
-            "void setup()" | "void setup(void)" | "void loop()" | "void loop(void)"
-        )
-    {
-        return None;
-    }
-    Some(signature)
-}
-
-fn has_skipped_context(node: Node<'_>) -> bool {
-    let mut current = node.parent();
-    while let Some(parent) = current {
-        match parent.kind() {
-            "namespace_definition"
-            | "class_specifier"
-            | "struct_specifier"
-            | "union_specifier"
-            | "field_declaration_list"
-            // Arduino sketches occasionally expose WASM/browser hooks with
-            // `extern \"C\"`. A generated C++ declaration would change the
-            // function's language linkage and make the later definition fail.
-            | "linkage_specification" => return true,
-            _ => current = parent.parent(),
-        }
-    }
-    false
-}
-
-fn find_descendant<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == kind {
-            return Some(child);
-        }
-        if let Some(found) = find_descendant(child, kind) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn normalize_signature(signature: &str) -> Option<String> {
-    let lines = signature
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>();
-    (!lines.is_empty()).then(|| lines.join(" "))
-}
-
-fn strip_default_arguments(signature: &str, start: usize, end: usize) -> String {
-    let Some(parameters) = signature.get(start..end) else {
-        return signature.to_string();
-    };
-    let Some(inner) = parameters
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-    else {
-        return signature.to_string();
-    };
-    format!(
-        "{}({}){}",
-        &signature[..start],
-        strip_defaults(inner),
-        &signature[end..]
-    )
-}
-
-fn strip_defaults(parameters: &str) -> String {
-    let mut output = String::new();
-    let mut skip_default = false;
-    let mut depths = [0usize; 4]; // paren, bracket, brace, angle
-    let mut quote = None;
-    let mut escaped = false;
-    for character in parameters.chars() {
-        if let Some(delimiter) = quote {
-            if !skip_default {
-                output.push(character);
-            }
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == delimiter {
-                quote = None;
-            }
+    let mut prototypes = Vec::new();
+    for candidate in candidates {
+        let context = candidate.context;
+        if context.namespace || context.aggregate || context.explicit_linkage {
             continue;
         }
-        match character {
-            '\'' | '"' => {
-                if !skip_default {
-                    output.push(character);
-                }
-                quote = Some(character);
-            }
-            '(' => {
-                depths[0] += 1;
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            ')' => {
-                depths[0] = depths[0].saturating_sub(1);
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '[' => {
-                depths[1] += 1;
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            ']' => {
-                depths[1] = depths[1].saturating_sub(1);
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '{' => {
-                depths[2] += 1;
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '}' => {
-                depths[2] = depths[2].saturating_sub(1);
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '<' => {
-                depths[3] += 1;
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '>' => {
-                depths[3] = depths[3].saturating_sub(1);
-                if !skip_default {
-                    output.push(character);
-                }
-            }
-            '=' if depths.iter().all(|depth| *depth == 0) => {
-                skip_default = true;
-                output = output.trim_end().to_string();
-            }
-            ',' if depths.iter().all(|depth| *depth == 0) => {
-                skip_default = false;
-                output = output.trim_end().to_string();
-                output.push(',');
-            }
-            _ if !skip_default => output.push(character),
-            _ => {}
+        // Normalize only the selection/deduplication key. Emitted source must
+        // preserve newlines that terminate C++ line comments.
+        let key = candidate
+            .signature
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if key.is_empty()
+            || key.contains("::")
+            || key.starts_with('#')
+            || matches!(
+                key.as_str(),
+                "void setup()" | "void setup(void)" | "void loop()" | "void loop(void)"
+            )
+            || !seen.insert(key)
+        {
+            continue;
         }
+        prototypes.push(candidate.signature);
     }
-    output
+    Ok(prototypes)
 }
 
 #[cfg(test)]
@@ -740,5 +565,26 @@ mod tests {
         assert!(!prototypes
             .iter()
             .any(|prototype| prototype.contains("browser_hook")));
+    }
+
+    #[test]
+    fn prototype_output_retains_comment_terminating_newlines() {
+        let prototypes = extract_function_prototypes(
+            "int helper(int x // parameter\n = 1) // header\n { return x; }",
+        )
+        .unwrap();
+        assert_eq!(
+            render_prototype_declarations(&prototypes),
+            "int helper(int x // parameter\n) // header\n;\n"
+        );
+    }
+
+    #[test]
+    fn arduino_selection_keeps_global_helpers_in_order_without_duplicates() {
+        let source = "void setup() {}\nvoid loop(void) {}\nnamespace n { void hidden() {} }\nstruct S { void member() {} };\nvoid helper() {}\nvoid helper() {}\nvoid second() {}";
+        assert_eq!(
+            extract_function_prototypes(source).unwrap(),
+            ["void helper()", "void second()"]
+        );
     }
 }

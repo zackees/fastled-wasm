@@ -925,6 +925,36 @@ or Safari rendering proof; the existing viewer acceptance gap remains open.
 The temporary path patch now points at the config capability checkout; a usable
 published release and patch removal remain required. No build speedup is claimed.
 
+### C++ source analysis migration
+
+Upstream issue zackees/kernal-api#209 is implemented in draft PR #210. Generic
+C++ traversal, syntax contexts, source ranges, parameter-default removal, and
+parser contract tests now belong to its optional `source-cpp` capability. The
+app removes both direct tree-sitter dependencies and their imports, consuming
+only owned kernel records. The temporary path patch points to the source-cpp
+checkout; a usable exact published release remains required.
+
+Arduino tab order, `setup`/`loop` and scope/linkage filtering, deduplication,
+generated preambles, line maps, snapshot generations, and atomic publication
+remain here. Selection uses normalized keys, but emitted signatures retain the
+newlines needed to terminate C++ line comments. Provenance from the original
+fbuild scanner remains documented. Bounded kernel parsing failures retain the
+last good snapshot through the existing publish-after-success path.
+
+The dependency ban and line-comment output regression both failed before
+adoption. All 8 preprocessor tests now pass, followed by 265 library tests,
+3 binary tests, 1 integration test, and 1 doc test. All 32 Python tests pass
+(1 skipped), including the dependency ban. Strict all-target Clippy and the CLI
+build passed. A fresh `/tmp/fastled-cpp-wasm.ncl9j6` sketch with forward calls,
+a default argument, and line-commented headers compiled and linked successfully
+using the unchanged Emscripten 4.0.21 toolchain. Its actual generated wrapper
+retains comment-ending newlines and removes the default in the prototype; the
+WASM header is valid and generated JavaScript contains no prohibited JSPI entry
+points. This is compiler-path evidence, not browser or Safari rendering proof.
+This change does not upgrade Emscripten or claim a measured build
+speedup. Remaining direct Rust dependencies are Clap, Serde, Serde JSON, Anyhow,
+and kernal-api; their migration remains required.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
