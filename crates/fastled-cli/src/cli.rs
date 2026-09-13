@@ -166,6 +166,52 @@ where
     Ok(Some(command))
 }
 
+pub(crate) fn primary_schema() -> kernal_api::command::Command {
+    use kernal_api::command::{Command as SchemaCommand, OptionSpec, ValueKind};
+
+    SchemaCommand::new("fastled")
+        .about("FastLED WASM compilation CLI")
+        .version(env!("CARGO_PKG_VERSION"))
+        .optional_positional("directory", ValueKind::string())
+        .option(OptionSpec::value("serve-dir", ValueKind::string()))
+        .option(OptionSpec::value("init", ValueKind::string()).optional_value("__init__"))
+        .option(OptionSpec::flag("just-compile"))
+        .option(OptionSpec::flag("no-app"))
+        .option(OptionSpec::value("link", ValueKind::enumeration(["static", "dynamic"])).default("static"))
+        .option(OptionSpec::flag("profile"))
+        .option(OptionSpec::flag("install"))
+        .option(OptionSpec::flag("dry-run"))
+        .option(OptionSpec::flag("no-interactive"))
+        .option(OptionSpec::flag("no-https"))
+        .option(OptionSpec::flag("test").conflicts("just-compile").conflicts("no-app"))
+        .option(OptionSpec::flag("check").conflicts("just-compile").conflicts("no-app"))
+        .exclusive_group("production-test", ["test", "check"])
+        .option(OptionSpec::value("test-wait-secs", ValueKind::f64()).default("1").requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-screenshot", ValueKind::string()).requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-interval-secs", ValueKind::f64()).requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-count", ValueKind::u32()).requires_any(["test", "check"]).conflicts("test-duration-secs"))
+        .option(OptionSpec::value("test-duration-secs", ValueKind::f64()).requires_any(["test", "check"]).conflicts("test-count"))
+        .option(OptionSpec::value("test-log", ValueKind::string()).requires_any(["test", "check"]))
+        .option(OptionSpec::flag("test-exit-on-error").requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-timeout-secs", ValueKind::f64()).default("120").requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-ready-timeout-secs", ValueKind::f64()).default("15").requires_any(["test", "check"]))
+        .option(OptionSpec::value("test-cmd", ValueKind::string()).repeated().requires_any(["test", "check"]))
+        .option(OptionSpec::flag("latest"))
+        .option(OptionSpec::value("branch", ValueKind::string()))
+        .option(OptionSpec::value("commit", ValueKind::string()))
+        .option(OptionSpec::value("fastled-path", ValueKind::string()))
+        .option(OptionSpec::flag("purge"))
+        .option(OptionSpec::flag("clangd"))
+        .option(OptionSpec::value("write-clangd", ValueKind::string()).optional_value("__cwd__"))
+        .option(OptionSpec::flag("write-intellisense-snapshot").hidden())
+        .option(OptionSpec::value("internal-ensure-fastled-repo", ValueKind::string()).optional_value("__latest__").hidden())
+        .option(OptionSpec::flag("internal-dwarf-smoke").hidden())
+        .option(OptionSpec::value("internal-serve-dir-headless", ValueKind::string()).hidden())
+        .option(OptionSpec::flag("debug").conflicts("quick").conflicts("release"))
+        .option(OptionSpec::flag("quick").conflicts("debug").conflicts("release"))
+        .option(OptionSpec::flag("release").conflicts("debug").conflicts("quick"))
+}
+
 /// How the sketch code is linked into the generated WASM program.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 pub(crate) enum LinkMode {
@@ -468,6 +514,29 @@ mod tests {
             management_command_from(["fastled", "source", "update", "--unknown"]),
             Err(message) if message == "invalid command-line arguments"
         ));
+    }
+
+    #[test]
+    fn primary_schema_captures_build_test_and_hidden_flags() {
+        let parsed = primary_schema()
+            .parse([
+                "fastled",
+                "sketch",
+                "--link=dynamic",
+                "--test",
+                "--test-count=2",
+                "--test-cmd=echo one",
+                "--test-cmd",
+                "echo two",
+                "--write-intellisense-snapshot",
+            ])
+            .unwrap();
+        assert_eq!(parsed.value("directory"), Some("sketch"));
+        assert_eq!(parsed.value("link"), Some("dynamic"));
+        assert_eq!(parsed.u32("test-count"), Some(2));
+        assert_eq!(parsed.values("test-cmd").unwrap().len(), 2);
+        assert!(parsed.flag("write-intellisense-snapshot").unwrap());
+        assert!(!primary_schema().render_help().contains("write-intellisense-snapshot"));
     }
 
     #[test]
