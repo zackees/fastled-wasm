@@ -47,6 +47,14 @@ def test_archive_download_uses_kernel_http():
     assert "kernal_api::http::" in source
 
 
+def test_obsolete_manifest_dependencies_are_removed():
+    root = Path(__file__).resolve().parents[2]
+    package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())
+    workspace = tomllib.loads((root / "Cargo.toml").read_text())
+    assert "indexmap" not in package.get("build-dependencies", {})
+    assert "thiserror" not in workspace["workspace"]["dependencies"]
+
+
 def test_http_callers_use_kernel():
     root = Path(__file__).resolve().parents[2]
     package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())

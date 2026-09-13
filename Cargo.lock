@@ -1049,7 +1049,6 @@ dependencies = [
  "ctcb-core",
  "getrandom 0.3.4",
  "gtk",
- "indexmap 1.9.3",
  "kernal-api",
  "serde",
  "serde_json",

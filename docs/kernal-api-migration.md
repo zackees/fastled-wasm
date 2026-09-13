@@ -24,7 +24,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 | Native viewer and terminal | tauri, tauri-build, gtk, webkit2gtk, crossterm | Extend semantic hosting as needed for test capture, microphone, graphics fixes, keyboard handling |
 | Compiler provisioning and C++ parsing | ctcb-core, tree-sitter, tree-sitter-cpp | Move reusable tool/parse mechanisms; retain FastLED build and preprocessing policy |
 | CLI, configuration, and utility support | clap, serde, serde_json, toml, anyhow, strsim, shell-words, tempfile, getrandom | Establish facade operations appropriate to actual consumers; remove obsolete dependencies |
-| Build-only support | indexmap | Determine whether still required by build graph |
+| Build-only support | indexmap | Direct unused entry removed; transitive Tauri copies remain until viewer migration |
 | Python launcher/tool provisioning | meson, ninja, uv, typeguard, zcmds_win32 | Audit runtime necessity and move shared provisioning into the base without breaking wheel installation |
 
 ## Development state
@@ -62,6 +62,17 @@ These are host-specific store paths. The explicit native xz/bzip2 prefixes avoid
 and failed the x86-64 link during archive adoption.
 
 ## Completion checks
+
+### Obsolete manifest entries
+
+The unused workspace `thiserror` declaration and direct build dependency on
+`indexmap` are removed. `build.rs` only invokes the optional Tauri build helper;
+there are no application references to either crate. The default viewer-enabled
+build and all 258 Rust tests pass without the direct `indexmap/std` feature
+request. The lockfile removes only the application-to-indexmap edge; neither
+transitive package removal nor a build-speed gain is claimed. The new manifest
+boundary was observed RED before removal and GREEN afterward; Python reports
+28 passed and one skipped. Tauri build support remains to be migrated.
 
 ### Tree fingerprint slice
 

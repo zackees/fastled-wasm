@@ -39,7 +39,6 @@ tree-sitter = { workspace = true }
 tree-sitter-cpp = { workspace = true }
 
 [build-dependencies]
-indexmap = { version = "1.9.3", features = ["std"] }
 tauri-build = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

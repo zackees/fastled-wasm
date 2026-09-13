@@ -14,7 +14,6 @@ homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
-thiserror = "2"
 kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "event-stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
