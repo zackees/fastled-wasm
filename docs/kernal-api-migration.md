@@ -177,13 +177,26 @@ temporary staging. Strict archive-feature Clippy passes. Native Windows link
 creation still needs execution coverage; post-creation resolution semantics and
 additional malformed ZIP64 cases remain review targets.
 
-This is not yet the required archive capability: tar.zst, selected tgz members,
-tar symlinks/hardlinks, bounded extended tar metadata, and real toolchain artifact
-checks remain required before adoption. No archive dependencies or tests have
-been removed from FastLED yet. All installer full-extraction call sites use
-empty staging directories. A real esbuild fixture is cached at
-`~/.fastled/toolchains/archives/esbuild-linux-x64-0.28.0.tgz`; use it read-only
-and extract into a fresh temporary directory for the acceptance check.
+The draft now also handles tar.zst, full/selected tgz extraction, tar symlinks
+and hardlinks, and bounded GNU/PAX metadata. Fourteen focused regressions pass.
+Review exposed a local/global PAX size-state mismatch and invalid link-prefix
+normalization; both were reproduced with failing regressions and fixed,
+including terminal directory suffixes. The default rejects dangling links; an
+explicit `PreserveMissingLeaf` policy preserves missing final targets under
+existing directories without allowing missing intermediate paths or hardlinks.
+
+Read-only acceptance passed for cached esbuild tgz member extraction and the
+catalog-pinned Emscripten 4.0.21 Linux x86-64 tar.zst. The latter's SHA-256 matched
+`5cd3cbe0316d37c9b39bdc63691c014f136a5d82a9f08ed29bb7ad62f7a83655`; extracted
+file hashes, executable modes, and literal symlink targets matched the archive.
+Its npm symlinks include literal backslashes and are dangling on Linux, requiring
+the explicit policy above to preserve the old extractor's behavior. No archive
+contents were executed. Fixtures were extracted only into fresh temporary dirs.
+
+No archive dependencies or tests have been removed from FastLED yet. Application
+adoption, isolated-feature CI, native Windows coverage, and upstream publication
+remain pending. All installer full-extraction call sites use empty staging
+directories; esbuild removes an existing selected binary before extraction.
 
 ### Final migration audit
 
