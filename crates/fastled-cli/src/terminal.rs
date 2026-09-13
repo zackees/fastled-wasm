@@ -8,6 +8,8 @@ use kernal_api::{
     pty::{PtyCommand, PtySession},
 };
 use std::{
+    collections::BTreeSet,
+    ffi::OsString,
     io::{self, Read},
     path::Path,
     sync::Arc,
@@ -34,7 +36,9 @@ fn size(cols: u16, rows: u16) -> io::Result<PtySize> {
         pixel_height: 0,
     })
 }
-fn shell_command(cwd: &Path) -> PtyCommand {
+/// Preserve the launch environment and repair the common desktop-entry PATH.
+/// Login files still run inside the interactive shell.
+fn shell_command(cwd: &Path) -> io::Result<PtyCommand> {
     #[cfg(unix)]
     let mut command = {
         let shell = std::env::var_os("SHELL")
@@ -47,34 +51,64 @@ fn shell_command(cwd: &Path) -> PtyCommand {
     #[cfg(windows)]
     let mut command =
         PtyCommand::new(std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()));
+    let mut paths = Vec::new();
+    if let Some(home) = kernal_api::platform::host::home_dir() {
+        paths.push(home.join(".local").join("bin"));
+        let nix_profile = home.join(".nix-profile").join("bin");
+        if nix_profile.is_dir() {
+            paths.push(nix_profile);
+        }
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&path));
+    }
+    #[cfg(unix)]
+    paths.extend(["/usr/local/bin", "/usr/bin", "/bin"].map(Into::into));
+    #[cfg(unix)]
+    if Path::new("/run/current-system/sw/bin").is_dir() {
+        paths.push("/run/current-system/sw/bin".into());
+    }
+    let mut environment: Vec<_> = std::env::vars_os()
+        .filter(|(key, _)| key != "PATH" && key != "TERM")
+        .collect();
+    environment.push((
+        OsString::from("PATH"),
+        std::env::join_paths(paths).map_err(io::Error::other)?,
+    ));
+    environment.push((OsString::from("TERM"), OsString::from("xterm-256color")));
+    command.environment = Some(environment);
     command.cwd = Some(cwd.to_path_buf());
-    command
+    Ok(command)
 }
 fn parse_text(text: &str) -> io::Result<ClientMessage> {
-    let Value::Object(fields) = json::parse(text.as_bytes()).map_err(io::Error::other)? else {
+    let Value::ObjectMembers(fields) =
+        json::parse_members(text.as_bytes()).map_err(io::Error::other)?
+    else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "terminal message must be an object",
         ));
     };
-    let Some(Value::String(kind)) = fields.get("type") else {
+    let Some(Value::String(kind)) = unique_member(&fields, "type") else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "terminal message type missing",
         ));
     };
     match kind.as_str() {
-        "ack" => Ok(ClientMessage::Ack),
-        "input" => match fields.get("data") {
-            Some(Value::String(data)) => Ok(ClientMessage::Input(data.clone())),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "terminal input missing",
-            )),
-        },
-        "resize" => match (
-            fields.get("cols").and_then(port_dimension),
-            fields.get("rows").and_then(port_dimension),
+        "ack" if has_only_fields(&fields, &["type"]) => Ok(ClientMessage::Ack),
+        "input" if has_only_fields(&fields, &["type", "data"]) => {
+            match unique_member(&fields, "data") {
+                Some(Value::String(data)) => Ok(ClientMessage::Input(data.clone())),
+                _ => Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "terminal input missing",
+                )),
+            }
+        }
+        "resize" if has_only_fields(&fields, &["type", "cols", "rows"]) => match (
+            unique_member(&fields, "cols").and_then(port_dimension),
+            unique_member(&fields, "rows").and_then(port_dimension),
         ) {
             (Some(cols), Some(rows)) => Ok(ClientMessage::Resize { cols, rows }),
             _ => Err(io::Error::new(
@@ -87,6 +121,26 @@ fn parse_text(text: &str) -> io::Result<ClientMessage> {
             "terminal message unknown",
         )),
     }
+}
+
+/// Return a member only when it appears exactly once. The protocol intentionally
+/// rejects duplicate and unknown fields just as the previous typed decoder did.
+fn unique_member<'a>(fields: &'a [(String, Value)], name: &str) -> Option<&'a Value> {
+    let mut members = fields
+        .iter()
+        .filter_map(|(key, value)| (key == name).then_some(value));
+    let member = members.next()?;
+    members.next().is_none().then_some(member)
+}
+
+fn has_only_fields(fields: &[(String, Value)], permitted: &[&str]) -> bool {
+    let permitted: BTreeSet<_> = permitted.iter().copied().collect();
+    fields
+        .iter()
+        .all(|(key, _)| permitted.contains(key.as_str()))
+        && permitted
+            .iter()
+            .all(|key| unique_member(fields, key).is_some())
 }
 
 fn port_dimension(value: &Value) -> Option<u16> {
@@ -129,7 +183,7 @@ pub(crate) async fn connect(
             let _permit = permit;
             let result = (|| -> io::Result<()> {
                 let (mut session, mut reader) =
-                    PtySession::spawn(shell_command(cwd.as_path()), size(80, 24)?)?;
+                    PtySession::spawn(shell_command(cwd.as_path())?, size(80, 24)?)?;
                 let reader_tx = worker_tx.clone();
                 std::thread::Builder::new()
                     .name("fastled-terminal-output".into())
@@ -219,5 +273,7 @@ mod tests {
             Ok(ClientMessage::Resize { .. })
         ));
         assert!(parse_text(r#"{"type":"exec","data":"oops"}"#).is_err());
+        assert!(parse_text(r#"{"type":"ack","ignored":true}"#).is_err());
+        assert!(parse_text(r#"{"type":"ack","type":"input","data":"oops"}"#).is_err());
     }
 }

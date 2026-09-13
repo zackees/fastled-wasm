@@ -21,8 +21,9 @@ split-debuginfo = "packed"
 strip = "none"
 
 # Temporary migration override; replace with the verified published release.
+# A git revision keeps CI hermetic while the crates.io release is pending.
 [patch.crates-io]
-kernal-api = { path = "../fastled-wasm-extern/kernal-api-cli" }
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", rev = "7457d73fdc4b4453678159476dd2ee6c443a58fa" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1
