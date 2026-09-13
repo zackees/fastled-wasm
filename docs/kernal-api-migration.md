@@ -268,7 +268,7 @@ native Windows positive/negative archive link tests. PR #166 is merged as
 repository's runner policy; macOS cross-compilation/archive checks passed.
 This is not yet a published release, and the application path patch remains.
 
-### HTTP client slice (draft; not adopted)
+### HTTP client slice (draft; partial local adoption)
 
 Tracking: https://github.com/zackees/fastled-wasm/issues/238 and
 https://github.com/zackees/kernal-api/issues/167. Investigation found blocking
@@ -340,6 +340,25 @@ HTTP/1 backend defaults to 100 headers and a 417792-byte read-buffer ceiling.
 The facade's configurable header ceiling is still checked after parsing, and
 these transitive implementation defaults are not a published facade guarantee.
 That distinction must be resolved or explicitly contracted before release.
+
+The opt-in HTTPS acceptance test passed against FastLED's public GitHub release
+metadata endpoint using verified TLS, a user-agent, bounded body collection,
+and the facade redirect policy. This proves trusted HTTPS on this host, not
+invalid-certificate rejection or all supported platforms.
+
+Local adoption now routes `archive::download` through the kernel's blocking
+streaming client and a caller-owned kernel runtime. FastLED keeps its 120-second
+total timeout, ten-redirect policy, destination creation, flush/error reporting,
+and a 16-GiB artifact ceiling. A product test proves successful writes and
+preservation of an existing destination on HTTP error. The boundary test failed
+on the old reqwest import then passed after adoption. The existing 249-library,
+2-binary, 1-integration, 1-doctest workspace suite passed, as did the new product
+test and seven Python smoke/boundary tests. Enabling the feature required only
+updating locked bytes 1.11.1 to the kernel's exact 1.12.1, not a broad refresh.
+Other reqwest callers remain, so the direct dependency is not yet removed.
+Strict workspace all-target Clippy passes, and the full Python unit suite has
+25 passes/1 skip. HTTP remains a locally adopted draft pending upstream review
+and release; this patch must not be released with the local path override.
 
 This is not the complete HTTP capability: streamed artifact sinks,
 SSE integration, redirect

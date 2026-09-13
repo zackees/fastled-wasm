@@ -19,27 +19,34 @@ use kernal_api::archive::{ArchiveFormat, DanglingLinks, ExtractionLimits};
 
 /// Download a file from `url` and write it to `dest`.
 ///
-/// Uses a blocking reqwest client with a 120-second timeout, streaming the
+/// Uses the kernel HTTP client with a 120-second timeout, streaming the
 /// response body so large archives do not need to be buffered in memory.
 ///
 /// # Errors
 /// Returns an error if the HTTP request fails, the server returns a non-2xx
 /// status, or writing the destination file fails.
 pub fn download(url: &str, dest: &Path) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
-        .context("failed to build HTTP client")?;
+        .context("failed to build download runtime")?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            max_body_bytes: 16 * 1024 * 1024 * 1024,
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .context("failed to build HTTP client")?;
 
     let mut response = client
         .get(url)
-        .send()
         .with_context(|| format!("GET {url} failed"))?;
 
-    response
-        .error_for_status_ref()
-        .with_context(|| format!("server returned error for {url}"))?;
+    if !(200..300).contains(&response.status()) {
+        anyhow::bail!("server returned HTTP {} for {url}", response.status());
+    }
 
     let file = File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
     let mut writer = BufWriter::new(file);
@@ -266,6 +273,40 @@ mod tests {
 
     fn temp_dir() -> TempDir {
         tempfile::tempdir().expect("tempdir")
+    }
+
+    #[test]
+    fn download_writes_artifact_and_preserves_destination_on_http_error() {
+        for status in [200, 404] {
+            let dir = temp_dir();
+            let destination = dir.path().join("artifact.zip");
+            fs::write(&destination, b"previous artifact").unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/artifact.zip", listener.local_addr().unwrap());
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    socket.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() < 4096);
+                }
+                write!(socket, "HTTP/1.1 {status} Fixture\r\nContent-Length: 8\r\nConnection: close\r\n\r\nartifact").unwrap();
+            });
+            let result = download(&url, &destination);
+            worker.join().unwrap();
+            if status == 200 {
+                result.unwrap();
+                assert_eq!(fs::read(destination).unwrap(), b"artifact");
+            } else {
+                assert!(result.is_err());
+                assert_eq!(fs::read(destination).unwrap(), b"previous artifact");
+            }
+        }
     }
 
     // ------------------------------------------------------------------

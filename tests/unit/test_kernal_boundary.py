@@ -35,3 +35,10 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
         assert "dirs::" not in source.read_text(), source
         for backend in ("zip", "tar", "zstd", "flate2"):
             assert f"{backend}::" not in source.read_text(), source
+
+
+def test_archive_download_uses_kernel_http():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/archive.rs").read_text()
+    assert "reqwest::" not in source
+    assert "kernal_api::http::" in source
