@@ -980,6 +980,22 @@ dependencies remain for the other eight JSON modules; this is not complete JSON
 adoption or a release-ready dependency graph. Published adoption, browser/Safari
 acceptance and measured build performance remain outstanding.
 
+The next local checkpoint moves production editor JSON generation and merging
+in `clangd_config.rs` to kernel-owned values. Compile-command arguments, forced
+prelude selection, VS Code association repair, C/C++ configuration replacement,
+unknown-field preservation and trailing newlines remain application policy.
+Resource-limit errors are propagated before replacing editor settings. The
+production boundary test observed RED then GREEN. Existing editor assertions
+first passed using Serde as an independent output oracle, then migrated to
+kernel values without dropping their field/argument assertions. The strengthened
+boundary test bans Serde JSON throughout the module, including tests.
+
+All 270 library, 3 binary, 1 integration and 1 doc tests pass for this checkpoint,
+including two new editor preservation regressions. Python passes 35 tests with
+1 skipped. Strict all-target Clippy, formatting, Ruff and single-reviewer review
+pass. Seven JSON source modules still need migration; release/runtime gates
+remain incomplete.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

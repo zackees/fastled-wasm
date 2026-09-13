@@ -17,7 +17,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde_json::json;
+use kernal_api::json::{self, Layout, Value as DocumentValue};
+use std::collections::BTreeMap;
 
 use crate::install;
 use crate::path::NormalizedPath;
@@ -234,21 +235,49 @@ fn write_compile_commands(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) ->
         .iter()
         .map(|ino_file| {
             let ino = display_path(ino_file);
-            json!({
-                "directory": paths.fastled_dir,
-                "file": ino,
-                "arguments": compile_arguments(inputs, paths, &ino, true, Some(&prelude)),
-            })
+            DocumentValue::Object(
+                [
+                    (
+                        "directory".into(),
+                        DocumentValue::String(paths.fastled_dir.clone()),
+                    ),
+                    ("file".into(), DocumentValue::String(ino.clone())),
+                    (
+                        "arguments".into(),
+                        DocumentValue::Array(
+                            compile_arguments(inputs, paths, &ino, true, Some(&prelude))
+                                .into_iter()
+                                .map(DocumentValue::String)
+                                .collect(),
+                        ),
+                    ),
+                ]
+                .into(),
+            )
         })
         .collect::<Vec<_>>();
-    entries.push(json!({
-        "directory": paths.fastled_dir,
-        "file": wrapper,
-        "arguments": compile_arguments(inputs, paths, &wrapper, false, None),
-    }));
-    install::write_json_file(
+    entries.push(DocumentValue::Object(
+        [
+            (
+                "directory".into(),
+                DocumentValue::String(paths.fastled_dir.clone()),
+            ),
+            ("file".into(), DocumentValue::String(wrapper.clone())),
+            (
+                "arguments".into(),
+                DocumentValue::Array(
+                    compile_arguments(inputs, paths, &wrapper, false, None)
+                        .into_iter()
+                        .map(DocumentValue::String)
+                        .collect(),
+                ),
+            ),
+        ]
+        .into(),
+    ));
+    write_editor_document(
         &inputs.sketch_dir.join("compile_commands.json"),
-        &serde_json::Value::Array(entries),
+        &DocumentValue::Array(entries),
     )
 }
 
@@ -286,47 +315,76 @@ fn write_clangd_file(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> Resu
 
 fn write_vscode_settings(paths: &ResolvedPaths, sketch_dir: &Path) -> Result<()> {
     let settings_path = sketch_dir.join(".vscode").join("settings.json");
-    let mut settings = install::read_json_file(&settings_path, json!({}));
-    if !settings.is_object() {
-        settings = json!({});
-    }
-    let object = settings.as_object_mut().expect("settings.json root object");
+    let mut object = read_editor_settings(&settings_path)?;
 
     object.insert(
         "clangd.arguments".to_string(),
-        json!([
-            "--compile-commands-dir=${workspaceFolder}",
-            format!("--query-driver={}", paths.clangxx),
-            "--background-index",
-            "--header-insertion=never",
-            "--completion-style=detailed",
-            "--pch-storage=memory",
-        ]),
+        DocumentValue::Array(
+            [
+                "--compile-commands-dir=${workspaceFolder}".into(),
+                format!("--query-driver={}", paths.clangxx),
+                "--background-index".into(),
+                "--header-insertion=never".into(),
+                "--completion-style=detailed".into(),
+                "--pch-storage=memory".into(),
+            ]
+            .into_iter()
+            .map(DocumentValue::String)
+            .collect(),
+        ),
     );
     object.insert(
         "clangd.fallbackFlags".to_string(),
-        json!([
-            "-std=c++20",
-            "--target=wasm32-unknown-emscripten",
-            format!("-I{}", paths.fastled_src),
-            format!("-I{}", paths.fastled_wasm_compiler),
-            format!("-isystem{}", paths.libcxx_include),
-            format!("-isystem{}", paths.sysroot_compat_include),
-            "-D__EMSCRIPTEN__=1",
-        ]),
+        DocumentValue::Array(
+            [
+                "-std=c++20".into(),
+                "--target=wasm32-unknown-emscripten".into(),
+                format!("-I{}", paths.fastled_src),
+                format!("-I{}", paths.fastled_wasm_compiler),
+                format!("-isystem{}", paths.libcxx_include),
+                format!("-isystem{}", paths.sysroot_compat_include),
+                "-D__EMSCRIPTEN__=1".into(),
+            ]
+            .into_iter()
+            .map(DocumentValue::String)
+            .collect(),
+        ),
     );
-    let associations = object
-        .entry("files.associations")
-        .or_insert_with(|| json!({}));
-    if !associations.is_object() {
-        *associations = json!({});
-    }
-    associations
-        .as_object_mut()
-        .expect("files.associations object")
-        .insert("*.ino".to_string(), json!("cpp"));
+    let mut associations = match object.remove("files.associations") {
+        Some(DocumentValue::Object(value)) => value,
+        _ => BTreeMap::new(),
+    };
+    associations.insert("*.ino".into(), DocumentValue::String("cpp".into()));
+    object.insert(
+        "files.associations".into(),
+        DocumentValue::Object(associations),
+    );
 
-    install::write_json_file(&settings_path, &settings)
+    write_editor_document(&settings_path, &DocumentValue::Object(object))
+}
+
+// Editor policy: retain unknown object fields; missing, malformed and nonobject
+// settings start empty. Resource failures must never erase a valid settings file.
+fn read_editor_settings(path: &Path) -> Result<BTreeMap<String, DocumentValue>> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Ok(BTreeMap::new());
+    };
+    match json::parse(text.as_bytes()) {
+        Ok(DocumentValue::Object(value)) => Ok(value),
+        Ok(_) | Err(json::Error::InvalidSyntax) => Ok(BTreeMap::new()),
+        Err(error) => {
+            Err(error).with_context(|| format!("read editor settings {}", path.display()))
+        }
+    }
+}
+
+fn write_editor_document(path: &Path, value: &DocumentValue) -> Result<()> {
+    let mut bytes = json::encode(value, Layout::Pretty).context("serialize editor JSON")?;
+    bytes.push(b'\n');
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    std::fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
 }
 
 /// Emit the same compile database and forced declaration prelude for the
@@ -337,23 +395,45 @@ fn write_cpptools_config(inputs: &ClangdConfigInputs, paths: &ResolvedPaths) -> 
         .sketch_dir
         .join(".vscode")
         .join("c_cpp_properties.json");
-    let mut properties = install::read_json_file(&path, json!({}));
-    if !properties.is_object() {
-        properties = json!({});
-    }
-    let root = properties.as_object_mut().expect("properties root object");
+    let mut root = read_editor_settings(&path)?;
     root.insert(
         "configurations".to_string(),
-        json!([{
-            "name": "FastLED WASM",
-            "compilerPath": paths.clangxx,
-            "compileCommands": "${workspaceFolder}/compile_commands.json",
-            "cppStandard": "c++20",
-            "includePath": [paths.sketch_dir, paths.fastled_src, paths.fastled_wasm_compiler],
-            "forcedInclude": [display_path(&inputs.prototype_header)],
-        }]),
+        DocumentValue::Array(vec![DocumentValue::Object(
+            [
+                ("name".into(), DocumentValue::String("FastLED WASM".into())),
+                (
+                    "compilerPath".into(),
+                    DocumentValue::String(paths.clangxx.clone()),
+                ),
+                (
+                    "compileCommands".into(),
+                    DocumentValue::String("${workspaceFolder}/compile_commands.json".into()),
+                ),
+                ("cppStandard".into(), DocumentValue::String("c++20".into())),
+                (
+                    "includePath".into(),
+                    DocumentValue::Array(
+                        [
+                            paths.sketch_dir.clone(),
+                            paths.fastled_src.clone(),
+                            paths.fastled_wasm_compiler.clone(),
+                        ]
+                        .into_iter()
+                        .map(DocumentValue::String)
+                        .collect(),
+                    ),
+                ),
+                (
+                    "forcedInclude".into(),
+                    DocumentValue::Array(vec![DocumentValue::String(display_path(
+                        &inputs.prototype_header,
+                    ))]),
+                ),
+            ]
+            .into(),
+        )]),
     );
-    install::write_json_file(&path, &properties)
+    write_editor_document(&path, &DocumentValue::Object(root))
 }
 
 /// Write `compile_commands.json`, `.clangd`, and `.vscode/settings.json`
@@ -432,8 +512,32 @@ pub fn run_write_clangd(dir_arg: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
     use std::fs;
+
+    fn field<'a>(value: &'a DocumentValue, key: &str) -> &'a DocumentValue {
+        let DocumentValue::Object(fields) = value else {
+            panic!("expected editor object")
+        };
+        fields.get(key).expect("expected editor field")
+    }
+
+    fn array(value: &DocumentValue) -> &[DocumentValue] {
+        let DocumentValue::Array(values) = value else {
+            panic!("expected editor array")
+        };
+        values
+    }
+
+    fn string(value: &DocumentValue) -> &str {
+        let DocumentValue::String(value) = value else {
+            panic!("expected editor string")
+        };
+        value
+    }
+
+    fn read_document(path: &Path) -> DocumentValue {
+        json::parse(&fs::read(path).unwrap()).unwrap()
+    }
 
     fn stub_inputs(root: &Path) -> ClangdConfigInputs {
         let sketch_dir = root.join("Blink");
@@ -554,8 +658,8 @@ mod tests {
         let cc_path = inputs.sketch_dir.join("compile_commands.json");
         let cc_text = fs::read_to_string(&cc_path).unwrap();
         assert!(!cc_text.contains("\\\\?\\"), "no \\\\?\\ prefixes allowed");
-        let cc: Value = serde_json::from_str(&cc_text).unwrap();
-        let entries = cc.as_array().expect("array");
+        let cc = json::parse(cc_text.as_bytes()).unwrap();
+        let entries = array(&cc);
         assert_eq!(entries.len(), 2);
 
         let clangxx = bundled_clangxx(&crate::path::canonicalize_normalized(
@@ -563,11 +667,9 @@ mod tests {
         ));
         assert!(clangxx.is_file(), "bundled clang++ must exist on disk");
         for entry in entries {
-            let args: Vec<&str> = entry["arguments"]
-                .as_array()
-                .unwrap()
+            let args: Vec<&str> = array(field(entry, "arguments"))
                 .iter()
-                .map(|v| v.as_str().unwrap())
+                .map(string)
                 .collect();
             assert_eq!(args[0], clangxx.to_string_lossy().replace('\\', "/"));
             assert!(args.contains(&"--target=wasm32-unknown-emscripten"));
@@ -598,18 +700,16 @@ mod tests {
                     && pair[1].ends_with("emscripten/cache/sysroot/include/compat")
             }));
             // directory is the FastLED checkout (build cwd).
-            let directory = entry["directory"].as_str().unwrap();
+            let directory = string(field(entry, "directory"));
             assert!(directory.ends_with("fastled"));
             assert!(!directory.contains("\\\\?\\"));
         }
         // The .ino entry forces C++.
-        let ino_args: Vec<&str> = entries[0]["arguments"]
-            .as_array()
-            .unwrap()
+        let ino_args: Vec<&str> = array(field(&entries[0], "arguments"))
             .iter()
-            .map(|v| v.as_str().unwrap())
+            .map(string)
             .collect();
-        assert!(entries[0]["file"].as_str().unwrap().ends_with("Blink.ino"));
+        assert!(string(field(&entries[0], "file")).ends_with("Blink.ino"));
         assert_eq!(&ino_args[1..3], ["-x", "c++"]);
         assert!(ino_args.windows(2).any(|pair| pair[0] == "-include"
             && pair[1].ends_with(".fastled/intellisense/prototypes.hpp")));
@@ -628,37 +728,27 @@ mod tests {
 
         // .vscode/settings.json
         let settings_path = inputs.sketch_dir.join(".vscode").join("settings.json");
-        let settings: Value =
-            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
-        let clangd_args: Vec<&str> = settings["clangd.arguments"]
-            .as_array()
-            .unwrap()
+        let settings = read_document(&settings_path);
+        let clangd_args: Vec<&str> = array(field(&settings, "clangd.arguments"))
             .iter()
-            .map(|v| v.as_str().unwrap())
+            .map(string)
             .collect();
         assert!(clangd_args.contains(&"--compile-commands-dir=${workspaceFolder}"));
         assert!(clangd_args
             .iter()
             .any(|a| a.starts_with("--query-driver=") && a.contains("clang++")));
-        assert_eq!(settings["files.associations"]["*.ino"], "cpp");
-
-        let cpptools: Value = serde_json::from_str(
-            &fs::read_to_string(
-                inputs
-                    .sketch_dir
-                    .join(".vscode")
-                    .join("c_cpp_properties.json"),
-            )
-            .unwrap(),
-        )
-        .unwrap();
         assert_eq!(
-            cpptools["configurations"][0]["compileCommands"],
+            string(field(field(&settings, "files.associations"), "*.ino")),
+            "cpp"
+        );
+
+        let cpptools = read_document(&inputs.sketch_dir.join(".vscode/c_cpp_properties.json"));
+        let configuration = &array(field(&cpptools, "configurations"))[0];
+        assert_eq!(
+            string(field(configuration, "compileCommands")),
             "${workspaceFolder}/compile_commands.json"
         );
-        assert!(cpptools["configurations"][0]["forcedInclude"][0]
-            .as_str()
-            .unwrap()
+        assert!(string(&array(field(configuration, "forcedInclude"))[0])
             .ends_with(".fastled/intellisense/prototypes.hpp"));
     }
 
@@ -676,12 +766,15 @@ mod tests {
 
         write_clangd_config(&inputs).unwrap();
 
-        let settings: Value =
-            serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
-        assert_eq!(settings["editor.formatOnSave"], true);
-        assert_eq!(settings["files.associations"]["*.h"], "cpp");
-        assert_eq!(settings["files.associations"]["*.ino"], "cpp");
-        assert!(settings["clangd.arguments"].is_array());
+        let settings = read_document(&settings_path);
+        assert_eq!(
+            field(&settings, "editor.formatOnSave"),
+            &DocumentValue::Bool(true)
+        );
+        let associations = field(&settings, "files.associations");
+        assert_eq!(string(field(associations, "*.h")), "cpp");
+        assert_eq!(string(field(associations, "*.ino")), "cpp");
+        assert!(!array(field(&settings, "clangd.arguments")).is_empty());
     }
 
     #[test]
@@ -696,6 +789,60 @@ mod tests {
     }
 
     #[test]
+    fn oversized_editor_settings_are_not_replaced() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let inputs = stub_inputs(tmp.path());
+        let path = inputs.sketch_dir.join(".vscode/settings.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = format!("{{\"custom\":\"{}\"}}", "x".repeat(json::MAX_INPUT_BYTES));
+        fs::write(&path, &original).unwrap();
+        assert!(write_clangd_config(&inputs).is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
+    }
+
+    #[test]
+    fn editor_json_preserves_unknown_cpptools_fields_and_repairs_associations() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let inputs = stub_inputs(tmp.path());
+        let vscode = inputs.sketch_dir.join(".vscode");
+        fs::create_dir_all(&vscode).unwrap();
+        fs::write(
+            vscode.join("settings.json"),
+            r#"{"files.associations":false,"custom":[null,"日本",18446744073709551615]}"#,
+        )
+        .unwrap();
+        fs::write(
+            vscode.join("c_cpp_properties.json"),
+            r#"{"version":4,"custom":{"enabled":true},"configurations":false}"#,
+        )
+        .unwrap();
+        write_clangd_config(&inputs).unwrap();
+        let text = fs::read_to_string(vscode.join("settings.json")).unwrap();
+        assert!(text.ends_with('\n'));
+        let settings = json::parse(text.as_bytes()).unwrap();
+        assert_eq!(
+            string(field(field(&settings, "files.associations"), "*.ino")),
+            "cpp"
+        );
+        let custom = array(field(&settings, "custom"));
+        assert_eq!(string(&custom[1]), "日本");
+        assert_eq!(custom[2], DocumentValue::Unsigned(u64::MAX));
+        let properties = read_document(&vscode.join("c_cpp_properties.json"));
+        assert_eq!(field(&properties, "version"), &DocumentValue::Signed(4));
+        assert_eq!(
+            field(field(&properties, "custom"), "enabled"),
+            &DocumentValue::Bool(true)
+        );
+        assert_eq!(
+            string(field(
+                &array(field(&properties, "configurations"))[0],
+                "name"
+            )),
+            "FastLED WASM"
+        );
+    }
+
+    #[test]
     fn emits_a_forced_prelude_entry_for_every_ino_tab() {
         let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let mut inputs = stub_inputs(tmp.path());
@@ -704,23 +851,17 @@ mod tests {
         inputs.ino_files.push(NormalizedPath::new(utility));
 
         write_clangd_config(&inputs).unwrap();
-        let commands: Value = serde_json::from_str(
-            &fs::read_to_string(inputs.sketch_dir.join("compile_commands.json")).unwrap(),
-        )
-        .unwrap();
-        let entries = commands.as_array().unwrap();
+        let commands = read_document(&inputs.sketch_dir.join("compile_commands.json"));
+        let entries = array(&commands);
         assert_eq!(
             entries.len(),
             3,
             "two visible tabs plus generated C++ source"
         );
         for entry in &entries[..2] {
-            let arguments = entry["arguments"].as_array().unwrap();
+            let arguments = array(field(entry, "arguments"));
             assert!(arguments.windows(2).any(|pair| {
-                pair[0].as_str() == Some("-include")
-                    && pair[1]
-                        .as_str()
-                        .is_some_and(|value| value.ends_with("prototypes.hpp"))
+                string(&pair[0]) == "-include" && string(&pair[1]).ends_with("prototypes.hpp")
             }));
         }
     }

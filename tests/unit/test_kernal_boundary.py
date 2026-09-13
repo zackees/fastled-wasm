@@ -89,6 +89,17 @@ def test_dwarf_smoke_json_uses_kernel():
     assert "kernal_api::json" in source
 
 
+def test_editor_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/clangd_config.rs").read_text()
+    production = source.split("#[cfg(test)]", 1)[0]
+    assert "serde_json::" not in source
+    assert "json!(" not in production
+    assert "install::read_json_file" not in production
+    assert "install::write_json_file" not in production
+    assert "kernal_api::json" in production
+
+
 def test_cpp_source_analysis_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     for path in (root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"):
