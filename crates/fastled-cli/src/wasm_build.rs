@@ -11,7 +11,7 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
 use kernal_api::json::{self, Layout, Value};
 
@@ -132,13 +132,13 @@ impl BuildFingerprints {
                     toolchain_fingerprint(tools)
                         .map(|value| (value, started.elapsed().as_secs_f64()))
                 });
-                let source = source
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("FastLED fingerprint worker panicked"))??;
-                let toolchain = toolchain
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("toolchain fingerprint worker panicked"))??;
-                Ok::<_, anyhow::Error>((source, toolchain))
+                let source = source.join().map_err(|_| {
+                    crate::error_compat::error!("FastLED fingerprint worker panicked")
+                })??;
+                let toolchain = toolchain.join().map_err(|_| {
+                    crate::error_compat::error!("toolchain fingerprint worker panicked")
+                })??;
+                Ok::<_, crate::error_compat::Error>((source, toolchain))
             })?;
         let mode_value = format!("mode={};link-mode={link_mode:?}", mode.as_str());
         let library = dynamic_cache::fingerprint_values([
@@ -197,7 +197,7 @@ impl BuildFlagsToml {
         fn table(value: &Value) -> Result<&BTreeMap<String, Value>> {
             match value {
                 Value::Table(fields) => Ok(fields),
-                _ => anyhow::bail!("build flag section must be a table"),
+                _ => crate::error_compat::bail!("build flag section must be a table"),
             }
         }
         fn strings(fields: &BTreeMap<String, Value>, name: &str) -> Result<Option<Vec<String>>> {
@@ -205,13 +205,13 @@ impl BuildFlagsToml {
                 .get(name)
                 .map(|value| {
                     let Value::Array(values) = value else {
-                        anyhow::bail!("{name} must be an array of strings");
+                        crate::error_compat::bail!("{name} must be an array of strings");
                     };
                     values
                         .iter()
                         .map(|value| match value {
                             Value::String(value) => Ok(value.clone()),
-                            _ => anyhow::bail!("{name} must contain only strings"),
+                            _ => crate::error_compat::bail!("{name} must contain only strings"),
                         })
                         .collect()
                 })
@@ -617,7 +617,7 @@ fn direct_clang_cflags(
     let install_dir = tools
         .emscripten_dir
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("Emscripten directory has no install parent"))?;
+        .ok_or_else(|| crate::error_compat::error!("Emscripten directory has no install parent"))?;
     let cache_path = install_dir.join(DIRECT_CFLAGS_FILE);
     let lock_path = install_dir.join(format!("{DIRECT_CFLAGS_FILE}.lock"));
     let lock = fs::OpenOptions::new()
@@ -883,7 +883,7 @@ fn link_wasm_dynamic(
                     &runtime_fingerprint,
                     &["fastled.js", "fastled.wasm"],
                 )
-                .map_err(anyhow::Error::msg)
+                .map_err(crate::error_compat::message)
             })();
             if let Err(error) = rebuild {
                 if let Err(mark_error) = dynamic_cache::mark_failure(
@@ -1023,7 +1023,7 @@ fn link_wasm_dynamic(
                 )?;
                 dynamic_cache::publish_staging(staging, &sketch_entry)?;
                 dynamic_cache::validate_entry(&sketch_entry, &sketch_fingerprint, &["sketch.wasm"])
-                    .map_err(anyhow::Error::msg)
+                    .map_err(crate::error_compat::message)
             })();
             if let Err(error) = rebuild {
                 if let Err(mark_error) = dynamic_cache::mark_failure(
@@ -1753,7 +1753,7 @@ fn compile_sketch(
             .args(direct_clang_compile_args(&args));
         run_status(command, "clang++ sketch compile", log)
     } else {
-        Err(anyhow::anyhow!(
+        Err(crate::error_compat::error!(
             "{}",
             direct_cflags_error.unwrap_or_else(|| "em++ --cflags unavailable".to_string())
         ))
@@ -1776,7 +1776,7 @@ fn compile_sketch(
     dynamic_cache::write_metadata(staging.path(), &object_fingerprint, &["sketch.o"])?;
     dynamic_cache::publish_staging(staging, &object_entry)?;
     dynamic_cache::validate_entry(&object_entry, &object_fingerprint, &["sketch.o"])
-        .map_err(anyhow::Error::msg)?;
+        .map_err(crate::error_compat::message)?;
     log(
         &format!(
             "[WASM] Sketch compile published: {} ({:.2}s)",
@@ -1898,7 +1898,7 @@ fn run_em_link_with_retries(
     log: LogSink,
 ) -> Result<()> {
     let max_attempts = if cfg!(windows) { 6 } else { 1 };
-    let mut last_err: Option<anyhow::Error> = None;
+    let mut last_err: Option<crate::error_compat::Error> = None;
     for attempt in 1..=max_attempts {
         let mut command = command_with_env(&tools.python, tools);
         command.current_dir(fastled_dir).arg(&tools.empp).args(args);
@@ -1918,7 +1918,7 @@ fn run_em_link_with_retries(
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("em++ wasm link failed")))
+    Err(last_err.unwrap_or_else(|| crate::error_compat::error!("em++ wasm link failed")))
 }
 
 fn direct_side_link_supported(tools: &ToolPaths, mode: BuildMode, wasm_bigint: &str) -> bool {
@@ -2013,9 +2013,9 @@ fn run_direct_side_link_4019(
 }
 
 fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
-    let output_dir = output_js
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
+    let output_dir = output_js.parent().ok_or_else(|| {
+        crate::error_compat::error!("output path has no parent: {}", output_js.display())
+    })?;
     fs::create_dir_all(output_dir)?;
     for name in [
         "fastled.js",
@@ -2078,9 +2078,9 @@ fn copy_dynamic_output(
     sketch_entry: &Path,
     output_js: &Path,
 ) -> Result<usize> {
-    let output_dir = output_js
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
+    let output_dir = output_js.parent().ok_or_else(|| {
+        crate::error_compat::error!("output path has no parent: {}", output_js.display())
+    })?;
     fs::create_dir_all(output_dir)?;
     let mut copied = 0;
     for (source_dir, name) in [

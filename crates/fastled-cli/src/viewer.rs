@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::Stdio;
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::platform::process::{
     spawn_sync, SpawnStdio, SpawnedChild, StdioSource, SyncEnvironment,
 };
@@ -179,7 +179,7 @@ pub(crate) fn launch_tauri_test_viewer(url: &str) -> Result<ViewerProcess> {
 
 fn launch_tauri_viewer_with_options(url: &str, inject_test_runtime: bool) -> Result<ViewerProcess> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "viewer must be launched with an http(s) URL pointing at the FastLED server, got: {url}"
         );
     }

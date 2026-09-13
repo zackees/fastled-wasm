@@ -6,7 +6,7 @@
 //! dropped into `~/.fastled/update/`, and periodically removes stale copies.
 
 use crate::archive;
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};

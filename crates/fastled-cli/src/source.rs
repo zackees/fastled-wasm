@@ -10,7 +10,7 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
 use kernal_api::json::{self, Layout, Value};
 
 use crate::cli::SourceAction;
@@ -155,7 +155,7 @@ pub(crate) fn read_receipt(repo_dir: &Path) -> Result<Option<SourceReceipt>> {
     let path = receipt_path(repo_dir);
     match fs::read_to_string(&path) {
         Ok(text) => json::parse_members(text.as_bytes())
-            .map_err(anyhow::Error::from)
+            .map_err(crate::error_compat::Error::from)
             .and_then(SourceReceipt::from_document)
             .with_context(|| format!("parse source receipt {}", path.display()))
             .map(Some),

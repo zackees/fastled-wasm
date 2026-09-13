@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
 use kernal_api::json::{self, Layout, Value};
 use kernal_api::platform::fs::{PatternSet, PatternSetBuilder};
@@ -112,7 +112,7 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
     let cache = FINGERPRINT_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
     let mut cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
 
     // Recreate dead watchers before trusting a cached value. If registration
     // fails, the normal construction path below performs an authoritative scan.
@@ -186,7 +186,7 @@ pub(crate) fn invalidate_persistent_fingerprints(paths: &[NormalizedPath]) -> Re
     };
     let cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
     let mut invalidated = 0;
     for (spec, entry) in cache.iter() {
         if paths
@@ -207,7 +207,7 @@ pub(crate) fn invalidate_all_persistent_fingerprints() -> Result<usize> {
     };
     let cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
     for entry in cache.values() {
         mark_fingerprint_dirty(&entry.generation);
     }
@@ -246,7 +246,10 @@ fn cache_fields<const N: usize>(value: Value, names: [&str; N]) -> Result<[Optio
             for (name, value) in members {
                 if let Some(index) = names.iter().position(|field| *field == name) {
                     if fields[index].replace(value).is_some() {
-                        anyhow::bail!("duplicate cache metadata field {}", names[index]);
+                        crate::error_compat::bail!(
+                            "duplicate cache metadata field {}",
+                            names[index]
+                        );
                     }
                 }
             }
@@ -256,14 +259,14 @@ fn cache_fields<const N: usize>(value: Value, names: [&str; N]) -> Result<[Optio
                 *field = Some(value);
             }
         }
-        _ => anyhow::bail!("invalid cache metadata record"),
+        _ => crate::error_compat::bail!("invalid cache metadata record"),
     }
     Ok(fields)
 }
 
 fn cache_string(value: Option<Value>, name: &str) -> Result<String> {
     let Some(Value::String(value)) = value else {
-        anyhow::bail!("cache metadata {name} must be a string");
+        crate::error_compat::bail!("cache metadata {name} must be a string");
     };
     Ok(value)
 }
@@ -272,7 +275,7 @@ fn cache_unsigned(value: Option<Value>, name: &str) -> Result<u64> {
     match value {
         Some(Value::Unsigned(value)) => Ok(value),
         Some(Value::Signed(value)) if value >= 0 => Ok(value as u64),
-        _ => anyhow::bail!("cache metadata {name} must be an unsigned integer"),
+        _ => crate::error_compat::bail!("cache metadata {name} must be an unsigned integer"),
     }
 }
 
@@ -285,7 +288,7 @@ impl CacheMetadata {
         let schema = u32::try_from(cache_unsigned(schema, "schema")?)?;
         let fingerprint = cache_string(fingerprint, "fingerprint")?;
         let Some(Value::ObjectMembers(members)) = artifacts else {
-            anyhow::bail!("cache metadata artifacts must be an object");
+            crate::error_compat::bail!("cache metadata artifacts must be an object");
         };
         let mut artifacts = BTreeMap::new();
         for (name, value) in members {
@@ -410,7 +413,7 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
     for name in artifacts {
         let path = staging.join(name);
         let record = hash_file(&path)?;
-        validate_artifact_shape(name, &path, record.bytes).map_err(anyhow::Error::msg)?;
+        validate_artifact_shape(name, &path, record.bytes).map_err(crate::error_compat::message)?;
         records.insert((*name).to_string(), record);
     }
     let metadata = CacheMetadata {
@@ -548,7 +551,7 @@ pub(crate) fn mark_failure(
     cache_root: &Path,
     fingerprint: &str,
     phase: &str,
-    error: &anyhow::Error,
+    error: &crate::error_compat::Error,
 ) -> Result<()> {
     write_attempt(
         cache_root,
@@ -881,7 +884,7 @@ mod tests {
             temp.path(),
             "key",
             "main-link",
-            &anyhow::anyhow!("link failed"),
+            &crate::error_compat::error!("link failed"),
         )
         .unwrap();
         assert!(previous_attempt(temp.path(), "key")

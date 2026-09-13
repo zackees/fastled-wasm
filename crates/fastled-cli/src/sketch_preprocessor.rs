@@ -9,7 +9,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
 use kernal_api::json::{self, Layout, Value};
 

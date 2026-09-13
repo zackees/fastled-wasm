@@ -16,7 +16,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::json::{self, Layout, Value as DocumentValue};
 use std::collections::BTreeMap;
 
@@ -460,7 +460,7 @@ pub fn run_write_clangd(dir_arg: &str) -> Result<()> {
     };
     let sketch_dir = crate::path::canonicalize_normalized(&sketch_dir);
     if !sketch_dir.is_dir() {
-        anyhow::bail!("sketch directory does not exist: {}", sketch_dir.display());
+        crate::error_compat::bail!("sketch directory does not exist: {}", sketch_dir.display());
     }
     let emsdk_install_dir = NormalizedPath::new(install::ensure_emscripten_installed()?);
     let tools_emcc_path = emsdk_install_dir.join("emscripten").join("emcc.py");

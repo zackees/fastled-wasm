@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
+use crate::error_compat::Result;
 use kernal_api::hash::Sha256Hasher as Sha256;
 
 use crate::dynamic_cache;

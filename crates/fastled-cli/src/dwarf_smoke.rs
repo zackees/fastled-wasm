@@ -2,15 +2,15 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
-use anyhow::Context;
+use crate::error_compat::Context;
 use kernal_api::json::{self, Layout, Value};
 
 use crate::debug_symbols;
 use crate::server;
 
-pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize> {
+pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> crate::error_compat::Result<usize> {
     let config = debug_symbols::read_debug_symbol_manifest(output_dir)?.ok_or_else(|| {
-        anyhow::anyhow!(
+        crate::error_compat::error!(
             "missing {} in {}",
             debug_symbols::DWARF_ROOTS_MANIFEST,
             output_dir.display()
@@ -18,7 +18,7 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize>
     })?;
     let paths = collect_debug_source_paths(output_dir, &config)?;
     if paths.is_empty() {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "no debug source paths found in {} or {}",
             output_dir.join("fastled.wasm").display(),
             output_dir.join("fastled.wasm.map").display()
@@ -55,7 +55,7 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize>
                 let status = resp.status();
                 let bytes = resp.into_bytes().await.unwrap_or_default();
                 let body = String::from_utf8_lossy(&bytes);
-                anyhow::bail!("/dwarfsource rejected {path} with {status}: {body}");
+                crate::error_compat::bail!("/dwarfsource rejected {path} with {status}: {body}");
             }
         }
         Ok(paths.len())
@@ -101,7 +101,7 @@ fn source_smoke_uses_manifest_paths_and_reports_missing_source() {
 pub(crate) fn collect_debug_source_paths(
     output_dir: &Path,
     config: &debug_symbols::DebugSymbolConfig,
-) -> anyhow::Result<BTreeSet<String>> {
+) -> crate::error_compat::Result<BTreeSet<String>> {
     let prefixes = debug_source_prefixes(config);
     let mut paths = BTreeSet::new();
 

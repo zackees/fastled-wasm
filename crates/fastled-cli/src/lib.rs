@@ -15,6 +15,7 @@ mod dwarf_smoke;
 mod dynamic_cache;
 #[cfg(test)]
 mod dynamic_cache_matrix_tests;
+mod error_compat;
 pub mod frontend;
 pub mod install;
 mod install_unlock;

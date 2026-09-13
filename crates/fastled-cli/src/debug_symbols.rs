@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::json::{self, Layout, Value};
 
 pub const DEFAULT_FASTLED_PREFIX: &str = "fastledsource";
@@ -59,13 +59,13 @@ impl DwarfPrefixConfig {
     pub(crate) fn from_config(value: &kernal_api::config::Value) -> Result<Self> {
         use kernal_api::config::Value;
         let Value::Table(fields) = value else {
-            anyhow::bail!("dwarf must be a table");
+            crate::error_compat::bail!("dwarf must be a table");
         };
         let string = |name: &str| -> Result<Option<String>> {
             match fields.get(name) {
                 None => Ok(None),
                 Some(Value::String(value)) => Ok(Some(value.clone())),
-                Some(_) => anyhow::bail!("dwarf.{name} must be a string"),
+                Some(_) => crate::error_compat::bail!("dwarf.{name} must be a string"),
             }
         };
         Ok(Self {
@@ -166,7 +166,10 @@ fn manifest_fields<const N: usize>(
             for (name, value) in members {
                 if let Some(index) = names.iter().position(|field| *field == name) {
                     if fields[index].replace(value).is_some() {
-                        anyhow::bail!("duplicate debug manifest field {}", names[index]);
+                        crate::error_compat::bail!(
+                            "duplicate debug manifest field {}",
+                            names[index]
+                        );
                     }
                 }
             }
@@ -176,7 +179,7 @@ fn manifest_fields<const N: usize>(
                 *field = Some(value);
             }
         }
-        _ => anyhow::bail!("invalid debug manifest record"),
+        _ => crate::error_compat::bail!("invalid debug manifest record"),
     }
     Ok(fields)
 }
@@ -185,7 +188,7 @@ fn manifest_string(value: Option<Value>, name: &str, default: Option<&str>) -> R
     match (value, default) {
         (Some(Value::String(value)), _) => Ok(value),
         (None, Some(default)) => Ok(default.to_owned()),
-        _ => anyhow::bail!("debug manifest {name} must be a string"),
+        _ => crate::error_compat::bail!("debug manifest {name} must be a string"),
     }
 }
 
@@ -330,7 +333,7 @@ pub fn read_debug_symbol_manifest(output_dir: &Path) -> Result<Option<DebugSymbo
         let version = match version {
             Some(Value::Signed(value)) => u32::try_from(value)?,
             Some(Value::Unsigned(value)) => u32::try_from(value)?,
-            _ => anyhow::bail!("debug manifest version must be an unsigned integer"),
+            _ => crate::error_compat::bail!("debug manifest version must be an unsigned integer"),
         };
         Ok((
             version,
@@ -339,7 +342,7 @@ pub fn read_debug_symbol_manifest(output_dir: &Path) -> Result<Option<DebugSymbo
     };
     let (version, config) = parse().with_context(|| format!("parse {}", path.display()))?;
     if version != 1 {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "unsupported debug symbol manifest version {} in {}",
             version,
             path.display()

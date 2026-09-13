@@ -13,7 +13,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
 use kernal_api::json::{self, Layout, Value};
 
 // ---------------------------------------------------------------------------

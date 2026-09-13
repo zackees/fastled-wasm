@@ -22,7 +22,6 @@ path = "src/main.rs"
 
 [dependencies]
 kernal-api = { workspace = true }
-anyhow = { workspace = true }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"

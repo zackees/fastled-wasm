@@ -807,7 +807,7 @@ pub async fn start_server(
     build_tx: Option<async_engine::BroadcastSender<String>>,
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
-) -> anyhow::Result<SocketAddr> {
+) -> crate::error_compat::Result<SocketAddr> {
     let state = AppState {
         serve_dir: Arc::new(serve_dir),
         build_tx,

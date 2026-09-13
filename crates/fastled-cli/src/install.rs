@@ -13,7 +13,7 @@ use std::sync::{Mutex, OnceLock};
 
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
 use kernal_api::json::{self, Layout, Value as JsonValue};
 
 use crate::archive;
@@ -1340,7 +1340,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let cache = EMSCRIPTEN_INSTALL_CACHE.get_or_init(|| Mutex::new(None));
     let mut cached = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("emscripten install cache lock poisoned"))?;
     if let Some(path) = cached.clone() {
         if validate_complete_emscripten_install(&path).is_ok() {
             return Ok(path);
@@ -1365,7 +1365,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     })?;
     let mut cached = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("emscripten install cache lock poisoned"))?;
     *cached = Some(installed.clone());
     Ok(installed)
 }
@@ -1388,7 +1388,7 @@ fn esbuild_platform_arch() -> Result<(&'static str, &'static str)> {
     } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "unsupported architecture for esbuild: {}",
             std::env::consts::ARCH
         );
@@ -1577,7 +1577,7 @@ fn find_fastled_extract_root(dir: &Path) -> Result<PathBuf> {
             return Ok(entry.path());
         }
     }
-    anyhow::bail!("no FastLED* directory found inside {}", dir.display())
+    crate::error_compat::bail!("no FastLED* directory found inside {}", dir.display())
 }
 
 /// Remove the derived short-path checkout when it represents `reference`.

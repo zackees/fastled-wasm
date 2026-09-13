@@ -10,7 +10,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::archive::{ArchiveFormat, DanglingLinks, ExtractionLimits};
 
 // ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
         .with_context(|| format!("GET {url} failed"))?;
 
     if !(200..300).contains(&response.status()) {
-        anyhow::bail!("server returned HTTP {} for {url}", response.status());
+        crate::error_compat::bail!("server returned HTTP {} for {url}", response.status());
     }
 
     let file = File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
@@ -200,7 +200,7 @@ pub(crate) fn write_emscripten_config_at(
     node_path: &Path,
 ) -> Result<()> {
     if !node_path.is_absolute() {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "NODE_JS must be an absolute path, got {}",
             node_path.display()
         );

@@ -2,7 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 
 use crate::path::NormalizedPath;
 

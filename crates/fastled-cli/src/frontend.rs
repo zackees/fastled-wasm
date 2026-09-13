@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
-use anyhow::{Context, Result};
+use crate::error_compat::{Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
 
 use crate::install;
@@ -31,7 +31,7 @@ fn workspace_root() -> PathBuf {
 
 fn validate_source_dir(candidate: PathBuf, origin: &str) -> Result<PathBuf> {
     if !candidate.is_dir() {
-        anyhow::bail!("{origin} is not a directory: {}", candidate.display());
+        crate::error_compat::bail!("{origin} is not a directory: {}", candidate.display());
     }
 
     // These are the source inputs that build_dist requires. Validate all of
@@ -46,7 +46,7 @@ fn validate_source_dir(candidate: PathBuf, origin: &str) -> Result<PathBuf> {
     ] {
         let required = candidate.join(relative);
         if !required.is_file() {
-            anyhow::bail!(
+            crate::error_compat::bail!(
                 "{origin} does not contain required frontend file {}",
                 required.display()
             );
@@ -64,7 +64,7 @@ fn packaged_source_dir() -> Result<Option<PathBuf>> {
         return Ok(None);
     };
     if value.trim().is_empty() {
-        anyhow::bail!("FASTLED_FRONTEND_DIR is set but empty");
+        crate::error_compat::bail!("FASTLED_FRONTEND_DIR is set but empty");
     }
     validate_source_dir(PathBuf::from(value), "FASTLED_FRONTEND_DIR").map(Some)
 }
@@ -91,7 +91,7 @@ fn default_source_dir() -> Result<PathBuf> {
         }
         current = dir.parent().map(Path::to_path_buf);
     }
-    anyhow::bail!(
+    crate::error_compat::bail!(
         "could not locate src/fastled/frontend relative to CARGO_MANIFEST_DIR={}",
         env!("CARGO_MANIFEST_DIR")
     )
@@ -263,7 +263,7 @@ fn run_esbuild(esbuild: &Path, source_dir: &Path, args: &[String]) -> Result<()>
         .status()
         .with_context(|| format!("spawn esbuild at {}", esbuild.display()))?;
     if !status.success() {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "esbuild failed with exit code {}",
             status.code().unwrap_or(-1)
         );
