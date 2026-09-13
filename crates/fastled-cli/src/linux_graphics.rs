@@ -110,6 +110,50 @@ pub fn apply() {
     }
 }
 
+/// Font DPI to report when GTK does not know it: CSS's reference DPI, the
+/// value GTK itself uses once the GSettings schema is available.
+pub const FALLBACK_FONT_DPI: i32 = 96;
+
+/// True when a `gtk-xft-dpi` value (DPI * 1024) is unusable. GDK reports the
+/// DPI as -1 when unknown; WebKitGTK (2.52 and main) multiplies that by 1024,
+/// checks only for exactly -1, and turns the result into a page zoom of
+/// -1/96, which collapses layout and reports a negative devicePixelRatio.
+pub fn font_dpi_is_unknown(gtk_xft_dpi: i32) -> bool {
+    gtk_xft_dpi <= 0
+}
+
+/// Gives GTK a usable font DPI when it reports none, so WebKitGTK computes a
+/// sane page scale. Must run after GTK is initialised and before the webview
+/// is created. WebKitGTK's GTK3 build reads `gdk_screen_get_resolution()`,
+/// which on Wayland is only filled in from the GSettings
+/// `org.gnome.desktop.interface` schema; unwrapped binaries on some
+/// distributions (NixOS with Plasma) cannot see that schema, so the screen
+/// keeps GDK's "unknown" value of -1 even when `gtk-xft-dpi` was set from
+/// settings.ini. Both are corrected so GTK4 builds behave the same.
+#[cfg(feature = "viewer")]
+pub fn ensure_font_dpi() {
+    use gtk::prelude::GtkSettingsExt;
+    let dpi = f64::from(FALLBACK_FONT_DPI);
+    if let Some(screen) = gtk::gdk::Screen::default() {
+        let current = screen.resolution();
+        if current.is_nan() || current <= 0.0 {
+            screen.set_resolution(dpi);
+            eprintln!(
+                "fastled: GDK reported an unknown screen resolution ({current}); using {FALLBACK_FONT_DPI} dpi so WebKitGTK does not apply a negative page scale"
+            );
+        }
+    }
+    if let Some(settings) = gtk::Settings::default() {
+        let current = settings.gtk_xft_dpi();
+        if font_dpi_is_unknown(current) {
+            settings.set_gtk_xft_dpi(FALLBACK_FONT_DPI * 1024);
+            eprintln!(
+                "fastled: GTK reported an unknown font DPI ({current}); using {FALLBACK_FONT_DPI}"
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +164,14 @@ mod tests {
             x11_backend: x11,
             already_set: set.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn unknown_font_dpi_is_detected() {
+        assert!(font_dpi_is_unknown(-1));
+        assert!(font_dpi_is_unknown(-1024));
+        assert!(font_dpi_is_unknown(0));
+        assert!(!font_dpi_is_unknown(96 * 1024));
     }
 
     #[test]

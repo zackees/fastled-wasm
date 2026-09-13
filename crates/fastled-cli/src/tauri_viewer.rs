@@ -331,6 +331,10 @@ pub fn run(options: ViewerOptions) -> ExitCode {
 
     let result = tauri::Builder::default()
         .setup(move |app| {
+            // GTK is initialised here but the webview does not exist yet.
+            #[cfg(target_os = "linux")]
+            fastled_cli::linux_graphics::ensure_font_dpi();
+
             let url = tauri::WebviewUrl::External(url.parse()?);
 
             let mut builder = tauri::WebviewWindowBuilder::new(app, "main", url)
