@@ -1062,6 +1062,26 @@ its receipt; both WASM headers are valid, and generated runtime JS has no JSPI
 entry points. This is compile/cache evidence, not browser/Safari acceptance or
 a measured before/after migration speedup.
 
+IntelliSense request and manifest JSON now use kernel-owned values. Editor
+version/generation ranges, nested duplicate rejection, positional records,
+optional versions, document defaults, ordered output and generation checks stay
+in FastLED. Baseline schema tests passed with the old backend, and the module
+boundary went RED to GREEN. Manifest encoding now finishes before replacing
+snapshot source/header files, so a new resource-limit error cannot leave a
+partial publication. C++ analysis and Arduino selection are unchanged. Two JSON
+source modules remain; registry adoption and platform acceptance are incomplete.
+The real stdin protocol published generation 8 with matching file hashes and
+returned that generation unchanged for a stale generation-7 request. A real
+compile then exposed #248: generated IntelliSense C++ was recursively included
+in the wrapper and source fingerprint. Two focused tests observed RED to GREEN
+after excluding `.fastled` from compiler inputs. Compilation succeeded with
+the snapshot retained, and a subsequent unsaved editor update preserved object,
+runtime and sketch cache hits. The WASM header and generated JS checks pass;
+this is not browser/Safari acceptance or comparative performance evidence.
+Final checks pass 286 library, 3 binary, 1 integration and 1 doc tests, Python
+40 passed/1 skipped, strict Clippy, formatting, Ruff and single-reviewer review
+(including the #248 follow-up).
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

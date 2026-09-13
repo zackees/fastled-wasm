@@ -1445,12 +1445,22 @@ pub(crate) fn create_wrapper(
     Ok(wrapper)
 }
 
+fn sketch_source_fingerprint(example_dir: &Path) -> Result<String> {
+    dynamic_cache::fingerprint_tree(
+        example_dir,
+        &[
+            "**/*.ino", "**/*.cpp", "**/*.c", "**/*.h", "**/*.hpp", "**/*.ipp",
+        ],
+        &[".git/**", ".build/**", ".fastled/**", "fastled_js/**"],
+    )
+}
+
 fn collect_cpp_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            if entry.file_name().to_string_lossy() == ".build" {
+            if matches!(entry.file_name().to_str(), Some(".build" | ".fastled")) {
                 continue;
             }
             collect_cpp_files(&path, out)?;
@@ -1592,13 +1602,7 @@ fn compile_sketch(
                 "empp-fallback-v1".to_string(),
             ),
         };
-    let source_fingerprint = dynamic_cache::fingerprint_tree(
-        example_dir,
-        &[
-            "**/*.ino", "**/*.cpp", "**/*.c", "**/*.h", "**/*.hpp", "**/*.ipp",
-        ],
-        &[".git/**", ".build/**", "fastled_js/**"],
-    )?;
+    let source_fingerprint = sketch_source_fingerprint(example_dir)?;
     let wrapper_contents = fs::read(wrapper)
         .with_context(|| format!("read generated wrapper {}", wrapper.display()))?;
     let compile_flag_blob = compile_flags.join("\n");
@@ -3350,5 +3354,38 @@ link_flags = []
         assert!(source.contains("void helper();"));
         assert!(source.contains("#line 1 \""));
         assert!(!source.contains("#include \""));
+    }
+
+    #[test]
+    fn issue_248_wrapper_excludes_intellisense_but_keeps_user_cpp() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(
+            tmp.path().join("Blink.ino"),
+            "void setup() {}\nvoid loop() {}\n",
+        )
+        .unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/helper.cpp"), "int helper = 1;\n").unwrap();
+        crate::sketch_preprocessor::write_disk_snapshot(tmp.path()).unwrap();
+        let wrapper = create_wrapper(tmp.path(), "Blink", &sketch_cache_dir(tmp.path())).unwrap();
+        let source = fs::read_to_string(wrapper).unwrap();
+        assert!(!source.contains(".fastled/intellisense/sketch.cpp"));
+        assert!(source.contains("src/helper.cpp"));
+    }
+
+    #[test]
+    fn issue_248_fingerprint_ignores_editor_output_but_tracks_user_cpp() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(
+            tmp.path().join("Blink.ino"),
+            "void setup() {}\nvoid loop() {}\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("helper.cpp"), "int helper = 1;\n").unwrap();
+        let before = sketch_source_fingerprint(tmp.path()).unwrap();
+        crate::sketch_preprocessor::write_disk_snapshot(tmp.path()).unwrap();
+        assert_eq!(sketch_source_fingerprint(tmp.path()).unwrap(), before);
+        fs::write(tmp.path().join("helper.cpp"), "int helper = 2;\n").unwrap();
+        assert_ne!(sketch_source_fingerprint(tmp.path()).unwrap(), before);
     }
 }

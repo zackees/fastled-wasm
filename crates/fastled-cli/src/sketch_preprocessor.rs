@@ -6,18 +6,18 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
-use serde::{Deserialize, Serialize};
+use kernal_api::json::{self, Layout, Value};
 
 use crate::path::NormalizedPath;
 
 /// A VS Code document buffer. Paths must name top-level `.ino` tabs in the
 /// sketch directory; unopened tabs are loaded from disk.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SnapshotDocument {
     pub path: String,
     pub version: i64,
@@ -25,15 +25,14 @@ pub struct SnapshotDocument {
 }
 
 /// JSON protocol sent over stdin by the VS Code extension.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct SnapshotRequest {
     pub sketch_dir: String,
     pub generation: u64,
-    #[serde(default)]
     pub documents: Vec<SnapshotDocument>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ManifestDocument {
     pub path: String,
     pub version: Option<i64>,
@@ -42,7 +41,7 @@ pub struct ManifestDocument {
 
 /// Completion marker for an IntelliSense cache generation. Consumers should
 /// only use the source/header named by this manifest after validating hashes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SnapshotManifest {
     pub schema: u32,
     pub generation: u64,
@@ -68,11 +67,185 @@ pub fn run_stdin_snapshot() -> Result<()> {
     io::stdin()
         .read_to_string(&mut request_json)
         .context("read IntelliSense snapshot request from stdin")?;
-    let request: SnapshotRequest =
-        serde_json::from_str(&request_json).context("parse IntelliSense snapshot JSON")?;
+    let request = parse_snapshot_request(&request_json)?;
     let manifest = write_live_snapshot(&request)?;
-    println!("{}", serde_json::to_string(&manifest)?);
+    let bytes = json::encode(&manifest.document(), Layout::Compact)?;
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&bytes)?;
+    stdout.write_all(b"\n")?;
     Ok(())
+}
+
+fn parse_snapshot_request(source: &str) -> Result<SnapshotRequest> {
+    let parse = || -> Result<SnapshotRequest> {
+        let [sketch_dir, generation, documents] = snapshot_fields(
+            json::parse_members(source.as_bytes())?,
+            ["sketch_dir", "generation", "documents"],
+            2,
+        )?;
+        let documents = snapshot_array(documents.or(Some(Value::Array(Vec::new()))), "documents")?
+            .into_iter()
+            .map(|value| {
+                let [path, version, text] = snapshot_fields(value, ["path", "version", "text"], 3)?;
+                Ok(SnapshotDocument {
+                    path: snapshot_string(path, "path")?,
+                    version: snapshot_signed(version)?,
+                    text: snapshot_string(text, "text")?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(SnapshotRequest {
+            sketch_dir: snapshot_string(sketch_dir, "sketch_dir")?,
+            generation: snapshot_unsigned(generation)?,
+            documents,
+        })
+    };
+    parse().context("parse IntelliSense snapshot JSON")
+}
+
+// Snapshot protocol field recognition and defaults remain application policy.
+fn snapshot_fields<const N: usize>(
+    value: Value,
+    names: [&str; N],
+    minimum: usize,
+) -> Result<[Option<Value>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    match value {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if let Some(index) = names.iter().position(|field| *field == name) {
+                    if fields[index].replace(value).is_some() {
+                        bail!("duplicate snapshot field {}", names[index]);
+                    }
+                }
+            }
+        }
+        Value::Array(values) if (minimum..=N).contains(&values.len()) => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => bail!("invalid snapshot record"),
+    }
+    Ok(fields)
+}
+
+fn snapshot_string(value: Option<Value>, name: &str) -> Result<String> {
+    let Some(Value::String(value)) = value else {
+        bail!("snapshot {name} must be a string")
+    };
+    Ok(value)
+}
+
+fn snapshot_array(value: Option<Value>, name: &str) -> Result<Vec<Value>> {
+    let Some(Value::Array(value)) = value else {
+        bail!("snapshot {name} must be an array")
+    };
+    Ok(value)
+}
+
+fn snapshot_unsigned(value: Option<Value>) -> Result<u64> {
+    match value {
+        Some(Value::Unsigned(value)) => Ok(value),
+        Some(Value::Signed(value)) if value >= 0 => Ok(value as u64),
+        _ => bail!("snapshot generation/schema must be an unsigned integer"),
+    }
+}
+
+fn snapshot_signed(value: Option<Value>) -> Result<i64> {
+    match value {
+        Some(Value::Signed(value)) => Ok(value),
+        Some(Value::Unsigned(value)) => Ok(i64::try_from(value)?),
+        _ => bail!("snapshot version must be a signed integer"),
+    }
+}
+
+impl SnapshotManifest {
+    fn parse(source: &str) -> Result<Self> {
+        let [schema, generation, documents, generated_source, generated_source_sha256, prototype_header, prototype_header_sha256] =
+            snapshot_fields(
+                json::parse_members(source.as_bytes())?,
+                [
+                    "schema",
+                    "generation",
+                    "documents",
+                    "generated_source",
+                    "generated_source_sha256",
+                    "prototype_header",
+                    "prototype_header_sha256",
+                ],
+                7,
+            )?;
+        let documents = snapshot_array(documents, "documents")?
+            .into_iter()
+            .map(|value| {
+                let [path, version, sha256] =
+                    snapshot_fields(value, ["path", "version", "sha256"], 3)?;
+                let version = match version {
+                    None | Some(Value::Null) => None,
+                    value => Some(snapshot_signed(value)?),
+                };
+                Ok(ManifestDocument {
+                    path: snapshot_string(path, "path")?,
+                    version,
+                    sha256: snapshot_string(sha256, "sha256")?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            schema: u32::try_from(snapshot_unsigned(schema)?)?,
+            generation: snapshot_unsigned(generation)?,
+            documents,
+            generated_source: snapshot_string(generated_source, "generated_source")?,
+            generated_source_sha256: snapshot_string(
+                generated_source_sha256,
+                "generated_source_sha256",
+            )?,
+            prototype_header: snapshot_string(prototype_header, "prototype_header")?,
+            prototype_header_sha256: snapshot_string(
+                prototype_header_sha256,
+                "prototype_header_sha256",
+            )?,
+        })
+    }
+
+    fn document(&self) -> Value {
+        let documents = self
+            .documents
+            .iter()
+            .map(|document| {
+                Value::ObjectMembers(vec![
+                    ("path".into(), Value::String(document.path.clone())),
+                    (
+                        "version".into(),
+                        document.version.map(Value::Signed).unwrap_or(Value::Null),
+                    ),
+                    ("sha256".into(), Value::String(document.sha256.clone())),
+                ])
+            })
+            .collect();
+        Value::ObjectMembers(vec![
+            ("schema".into(), Value::Unsigned(self.schema.into())),
+            ("generation".into(), Value::Unsigned(self.generation)),
+            ("documents".into(), Value::Array(documents)),
+            (
+                "generated_source".into(),
+                Value::String(self.generated_source.clone()),
+            ),
+            (
+                "generated_source_sha256".into(),
+                Value::String(self.generated_source_sha256.clone()),
+            ),
+            (
+                "prototype_header".into(),
+                Value::String(self.prototype_header.clone()),
+            ),
+            (
+                "prototype_header_sha256".into(),
+                Value::String(self.prototype_header_sha256.clone()),
+            ),
+        ])
+    }
 }
 
 pub fn preprocess_disk(sketch_dir: &Path) -> Result<PreprocessedSketch> {
@@ -167,21 +340,36 @@ fn write_snapshot(request: &SnapshotRequest, force_disk_refresh: bool) -> Result
         prototype_header_sha256: sha256(&rendered.prototype_header),
     };
 
-    fs::create_dir_all(&cache_dir)?;
+    publish_snapshot(
+        &cache_dir,
+        &manifest,
+        &rendered.translation_unit,
+        &rendered.prototype_header,
+    )?;
+    Ok(manifest)
+}
+
+fn publish_snapshot(
+    cache_dir: &Path,
+    manifest: &SnapshotManifest,
+    source: &str,
+    header: &str,
+) -> Result<()> {
+    // Encoding can fail on resource bounds. Check it before replacing either
+    // file referenced by the last good publication marker.
+    let encoded = json::encode(&manifest.document(), Layout::Pretty)?;
+    fs::create_dir_all(cache_dir)?;
     atomic_write(
         &cache_dir.join(&manifest.generated_source),
-        &rendered.translation_unit,
+        source.as_bytes(),
     )?;
     atomic_write(
         &cache_dir.join(&manifest.prototype_header),
-        &rendered.prototype_header,
+        header.as_bytes(),
     )?;
     // The manifest is written last and is the atomic publication marker.
-    atomic_write(
-        &cache_dir.join("manifest.json"),
-        &serde_json::to_string_pretty(&manifest)?,
-    )?;
-    Ok(manifest)
+    atomic_write(&cache_dir.join("manifest.json"), &encoded)?;
+    Ok(())
 }
 
 fn preprocess(
@@ -290,10 +478,10 @@ fn intellisense_dir(sketch_dir: &Path) -> NormalizedPath {
 }
 
 fn read_manifest(cache_dir: &Path) -> Option<SnapshotManifest> {
-    serde_json::from_str(&fs::read_to_string(cache_dir.join("manifest.json")).ok()?).ok()
+    SnapshotManifest::parse(&fs::read_to_string(cache_dir.join("manifest.json")).ok()?).ok()
 }
 
-fn atomic_write(path: &Path, contents: &str) -> Result<()> {
+fn atomic_write(path: &Path, contents: &[u8]) -> Result<()> {
     let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
     fs::write(&temporary, contents).with_context(|| format!("write {}", temporary.display()))?;
     if path.exists() {
@@ -371,6 +559,88 @@ fn extract_function_prototypes(source: &str) -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_json_encoding_limit_preserves_all_published_files() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let mut manifest = super::SnapshotManifest::parse(r#"[1,1,[["a",null,"digest"]],"sketch.cpp","sourcehash","prototypes.hpp","headerhash"]"#).unwrap();
+        assert_eq!(super::json::encode(&manifest.document(), super::Layout::Compact).unwrap(), br#"{"schema":1,"generation":1,"documents":[{"path":"a","version":null,"sha256":"digest"}],"generated_source":"sketch.cpp","generated_source_sha256":"sourcehash","prototype_header":"prototypes.hpp","prototype_header_sha256":"headerhash"}"#);
+        super::publish_snapshot(temp.path(), &manifest, "old source", "old header").unwrap();
+        let original = std::fs::read(temp.path().join("manifest.json")).unwrap();
+        manifest.generation = 2;
+        manifest.documents[0].path = "x".repeat(super::json::MAX_OUTPUT_BYTES);
+        let error = super::publish_snapshot(temp.path(), &manifest, "new source", "new header")
+            .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<super::json::Error>(),
+            Some(&super::json::Error::OutputTooLarge)
+        );
+        assert_eq!(
+            std::fs::read(temp.path().join("manifest.json")).unwrap(),
+            original
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("sketch.cpp")).unwrap(),
+            "old source"
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("prototypes.hpp")).unwrap(),
+            "old header"
+        );
+    }
+
+    #[test]
+    fn snapshot_json_schema_preserves_defaults_signed_versions_and_duplicates() {
+        for source in [
+            r#"{"sketch_dir":"日本","generation":18446744073709551615}"#,
+            r#"["日本",18446744073709551615]"#,
+        ] {
+            let request = super::parse_snapshot_request(source).unwrap();
+            assert_eq!(request.sketch_dir, "日本");
+            assert_eq!(request.generation, u64::MAX);
+            assert!(request.documents.is_empty());
+        }
+        let request = super::parse_snapshot_request(
+            r#"["sketch",1,[["a.ino",-9223372036854775808,"void loop() {}"]]]"#,
+        )
+        .unwrap();
+        assert_eq!(request.documents[0].version, i64::MIN);
+        for source in [
+            r#"{"sketch_dir":"s","generation":1,"generation":1}"#,
+            r#"{"sketch_dir":"s","generation":1,"documents":null}"#,
+            r#"["s",-1]"#,
+            r#"["s",1,[["a",1.0,"text"]]]"#,
+            r#"["s",1,[{"path":"a","version":1,"text":"x","text":"y"}]]"#,
+        ] {
+            assert!(
+                super::parse_snapshot_request(source).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn manifest_json_schema_preserves_optional_versions_and_required_hashes() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for source in [
+            r#"[1,18446744073709551615,[{"path":"a","sha256":"digest"}],"sketch.cpp","sourcehash","prototypes.hpp","headerhash"]"#,
+            r#"[1,18446744073709551615,[["a",null,"digest"]],"sketch.cpp","sourcehash","prototypes.hpp","headerhash"]"#,
+        ] {
+            std::fs::write(temp.path().join("manifest.json"), source).unwrap();
+            let manifest = super::read_manifest(temp.path()).unwrap();
+            assert_eq!(manifest.generation, u64::MAX);
+            assert_eq!(manifest.documents[0].version, None);
+            assert_eq!(manifest.prototype_header_sha256, "headerhash");
+        }
+        for source in [
+            r#"[1,0,[],"sketch.cpp","sourcehash","prototypes.hpp"]"#,
+            r#"[1,0,[["a","digest"]],"s","h","p","h"]"#,
+            r#"[1,0,[{"path":"a","version":null,"version":null,"sha256":"h"}],"s","h","p","h"]"#,
+        ] {
+            std::fs::write(temp.path().join("manifest.json"), source).unwrap();
+            assert!(super::read_manifest(temp.path()).is_none());
+        }
+    }
+
     use super::*;
 
     #[test]
