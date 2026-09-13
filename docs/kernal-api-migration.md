@@ -19,7 +19,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 | Paths | dirs | Adapt existing filesystem facade while preserving FastLED directory layout |
 | Process lifecycle and native containment | running-process, windows-sys | #234: command runner and viewer use kernel-owned contained children; removed direct backend dependencies and native handle code |
 | Async runtime, channels, clocks | tokio, tokio-stream | Use async_engine types and operations; coordinate HTTP/SSE consumer types |
-| HTTP download, archive extraction, hashes | reqwest, zip, tar, zstd, flate2, sha2 | Add shared streaming APIs and move generic archive tests upstream; retain toolchain URLs/configuration here |
+| HTTP download, archive extraction, hashes | reqwest, zip, tar, zstd, flate2, sha2 | #235 tracks SHA-256 facade migration; add shared streaming APIs and move generic archive tests upstream; retain toolchain URLs/configuration here |
 | HTTP server and SSE | axum, tower-http | Add shared server capability; retain routes, payloads, and FastLED policy here |
 | Native viewer and terminal | tauri, tauri-build, gtk, webkit2gtk, crossterm | Extend semantic hosting as needed for test capture, microphone, graphics fixes, keyboard handling |
 | Compiler provisioning and C++ parsing | ctcb-core, tree-sitter, tree-sitter-cpp | Move reusable tool/parse mechanisms; retain FastLED build and preprocessing policy |
@@ -106,6 +106,15 @@ terminated by the shared build scheduler, not a compiler diagnostic. Native
 Windows execution remains pending. Review found a kernel startup-error cleanup
 gap tracked in https://github.com/zackees/kernal-api/issues/159; preserving the
 old viewer's failed-resume handling is a prerequisite for release consumption.
+
+The fix is implemented on sibling branch `feat/windows-spawn-cleanup`, commit
+`f23da2a`, in https://github.com/zackees/kernal-api/pull/160 (stacked on #158).
+Job creation now precedes the suspended child, owned cleanup covers later
+startup failures, and failed resume is reported. Linux kernel tests and strict
+Windows cross-target Clippy pass. The source ownership regression was observed
+RED then GREEN. Native Windows fault-injection tests for assignment, resume,
+and duplication failures are added but await CI execution. One-agent pre-push
+review found no actionable issues. Neither upstream PR is a published release.
 
 ### Final migration audit
 
