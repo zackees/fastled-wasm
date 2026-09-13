@@ -247,6 +247,21 @@ archive Clippy (all targets) also passes. Updated archive head `8c27706` is
 pushed to PR #166; native Windows execution still requires fresh CI. The HTTP
 draft is rebased onto this fix. No failed job has been blindly restarted.
 
+Run `34737499816` passed all 539 native Windows library tests, including the
+previously failing containment test, then exposed failures in both newly
+enabled archive symlink tests: extraction succeeded, but following the links
+returned Windows error 123 (`InvalidFilename`). The raw archive targets retain
+forward slashes; Windows relative reparse targets require native separators
+(matching https://github.com/dotnet/runtime/issues/79031). A Windows-only
+separator conversion is under test/review, preserving Unix literals and the
+existing link-graph validation. Native Windows GREEN remains a release gate.
+The run is now terminal: every other CI job passed. The scoped separator helper
+and all 14 Linux archive regressions pass, and focused source review is clean.
+Archive head `9c176b9` is pushed with this fix and portable negative link-graph
+tests enabled on Windows. Strict Windows all-target archive Clippy and the
+additional Windows test compilation both pass. Fresh native CI is required;
+the HTTP draft is rebased onto the fix.
+
 ### HTTP client slice (draft; not adopted)
 
 Tracking: https://github.com/zackees/fastled-wasm/issues/238 and
@@ -278,8 +293,17 @@ payload/header checks, malformed header and framing-header rejection, and an
 excessive-header regression observed RED then GREEN. Strict Clippy and the
 broader HTTP-enabled kernel suite still pass.
 
+Draft commit `c08555e` adds caller-buffered async body reads with a private
+zero-copy pending transport chunk. Reads obey the cumulative body ceiling,
+return before body completion, and stay failed after an overflow; collection
+after partial reads returns only unread bytes. Eleven focused HTTP tests and
+the broader HTTP-enabled suite pass, as does strict all-target host Clippy.
+An impossible-deadline regression was observed RED then GREEN; client
+construction now rejects zero or greater-than-365-day timeouts. These generic
+mechanism tests live upstream, not in FastLED. HTTP is still not adopted.
+
 This is not the complete HTTP capability: runtime-owned blocking access,
-streamed artifact sinks, bounded SSE pulls, redirect
+streamed artifact sinks, SSE integration, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
 metadata analysis remain required, along with isolation/platform CI and review.
 FastLED still directly depends on reqwest. No HTTP PR or release is published.
