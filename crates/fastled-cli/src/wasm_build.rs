@@ -156,7 +156,7 @@ impl BuildFingerprints {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct BuildFlagsToml {
     all: Option<FlagSection>,
     sketch: Option<FlagSection>,
@@ -165,28 +165,118 @@ struct BuildFlagsToml {
     dwarf: Option<debug_symbols::DwarfPrefixConfig>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct FlagSection {
     defines: Option<Vec<String>>,
     compiler_flags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct LinkingSection {
     base: Option<FlagList>,
     sketch: Option<FlagList>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct ModeSection {
     flags: Option<Vec<String>>,
     sketch_flags: Option<Vec<String>>,
     link_flags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct FlagList {
     flags: Option<Vec<String>>,
+}
+
+// The kernel owns TOML syntax and resource bounds; these fields and defaults
+// are FastLED's compiler policy. Unknown fields deliberately remain ignored.
+impl BuildFlagsToml {
+    fn parse(source: &str) -> Result<Self> {
+        use kernal_api::config::{Document, Value};
+        fn table(value: &Value) -> Result<&BTreeMap<String, Value>> {
+            match value {
+                Value::Table(fields) => Ok(fields),
+                _ => anyhow::bail!("build flag section must be a table"),
+            }
+        }
+        fn strings(fields: &BTreeMap<String, Value>, name: &str) -> Result<Option<Vec<String>>> {
+            fields
+                .get(name)
+                .map(|value| {
+                    let Value::Array(values) = value else {
+                        anyhow::bail!("{name} must be an array of strings");
+                    };
+                    values
+                        .iter()
+                        .map(|value| match value {
+                            Value::String(value) => Ok(value.clone()),
+                            _ => anyhow::bail!("{name} must contain only strings"),
+                        })
+                        .collect()
+                })
+                .transpose()
+        }
+        fn flags(value: &Value) -> Result<FlagSection> {
+            let fields = table(value)?;
+            Ok(FlagSection {
+                defines: strings(fields, "defines")?,
+                compiler_flags: strings(fields, "compiler_flags")?,
+            })
+        }
+        fn flag_list(value: &Value) -> Result<FlagList> {
+            Ok(FlagList {
+                flags: strings(table(value)?, "flags")?,
+            })
+        }
+        fn linking(value: &Value) -> Result<LinkingSection> {
+            let fields = table(value)?;
+            Ok(LinkingSection {
+                base: fields.get("base").map(flag_list).transpose()?,
+                sketch: fields.get("sketch").map(flag_list).transpose()?,
+            })
+        }
+        fn modes(value: &Value) -> Result<BTreeMap<String, ModeSection>> {
+            table(value)?
+                .iter()
+                .map(|(name, value)| {
+                    let fields = table(value).with_context(|| format!("build_modes.{name}"))?;
+                    Ok((
+                        name.clone(),
+                        ModeSection {
+                            flags: strings(fields, "flags")?,
+                            sketch_flags: strings(fields, "sketch_flags")?,
+                            link_flags: strings(fields, "link_flags")?,
+                        },
+                    ))
+                })
+                .collect()
+        }
+        let document = Document::parse_toml(source)?;
+        let fields = table(document.root())?;
+        Ok(Self {
+            all: fields.get("all").map(flags).transpose().context("all")?,
+            sketch: fields
+                .get("sketch")
+                .map(flags)
+                .transpose()
+                .context("sketch")?,
+            linking: fields
+                .get("linking")
+                .map(linking)
+                .transpose()
+                .context("linking")?,
+            build_modes: fields
+                .get("build_modes")
+                .map(modes)
+                .transpose()
+                .context("build_modes")?,
+            dwarf: fields
+                .get("dwarf")
+                .map(debug_symbols::DwarfPrefixConfig::from_config)
+                .transpose()?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1013,7 +1103,7 @@ fn load_build_flags(fastled_dir: &Path) -> Result<BuildFlagsToml> {
         .join("build_flags.toml");
     let source = fs::read_to_string(&path)
         .with_context(|| format!("read build flags {}", path.display()))?;
-    toml::from_str(&source).with_context(|| format!("parse {}", path.display()))
+    BuildFlagsToml::parse(&source).with_context(|| format!("parse {}", path.display()))
 }
 
 pub(crate) fn get_sketch_compile_flags(
@@ -2593,6 +2683,39 @@ mod tests {
         let compiler_dir = fastled_dir.join("src/platforms/wasm/compiler");
         fs::create_dir_all(&compiler_dir).unwrap();
         fs::write(compiler_dir.join("build_flags.toml"), source).unwrap();
+    }
+
+    #[test]
+    fn build_flags_schema_preserves_defaults_and_ignores_unknown_fields() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        write_build_flags(tmp.path(), "unknown = 42\n[all]\ndefines = ['A', 'B']\nunknown = false\n[dwarf]\nsketch_prefix = 'custom'\n");
+        let parsed = load_build_flags(tmp.path()).unwrap();
+        let all = parsed.all.unwrap();
+        assert_eq!(all.defines.unwrap(), ["A", "B"]);
+        assert!(all.compiler_flags.is_none());
+        assert!(parsed.build_modes.is_none());
+        let dwarf = parsed.dwarf.unwrap();
+        assert_eq!(dwarf.sketch_prefix, "custom");
+        assert_eq!(dwarf.fastled_prefix, debug_symbols::DEFAULT_FASTLED_PREFIX);
+        assert!(dwarf.file_prefix_map_from.is_none());
+    }
+
+    #[test]
+    fn build_flags_schema_rejects_wrong_known_field_types() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for source in [
+            "all = 1",
+            "[all]\ndefines = 'A'",
+            "[sketch]\ncompiler_flags = [1]",
+            "[linking]\nbase = false",
+            "[linking.base]\nflags = [false]",
+            "[build_modes]\nquick = 1",
+            "[build_modes.debug]\nsketch_flags = 1",
+            "[dwarf]\nfastled_prefix = 1",
+        ] {
+            write_build_flags(tmp.path(), source);
+            assert!(load_build_flags(tmp.path()).is_err(), "accepted {source}");
+        }
     }
 
     #[test]

@@ -894,6 +894,37 @@ OffscreenCanvas WebGL2, and no canvas appeared before the readiness deadline.
 Issue #247 tracks this real WASM worker/render gap; the earlier synthetic
 canvas fixture is not a substitute. No browser check was weakened.
 
+### TOML migration in progress
+
+Upstream issue zackees/kernal-api#206 is implemented in draft
+zackees/kernal-api#208, stacked on #205. The optional `config-toml` capability
+owns parsing and bounded semantic values; FastLED retains field validation and
+defaults. Its focused/full-feature tests, strict Clippy, runtime dependency
+isolation, and Windows/macOS cross-checks passed locally. CI remains pending.
+
+Three app regression tests passed against the existing parser: build flag
+defaults/unknown fields, rejection of wrong known-field types, and independent
+DWARF validation/default fallback. These protect product policy during adoption.
+The app now consumes `kernal_api::config::Document` at both TOML call sites,
+and neither app manifest nor its lockfile dependency list contains direct TOML.
+The schema adapter keeps compiler field validation local, including ordered flag
+lists, optional modes, and DWARF defaults. Standalone DWARF loading still ignores
+unrelated compiler fields. Kernel syntax errors are bounded and do not echo file
+contents; the app adds the configuration path. Kernel source/node/depth limits
+now apply to configuration input.
+
+The new dependency-boundary test failed before adoption and passed afterward.
+All three schema regressions also passed after adoption, followed by 263 library,
+3 binary, 1 integration, and 1 doc test, plus 31 Python tests (1 skipped).
+Strict all-target Clippy and the updated executable build passed. A fresh Blink
+sketch in `/tmp/fastled-toml-wasm.LFSPI7` compiled and linked successfully using
+the unchanged Emscripten 4.0.21 toolchain and real FastLED source configuration.
+The generated WASM has the expected magic/version bytes; generated JavaScript
+contains none of the prohibited JSPI entry points. This compile is not browser
+or Safari rendering proof; the existing viewer acceptance gap remains open.
+The temporary path patch now points at the config capability checkout; a usable
+published release and patch removal remain required. No build speedup is claimed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

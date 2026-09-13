@@ -60,6 +60,29 @@ impl Default for DwarfPrefixConfig {
     }
 }
 
+impl DwarfPrefixConfig {
+    pub(crate) fn from_config(value: &kernal_api::config::Value) -> Result<Self> {
+        use kernal_api::config::Value;
+        let Value::Table(fields) = value else {
+            anyhow::bail!("dwarf must be a table");
+        };
+        let string = |name: &str| -> Result<Option<String>> {
+            match fields.get(name) {
+                None => Ok(None),
+                Some(Value::String(value)) => Ok(Some(value.clone())),
+                Some(_) => anyhow::bail!("dwarf.{name} must be a string"),
+            }
+        };
+        Ok(Self {
+            fastled_prefix: string("fastled_prefix")?.unwrap_or_else(default_fastled_prefix),
+            sketch_prefix: string("sketch_prefix")?.unwrap_or_else(default_sketch_prefix),
+            dwarf_prefix: string("dwarf_prefix")?.unwrap_or_else(default_dwarf_prefix),
+            file_prefix_map_from: string("file_prefix_map_from")?,
+            file_prefix_map_to: string("file_prefix_map_to")?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DebugSymbolConfig {
     pub sketch_dir: PathBuf,
@@ -121,11 +144,6 @@ pub fn load_debug_symbol_config(
 }
 
 fn read_dwarf_prefixes(fastled_dir: &Path) -> Option<DwarfPrefixConfig> {
-    #[derive(Deserialize)]
-    struct BuildFlagsToml {
-        dwarf: Option<DwarfPrefixConfig>,
-    }
-
     let candidate = fastled_dir
         .join("src")
         .join("platforms")
@@ -133,8 +151,11 @@ fn read_dwarf_prefixes(fastled_dir: &Path) -> Option<DwarfPrefixConfig> {
         .join("compiler")
         .join("build_flags.toml");
     let text = std::fs::read_to_string(&candidate).ok()?;
-    let parsed: BuildFlagsToml = toml::from_str(&text).ok()?;
-    parsed.dwarf
+    let parsed = kernal_api::config::Document::parse_toml(&text).ok()?;
+    let kernal_api::config::Value::Table(fields) = parsed.root() else {
+        return None;
+    };
+    DwarfPrefixConfig::from_config(fields.get("dwarf")?).ok()
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -370,6 +391,32 @@ mod tests {
     use super::*;
     use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
+
+    #[test]
+    fn dwarf_schema_ignores_unrelated_sections_and_defaults_invalid_overrides() {
+        let tmp = TemporaryDirectory::new().unwrap();
+        let compiler = tmp.path().join("src/platforms/wasm/compiler");
+        fs::create_dir_all(&compiler).unwrap();
+        let path = compiler.join("build_flags.toml");
+        // This reader validates only DWARF policy, not compiler flag schemas.
+        fs::write(&path, "all = 1\n[dwarf]\nsketch_prefix = 'custom'\n").unwrap();
+        let parsed = read_dwarf_prefixes(tmp.path()).unwrap();
+        assert_eq!(parsed.sketch_prefix, "custom");
+        assert_eq!(parsed.fastled_prefix, DEFAULT_FASTLED_PREFIX);
+        for source in ["[dwarf]\nsketch_prefix = 1", "x =", "all = 1"] {
+            fs::write(&path, source).unwrap();
+            assert!(
+                read_dwarf_prefixes(tmp.path()).is_none(),
+                "accepted {source}"
+            );
+            let config = load_debug_symbol_config(
+                tmp.path().join("sketch"),
+                Some(tmp.path().to_path_buf()),
+                None,
+            );
+            assert_eq!(config.prefixes.sketch_prefix, DEFAULT_SKETCH_PREFIX);
+        }
+    }
 
     fn setup_dirs() -> (TemporaryDirectory, PathBuf, PathBuf, PathBuf) {
         let tmp = TemporaryDirectory::new().unwrap();

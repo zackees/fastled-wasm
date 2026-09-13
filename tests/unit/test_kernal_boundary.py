@@ -65,6 +65,16 @@ def test_archive_download_uses_kernel_http():
     assert "kernal_api::http::" in source
 
 
+def test_toml_configuration_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    for path in (root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"):
+        data = tomllib.loads(path.read_text())
+        assert "toml" not in data.get("dependencies", {})
+        assert "toml" not in data.get("workspace", {}).get("dependencies", {})
+    for source in (root / "crates/fastled-cli/src").rglob("*.rs"):
+        assert "toml::" not in source.read_text(), source
+
+
 def test_viewer_backend_is_owned_by_kernel():
     root = Path(__file__).resolve().parents[2]
     manifests = [root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"]
