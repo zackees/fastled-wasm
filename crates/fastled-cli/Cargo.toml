@@ -34,7 +34,6 @@ toml = { workspace = true }
 tauri = { workspace = true, optional = true }
 tempfile = "3"
 shell-words = { workspace = true }
-getrandom = "0.3"
 tree-sitter = { workspace = true }
 tree-sitter-cpp = { workspace = true }
 

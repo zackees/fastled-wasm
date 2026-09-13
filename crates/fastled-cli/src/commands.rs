@@ -254,15 +254,6 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         }
     };
     let (test_tx, mut test_rx) = async_engine::unbounded_channel();
-    let mut token_bytes = [0_u8; 32];
-    if let Err(error) = getrandom::fill(&mut token_bytes) {
-        eprintln!("fastled: could not create test capability: {error}");
-        return test_exit(TestOutcome::Failure);
-    }
-    let test_token = token_bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
     let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
     let screenshot_paths = plan
         .screenshots
@@ -291,6 +282,13 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         }
     };
     rt.run(async {
+        let test_token = match create_test_capability().await {
+            Ok(token) => token,
+            Err(error) => {
+                eprintln!("fastled: could not create test capability: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
         let addr = match server::start_server(
             output_dir.clone(),
             0,
@@ -507,6 +505,14 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             }
         }
     })
+}
+
+async fn create_test_capability() -> Result<String, kernal_api::random::RandomError> {
+    // One startup request; the shared kernel budget outlives cancellation of
+    // any native OS entropy call. Length, encoding and wait policy stay here.
+    let entropy = kernal_api::random::SecureRandom::new(1, std::time::Duration::from_secs(5))?;
+    let bytes = entropy.bytes(32).await?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn test_exit(outcome: TestOutcome) -> ExitCode {
@@ -890,5 +896,17 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
             eprintln!("fastled: DWARF source smoke failed: {err:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    #[tokio::test]
+    async fn test_capability_preserves_32_byte_lowercase_hex_wire_format() {
+        let token = super::create_test_capability().await.unwrap();
+        assert_eq!(token.len(), 64);
+        assert!(token
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
     }
 }

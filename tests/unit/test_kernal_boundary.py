@@ -23,6 +23,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "tokio-stream" not in dependencies
     assert "axum" not in dependencies
     assert "tower-http" not in dependencies
+    assert "getrandom" not in dependencies
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
     for target in manifest.get("target", {}).values():
@@ -36,6 +37,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
         assert "windows_sys::" not in source.read_text(), source
         assert "sha2::" not in source.read_text(), source
         assert "dirs::" not in source.read_text(), source
+        assert "getrandom::" not in source.read_text(), source
         for backend in ("zip", "tar", "zstd", "flate2"):
             assert f"{backend}::" not in source.read_text(), source
 
