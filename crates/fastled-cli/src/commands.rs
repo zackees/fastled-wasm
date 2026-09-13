@@ -289,7 +289,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                 screenshot_paths,
                 events: test_tx,
                 token: test_token.clone(),
-                sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+                sleep_permits: async_engine::Semaphore::new(4),
             }),
         )
         .await
@@ -353,12 +353,19 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             eprintln!("fastled: production test timed out while launching the viewer");
             return test_exit(TestOutcome::TotalTimeout);
         };
-        let deadline_origin = tokio::time::Instant::now();
-        let total_deadline = deadline_origin + remaining;
-        let ready_deadline = deadline_origin + plan.ready_timeout;
+        let total_deadline = async_engine::Deadline::after(remaining);
+        let ready_deadline = async_engine::Deadline::after(plan.ready_timeout);
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
-        let mut liveness = tokio::time::interval(std::time::Duration::from_millis(100));
+        let mut liveness = match async_engine::PeriodicTimer::new(
+            std::time::Duration::from_millis(100),
+        ) {
+            Ok(timer) => timer,
+            Err(error) => {
+                eprintln!("fastled: could not start viewer monitoring: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
         let mut ready = false;
         let mut page_error = false;
         let mut saved = HashSet::new();
@@ -371,11 +378,11 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         loop {
             tokio::select! {
                 biased;
-                _ = tokio::time::sleep_until(total_deadline) => {
+                _ = async_engine::sleep_until(total_deadline) => {
                     eprintln!("fastled: production test exceeded --test-timeout-secs");
                     return test_exit(TestOutcome::TotalTimeout);
                 }
-                _ = tokio::time::sleep_until(ready_deadline), if !ready => {
+                _ = async_engine::sleep_until(ready_deadline), if !ready => {
                     eprintln!("fastled: viewer did not render a canvas before --test-ready-timeout-secs");
                     return test_exit(TestOutcome::ReadyTimeout);
                 }
