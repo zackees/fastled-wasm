@@ -12,7 +12,10 @@ use std::{
     ffi::OsString,
     io::{self, Read},
     path::Path,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -143,6 +146,12 @@ fn has_only_fields(fields: &[(String, Value)], permitted: &[&str]) -> bool {
             .all(|key| unique_member(fields, key).is_some())
 }
 
+fn acknowledge(pending_writes: &AtomicUsize) {
+    let _ = pending_writes.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
+        pending.checked_sub(1)
+    });
+}
+
 fn port_dimension(value: &Value) -> Option<u16> {
     match value {
         Value::Unsigned(value) => (*value).try_into().ok(),
@@ -158,6 +167,10 @@ pub(crate) async fn connect(
     let (mut writer, mut reader) = socket.split();
     let (input_tx, mut input_rx) = async_engine::channel(32);
     let (output_tx, mut output_rx) = async_engine::channel(32);
+    let pending_writes = Arc::new(AtomicUsize::new(0));
+    let input_closed = Arc::new(AtomicBool::new(false));
+    let input_pending_writes = Arc::clone(&pending_writes);
+    let input_closed_task = Arc::clone(&input_closed);
     let input_task = async_engine::launch(async move {
         while let Ok(Some(message)) = reader.receive().await {
             let input = match message {
@@ -167,6 +180,7 @@ pub(crate) async fn connect(
                 WebSocketMessage::Close => break,
             };
             match input {
+                Ok(ClientMessage::Ack) => acknowledge(&input_pending_writes),
                 Ok(message) => {
                     if input_tx.try_send(message).is_err() {
                         break;
@@ -175,6 +189,7 @@ pub(crate) async fn connect(
                 Err(_) => break,
             }
         }
+        input_closed_task.store(true, Ordering::Relaxed);
     });
     let worker_tx = output_tx.clone();
     let worker = std::thread::Builder::new()
@@ -243,6 +258,16 @@ pub(crate) async fn connect(
         return;
     }
     while let Some(message) = output_rx.recv().await {
+        if matches!(message, WebSocketMessage::Binary(_)) {
+            while pending_writes.load(Ordering::Relaxed) >= 16 {
+                if input_closed.load(Ordering::Relaxed) {
+                    input_task.cancel();
+                    return;
+                }
+                async_engine::sleep(Duration::from_millis(5)).await;
+            }
+            pending_writes.fetch_add(1, Ordering::Relaxed);
+        }
         if writer.send(message).await.is_err() {
             break;
         }
@@ -275,5 +300,9 @@ mod tests {
         assert!(parse_text(r#"{"type":"exec","data":"oops"}"#).is_err());
         assert!(parse_text(r#"{"type":"ack","ignored":true}"#).is_err());
         assert!(parse_text(r#"{"type":"ack","type":"input","data":"oops"}"#).is_err());
+        let pending_writes = AtomicUsize::new(1);
+        acknowledge(&pending_writes);
+        acknowledge(&pending_writes);
+        assert_eq!(pending_writes.load(Ordering::Relaxed), 0);
     }
 }
