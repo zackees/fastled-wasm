@@ -21,7 +21,6 @@ name = "fastled"
 path = "src/main.rs"
 
 [dependencies]
-clap = { workspace = true }
 kernal-api = { workspace = true }
 anyhow = { workspace = true }
 

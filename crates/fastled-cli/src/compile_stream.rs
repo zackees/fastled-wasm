@@ -365,7 +365,6 @@ pub(crate) fn update_debug_symbol_resolver(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     fn read_status(dir: &Path) -> String {
         std::fs::read_to_string(dir.join("build-status.json")).unwrap()

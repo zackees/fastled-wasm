@@ -2,8 +2,6 @@
 
 use std::process::ExitCode;
 
-use clap::Parser;
-
 mod archive;
 mod build;
 mod cache_upgrade;
@@ -50,17 +48,31 @@ pub fn run() -> ExitCode {
     }
 
     let arguments = std::env::args_os().collect::<Vec<_>>();
-    let presentation_request = arguments.iter().skip(1).any(|argument| {
-        matches!(
-            argument.to_str(),
-            Some("--help" | "-h" | "--version" | "-V")
-        )
-    });
-    // The bounded schema intentionally accepts UTF-8 arguments. Retain the
-    // existing native Clap path when a caller supplies a non-UTF-8 path so
-    // path-valued options remain lossless during the staged migration.
-    let has_non_utf8_argument = arguments.iter().any(|argument| argument.to_str().is_none());
-    if !presentation_request && !has_non_utf8_argument {
+    let presentation_request = arguments
+        .iter()
+        .skip(1)
+        .take_while(|argument| argument.as_os_str() != "--")
+        .any(|argument| {
+            matches!(
+                argument.to_str(),
+                Some("--help" | "-h" | "--version" | "-V")
+            )
+        });
+    if presentation_request {
+        let version_request = arguments
+            .iter()
+            .skip(1)
+            .take_while(|argument| argument.as_os_str() != "--")
+            .any(|argument| matches!(argument.to_str(), Some("--version" | "-V")));
+        let schema = cli::primary_schema();
+        if version_request {
+            print!("{}", schema.render_version());
+        } else {
+            print!("{}", cli::presentation_help(&arguments));
+        }
+        return ExitCode::SUCCESS;
+    }
+    {
         match cli::management_command_from(&arguments) {
             Ok(Some(command)) => return run_management_command(command),
             Ok(None) => {}
@@ -70,15 +82,11 @@ pub fn run() -> ExitCode {
             }
         }
     }
-    let mut cli = if presentation_request || has_non_utf8_argument {
-        cli::Cli::parse()
-    } else {
-        match cli::primary_cli_from(&arguments) {
-            Ok(cli) => cli,
-            Err(error) => {
-                eprintln!("fastled: {error}");
-                return ExitCode::FAILURE;
-            }
+    let mut cli = match cli::primary_cli_from(&arguments) {
+        Ok(cli) => cli,
+        Err(error) => {
+            eprintln!("fastled: {error}");
+            return ExitCode::FAILURE;
         }
     };
     cli::apply_test_implications(&mut cli);

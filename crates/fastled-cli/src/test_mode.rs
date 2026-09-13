@@ -494,7 +494,6 @@ pub(crate) async fn wait_for_ready(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     const COMMAND_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
