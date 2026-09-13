@@ -223,6 +223,35 @@ passes after rebase; the first attempt ended in a Soldr relay error, followed
 by a successful unchanged retry. PR #162 is now mergeable and its fresh CI
 checks are queued. No release has been published.
 
+### HTTP client slice (draft; not adopted)
+
+Tracking: https://github.com/zackees/fastled-wasm/issues/238 and
+https://github.com/zackees/kernal-api/issues/167. Investigation found blocking
+downloads, GitHub metadata and HEAD probes, async DWARF debug POSTs, and server
+HTTP/SSE integration tests. Removing reqwest requires all of these callers,
+not just downloads. Existing private kernel ureq callers do not provide a
+public capability. Product URLs, schemas, fallback policy and protocol tests
+remain FastLED-owned.
+
+The sibling `feat/http-client-facade` draft adds an optional async GET transport
+using private reqwest 0.12.28/native TLS without constructing a runtime. It has
+owned client/response/limit types, bounded small-body collection, post-parse
+header acceptance limits, finite connection/read/total timeouts, and rejects
+embedded URL credentials. Redirects are returned to callers, not followed.
+Five loopback tests pass after the initial missing-feature RED test, covering
+status/body preservation, declared/streamed overflow, header ceilings, invalid
+URLs, unfollowed redirects, and stalled headers/body. Local compilation requires
+the host OpenSSL pkg-config and shared-library paths.
+Strict HTTP-feature Clippy and the broader HTTP-enabled kernel test suite pass
+(166 library tests plus enabled integration tests); no HTTP adoption or
+cross-platform execution claim is implied by those checks.
+
+This is not the complete HTTP capability: runtime-owned blocking access,
+streamed artifact sinks, HEAD/POST, owned headers, bounded SSE pulls, redirect
+policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
+metadata analysis remain required, along with isolation/platform CI and review.
+FastLED still directly depends on reqwest. No HTTP PR or release is published.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
