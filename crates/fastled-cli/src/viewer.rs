@@ -267,8 +267,8 @@ fn is_fastled_binary(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
-    use tempfile::TempDir;
 
     #[test]
     fn test_viewer_available_does_not_panic() {
@@ -295,7 +295,7 @@ mod tests {
     fn test_find_viewer_in_arch_dirs_finds_binary() {
         // Set up a fake target tree:
         //   <tmp>/target/x86_64-pc-windows-msvc/release/fastled[.exe]
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         let arch_dir = target.join("x86_64-pc-windows-msvc").join("release");
         fs::create_dir_all(&arch_dir).expect("mkdir arch_dir");
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn test_find_viewer_in_arch_dirs_skips_dotfiles() {
         // A hidden `.cache` dir should not be scanned.
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         let hidden = target.join(".cache").join("debug");
         fs::create_dir_all(&hidden).expect("mkdir hidden");
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_find_viewer_in_arch_dirs_returns_none_for_empty_tree() {
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         fs::create_dir_all(&target).expect("mkdir target");
         assert!(find_viewer_in_arch_dirs(&target).is_none());
@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_find_viewer_in_arch_dirs_missing_target() {
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let missing = tmp.path().join("does-not-exist");
         assert!(find_viewer_in_arch_dirs(&missing).is_none());
     }

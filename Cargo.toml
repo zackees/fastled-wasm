@@ -36,7 +36,7 @@ strip = "none"
 
 # Temporary migration override; replace with the verified published release.
 [patch.crates-io]
-kernal-api = { path = "../fastled-wasm-extern/kernal-api-entropy" }
+kernal-api = { path = "../fastled-wasm-extern/kernal-api-temporary" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1

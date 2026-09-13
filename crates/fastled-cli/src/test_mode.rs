@@ -615,7 +615,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_200_commands_run_sequentially_and_capture_both_streams() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         #[cfg(windows)]
         let commands = vec![
             "echo A>order.txt".to_string(),
@@ -662,7 +662,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_200_nonzero_command_stops_the_sequence() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         #[cfg(windows)]
         let commands = vec![
             "exit /b 7".to_string(),
@@ -699,7 +699,7 @@ mod tests {
 
     #[tokio::test]
     async fn issue_208_runner_finishes_after_closing_descendant_pipe_writers() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         #[cfg(windows)]
         let command = "start /B cmd /C \"ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt\"";
         #[cfg(not(windows))]
@@ -728,7 +728,7 @@ mod tests {
     #[tokio::test]
     async fn issue_200_cancelling_runner_kills_the_contained_shell() {
         for drop_handle in [false, true] {
-            let temp = tempfile::tempdir().unwrap();
+            let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
             #[cfg(windows)]
             let command = "echo READY & ping -n 3 127.0.0.1 >NUL & echo LATE > late.txt";
             #[cfg(not(windows))]

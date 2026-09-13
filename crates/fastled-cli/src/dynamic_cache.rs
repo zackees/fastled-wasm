@@ -335,8 +335,11 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
 /// Publish a fully validated staging directory by one same-filesystem rename.
 /// A key is never observable as successful until every artifact and its
 /// metadata are complete.
-pub(crate) fn publish_staging(staging: tempfile::TempDir, target: &Path) -> Result<()> {
-    let staging_path = staging.keep();
+pub(crate) fn publish_staging(
+    staging: kernal_api::platform::fs::TemporaryDirectory,
+    target: &Path,
+) -> Result<()> {
+    let staging_path = staging.persist();
     if target.exists() {
         fs::remove_dir_all(target)
             .with_context(|| format!("remove invalid cache entry {}", target.display()))?;
@@ -354,12 +357,13 @@ pub(crate) fn publish_staging(staging: tempfile::TempDir, target: &Path) -> Resu
     Ok(())
 }
 
-pub(crate) fn staging_dir(cache_root: &Path, prefix: &str) -> Result<tempfile::TempDir> {
+pub(crate) fn staging_dir(
+    cache_root: &Path,
+    prefix: &str,
+) -> Result<kernal_api::platform::fs::TemporaryDirectory> {
     fs::create_dir_all(cache_root)
         .with_context(|| format!("create cache root {}", cache_root.display()))?;
-    tempfile::Builder::new()
-        .prefix(prefix)
-        .tempdir_in(cache_root)
+    kernal_api::platform::fs::TemporaryDirectory::in_directory(cache_root, prefix)
         .with_context(|| format!("create staging directory in {}", cache_root.display()))
 }
 
@@ -473,7 +477,7 @@ mod tests {
     // the persistent fingerprint before the next lookup.
     #[test]
     fn explicit_invalidation_detects_immediate_same_size_edit_with_restored_mtime() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let source = temp.path().join("sketch.ino");
         fs::write(&source, "aaaa").unwrap();
         let mut fingerprint = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
@@ -499,8 +503,8 @@ mod tests {
 
     #[test]
     fn path_invalidation_dirties_only_matching_spec() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
+        let first = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let second = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(first.path().join("one.cpp"), "one").unwrap();
         fs::write(second.path().join("two.cpp"), "two").unwrap();
         fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
@@ -516,7 +520,7 @@ mod tests {
 
     #[test]
     fn lost_fingerprint_watch_discards_cached_value_and_registers_again() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(temp.path().join("sketch.ino"), "aaaa").unwrap();
         let expected = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
         let spec = FingerprintSpec {
@@ -542,8 +546,8 @@ mod tests {
 
     #[test]
     fn invalidate_all_dirties_every_spec() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
+        let first = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let second = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(first.path().join("one.cpp"), "one").unwrap();
         fs::write(second.path().join("two.cpp"), "two").unwrap();
         fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
@@ -554,7 +558,7 @@ mod tests {
 
     #[test]
     fn excluded_output_path_does_not_dirty_spec() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::create_dir_all(temp.path().join("fastled_js")).unwrap();
         fs::write(temp.path().join("source.cpp"), "source").unwrap();
         fingerprint_tree_persistent(temp.path(), &["**/*.cpp"], &["fastled_js/**"]).unwrap();
@@ -588,7 +592,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_missing_empty_truncated_and_corrupt_entries() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let entry = temp.path().join("entry");
         fs::create_dir(&entry).unwrap();
         fs::write(entry.join("fastled.js"), "js").unwrap();
@@ -612,7 +616,7 @@ mod tests {
 
     #[test]
     fn cache_lock_serializes_same_key() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path().to_path_buf();
         let barrier = Arc::new(Barrier::new(2));
         let other_barrier = Arc::clone(&barrier);
@@ -630,7 +634,7 @@ mod tests {
 
     #[test]
     fn atomic_publish_replaces_invalid_entry() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path().join("cache");
         fs::create_dir(&root).unwrap();
         let target = root.join("key");
@@ -648,7 +652,7 @@ mod tests {
 
     #[test]
     fn attempt_state_records_pending_failure_and_clears_after_success() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         mark_pending(temp.path(), "key", "main-link").unwrap();
         assert_eq!(
             previous_attempt(temp.path(), "key").as_deref(),

@@ -269,10 +269,10 @@ fn _promote_single_child(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use kernal_api::platform::fs::TemporaryDirectory;
 
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+    fn temp_dir() -> TemporaryDirectory {
+        kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir")
     }
 
     #[test]
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_write_emscripten_config_does_not_touch_unchanged_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let install_dir = dir.path().join("emscripten").join("4.0.19");
         fs::create_dir_all(&install_dir).unwrap();
         let node = install_dir.join("managed-node");

@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn report_build_outcome_success_requires_index_html() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
         assert!(!report_build_outcome(dir.path(), &tx, true, true));
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn report_build_outcome_failure_is_error_even_with_stale_index() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
         let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn report_build_outcome_allows_success_without_app() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
         assert!(report_build_outcome(dir.path(), &tx, true, false));

@@ -1389,10 +1389,11 @@ pub(crate) fn refresh_fastled_repo(reference: &str) -> Result<PathBuf> {
     let cache_base = fastled_root()?.join("cache");
     let archive_cache = cache_base.join("archives");
     fs::create_dir_all(&archive_cache)?;
-    let download_dir = tempfile::Builder::new()
-        .prefix("fastled-source-download-")
-        .tempdir_in(&archive_cache)
-        .context("create temporary FastLED download directory")?;
+    let download_dir = kernal_api::platform::fs::TemporaryDirectory::in_directory(
+        &archive_cache,
+        "fastled-source-download-",
+    )
+    .context("create temporary FastLED download directory")?;
     let archive_path = download_dir.path().join("FastLED.zip");
     archive::download(&url, &archive_path)
         .with_context(|| format!("download FastLED archive from {url}"))?;
@@ -2027,7 +2028,8 @@ fn install_auto_debug_extension(dry_run: bool) -> Result<bool> {
         return Ok(false);
     };
 
-    let temp_dir = tempfile::tempdir().context("create temp dir for extension")?;
+    let temp_dir = kernal_api::platform::fs::TemporaryDirectory::new()
+        .context("create temp dir for extension")?;
     let vsix_path = temp_dir.path().join("auto-debug.vsix");
     println!("Downloading Auto Debug extension...");
     download_to_path(AUTO_DEBUG_VSIX_URL, &vsix_path)?;
@@ -2212,7 +2214,7 @@ mod tests {
     fn fastled_python_keeps_virtual_environment_symlink_path() {
         use std::os::unix::fs::symlink;
 
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let base_python = temp.path().join("base-python");
         fs::write(&base_python, "python").unwrap();
         let venv_bin = temp.path().join("FastLED/.venv/bin");
@@ -2231,7 +2233,7 @@ mod tests {
     fn selected_virtualenv_python_keeps_sibling_uv_path() {
         use std::os::unix::fs::symlink;
 
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let base_python = temp.path().join("base/bin/python");
         fs::create_dir_all(base_python.parent().unwrap()).unwrap();
         fs::write(&base_python, "python").unwrap();
@@ -2273,7 +2275,7 @@ mod tests {
     // Regression coverage for issue #194: a valid active install must not
     // fall through to manifest discovery or an implicit replacement.
     fn active_install_is_selected_without_network_or_manifest_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         write_state(
@@ -2294,7 +2296,7 @@ mod tests {
 
     #[test]
     fn legacy_marker_migrates_to_receipt_and_active_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = temp.path().join(spec.package_id);
         for path in required_emscripten_payload_files(&install) {
@@ -2317,14 +2319,14 @@ mod tests {
 
     #[test]
     fn existing_history_never_bootstraps_implicitly() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::create_dir(temp.path().join("4.0.18")).unwrap();
         assert!(has_install_history(temp.path()));
     }
 
     #[test]
     fn invalid_active_uses_previous_known_good_without_rewriting_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         let broken = temp.path().join("broken");
@@ -2345,7 +2347,7 @@ mod tests {
 
     #[test]
     fn missing_required_tool_rejects_managed_install() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         fs::remove_file(install.join(if cfg!(windows) {
@@ -2374,7 +2376,7 @@ mod tests {
     fn ensure_toolchain_executables_restores_unix_execute_bits() {
         use std::os::unix::fs::PermissionsExt;
 
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let bin_dir = temp.path().join("bin");
         fs::create_dir_all(&bin_dir).expect("create bin");
         let tool = bin_dir.join("llvm-ar");

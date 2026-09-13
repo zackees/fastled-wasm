@@ -2620,7 +2620,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_bin_exposes_python_spellings_and_node() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let install = temp.path().join("toolchain");
         let tools = temp.path().join("tools");
         fs::create_dir_all(&tools).unwrap();
@@ -2651,7 +2651,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_path_prepends_without_dropping_caller_path() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let runtime_bin = temp.path().join("runtime-bin");
         let managed_bin = temp.path().join("managed-bin");
         let caller_bin = temp.path().join("caller-bin");
@@ -2793,7 +2793,7 @@ mod tests {
 
     #[test]
     fn direct_side_link_is_strictly_version_mode_and_abi_gated() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
         assert!(direct_side_link_supported(
             &tools,
@@ -2820,7 +2820,7 @@ mod tests {
 
     #[test]
     fn direct_side_link_plan_preserves_side_module_one_contract() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
         let args = direct_side_link_args(&tools, Path::new("sketch.o"), Path::new("sketch.wasm"));
         assert!(args.contains(&"--whole-archive".to_string()));
@@ -2831,7 +2831,7 @@ mod tests {
 
     #[test]
     fn dynamic_output_does_not_recopy_unchanged_runtime() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let runtime = temp.path().join("runtime");
         let sketch = temp.path().join("sketch");
         let output = temp.path().join("output");
@@ -2909,7 +2909,7 @@ mod tests {
 
     #[test]
     fn runtime_source_fingerprint_includes_js_library_and_meson_helpers() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         for (relative, contents) in [
             ("src/core.cpp", "core"),
@@ -2941,7 +2941,7 @@ mod tests {
 
     #[test]
     fn library_archive_validation_rejects_missing_empty_and_truncated_files() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let archive = temp.path().join("libfastled.a");
         assert!(!library_archive_is_valid(&archive));
         fs::write(&archive, []).unwrap();
@@ -2956,7 +2956,7 @@ mod tests {
 
     #[test]
     fn debug_compile_flags_include_dynamic_dwarf_prefix_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         let sketch_dir = tmp.path().join("Blink");
         let emsdk_root = tmp.path().join("emsdk");
@@ -3007,7 +3007,7 @@ dwarf_prefix = "dwarfsource"
 
     #[test]
     fn quick_compile_flags_do_not_include_dwarf_prefix_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         write_build_flags(
             &fastled_dir,
@@ -3039,7 +3039,7 @@ flags = ["-g0"]
 
     #[test]
     fn debug_link_flags_emit_wasm_source_map() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         write_build_flags(
             &fastled_dir,
@@ -3062,7 +3062,7 @@ link_flags = []
 
     #[test]
     fn copy_linked_output_copies_and_removes_source_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let cache = tmp.path().join("cache");
         let output = tmp.path().join("out").join("fastled.js");
         fs::create_dir_all(&cache).unwrap();
@@ -3084,7 +3084,7 @@ link_flags = []
 
     #[test]
     fn copy_linked_output_copies_dynamic_side_module_and_removes_it_when_stale() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let cache = tmp.path().join("cache");
         let output = tmp.path().join("out").join("fastled.js");
         fs::create_dir_all(&cache).unwrap();
@@ -3106,7 +3106,7 @@ link_flags = []
 
     #[test]
     fn generate_manifest_uses_new_name_and_removes_legacy_name() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let example = tmp.path().join("Sketch");
         let output = example.join("fastled_js");
         fs::create_dir_all(example.join("data")).unwrap();
@@ -3130,7 +3130,7 @@ link_flags = []
 
     #[test]
     fn generate_manifest_resolves_lnk_and_assets_json_for_the_wasm_vfs() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let example = tmp.path().join("Sketch");
         let data = example.join("data");
         let output = example.join("fastled_js");
@@ -3211,7 +3211,7 @@ link_flags = []
 
     #[test]
     fn wrapper_compiles_canonical_multi_tab_ino_translation_unit() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = tmp.path().join("Blink");
         fs::create_dir_all(&sketch).unwrap();
         fs::write(

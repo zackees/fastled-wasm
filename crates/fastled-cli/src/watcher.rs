@@ -334,12 +334,12 @@ fn path_contains_ignored(path: &Path, ignored: &[String]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
     use std::time::{Duration, Instant};
-    use tempfile::TempDir;
 
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+    fn temp_dir() -> TemporaryDirectory {
+        kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir")
     }
 
     // ------------------------------------------------------------------

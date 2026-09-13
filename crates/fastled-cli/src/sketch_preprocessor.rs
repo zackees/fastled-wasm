@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn orders_primary_then_other_top_level_tabs_and_maps_each_tab() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = temp.path().join("Blink");
         fs::create_dir_all(sketch.join("nested")).unwrap();
         fs::write(
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn live_snapshot_uses_unsaved_text_and_never_overwrites_sketch() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = temp.path().join("Sketch");
         fs::create_dir_all(&sketch).unwrap();
         let source = sketch.join("Sketch.ino");
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn invalid_new_buffer_preserves_last_known_good_snapshot() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = temp.path().join("Sketch");
         fs::create_dir_all(&sketch).unwrap();
         let source = sketch.join("Sketch.ino");
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn older_generation_cannot_replace_newer_snapshot() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = temp.path().join("Sketch");
         fs::create_dir_all(&sketch).unwrap();
         let source = sketch.join("Sketch.ino");
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn disk_topology_refresh_replaces_a_previous_live_generation() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = temp.path().join("Sketch");
         fs::create_dir_all(&sketch).unwrap();
         let source = sketch.join("Sketch.ino");
