@@ -1299,16 +1299,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gethostname"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
-dependencies = [
- "rustix",
- "windows-link 0.2.1",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2033,8 +2023,8 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.0"
-source = "git+https://github.com/zackees/kernal-api.git?rev=c021e1eea366bb6d87f493e488bb29689ae10c71#c021e1eea366bb6d87f493e488bb29689ae10c71"
+version = "0.1.1"
+source = "git+https://github.com/zackees/kernal-api.git?rev=50c1d4a62e39505e14205fa094f7e95732ed55c0#50c1d4a62e39505e14205fa094f7e95732ed55c0"
 dependencies = [
  "blake3",
  "bytes",
@@ -3217,9 +3207,9 @@ dependencies = [
 
 [[package]]
 name = "running-process"
-version = "4.10.10"
+version = "4.10.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d49ccdbfa59730688bbbeca9c9f3f4ee4c8976e38e9e5929fee8128bbd046db"
+checksum = "492c9f25a9a886d7e4281eae987e2d90732ee07f01a35860899618b3b3484cc3"
 dependencies = [
  "libc",
  "running-process-platform-internal",
@@ -3232,19 +3222,17 @@ dependencies = [
 
 [[package]]
 name = "running-process-platform-internal"
-version = "4.10.11"
+version = "4.10.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dee9be8d7fb159393e54586b070fec01912fab04444f98f4db54fd3ceebdae59"
+checksum = "ce466bd3d8c281e4f3f409bf0931011306172fbd74032787958eaf5272505391"
 dependencies = [
  "libc",
- "png 0.17.16",
  "sysinfo",
  "thiserror 2.0.20",
  "tokio",
  "widestring",
  "winapi",
  "windows-sys 0.61.2",
- "x11rb",
 ]
 
 [[package]]
@@ -5549,23 +5537,6 @@ dependencies = [
  "windows-core 0.62.2",
  "windows-version",
 ]
-
-[[package]]
-name = "x11rb"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414"
-dependencies = [
- "gethostname",
- "rustix",
- "x11rb-protocol",
-]
-
-[[package]]
-name = "x11rb-protocol"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 
 [[package]]
 name = "xz2"

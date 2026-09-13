@@ -13,7 +13,7 @@ repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
-kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "websocket", "event-stream", "secure-random", "text-similarity", "pty", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json", "error-context"] }
+kernal-api = { version = "=0.1.1", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "websocket", "event-stream", "secure-random", "text-similarity", "pty", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json", "error-context"] }
 
 [profile.release]
 debug = "line-tables-only"
@@ -23,7 +23,7 @@ strip = "none"
 # Temporary migration override; replace with the verified published release.
 # A git revision keeps CI hermetic while the crates.io release is pending.
 [patch.crates-io]
-kernal-api = { git = "https://github.com/zackees/kernal-api.git", rev = "c021e1eea366bb6d87f493e488bb29689ae10c71" }
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", rev = "50c1d4a62e39505e14205fa094f7e95732ed55c0" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1
