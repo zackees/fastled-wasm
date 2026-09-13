@@ -439,6 +439,23 @@ package versions. The full FastLED Rust suite (255 tests), strict all-target
 Clippy and three boundary tests pass. Publication and removal of the temporary
 local path override remain pending, as does the rest of the dependency inventory.
 
+### Async runtime and coordination slice
+
+Issue #239 tracks remaining Tokio ownership. All application runtime construction
+now uses kernel `RuntimeBuilder`/`Runtime::run`; basic sleeps and relative
+timeouts in commands, the test runner and server use `async_engine` operations.
+The source boundary failed before migration and passes afterward. FastLED keeps
+its existing timeout values, exit behavior and test-runner policy. The full
+255-test Rust workspace suite, strict all-target Clippy and Python suite
+(27 passes/1 skip) pass.
+
+Tokio and tokio-stream remain direct dependencies. Remaining work includes
+channel types (notably blocking sends from output-reader threads), broadcast/SSE,
+signals, semaphore try-acquisition, absolute timers, tasks and server I/O.
+Kernel async_engine explicitly leaves select/attribute macro calls as a separate
+macro-boundary decision; this slice does not add a generic race combinator or
+claim those dependencies have been removed.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.

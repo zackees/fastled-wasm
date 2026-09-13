@@ -1,3 +1,4 @@
+use kernal_api::async_engine;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -68,8 +69,11 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     // Write initial compiling status for polling fallback.
     write_build_status(&output_dir, "compiling", "Compiling...");
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    rt.block_on(async {
+    let rt = async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create kernel runtime");
+    rt.run(async {
         // Start the Rust HTTP server (background tokio task).
         let addr = match server::start_server(
             output_dir.clone(),
@@ -264,14 +268,17 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
     };
 
     write_build_status(&output_dir, "compiling", "Compiling...");
-    let rt = match tokio::runtime::Runtime::new() {
+    let rt = match async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+    {
         Ok(runtime) => runtime,
         Err(error) => {
             eprintln!("fastled: could not create test runtime: {error}");
             return test_exit(TestOutcome::Failure);
         }
     };
-    rt.block_on(async {
+    rt.run(async {
         let addr = match server::start_server(
             output_dir.clone(),
             0,
@@ -761,8 +768,11 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         }
     };
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    rt.block_on(async {
+    let rt = async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create kernel runtime");
+    rt.run(async {
         let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
         let addr = match server::start_server(path.clone(), 0, None, debug_symbols, None).await {
             Ok(a) => a,
@@ -799,7 +809,7 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
                             println!("\nShutting down...");
                             break;
                         }
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                        _ = async_engine::sleep(std::time::Duration::from_secs(1)) => {
                             if !viewer.is_alive() {
                                 println!("\nViewer window closed; shutting down.");
                                 break;
