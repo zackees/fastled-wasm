@@ -70,5 +70,7 @@ def test_migrated_async_operations_use_kernel():
             "tokio::sync::mpsc",
             "tokio::sync::broadcast",
             "tokio_stream::",
+            "tokio::fs::write",
+            "tokio::fs::create_dir_all",
         ):
             assert backend not in source, path

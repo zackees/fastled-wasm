@@ -490,6 +490,27 @@ Tokio remains direct for signals, server I/O and macro call sites. Upstream
 merge/release, exact registry adoption and the other inventory rows remain
 outstanding; the local path patch is still migration-only.
 
+### Screenshot persistence adoption
+
+Screenshot persistence now uses `platform::fs::AsyncFileIo` from the local
+kernel HTTP-server development branch (upstream #176). One shared budget per
+server admits four native writes, each accepting at most 64 MiB with a 30-second
+deadline. Saturation is reported as a screenshot failure; there is no additional
+waiting-task queue. Native work still running after cancellation retains its
+permit until it ends. Writes remain non-atomic and can leave partial output on
+failure or timeout. FastLED retains PNG validation, authorization, preconfigured
+destination selection and saved/failure events. Direct Tokio write and directory
+creation calls are removed and banned by the boundary test. The HTTP server
+itself still uses Axum/Tower/Tokio pending the complete upstream contract and
+route-parity work. This remains migration-only path-patch adoption, not a
+published release.
+
+Validation: the screenshot endpoint covers successful persistence and native
+write failure reporting. All 255 Rust workspace tests and strict all-target
+Clippy pass; Python reports 27 passed and one skipped. The boundary test was
+observed RED before removing the Tokio calls and GREEN afterward. One local
+review covered the Rust, Python and documentation changes with no findings.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
