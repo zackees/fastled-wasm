@@ -184,3 +184,11 @@ def test_migrated_async_operations_use_kernel():
             "tower_http::",
         ):
             assert backend not in source, path
+
+
+def test_source_receipt_uses_kernal_json() -> None:
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/source.rs").read_text()
+    assert "serde::" not in source
+    assert "serde_json::" not in source
+    assert "json::parse_members" in source

@@ -996,6 +996,22 @@ including two new editor preservation regressions. Python passes 35 tests with
 pass. Seven JSON source modules still need migration; release/runtime gates
 remain incomplete.
 
+Typed receipt migration has an additional verified compatibility requirement.
+New source-receipt baseline tests pass for optional/null commit fields, exact
+unsigned timestamps, strict field types, duplicate-known-field rejection and
+duplicate-unknown-field tolerance. Issue #211 and upstream PR #212 now provide
+bounded `json::parse_members` and owned `ObjectMembers` values that retain
+nested duplicates without exposing backend traits. Source receipts use that
+surface; field recognition, type validation and positional-record support stay
+local. Encoding preserves declared field order, omits absent commits and adds
+no trailing newline. The receipt module no longer uses Serde; six JSON source
+modules remain. The app still consumes the migration-only upstream path patch.
+
+Receipt checkpoint verification: 273 library, 3 binary, 1 integration and 1 doc
+tests pass; Python passes 36 with 1 skipped. Strict all-target Clippy, formatting,
+Ruff and single-reviewer review pass. No compiler backend or flags changed in
+this checkpoint; it does not add native-browser or Safari acceptance evidence.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
