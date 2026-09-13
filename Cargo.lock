@@ -1200,6 +1200,7 @@ dependencies = [
  "fs2",
  "getrandom 0.3.4",
  "globset",
+ "gtk",
  "indexmap 1.9.3",
  "notify",
  "reqwest 0.12.28",
