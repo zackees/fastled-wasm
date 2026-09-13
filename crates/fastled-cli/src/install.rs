@@ -15,6 +15,8 @@ use std::sync::{Mutex, OnceLock};
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
+use kernal_api::json::{self, Layout, Value as JsonValue};
+#[cfg(test)]
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -282,10 +284,9 @@ pub struct ToolchainPart {
     pub sha256: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ToolchainReceipt {
     schema_version: u32,
-    #[serde(default)]
     catalog_commit: String,
     platform: String,
     arch: String,
@@ -295,11 +296,162 @@ struct ToolchainReceipt {
     health_checked: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ActiveToolchainState {
     schema_version: u32,
     active: Option<String>,
     previous_known_good: Option<String>,
+}
+
+// Record schemas are installer policy. The kernel owns JSON syntax, duplicate
+// preservation and resource limits; unknown fields remain forward-compatible.
+fn toolchain_record<const N: usize>(
+    bytes: &[u8],
+    names: [&str; N],
+) -> Result<[Option<JsonValue>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    match json::parse_members(bytes)? {
+        JsonValue::ObjectMembers(members) => {
+            for (name, value) in members {
+                let Some(index) = names.iter().position(|known| *known == name) else {
+                    continue;
+                };
+                if fields[index].replace(value).is_some() {
+                    bail!("duplicate toolchain record field: {}", names[index]);
+                }
+            }
+        }
+        JsonValue::Array(values) if values.len() == N => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => bail!("invalid toolchain record"),
+    }
+    Ok(fields)
+}
+
+fn toolchain_schema(value: Option<JsonValue>) -> Result<u32> {
+    match value {
+        Some(JsonValue::Signed(value)) => Ok(u32::try_from(value)?),
+        Some(JsonValue::Unsigned(value)) => Ok(u32::try_from(value)?),
+        _ => bail!("missing or invalid toolchain schema version"),
+    }
+}
+
+fn toolchain_string(value: Option<JsonValue>) -> Result<String> {
+    match value {
+        Some(JsonValue::String(value)) => Ok(value),
+        _ => bail!("missing or invalid toolchain string field"),
+    }
+}
+
+impl ActiveToolchainState {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let [schema, active, previous] =
+            toolchain_record(bytes, ["schema_version", "active", "previous_known_good"])?;
+        let optional_string = |value| match value {
+            None | Some(JsonValue::Null) => Ok(None),
+            other => toolchain_string(other).map(Some),
+        };
+        Ok(Self {
+            schema_version: toolchain_schema(schema)?,
+            active: optional_string(active)?,
+            previous_known_good: optional_string(previous)?,
+        })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(json::encode(
+            &JsonValue::ObjectMembers(vec![
+                (
+                    "schema_version".into(),
+                    JsonValue::Unsigned(self.schema_version.into()),
+                ),
+                (
+                    "active".into(),
+                    self.active
+                        .clone()
+                        .map_or(JsonValue::Null, JsonValue::String),
+                ),
+                (
+                    "previous_known_good".into(),
+                    self.previous_known_good
+                        .clone()
+                        .map_or(JsonValue::Null, JsonValue::String),
+                ),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
+}
+
+impl ToolchainReceipt {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let [schema, catalog, platform, arch, package, url, hash, health] = toolchain_record(
+            bytes,
+            [
+                "schema_version",
+                "catalog_commit",
+                "platform",
+                "arch",
+                "package_id",
+                "archive_url",
+                "archive_sha256",
+                "health_checked",
+            ],
+        )?;
+        let Some(JsonValue::Bool(health_checked)) = health else {
+            bail!("missing or invalid toolchain health flag");
+        };
+        Ok(Self {
+            schema_version: toolchain_schema(schema)?,
+            catalog_commit: match catalog {
+                None => String::new(),
+                other => toolchain_string(other)?,
+            },
+            platform: toolchain_string(platform)?,
+            arch: toolchain_string(arch)?,
+            package_id: toolchain_string(package)?,
+            archive_url: toolchain_string(url)?,
+            archive_sha256: toolchain_string(hash)?,
+            health_checked,
+        })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(json::encode(
+            &JsonValue::ObjectMembers(vec![
+                (
+                    "schema_version".into(),
+                    JsonValue::Unsigned(self.schema_version.into()),
+                ),
+                (
+                    "catalog_commit".into(),
+                    JsonValue::String(self.catalog_commit.clone()),
+                ),
+                ("platform".into(), JsonValue::String(self.platform.clone())),
+                ("arch".into(), JsonValue::String(self.arch.clone())),
+                (
+                    "package_id".into(),
+                    JsonValue::String(self.package_id.clone()),
+                ),
+                (
+                    "archive_url".into(),
+                    JsonValue::String(self.archive_url.clone()),
+                ),
+                (
+                    "archive_sha256".into(),
+                    JsonValue::String(self.archive_sha256.clone()),
+                ),
+                (
+                    "health_checked".into(),
+                    JsonValue::Bool(self.health_checked),
+                ),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
 }
 
 const TOOLCHAIN_STATE_SCHEMA: u32 = 1;
@@ -394,8 +546,8 @@ fn read_state(base: &Path) -> Result<ActiveToolchainState> {
             ..ActiveToolchainState::default()
         });
     }
-    let state: ActiveToolchainState = serde_json::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
+    let state = ActiveToolchainState::parse(
+        &fs::read(&path).with_context(|| format!("read {}", path.display()))?,
     )
     .with_context(|| format!("parse {}", path.display()))?;
     if state.schema_version != TOOLCHAIN_STATE_SCHEMA {
@@ -410,7 +562,7 @@ fn read_state(base: &Path) -> Result<ActiveToolchainState> {
 fn write_state(base: &Path, state: &ActiveToolchainState) -> Result<()> {
     let path = state_path(base);
     let temp = base.join(format!(".toolchain-state-{}.tmp", std::process::id()));
-    fs::write(&temp, serde_json::to_vec_pretty(state)?)?;
+    fs::write(&temp, state.encode()?)?;
     if path.exists() {
         let backup = base.join(format!(".toolchain-state-{}.bak", std::process::id()));
         fs::rename(&path, &backup).with_context(|| format!("backup {}", path.display()))?;
@@ -436,16 +588,14 @@ fn write_receipt(install: &Path, spec: ToolchainSpec, health_checked: bool) -> R
         archive_sha256: spec.archive_sha256.to_string(),
         health_checked,
     };
-    fs::write(receipt_path(install), serde_json::to_vec_pretty(&receipt)?)?;
+    fs::write(receipt_path(install), receipt.encode()?)?;
     Ok(())
 }
 
 fn read_receipt(install: &Path) -> Result<ToolchainReceipt> {
     let path = receipt_path(install);
-    serde_json::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
-    )
-    .with_context(|| format!("parse {}", path.display()))
+    ToolchainReceipt::parse(&fs::read(&path).with_context(|| format!("read {}", path.display()))?)
+        .with_context(|| format!("parse {}", path.display()))
 }
 
 fn validate_managed_install(install: &Path, spec: ToolchainSpec) -> Result<()> {
@@ -2372,6 +2522,125 @@ mod tests {
             resolve_active_install(temp.path(), spec).unwrap(),
             Some(install)
         );
+    }
+
+    #[test]
+    fn toolchain_json_schema_preserves_defaults_duplicates_and_sequences() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for source in [
+            r#"{"schema_version":1}"#,
+            r#"{"schema_version":1,"active":null,"previous_known_good":null,"unknown":false}"#,
+            r#"[1,null,null]"#,
+        ] {
+            fs::write(state_path(temp.path()), source).unwrap();
+            assert_eq!(
+                read_state(temp.path()).unwrap(),
+                ActiveToolchainState {
+                    schema_version: 1,
+                    active: None,
+                    previous_known_good: None,
+                }
+            );
+        }
+        for source in [
+            r#"{"schema_version":1,"active":null,"active":"a"}"#,
+            r#"{"schema_version":1,"previous_known_good":null,"previous_known_good":null}"#,
+            r#"{"schema_version":1,"schema_version":1}"#,
+            r#"{"schema_version":1,"active":false}"#,
+            r#"{"schema_version":1.0}"#,
+            r#"{"schema_version":-1}"#,
+            r#"{"schema_version":4294967296}"#,
+            r#"{}"#,
+            r#"[1]"#,
+            r#"[1,null,null,null]"#,
+        ] {
+            fs::write(state_path(temp.path()), source).unwrap();
+            assert!(read_state(temp.path()).is_err(), "{source}");
+        }
+        let receipt = r#"{"schema_version":4294967295,"platform":"linux","arch":"x86_64","package_id":"λ","archive_url":"u","archive_sha256":"h","health_checked":false}"#;
+        fs::write(receipt_path(temp.path()), receipt).unwrap();
+        let expected = read_receipt(temp.path()).unwrap();
+        assert_eq!(expected.schema_version, u32::MAX);
+        assert_eq!(expected.catalog_commit, "");
+        fs::write(
+            receipt_path(temp.path()),
+            r#"[4294967295,"","linux","x86_64","λ","u","h",false]"#,
+        )
+        .unwrap();
+        assert_eq!(read_receipt(temp.path()).unwrap(), expected);
+        for source in [
+            receipt.replace("\"health_checked\":false", "\"health_checked\":null"),
+            receipt.replace("\"health_checked\":false", "\"health_checked\":0"),
+            receipt.replace(
+                "\"health_checked\":false",
+                "\"health_checked\":false,\"health_checked\":true",
+            ),
+            receipt.replace("\"platform\":\"linux\"", "\"platform\":null"),
+            receipt.replace("\"platform\":\"linux\",", ""),
+            receipt.replace(
+                "\"platform\":\"linux\"",
+                "\"platform\":\"linux\",\"catalog_commit\":null",
+            ),
+            r#"[1,"linux","x86_64","p","u","h",true]"#.to_string(),
+        ] {
+            fs::write(receipt_path(temp.path()), &source).unwrap();
+            assert!(read_receipt(temp.path()).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn toolchain_json_encoding_preserves_wire_format_and_failed_writes() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let mut state = ActiveToolchainState {
+            schema_version: 1,
+            active: Some("λ".into()),
+            previous_known_good: None,
+        };
+        write_state(temp.path(), &state).unwrap();
+        let before = fs::read(state_path(temp.path())).unwrap();
+        assert_eq!(
+            String::from_utf8(before.clone()).unwrap(),
+            "{\n  \"schema_version\": 1,\n  \"active\": \"λ\",\n  \"previous_known_good\": null\n}"
+        );
+        state.active = Some("x".repeat(json::MAX_OUTPUT_BYTES));
+        assert!(matches!(
+            write_state(temp.path(), &state)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        assert_eq!(fs::read(state_path(temp.path())).unwrap(), before);
+        assert!(!temp
+            .path()
+            .join(format!(".toolchain-state-{}.tmp", std::process::id()))
+            .exists());
+        let receipt = ToolchainReceipt {
+            schema_version: 1,
+            catalog_commit: "c".into(),
+            platform: "p".into(),
+            arch: "a".into(),
+            package_id: "i".into(),
+            archive_url: "u".into(),
+            archive_sha256: "h".into(),
+            health_checked: true,
+        };
+        let bytes = receipt.encode().unwrap();
+        assert_eq!(String::from_utf8(bytes.clone()).unwrap(),
+            "{\n  \"schema_version\": 1,\n  \"catalog_commit\": \"c\",\n  \"platform\": \"p\",\n  \"arch\": \"a\",\n  \"package_id\": \"i\",\n  \"archive_url\": \"u\",\n  \"archive_sha256\": \"h\",\n  \"health_checked\": true\n}");
+        assert_eq!(ToolchainReceipt::parse(&bytes).unwrap(), receipt);
+        let oversized = vec![b' '; json::MAX_INPUT_BYTES + 1];
+        assert!(matches!(
+            ToolchainReceipt::parse(&oversized)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
+        assert!(matches!(
+            ActiveToolchainState::parse(&oversized)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
     }
 
     #[test]

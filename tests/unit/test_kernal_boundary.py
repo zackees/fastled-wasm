@@ -103,6 +103,20 @@ def test_wasm_build_json_uses_kernel():
     assert "kernal_api::json" in source
 
 
+def test_installer_receipt_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/install.rs").read_text()
+    records = source.split("struct ToolchainReceipt", 1)[1].split(
+        "fn validate_managed_install", 1
+    )[0]
+    assert "serde_json::" not in records
+    assert "serde(" not in records
+    assert "Serialize" not in records
+    assert "Deserialize" not in records
+    assert "json::parse_members" in records
+    assert "json::encode" in records
+
+
 def test_dwarf_smoke_json_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     source = (root / "crates/fastled-cli/src/dwarf_smoke.rs").read_text()
