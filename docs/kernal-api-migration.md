@@ -770,8 +770,17 @@ identifies these remaining viewer requirements:
   WebGL capture setup and FastLED's screenshot schedule, including reloads.
   These scripts and HTTP endpoints remain product policy. Do not weaken the
   isolated webview's no-native-IPC contract to obtain script delivery.
+  Kernel issue https://github.com/zackees/kernal-api/issues/195 implements an
+  explicit bounded bootstrap route, restricted to the original HTTP(S) origin.
+  Its Linux native proof checks ordering before page code, same-origin reload,
+  subframe exclusion, absent IPC and rejected cross-origin navigation. The
+  existing isolated route remains script-free; Windows execution and app
+  integration remain required.
 - Windows DPI/zoom policy: preserve the existing Windows-only adjustment and
   avoid applying it on Linux/macOS. Validate on native hosts.
+- Interactive lifetime: preserve waiting for the user to close the window,
+  without introducing an arbitrary lifetime timeout. The current kernel
+  terminal-wait API requires a timeout that revokes the window on expiry.
 - Media and graphics parity: the kernel already contains the Linux renderer
   environment, font-DPI and opt-in user-media mechanisms, but adoption still
   needs real viewer tests for microphone, rendering, logs, captures and teardown.
