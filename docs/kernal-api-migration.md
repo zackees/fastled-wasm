@@ -422,6 +422,23 @@ all four tests pass. Strict HTTP-feature Clippy and the broader kernel suite
 also pass. These tests run in the existing native all-features CI lanes, but
 supported-platform results and the metadata-allocation contract remain pending.
 
+The metadata contract is now documented upstream with a distinction between
+application acceptance limits, private parser thresholds, and allocator/RSS
+usage. Hyper 1.11.0 is an exact optional private dependency so published
+consumers use the audited parser. Regressions reject excessive response heads,
+field counts, trailers and chunk extensions even with relaxed application
+limits; the version-pin guard was observed RED then GREEN. Twenty-two HTTP
+integration tests, 170 kernel library tests, the other enabled integration
+suites, strict Clippy and dependency-isolation checks pass. Local review is clean.
+
+Kernel [PR #169](https://github.com/zackees/kernal-api/pull/169) is open;
+[CI run 34740069309](https://github.com/zackees/kernal-api/actions/runs/34740069309)
+is in progress. FastLED explicitly updates its locked Hyper 1.9.0 to 1.11.0;
+Cargo also reselects already-locked Windows dependency edges without adding
+package versions. The full FastLED Rust suite (255 tests), strict all-target
+Clippy and three boundary tests pass. Publication and removal of the temporary
+local path override remain pending, as does the rest of the dependency inventory.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
