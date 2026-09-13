@@ -110,8 +110,8 @@ pub fn apply() {
     }
 }
 
-/// Font DPI to report when GTK does not know it: CSS's reference DPI, the
-/// value GTK itself uses once the GSettings schema is available.
+/// CSS reference DPI; also what GTK reports once the GSettings schema is
+/// visible and the text scaling factor is 1.0.
 pub const FALLBACK_FONT_DPI: i32 = 96;
 
 /// True when a `gtk-xft-dpi` value (DPI * 1024) is unusable. GDK reports the
@@ -122,35 +122,57 @@ pub fn font_dpi_is_unknown(gtk_xft_dpi: i32) -> bool {
     gtk_xft_dpi <= 0
 }
 
-/// Gives GTK a usable font DPI when it reports none, so WebKitGTK computes a
-/// sane page scale. Must run after GTK is initialised and before the webview
-/// is created. WebKitGTK's GTK3 build reads `gdk_screen_get_resolution()`,
-/// which on Wayland is only filled in from the GSettings
-/// `org.gnome.desktop.interface` schema; unwrapped binaries on some
-/// distributions (NixOS with Plasma) cannot see that schema, so the screen
-/// keeps GDK's "unknown" value of -1 even when `gtk-xft-dpi` was set from
-/// settings.ini. Both are corrected so GTK4 builds behave the same.
+/// The `gtk-xft-dpi` value (DPI * 1024) the viewer should run with.
+///
+/// WebKitGTK renders at GDK's integer scale factor and multiplies its page
+/// zoom by font DPI / 96. Desktops with fractional scaling (KDE at 1.5 or
+/// 1.75) tell GTK3 apps their intended scale through that font DPI, so the
+/// effective scale should be `desktop_dpi / 96`, not the integer scale. That
+/// means reporting `desktop_dpi / integer_scale`: at 168 dpi on a 2x display
+/// the page zooms to 0.875 and lands at 1.75x. On X11 the integer scale is 1
+/// and the value passes through unchanged. When the desktop gives no DPI at
+/// all, report 96 so plain integer scaling applies and WebKit never sees
+/// GDK's -1.
+pub fn effective_font_dpi(desktop_gtk_xft_dpi: i32, integer_scale: i32) -> i32 {
+    let scale = integer_scale.max(1);
+    if font_dpi_is_unknown(desktop_gtk_xft_dpi) {
+        return FALLBACK_FONT_DPI * 1024;
+    }
+    (desktop_gtk_xft_dpi / scale).max(1)
+}
+
+/// Applies [`effective_font_dpi`] to GTK before the webview exists. Setting
+/// the `gtk-xft-dpi` setting also updates the GdkScreen resolution that
+/// WebKitGTK's GTK3 build reads, and WebKit re-reads it on change. On Wayland
+/// GDK only learns the desktop DPI from the GSettings
+/// `org.gnome.desktop.interface` schema, which unwrapped binaries on some
+/// distributions (NixOS with Plasma) cannot see; the GtkSettings property may
+/// still carry the desktop's value from settings.ini, so it is read from
+/// there and the screen resolution is corrected explicitly as well.
 #[cfg(feature = "viewer")]
 pub fn ensure_font_dpi() {
+    use gtk::gdk::prelude::MonitorExt;
     use gtk::prelude::GtkSettingsExt;
-    let dpi = f64::from(FALLBACK_FONT_DPI);
-    if let Some(screen) = gtk::gdk::Screen::default() {
-        let current = screen.resolution();
-        if current.is_nan() || current <= 0.0 {
-            screen.set_resolution(dpi);
-            eprintln!(
-                "fastled: GDK reported an unknown screen resolution ({current}); using {FALLBACK_FONT_DPI} dpi so WebKitGTK does not apply a negative page scale"
-            );
+    let Some(settings) = gtk::Settings::default() else {
+        return;
+    };
+    let desktop = settings.gtk_xft_dpi();
+    let integer_scale = gtk::gdk::Display::default()
+        .and_then(|display| display.primary_monitor().or_else(|| display.monitor(0)))
+        .map(|monitor| monitor.scale_factor())
+        .unwrap_or(1);
+    let wanted = effective_font_dpi(desktop, integer_scale);
+    let screen_dpi = gtk::gdk::Screen::default()
+        .map(|screen| screen.resolution())
+        .unwrap_or(-1.0);
+    if wanted != desktop || screen_dpi.is_nan() || screen_dpi <= 0.0 {
+        settings.set_gtk_xft_dpi(wanted);
+        if let Some(screen) = gtk::gdk::Screen::default() {
+            screen.set_resolution(f64::from(wanted) / 1024.0);
         }
-    }
-    if let Some(settings) = gtk::Settings::default() {
-        let current = settings.gtk_xft_dpi();
-        if font_dpi_is_unknown(current) {
-            settings.set_gtk_xft_dpi(FALLBACK_FONT_DPI * 1024);
-            eprintln!(
-                "fastled: GTK reported an unknown font DPI ({current}); using {FALLBACK_FONT_DPI}"
-            );
-        }
+        eprintln!(
+            "fastled: font dpi {desktop} (desktop) / scale {integer_scale} -> {wanted}; screen resolution was {screen_dpi}"
+        );
     }
 }
 
@@ -164,6 +186,19 @@ mod tests {
             x11_backend: x11,
             already_set: set.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn effective_font_dpi_follows_the_desktop_scale() {
+        // Desktop at 1.75 (168 dpi) on a 2x integer display: zoom to 0.875
+        assert_eq!(effective_font_dpi(172032, 2), 86016);
+        // X11: integer scale 1, value passes through
+        assert_eq!(effective_font_dpi(172032, 1), 172032);
+        // 96 dpi desktop on a 2x display stays plain integer scaling
+        assert_eq!(effective_font_dpi(98304, 2), 49152);
+        // Unknown desktop DPI: 96 so WebKit never sees GDK's -1
+        assert_eq!(effective_font_dpi(-1, 2), 98304);
+        assert_eq!(effective_font_dpi(0, 1), 98304);
     }
 
     #[test]
