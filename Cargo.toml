@@ -14,7 +14,7 @@ homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
-kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "event-stream", "secure-random", "text-similarity", "terminal-input", "terminal-style", "command-arguments", "config-toml", "source-cpp", "json"] }
+kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "event-stream", "secure-random", "text-similarity", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json"] }
 anyhow = "1"
 
 [profile.release]
@@ -24,7 +24,7 @@ strip = "none"
 
 # Temporary migration override; replace with the verified published release.
 [patch.crates-io]
-kernal-api = { path = "../fastled-wasm-extern/kernal-api-json" }
+kernal-api = { path = "../fastled-wasm-extern/kernal-api-cli" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1
