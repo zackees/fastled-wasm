@@ -1220,6 +1220,7 @@ dependencies = [
  "tower-http",
  "tree-sitter",
  "tree-sitter-cpp",
+ "webkit2gtk",
  "windows-sys 0.61.2",
  "zccache-fingerprint",
  "zip",
