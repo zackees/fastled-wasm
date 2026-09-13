@@ -42,3 +42,14 @@ def test_archive_download_uses_kernel_http():
     source = (root / "crates/fastled-cli/src/archive.rs").read_text()
     assert "reqwest::" not in source
     assert "kernal_api::http::" in source
+
+
+def test_blocking_http_callers_use_kernel():
+    root = Path(__file__).resolve().parents[2]
+    manifest = tomllib.loads((root / "Cargo.toml").read_text())
+    assert "blocking" not in manifest["workspace"]["dependencies"]["reqwest"].get(
+        "features", []
+    )
+    for name in ("install.rs", "project.rs"):
+        source = (root / "crates/fastled-cli/src" / name).read_text()
+        assert "reqwest::" not in source, name

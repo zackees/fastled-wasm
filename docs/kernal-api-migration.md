@@ -360,6 +360,17 @@ Strict workspace all-target Clippy passes, and the full Python unit suite has
 25 passes/1 skip. HTTP remains a locally adopted draft pending upstream review
 and release; this patch must not be released with the local path override.
 
+The remaining blocking HTTP callers in install/project now use kernel clients:
+release metadata stays bounded and is parsed as FastLED JSON, HEAD probes keep
+their boolean fallback, and extension downloads reuse the streaming artifact
+downloader. Project metadata now sends the same user-agent as install metadata.
+There are no remaining `reqwest::blocking` imports; the app no longer enables
+reqwest's blocking feature. Source and manifest boundary tests were observed
+RED then GREEN. Python unit tests pass (26/1 skipped). The direct reqwest
+dependency remains for async debug requests and server integration tests.
+After feature removal, strict workspace all-target Clippy and the full Rust
+suite pass (250 library, 2 binary, 1 integration, 1 doctest).
+
 This is not the complete HTTP capability: streamed artifact sinks,
 SSE integration, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
