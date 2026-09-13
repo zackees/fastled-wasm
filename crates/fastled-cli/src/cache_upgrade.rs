@@ -22,7 +22,7 @@ fn fastled_root() -> Result<NormalizedPath> {
         return Ok(NormalizedPath::new(root));
     }
     Ok(NormalizedPath::new(
-        dirs::home_dir()
+        kernal_api::platform::fs::user_home_dir()
             .context("cannot resolve home directory for cache upgrade cleanup")?
             .join(".fastled"),
     ))
