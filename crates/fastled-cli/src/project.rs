@@ -395,23 +395,36 @@ const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/FastLED/FastLED/
 ///
 /// Returns `None` when the request fails or the response cannot be parsed.
 fn fetch_latest_release_tag() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
         .ok()?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .ok()?;
 
     let resp = client
-        .get(GITHUB_RELEASES_API)
-        .header("Accept", "application/vnd.github.v3+json")
-        .send()
+        .execute(kernal_api::http::Request {
+            headers: &[
+                ("Accept", "application/vnd.github.v3+json"),
+                ("User-Agent", "fastled-cli"),
+            ],
+            ..kernal_api::http::Request::get(GITHUB_RELEASES_API)
+        })
         .ok()?;
 
-    if !resp.status().is_success() {
+    if !(200..300).contains(&resp.status()) {
         return None;
     }
 
-    let body = resp.text().ok()?;
-    let json: serde_json::Value = serde_json::from_str(&body).ok()?;
+    let body = resp.into_bytes().ok()?;
+    let json: serde_json::Value = serde_json::from_slice(&body).ok()?;
     json.get("tag_name")
         .and_then(|v: &serde_json::Value| v.as_str())
         .map(|s: &str| s.to_owned())

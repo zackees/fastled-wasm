@@ -1249,22 +1249,33 @@ fn is_commit_sha(ref_str: &str) -> bool {
 /// Hit the GitHub API for the latest FastLED release tag.
 /// Returns `None` on any failure so callers can fall back to `master`.
 fn fetch_latest_release_tag() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::limited(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
         .ok()?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .ok()?;
     let resp = client
-        .get(FASTLED_LATEST_RELEASE_API)
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "fastled-cli")
-        .send()
+        .execute(kernal_api::http::Request {
+            headers: &[
+                ("Accept", "application/vnd.github.v3+json"),
+                ("User-Agent", "fastled-cli"),
+            ],
+            ..kernal_api::http::Request::get(FASTLED_LATEST_RELEASE_API)
+        })
         .ok()?;
-    if !resp.status().is_success() {
+    if !(200..300).contains(&resp.status()) {
         return None;
     }
-    let text = resp.text().ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let bytes = resp.into_bytes().ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     value
         .get("tag_name")
         .and_then(serde_json::Value::as_str)
@@ -1272,16 +1283,28 @@ fn fetch_latest_release_tag() -> Option<String> {
 }
 
 fn head_check(url: &str) -> bool {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build();
+    let Ok(runtime) = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
+        .build()
+    else {
+        return false;
+    };
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    );
     match client {
         Ok(c) => c
-            .head(url)
-            .header("User-Agent", "fastled-cli")
-            .send()
-            .map(|r| r.status().is_success())
+            .execute(kernal_api::http::Request {
+                method: kernal_api::http::Method::Head,
+                headers: &[("User-Agent", "fastled-cli")],
+                ..kernal_api::http::Request::get(url)
+            })
+            .map(|r| (200..300).contains(&r.status()))
             .unwrap_or(false),
         Err(_) => false,
     }
@@ -1990,21 +2013,7 @@ fn update_vscode_settings_for_fastled() -> Result<()> {
 }
 
 fn download_to_path(url: &str, dest: &Path) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .context("build HTTP client")?;
-    let bytes = client
-        .get(url)
-        .send()
-        .with_context(|| format!("GET {url} failed"))?
-        .error_for_status()
-        .with_context(|| format!("download returned error for {url}"))?
-        .bytes()
-        .context("read response bytes")?;
-    fs::write(dest, &bytes).with_context(|| format!("write {}", dest.display()))?;
-    Ok(())
+    archive::download(url, dest)
 }
 
 fn install_auto_debug_extension(dry_run: bool) -> Result<bool> {
