@@ -258,7 +258,7 @@ pub(crate) fn run_source_action(action: SourceAction) -> Result<()> {
             if let Some(warning) = master_stale_warning(&status) {
                 use std::io::IsTerminal;
                 if std::io::stderr().is_terminal() {
-                    eprintln!("{}", crossterm::style::Stylize::yellow(warning));
+                    eprintln!("{}", crate::diagnostics::yellow_warning(&warning));
                 } else {
                     eprintln!("{warning}");
                 }

@@ -102,7 +102,7 @@ pub(crate) fn announce_link_mode(cli: &Cli, tx: Option<&BroadcastSender<String>>
         println!("{}", link_mode_announcement(mode));
         if let Some(warning) = migration_warning(cli) {
             if std::io::stderr().is_terminal() {
-                eprintln!("{}", crossterm::style::Stylize::yellow(warning));
+                eprintln!("{}", crate::diagnostics::yellow_warning(warning));
             } else {
                 eprintln!("{warning}");
             }
@@ -223,7 +223,7 @@ pub(crate) fn send_sse(tx: &BroadcastSender<String>, json: &str) {
 
 pub(crate) fn emit_build_log(tx: &BroadcastSender<String>, line: &str, stream: &str) {
     if stream == "warning" && std::io::stderr().is_terminal() {
-        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+        eprintln!("{}", crate::diagnostics::yellow_warning(line));
     } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {

@@ -648,6 +648,37 @@ one skipped). Full application Rust tests and strict all-target Clippy pass;
 the cross-repository source review is clean. Publication and exact adoption remain required;
 no speed improvement is claimed.
 
+### Terminal-input adoption checkpoint
+
+FastLED now uses kernel-owned decoded terminal input and diagnostic styling
+from https://github.com/zackees/kernal-api/pull/186 (issue #178). Direct
+`crossterm` is removed and banned by the boundary test (observed RED then GREEN).
+The lightweight `terminal-input` and `terminal-style` features add no backend
+dependencies; enabling key input does not enable PTY process spawning.
+
+FastLED retains Space/Enter rebuild policy, cache invalidation, warning text,
+stderr terminal detection and cached nonempty `NO_COLOR` handling. The unused
+background keyboard listener is removed. Native capture, bounded decoding,
+ownership/restoration and generic tests live upstream. The decoder deliberately
+does not promise complete Crossterm modifier equivalence: ambiguous Alt+Space
+and control sequences are not interpreted as rebuild keys.
+
+Watch mode polls input and file events every 100 ms. Graceful Ctrl+C handling
+is registered before lazy terminal capture; interruption drops the capture
+owner and exits with status 130. An in-flight build finishes before interruption
+is handled. Input failures disable manual rebuild input with one diagnostic;
+file watching continues. Compiler flags and backend behavior are unchanged.
+
+The current migration-only patch points at
+`../fastled-wasm-extern/kernal-api-terminal` on `feat/terminal-input`.
+Dependency-isolation checks and Python tests pass (28 passed, one skipped).
+Full Rust workspace tests pass: 259 library tests, two binary tests, one
+integration test and one doc test. The cross-repository review is clean.
+Strict all-target application Clippy and formatting pass. Native-platform CI
+for the latest upstream feature split remains pending.
+Publication and exact registry adoption remain required; no build-speed
+improvement is claimed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

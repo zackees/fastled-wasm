@@ -26,7 +26,7 @@ fn stdio_log(line: &str, stream: &str) {
     use std::io::IsTerminal;
 
     if stream == "warning" && std::io::stderr().is_terminal() {
-        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+        eprintln!("{}", crate::diagnostics::yellow_warning(line));
     } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {

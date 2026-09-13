@@ -138,7 +138,37 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         };
         let rx = file_watcher.start();
 
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+        let mut rebuild_keys = keyboard::RebuildKeys::default();
+        let mut watch_exit = ExitCode::SUCCESS;
+        let mut input_tick = match async_engine::PeriodicTimer::new(std::time::Duration::from_millis(100)) {
+            Ok(timer) => timer,
+            Err(error) => {
+                eprintln!("fastled: could not start watch polling: {error}");
+                file_watcher.stop();
+                return ExitCode::FAILURE;
+            }
+        };
+
         loop {
+            // Poll Ctrl+C first so its handler is registered before lazy key
+            // capture changes terminal modes. In-flight builds still finish
+            // before the next loop tick handles a pending interruption.
+            tokio::select! {
+                biased;
+                interrupted = &mut ctrl_c => {
+                    watch_exit = match interrupted {
+                        Ok(()) => ExitCode::from(130),
+                        Err(error) => {
+                            eprintln!("fastled: Ctrl+C monitoring failed: {error}");
+                            ExitCode::FAILURE
+                        }
+                    };
+                    break;
+                }
+                _ = input_tick.tick() => {}
+            }
             // The viewer window is the app from the user's perspective: once
             // it is gone (closed or crashed), shut the CLI down cleanly. An
             // in-flight compile always finishes first because this check only
@@ -148,7 +178,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
                 break;
             }
 
-            let should_rebuild = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+            let should_rebuild = match rx.try_recv() {
                 Ok(batch) => {
                     println!(
                         "\nChanges detected in {:?}{}",
@@ -175,8 +205,14 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
                     }
                     true
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    let manual = keyboard::check_for_space();
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    let manual = match rebuild_keys.poll() {
+                        Ok(manual) => manual,
+                        Err(error) => {
+                            eprintln!("fastled: manual rebuild input disabled: {error}");
+                            false
+                        }
+                    };
                     if manual {
                         if let Err(error) = dynamic_cache::invalidate_all_persistent_fingerprints() {
                             eprintln!("fastled: persistent fingerprint invalidation failed; falling back to full scans: {error:#}");
@@ -206,8 +242,9 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             }
         }
 
+        drop(rebuild_keys);
         file_watcher.stop();
-        ExitCode::SUCCESS
+        watch_exit
     })
 }
 

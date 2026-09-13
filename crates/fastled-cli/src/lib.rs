@@ -12,6 +12,7 @@ mod cli;
 mod commands;
 mod compile_stream;
 pub mod debug_symbols;
+mod diagnostics;
 mod dwarf_smoke;
 mod dynamic_cache;
 #[cfg(test)]
