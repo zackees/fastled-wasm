@@ -347,17 +347,24 @@ pub fn run(options: ViewerOptions) -> ExitCode {
             if inject_test_runtime {
                 builder = builder.initialization_script(TEST_RUNTIME_SCRIPT);
             }
+            #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
             let window = builder.build()?;
 
             // Counteract WebView2 DPI auto-scaling while keeping the UI readable.
-            let scale = window.scale_factor().unwrap_or(1.0);
-            if scale > 1.0 {
-                let zoom = 0.92 / scale;
-                let js = format!(
-                    "document.addEventListener('DOMContentLoaded', function() {{ document.body.style.zoom = '{}'; }});",
-                    zoom
-                );
-                window.eval(&js).ok();
+            // Windows only: WebKitGTK and WKWebView already render at the
+            // window's scale factor, so this zoom would halve the page on a
+            // 2x Linux or macOS display.
+            #[cfg(target_os = "windows")]
+            {
+                let scale = window.scale_factor().unwrap_or(1.0);
+                if scale > 1.0 {
+                    let zoom = 0.92 / scale;
+                    let js = format!(
+                        "document.addEventListener('DOMContentLoaded', function() {{ document.body.style.zoom = '{}'; }});",
+                        zoom
+                    );
+                    window.eval(&js).ok();
+                }
             }
             Ok(())
         })
