@@ -23,7 +23,7 @@ strip = "none"
 # Temporary migration override; replace with the verified published release.
 # A git revision keeps CI hermetic while the crates.io release is pending.
 [patch.crates-io]
-kernal-api = { git = "https://github.com/zackees/kernal-api.git", rev = "b63506dc1e5d963d57235ab1d26e0e86f1ed4f51" }
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", rev = "c5dd324" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1
