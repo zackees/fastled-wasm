@@ -13,9 +13,8 @@ use std::sync::{Arc, RwLock};
 use kernal_api::{
     async_engine,
     http_server::{Limits, Request, Response, Server},
+    json::{self, Layout, Value},
 };
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 
@@ -27,12 +26,42 @@ use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 /// the server.
 pub type DebugSymbolHandle = Arc<RwLock<Option<DebugSymbolResolver>>>;
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub(crate) struct TestRuntimeConfig {
     pub(crate) wait_ms: f64,
     pub(crate) interval_ms: Option<f64>,
     pub(crate) screenshot_names: Vec<String>,
+}
+
+impl TestRuntimeConfig {
+    fn document(&self) -> Value {
+        // Preserve the wire protocol's null representation for non-finite
+        // values; accepted test schedules are validated separately.
+        let number = |value: f64| {
+            if value.is_finite() {
+                Value::Float(value)
+            } else {
+                Value::Null
+            }
+        };
+        Value::ObjectMembers(vec![
+            ("waitMs".into(), number(self.wait_ms)),
+            (
+                "intervalMs".into(),
+                self.interval_ms.map(number).unwrap_or(Value::Null),
+            ),
+            (
+                "screenshotNames".into(),
+                Value::Array(
+                    self.screenshot_names
+                        .iter()
+                        .cloned()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            ),
+        ])
+    }
 }
 
 #[derive(Clone)]
@@ -376,12 +405,19 @@ fn text(status: u16, body: impl Into<String>) -> Reply {
         .with_header("content-type", "text/plain; charset=utf-8")
 }
 
-fn json_reply(status: u16, value: impl Serialize) -> Reply {
+fn json_reply(status: u16, value: Value) -> Reply {
     Response::new(
         status,
-        serde_json::to_vec(&value).map_err(std::io::Error::other)?,
+        json::encode(&value, Layout::Compact).map_err(std::io::Error::other)?,
     )?
     .with_header("content-type", "application/json")
+}
+
+fn json_error(status: u16, message: impl Into<String>) -> Reply {
+    json_reply(
+        status,
+        Value::ObjectMembers(vec![("error".into(), Value::String(message.into()))]),
+    )
 }
 
 async fn stream_file(state: &AppState, path: &std::path::Path, prefix: &[u8], mime: &str) -> Reply {
@@ -534,9 +570,31 @@ async fn viewer_screenshot(state: &AppState, request: &Request) -> Reply {
     empty(204)
 }
 
-#[derive(Deserialize)]
-struct DwarfSourceRequest {
-    path: String,
+fn dwarf_request_path(document: Value) -> Result<String, (u16, &'static str)> {
+    let mut path = None;
+    match document {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if name == "path" && path.replace(value).is_some() {
+                    return Err((422, "duplicate path field"));
+                }
+            }
+        }
+        Value::Array(values) => {
+            let mut values = values.into_iter();
+            path = values.next();
+            // A valid positional path followed by extra items was classified
+            // as trailing input by the original endpoint.
+            if matches!(path, Some(Value::String(_))) && values.next().is_some() {
+                return Err((400, "unexpected fields after path"));
+            }
+        }
+        _ => return Err((422, "expected path object or positional record")),
+    }
+    match path {
+        Some(Value::String(path)) => Ok(path),
+        _ => Err((422, "path must be a string")),
+    }
 }
 
 async fn dwarf_source(state: &AppState, request: &Request) -> Reply {
@@ -554,9 +612,23 @@ async fn dwarf_source(state: &AppState, request: &Request) -> Reply {
     {
         return text(415, "expected application/json");
     }
-    let payload = match serde_json::from_slice::<DwarfSourceRequest>(request.body()) {
-        Ok(payload) => payload,
-        Err(error) => return text(if error.is_data() { 422 } else { 400 }, error.to_string()),
+    let document = match json::parse_members(request.body()) {
+        Ok(document) => document,
+        Err(error) => {
+            return text(
+                match error {
+                    json::Error::InputTooLarge
+                    | json::Error::TooManyNodes
+                    | json::Error::TooDeep => 413,
+                    _ => 400,
+                },
+                error.to_string(),
+            )
+        }
+    };
+    let path = match dwarf_request_path(document) {
+        Ok(path) => path,
+        Err((status, message)) => return text(status, message),
     };
     let resolver = state
         .debug_symbols
@@ -564,19 +636,19 @@ async fn dwarf_source(state: &AppState, request: &Request) -> Reply {
         .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
         .clone();
     let Some(resolver) = resolver else {
-        return json_reply(400, json!({"error": "debug source resolver unavailable"}));
+        return json_error(400, "debug source resolver unavailable");
     };
-    let path = payload.path.trim();
+    let path = path.trim();
     if path.is_empty() {
-        return json_reply(400, json!({"error": "missing path"}));
+        return json_error(400, "missing path");
     }
     match resolver.resolve(path, true) {
         Ok(file) => match stream_file(state, &file, &[], "text/plain; charset=utf-8").await {
             Ok(response) => Ok(response),
-            Err(error) => json_reply(500, json!({"error": error.to_string()})),
+            Err(error) => json_error(500, error.to_string()),
         },
-        Err(ResolveError::NotFound(message)) => json_reply(404, json!({"error": message})),
-        Err(ResolveError::Invalid(message)) => json_reply(400, json!({"error": message})),
+        Err(ResolveError::NotFound(message)) => json_error(404, message),
+        Err(ResolveError::Invalid(message)) => json_error(400, message),
     }
 }
 
@@ -586,15 +658,25 @@ fn debug_source_roots(state: &AppState) -> Reply {
         .read()
         .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
         .clone();
-    let roots =
-        resolver
-            .map(|resolver| {
-                resolver.config().source_roots().into_iter()
-        .map(|(prefix, path)| json!({"prefix": prefix, "path": path.display().to_string()}))
-        .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-    json_reply(200, json!({"roots": roots}))
+    let roots = resolver
+        .map(|resolver| {
+            resolver
+                .config()
+                .source_roots()
+                .into_iter()
+                .map(|(prefix, path)| {
+                    Value::ObjectMembers(vec![
+                        ("path".into(), Value::String(path.display().to_string())),
+                        ("prefix".into(), Value::String(prefix)),
+                    ])
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json_reply(
+        200,
+        Value::ObjectMembers(vec![("roots".into(), Value::Array(roots))]),
+    )
 }
 
 async fn route(state: &AppState, request: Request) -> Reply {
@@ -645,7 +727,7 @@ async fn route(state: &AppState, request: Request) -> Reply {
                     return empty(401);
                 }
                 match path.as_str() {
-                    "/test-config" => return json_reply(200, &test.runtime),
+                    "/test-config" => return json_reply(200, test.runtime.document()),
                     "/test-ready" => {
                         let _ = test.events.send(TestEvent::Ready);
                     }
@@ -1033,10 +1115,9 @@ mod tests {
         )
         .await
         .unwrap();
-        let config: serde_json::Value =
-            serde_json::from_str(&response_text(config_response).await).unwrap();
-        assert_eq!(config["waitMs"].as_f64(), Some(25.0));
-        assert_eq!(config["screenshotNames"][0], "frame-0");
+        let config = json::parse(response_text(config_response).await.as_bytes()).unwrap();
+        assert_eq!(field(&config, "waitMs"), &Value::Float(25.0));
+        assert_eq!(field(&config, "screenshotNames"), &Value::Array(vec![Value::String("frame-0".into())]));
 
         // Product policy: four occupied slots reject another authorized sleep
         // with HTTP 429; releasing a slot admits the next request.
@@ -1472,16 +1553,23 @@ mod tests {
     // DWARF source endpoint tests
     // ------------------------------------------------------------------
 
-    fn json_body(value: serde_json::Value) -> String {
-        value.to_string()
+    fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
+        let Value::Object(fields) = value else {
+            panic!("expected object")
+        };
+        fields.get(name).expect("expected field")
     }
 
-    async fn post_json(addr: SocketAddr, path: &str, body: serde_json::Value) -> HttpResponse {
+    fn path_document(path: &str) -> Value {
+        Value::ObjectMembers(vec![("path".into(), Value::String(path.into()))])
+    }
+
+    async fn post_json(addr: SocketAddr, path: &str, body: Value) -> HttpResponse {
         http_request(
             HttpMethod::Post,
             &format!("http://{addr}{path}"),
             &[("Content-Type", "application/json")],
-            json_body(body).as_bytes(),
+            &json::encode(&body, Layout::Compact).unwrap(),
         )
         .await
         .unwrap()
@@ -1495,13 +1583,141 @@ mod tests {
             .unwrap()
             .run(async {
                 let (addr, _dir) = setup_server().await;
-                let resp = post_json(
-                    addr,
-                    "/dwarfsource",
-                    serde_json::json!({"path": "sketchsource/foo.ino"}),
-                )
-                .await;
+                let resp =
+                    post_json(addr, "/dwarfsource", path_document("sketchsource/foo.ino")).await;
                 assert_eq!(resp.status(), 400);
+            });
+    }
+
+    #[test]
+    fn dwarfsource_json_schema_distinguishes_media_syntax_and_field_errors() {
+        async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                for (content_type, body, status) in [
+                    ("text/plain", r#"{"path":"日本"}"#, 415),
+                    ("application/json", "{", 400),
+                    ("application/json", r#"{"path":1}"#, 422),
+                    ("application/json", r#"{}"#, 422),
+                    ("application/json", r#"{"path":"a","path":"b"}"#, 422),
+                    ("application/json", r#"[]"#, 422),
+                    ("application/json", r#"[1,2]"#, 422),
+                    ("application/json", r#"["a","b"]"#, 400),
+                    // Valid requests proceed to the missing-resolver response.
+                    ("application/json", r#"["日本"]"#, 400),
+                    (
+                        "application/json",
+                        r#"{"path":"日本","future":null,"future":true}"#,
+                        400,
+                    ),
+                    (
+                        "application/vnd.fastled+json; charset=utf-8",
+                        r#"{"path":"a"}"#,
+                        400,
+                    ),
+                ] {
+                    let response = http_request(
+                        HttpMethod::Post,
+                        &format!("http://{addr}/dwarfsource"),
+                        &[("Content-Type", content_type)],
+                        body.as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response.status(), status, "{content_type}: {body}");
+                    if body.contains("日本") && status == 400 {
+                        assert!(response_text(response)
+                            .await
+                            .contains("resolver unavailable"));
+                    }
+                }
+            });
+    }
+
+    #[test]
+    fn runtime_json_preserves_camel_case_order_nulls_and_finite_numbers() {
+        for (wait_ms, interval_ms, expected) in [
+            (
+                25.0,
+                Some(1.5),
+                r#"{"waitMs":25.0,"intervalMs":1.5,"screenshotNames":["日本"]}"#,
+            ),
+            (
+                f64::NAN,
+                None,
+                r#"{"waitMs":null,"intervalMs":null,"screenshotNames":["日本"]}"#,
+            ),
+            (
+                f64::INFINITY,
+                Some(f64::NEG_INFINITY),
+                r#"{"waitMs":null,"intervalMs":null,"screenshotNames":["日本"]}"#,
+            ),
+        ] {
+            let runtime = TestRuntimeConfig {
+                wait_ms,
+                interval_ms,
+                screenshot_names: vec!["日本".into()],
+            };
+            assert_eq!(
+                json::encode(&runtime.document(), Layout::Compact).unwrap(),
+                expected.as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn dwarfsource_json_resource_limits_and_syntax_errors_are_explicit() {
+        async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let mut oversized = r#"{"path":"a"}"#.to_owned();
+                oversized.extend(std::iter::repeat_n(
+                    ' ',
+                    json::MAX_INPUT_BYTES + 1 - oversized.len(),
+                ));
+                let too_deep = format!(
+                    "{{\"path\":\"a\",\"extra\":{}0{}}}",
+                    "[".repeat(json::MAX_DEPTH + 1),
+                    "]".repeat(json::MAX_DEPTH + 1)
+                );
+                let too_many = format!(
+                    "{{\"path\":\"a\",\"extra\":[{}0]}}",
+                    "0,".repeat(json::MAX_NODES)
+                );
+                for body in [oversized, too_deep, too_many] {
+                    let response = HttpClient::new(HttpLimits {
+                        max_request_bytes: json::MAX_INPUT_BYTES + 4096,
+                        ..HttpLimits::default()
+                    })
+                    .unwrap()
+                    .execute(HttpRequest {
+                        method: HttpMethod::Post,
+                        url: &format!("http://{addr}/dwarfsource"),
+                        headers: &[("Content-Type", "application/json")],
+                        body: body.as_bytes(),
+                    })
+                    .await
+                    .unwrap();
+                    assert_eq!(response.status(), 413);
+                }
+                // Syntax is validated before schema inspection, including when a
+                // wrong field type precedes malformed trailing input.
+                let response = http_request(
+                    HttpMethod::Post,
+                    &format!("http://{addr}/dwarfsource"),
+                    &[("Content-Type", "application/json")],
+                    br#"{"path":false,"private-marker":}"#,
+                )
+                .await
+                .unwrap();
+                assert_eq!(response.status(), 400);
+                assert!(!response_text(response).await.contains("private-marker"));
             });
     }
 
@@ -1517,9 +1733,8 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(resp.status(), 200);
-                let body: serde_json::Value =
-                    serde_json::from_str(&response_text(resp).await).unwrap();
-                assert!(body["roots"].as_array().unwrap().is_empty());
+                let body = json::parse(response_text(resp).await.as_bytes()).unwrap();
+                assert_eq!(field(&body, "roots"), &Value::Array(vec![]));
             });
     }
 
@@ -1550,7 +1765,7 @@ mod tests {
                 let resp = post_json(
                     addr,
                     "/dwarfsource",
-                    serde_json::json!({"path": "sketchsource/src/demo.ino"}),
+                    path_document("sketchsource/src/demo.ino"),
                 )
                 .await;
                 assert_eq!(resp.status(), 200);
@@ -1560,13 +1775,14 @@ mod tests {
                 let resp = http_get(format!("http://{addr}/debug/source-roots"))
                     .await
                     .unwrap();
-                let body: serde_json::Value =
-                    serde_json::from_str(&response_text(resp).await).unwrap();
-                let roots = body["roots"].as_array().unwrap();
+                let body = json::parse(response_text(resp).await.as_bytes()).unwrap();
+                let Value::Array(roots) = field(&body, "roots") else {
+                    panic!("expected roots array")
+                };
                 assert!(!roots.is_empty());
                 assert!(roots
                     .iter()
-                    .any(|r| r["prefix"].as_str() == Some("sketchsource")));
+                    .any(|r| field(r, "prefix") == &Value::String("sketchsource".into())));
             });
     }
 
@@ -1677,7 +1893,7 @@ mod tests {
                 let resp = post_json(
                     addr,
                     "/dwarfsource",
-                    serde_json::json!({"path": "sketchsource/../escape.txt"}),
+                    path_document("sketchsource/../escape.txt"),
                 )
                 .await;
                 assert_eq!(resp.status(), 400);

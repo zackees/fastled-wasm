@@ -1024,6 +1024,25 @@ Verification passes 275 library, 3 binary, 1 integration and 1 doc tests;
 Python passes 37 with 1 skipped. Strict all-target Clippy, formatting, Ruff and
 single-reviewer review pass. Compiler behavior is unchanged.
 
+Server JSON now uses kernel-owned values for test configuration, DWARF requests,
+source roots and error responses, including its tests. The HTTP schema baseline
+passed before replacement, and the new production path first passed existing
+tests with the previous decoder as an independent output oracle. Media types,
+known-field duplicate rejection, positional path requests, response field names,
+runtime nulls and source resolution remain application policy.
+
+The bounded parser adds explicit HTTP 413 responses for its byte/node/depth
+limits. It validates complete JSON syntax before schema inspection: malformed
+documents return 400 even if an earlier field has the wrong type; valid documents
+with invalid fields return 422. Diagnostics no longer echo backend source
+snippets. These are intentional invalid-input changes, not a claim of byte-for-
+byte legacy error compatibility. Four JSON source modules remain.
+The full workspace passes 278 library, 3 binary, 1 integration and 1 doc tests;
+Python passes 38 with 1 skipped. Strict Clippy, formatting, Ruff and review pass;
+all 27 server tests were rerun after the final Clippy-only style correction.
+The upstream JSON head d2879eb has 53 successful/skipped CI checks, but the
+earlier webview PR #199 still has failing checks and the stack is not landed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
