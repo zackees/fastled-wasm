@@ -23,7 +23,6 @@ path = "src/main.rs"
 [dependencies]
 clap = { workspace = true }
 kernal-api = { workspace = true }
-reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
@@ -62,3 +61,4 @@ bin-dir = "fastled{ binary-ext }"
 pkg-fmt = "zip"
 
 [dev-dependencies]
+reqwest = { workspace = true }

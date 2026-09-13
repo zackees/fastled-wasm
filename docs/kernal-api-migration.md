@@ -371,6 +371,16 @@ dependency remains for async debug requests and server integration tests.
 After feature removal, strict workspace all-target Clippy and the full Rust
 suite pass (250 library, 2 binary, 1 integration, 1 doctest).
 
+DWARF source-smoke POSTs now use kernel HTTP, runtime construction, and sleep;
+FastLED retains the JSON payload and source-path/status policy. Reqwest has been
+removed from production dependencies and remains temporarily as a dev-dependency
+for server integration tests. The boundary regression failed on the old DWARF
+import then passed. The full existing workspace suite and strict Clippy passed;
+an additional real-local-server source-smoke test also passes for both a mapped
+source and its missing-file error. This is HTTP/source-resolution validation,
+not a WASM execution or Safari test. Server-test migration is still required
+before removing reqwest entirely.
+
 This is not the complete HTTP capability: streamed artifact sinks,
 SSE integration, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
