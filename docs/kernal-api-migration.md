@@ -570,7 +570,32 @@ Next capability gaps include bounded terminal key polling and styling
 (https://github.com/zackees/kernal-api/issues/180). FastLED keeps rebuild-key
 selection, warning text, token length/encoding and authorization policy. The
 kernel owns the underlying terminal and OS-random mechanisms and generic tests.
-Neither issue is implemented or adopted yet.
+Terminal work remains outstanding. The entropy capability is now implemented
+in https://github.com/zackees/kernal-api/pull/181, with five focused upstream
+tests, broader feature tests, strict Clippy, dependency-isolation checks and
+entropy-enabled extracted-package verification passing locally.
+
+### Secure entropy adoption
+
+FastLED now requests its 32 entropy bytes through the kernel's bounded native
+capability and keeps lowercase-hex encoding, authorization and startup-failure
+handling here. The one startup request has a five-second caller deadline; an
+OS call still running afterward retains the kernel admission slot until it ends.
+The deadline does not promise bounded runtime shutdown if that native call is
+still blocked when the CLI exits.
+No predictable fallback is permitted. Direct `getrandom` is removed and banned
+by the app boundary test (observed RED then GREEN). The transitive 0.4.2 pin
+updates to the kernel-selected 0.4.3; its obsolete WASI 0.3 binding packages
+leave the lockfile, but other transitive random dependencies remain.
+
+During this slice the migration-only patch points at
+`../fastled-wasm-extern/kernal-api-entropy` on `feat/secure-entropy`, not the
+original sibling checkout. Restore the canonical checkout after upstream merge,
+then remove the patch entirely when adopting the exact published release.
+All 259 Rust workspace tests passed. Strict all-target Clippy and the focused
+token-format test pass after moving its test module to the end of the file.
+The single reviewer confirmed the corrected async integration; Python tests
+pass (28 passed, one skipped). This is not published adoption.
 
 ### Final migration audit
 
