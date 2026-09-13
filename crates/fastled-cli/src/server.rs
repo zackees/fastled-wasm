@@ -787,7 +787,39 @@ pub async fn start_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::http::{
+        Client as HttpClient, Limits as HttpLimits, Method as HttpMethod, Request as HttpRequest,
+        Response as HttpResponse,
+    };
     use std::fs;
+
+    async fn http_request(
+        method: HttpMethod,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> std::io::Result<HttpResponse> {
+        HttpClient::new(HttpLimits::default())?
+            .execute(HttpRequest {
+                method,
+                url,
+                headers,
+                body,
+            })
+            .await
+    }
+
+    async fn http_get(url: String) -> std::io::Result<HttpResponse> {
+        http_request(HttpMethod::Get, &url, &[], &[]).await
+    }
+
+    async fn response_text(response: HttpResponse) -> String {
+        String::from_utf8(response.into_bytes().await.unwrap()).unwrap()
+    }
+
+    fn header_text<'a>(response: &'a HttpResponse, name: &str) -> &'a str {
+        std::str::from_utf8(response.header(name).unwrap()).unwrap()
+    }
 
     fn empty_handle() -> DebugSymbolHandle {
         Arc::new(RwLock::new(None))
@@ -807,13 +839,14 @@ mod tests {
     #[tokio::test]
     async fn test_viewer_log_endpoint_accepts_posts() {
         let (addr, _dir) = setup_server().await;
-        let client = reqwest::Client::new();
-        let resp = client
-            .post(format!("http://{addr}/viewer-log"))
-            .body("error: something broke")
-            .send()
-            .await
-            .unwrap();
+        let resp = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-log"),
+            &[],
+            b"error: something broke",
+        )
+        .await
+        .unwrap();
         assert_eq!(resp.status(), 204);
     }
 
@@ -847,80 +880,90 @@ mod tests {
         )
         .await
         .unwrap();
-        let client = reqwest::Client::new();
 
-        let unauthorized = client
-            .get(format!("http://{addr}/test-config"))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
-        let config_response = client
-            .get(format!("http://{addr}/test-config"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
+        let unauthorized = http_request(
+            HttpMethod::Get,
+            &format!("http://{addr}/test-config"),
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED.as_u16());
+        let config_response = http_request(
+            HttpMethod::Get,
+            &format!("http://{addr}/test-config"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
         let config: serde_json::Value =
-            serde_json::from_str(&config_response.text().await.unwrap()).unwrap();
+            serde_json::from_str(&response_text(config_response).await).unwrap();
         assert_eq!(config["waitMs"].as_f64(), Some(25.0));
         assert_eq!(config["screenshotNames"][0], "frame-0");
 
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=1"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=-1"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=26"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT.as_u16());
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=-1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=26"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
 
-        let worker = client
-            .get(format!("http://{addr}/fastled_background_worker.js"))
-            .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
+        let worker = response_text(
+            http_get(format!("http://{addr}/fastled_background_worker.js"))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert!(worker.starts_with("\nconst __fastledOriginalOffscreenGetContext"));
         assert!(worker.contains("preserveDrawingBuffer: true"));
         assert!(worker.contains("console.log('worker');"));
         assert!(worker.contains("gl.readPixels"));
         assert!(worker.contains("fastled_test_capture_response"));
 
-        let response = client
-            .post(format!("http://{addr}/viewer-screenshot?name=..%2Fescape"))
-            .bearer_auth("test-token")
-            .body(vec![137, 80, 78, 71, 13, 10, 26, 10])
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=..%2Fescape"),
+            &[("Authorization", "Bearer test-token")],
+            &[137, 80, 78, 71, 13, 10, 26, 10],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
         assert!(!dir.path().join("escape").exists());
 
         let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
-        let response = client
-            .post(format!("http://{addr}/viewer-screenshot?name=frame-0"))
-            .bearer_auth("test-token")
-            .body(png.clone())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=frame-0"),
+            &[("Authorization", "Bearer test-token")],
+            &png,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT.as_u16());
         assert_eq!(fs::read(&screenshot).unwrap(), png);
         assert!(matches!(
             rx.recv().await,
@@ -931,9 +974,9 @@ mod tests {
     #[tokio::test]
     async fn test_loading_page_when_no_index_html() {
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        let resp = http_get(format!("http://{addr}/")).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
+        let body = response_text(resp).await;
         assert!(
             body.contains("Compiling..."),
             "expected loading page, got: {body}"
@@ -952,13 +995,13 @@ mod tests {
             r#"{"status":"error","message":"Compilation failed"}"#,
         )
         .unwrap();
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        let resp = http_get(format!("http://{addr}/")).await.unwrap();
         assert_eq!(
             resp.status(),
             200,
             "viewer should land on the loading page, not 404/redirect, when compile failed"
         );
-        let body = resp.text().await.unwrap();
+        let body = response_text(resp).await;
         assert!(
             body.contains("Compiling..."),
             "expected loading page, got: {body}"
@@ -974,9 +1017,9 @@ mod tests {
     async fn test_serves_index_html_when_present() {
         let (addr, dir) = setup_server().await;
         fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
+        let resp = http_get(format!("http://{addr}/")).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
+        let body = response_text(resp).await;
         assert!(
             body.contains("OK"),
             "expected index.html content, got: {body}"
@@ -987,14 +1030,9 @@ mod tests {
     async fn test_serves_js_with_correct_mime() {
         let (addr, dir) = setup_server().await;
         fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/app.js")).await.unwrap();
+        let resp = http_get(format!("http://{addr}/app.js")).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let ct = header_text(&resp, "content-type");
         assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
     }
 
@@ -1002,35 +1040,20 @@ mod tests {
     async fn test_serves_wasm_with_correct_mime() {
         let (addr, dir) = setup_server().await;
         fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
-        let resp = reqwest::get(format!("http://{addr}/fastled.wasm"))
+        let resp = http_get(format!("http://{addr}/fastled.wasm"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let ct = header_text(&resp, "content-type");
         assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
     }
 
     #[tokio::test]
     async fn test_safari_compatible_coop_coep_headers() {
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        let coep = resp
-            .headers()
-            .get("cross-origin-embedder-policy")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let coop = resp
-            .headers()
-            .get("cross-origin-opener-policy")
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let resp = http_get(format!("http://{addr}/")).await.unwrap();
+        let coep = header_text(&resp, "cross-origin-embedder-policy");
+        let coop = header_text(&resp, "cross-origin-opener-policy");
         assert_eq!(coep, "require-corp");
         assert_eq!(coop, "same-origin");
     }
@@ -1038,7 +1061,7 @@ mod tests {
     #[tokio::test]
     async fn test_404_for_missing_file() {
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/nonexistent.js"))
+        let resp = http_get(format!("http://{addr}/nonexistent.js"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 404);
@@ -1048,7 +1071,7 @@ mod tests {
     async fn test_build_status_json_served() {
         let (addr, dir) = setup_server().await;
         // Initially no build-status.json -> 404
-        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
+        let resp = http_get(format!("http://{addr}/build-status.json"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 404);
@@ -1059,11 +1082,11 @@ mod tests {
             r#"{"status":"compiling","message":"Building..."}"#,
         )
         .unwrap();
-        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
+        let resp = http_get(format!("http://{addr}/build-status.json"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
+        let body = response_text(resp).await;
         assert!(body.contains("compiling"));
     }
 
@@ -1073,7 +1096,7 @@ mod tests {
         // Create a file outside the serve dir
         let parent = dir.path().parent().unwrap();
         fs::write(parent.join("secret.txt"), "top secret").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/../secret.txt"))
+        let resp = http_get(format!("http://{addr}/../secret.txt"))
             .await
             .unwrap();
         // Should not serve files outside the serve dir
@@ -1088,7 +1111,7 @@ mod tests {
     async fn test_sse_returns_404_without_broadcast() {
         // Server started without broadcast channel → /build-stream returns 404.
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/build-stream"))
+        let resp = http_get(format!("http://{addr}/build-stream"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 404);
@@ -1112,16 +1135,9 @@ mod tests {
         let url = format!("http://{addr}/build-stream");
 
         // Connect to SSE endpoint.
-        let client = reqwest::Client::new();
-        let mut resp = client.get(&url).send().await.unwrap();
+        let mut resp = http_get(url).await.unwrap();
         assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
+        let ct = header_text(&resp, "content-type").to_string();
         assert!(
             ct.contains("text/event-stream"),
             "expected event-stream content-type, got: {ct}"
@@ -1139,8 +1155,12 @@ mod tests {
         // Read SSE chunks until we see both events (or timeout).
         let mut collected = String::new();
         let deadline = std::time::Duration::from_secs(3);
-        while let Ok(Ok(Some(chunk))) = tokio::time::timeout(deadline, resp.chunk()).await {
-            collected.push_str(&String::from_utf8_lossy(&chunk));
+        let mut buffer = [0; 4096];
+        while let Ok(Ok(n)) = tokio::time::timeout(deadline, resp.read(&mut buffer)).await {
+            if n == 0 {
+                break;
+            }
+            collected.push_str(&String::from_utf8_lossy(&buffer[..n]));
             if collected.contains("Building sketch...") && collected.contains("success") {
                 break;
             }
@@ -1159,8 +1179,8 @@ mod tests {
     #[tokio::test]
     async fn test_loading_page_contains_eventsource() {
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        let body = resp.text().await.unwrap();
+        let resp = http_get(format!("http://{addr}/")).await.unwrap();
+        let body = response_text(resp).await;
         assert!(
             body.contains("EventSource"),
             "loading page should use EventSource for SSE"
@@ -1210,14 +1230,15 @@ mod tests {
         value.to_string()
     }
 
-    async fn post_json(addr: SocketAddr, path: &str, body: serde_json::Value) -> reqwest::Response {
-        reqwest::Client::new()
-            .post(format!("http://{addr}{path}"))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(json_body(body))
-            .send()
-            .await
-            .unwrap()
+    async fn post_json(addr: SocketAddr, path: &str, body: serde_json::Value) -> HttpResponse {
+        http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}{path}"),
+            &[("Content-Type", "application/json")],
+            json_body(body).as_bytes(),
+        )
+        .await
+        .unwrap()
     }
 
     #[tokio::test]
@@ -1235,11 +1256,11 @@ mod tests {
     #[tokio::test]
     async fn debug_source_roots_empty_without_resolver() {
         let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/debug/source-roots"))
+        let resp = http_get(format!("http://{addr}/debug/source-roots"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&response_text(resp).await).unwrap();
         assert!(body["roots"].as_array().unwrap().is_empty());
     }
 
@@ -1268,13 +1289,13 @@ mod tests {
         )
         .await;
         assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
+        let body = response_text(resp).await;
         assert!(body.contains("void setup()"));
 
-        let resp = reqwest::get(format!("http://{addr}/debug/source-roots"))
+        let resp = http_get(format!("http://{addr}/debug/source-roots"))
             .await
             .unwrap();
-        let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
+        let body: serde_json::Value = serde_json::from_str(&response_text(resp).await).unwrap();
         let roots = body["roots"].as_array().unwrap();
         assert!(!roots.is_empty());
         assert!(roots
@@ -1301,26 +1322,21 @@ mod tests {
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
+        let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let ct = header_text(&resp, "content-type");
         assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
-        assert!(resp.text().await.unwrap().contains("void loop()"));
+        assert!(response_text(resp).await.contains("void loop()"));
 
-        let resp = reqwest::get(format!(
+        let resp = http_get(format!(
             "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
         ))
         .await
         .unwrap();
         assert_eq!(resp.status(), 200);
-        assert!(resp.text().await.unwrap().contains("void loop()"));
+        assert!(response_text(resp).await.contains("void loop()"));
     }
 
     #[tokio::test]
@@ -1350,11 +1366,11 @@ mod tests {
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
+        let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
             .await
             .unwrap();
         assert_eq!(resp.status(), 200);
-        assert!(resp.text().await.unwrap().contains("void setup()"));
+        assert!(response_text(resp).await.contains("void setup()"));
     }
 
     #[tokio::test]

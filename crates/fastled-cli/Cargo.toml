@@ -55,6 +55,3 @@ webkit2gtk = { version = "2.0", features = ["v2_40"], optional = true }
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
 bin-dir = "fastled{ binary-ext }"
 pkg-fmt = "zip"
-
-[dev-dependencies]
-reqwest = { workspace = true }

@@ -381,11 +381,20 @@ source and its missing-file error. This is HTTP/source-resolution validation,
 not a WASM execution or Safari test. Server-test migration is still required
 before removing reqwest entirely.
 
-This is not the complete HTTP capability: streamed artifact sinks,
-SSE integration, redirect
-policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
-metadata analysis remain required, along with isolation/platform CI and review.
-FastLED still directly depends on reqwest. No HTTP PR or release is published.
+Server integration tests now use the kernel HTTP client, including POST bodies,
+authorization headers, response headers, and caller-buffered SSE reads. Reqwest
+is removed from both direct dependency lists; the boundary test was observed RED
+then GREEN. All 21 endpoint tests and the full workspace suite pass (251 library,
+2 binary, 1 integration, 1 doctest), as do Python unit tests (26/1 skipped)
+and strict workspace all-target Clippy.
+The lockfile drops now-unused HTTP/2, charset, and secondary TLS dependencies;
+reqwest remains a private transitive dependency, not an application import.
+No build-speed improvement has yet been measured.
+
+HTTP remains a locally adopted draft. Upstream review, TLS rejection/downgrade
+fixtures, the pre-allocation metadata contract, and supported-platform CI still
+need resolution. No HTTP PR or release is published, and the temporary local
+path override must be removed before release.
 
 ### Final migration audit
 
