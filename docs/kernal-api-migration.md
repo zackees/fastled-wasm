@@ -220,8 +220,10 @@ the newer Linux WebKit changes. `git range-diff` confirms all five migration
 patches are identical after rebase. New heads are SHA `40fcb18`, home `4efac1c`,
 and archive `6c32591` (including CI checks). The migrated-feature kernel suite
 passes after rebase; the first attempt ended in a Soldr relay error, followed
-by a successful unchanged retry. PR #162 is now mergeable and its fresh CI
-checks are queued. No release has been published.
+by a successful unchanged retry. SHA-256 PR #162 and home-resolution PR #164
+have now merged after their complete CI checks passed. Archive PR #166 has
+been retargeted to main; its remaining release gates still apply. No release
+has been published.
 
 ### HTTP client slice (draft; not adopted)
 
@@ -246,8 +248,16 @@ Strict HTTP-feature Clippy and the broader HTTP-enabled kernel test suite pass
 (166 library tests plus enabled integration tests); no HTTP adoption or
 cross-platform execution claim is implied by those checks.
 
+The draft now adds facade-owned GET/HEAD/POST request types, borrowed application
+headers/body, response header access, and request URL/body/header byte ceilings.
+Header counts are independently bounded before request construction. Eight
+focused tests pass, including HEAD entity-length handling, wire-level POST
+payload/header checks, malformed header and framing-header rejection, and an
+excessive-header regression observed RED then GREEN. Strict Clippy and the
+broader HTTP-enabled kernel suite still pass.
+
 This is not the complete HTTP capability: runtime-owned blocking access,
-streamed artifact sinks, HEAD/POST, owned headers, bounded SSE pulls, redirect
+streamed artifact sinks, bounded SSE pulls, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
 metadata analysis remain required, along with isolation/platform CI and review.
 FastLED still directly depends on reqwest. No HTTP PR or release is published.
