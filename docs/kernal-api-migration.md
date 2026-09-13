@@ -449,7 +449,7 @@ its existing timeout values, exit behavior and test-runner policy. The full
 255-test Rust workspace suite, strict all-target Clippy and Python suite
 (27 passes/1 skip) pass.
 
-Tokio and tokio-stream remain direct dependencies. Remaining work includes
+At that initial stage, Tokio and tokio-stream remained direct dependencies. Work included
 channel types (notably blocking sends from output-reader threads), broadcast/SSE,
 signals, semaphore try-acquisition, absolute timers, tasks and server I/O.
 Kernel async_engine explicitly leaves select/attribute macro calls as a separate
@@ -463,10 +463,32 @@ task to retain its existing runtime-owned lifetime. Test-runner command and
 output-drain deadlines use kernel Deadline. The cancellation product regression
 now waits for a READY event, covers explicit cancellation and handle drop, and
 waits beyond normal command completion before checking for escaped-shell output.
-The async source boundary was observed RED then GREEN. Bounded channels still
-need a kernel blocking-send operation for the synchronous reader threads.
+The async source boundary was observed RED then GREEN. Bounded channels then
+needed a kernel blocking-send operation for the synchronous reader threads.
 All 255 Rust tests, strict all-target Clippy and 27 Python tests pass (one
 Python test skipped) after this task/channel migration.
+
+Bounded channels now use the kernel blocking-send operation (upstream #170,
+PR #171). Shared deadline waits, periodic viewer monitoring and non-waiting
+semaphore admission use the kernel operations from #172 / PR #173. The app
+retains its 100 ms cadence, timeout priorities and four-slot admission policy;
+its endpoint test verifies HTTP 429 on saturation and admission after release.
+
+Broadcast delivery and SSE stream adaptation now use the kernel API from #174.
+The direct `tokio-stream` dependency is removed. The optional kernel
+`event-stream` feature owns stream interoperability, without a pump task or
+additional queue. Generic tests cover fanout, exact entry capacity, explicit
+lag counts, ordered recovery, closure and cancellation. FastLED retains event
+JSON and its existing explicit filtering of SSE lag notifications. Entry
+capacity is not a payload-byte bound. The source/dependency boundary was
+observed RED before adoption and GREEN afterward.
+
+The lockfile updates only `futures-core` 0.3.32 -> 0.3.34 and `tokio-stream`
+0.1.18 -> 0.1.19 to meet exact upstream requirements. Cargo also reselects
+already-locked Windows dependency edges; no other package versions change.
+Tokio remains direct for signals, server I/O and macro call sites. Upstream
+merge/release, exact registry adoption and the other inventory rows remain
+outstanding; the local path patch is still migration-only.
 
 ### Final migration audit
 
