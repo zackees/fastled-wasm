@@ -16,7 +16,6 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use ctcb_core::Target;
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -990,9 +989,10 @@ fn with_toolchain_lock<T>(base: &Path, action: impl FnOnce() -> Result<T>) -> Re
     let lock_path = base.join(".fastled-toolchain.lock");
     let lock = fs::File::create(&lock_path)
         .with_context(|| format!("create toolchain lock {}", lock_path.display()))?;
-    lock.lock_exclusive()
+    let guard = kernal_api::platform::fs::lock_exclusive(&lock)
         .with_context(|| format!("lock toolchain state {}", lock_path.display()))?;
     let result = action();
+    drop(guard);
     drop(lock);
     result
 }

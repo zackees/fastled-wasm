@@ -15,6 +15,7 @@ dev = [
     "build>=1",
     "setuptools>=69",
     "wheel>=0.43",
+    "tomli>=2",
 ]
 
 [project]

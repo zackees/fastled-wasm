@@ -11,7 +11,6 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tree_sitter::{Node, Parser};
@@ -148,8 +147,8 @@ fn write_snapshot(request: &SnapshotRequest, force_disk_refresh: bool) -> Result
         .write(true)
         .open(&lock_path)
         .with_context(|| format!("open IntelliSense lock {}", lock_path.display()))?;
-    lock.lock_exclusive()
-        .context("lock IntelliSense snapshot")?;
+    let _guard =
+        kernal_api::platform::fs::lock_exclusive(&lock).context("lock IntelliSense snapshot")?;
 
     if let Some(existing) = read_manifest(&cache_dir) {
         if !force_disk_refresh && existing.generation > request.generation {
