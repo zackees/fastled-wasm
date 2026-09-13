@@ -13,7 +13,7 @@ use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
+use kernal_api::hash::Sha256Hasher as Sha256;
 
 use crate::install;
 

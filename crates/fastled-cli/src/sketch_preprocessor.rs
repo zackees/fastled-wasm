@@ -11,8 +11,8 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
+use kernal_api::hash::Sha256Hasher as Sha256;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tree_sitter::{Node, Parser};
 
 use crate::path::NormalizedPath;

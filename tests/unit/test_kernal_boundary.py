@@ -18,6 +18,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "notify" not in dependencies
     assert "zccache-fingerprint" not in dependencies
     assert "running-process" not in dependencies
+    assert "sha2" not in dependencies
     for target in manifest.get("target", {}).values():
         assert "windows-sys" not in target.get("dependencies", {})
     for source in (root / "crates/fastled-cli/src").rglob("*.rs"):
@@ -27,3 +28,4 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
         assert "zccache_fingerprint::" not in source.read_text(), source
         assert "running_process::" not in source.read_text(), source
         assert "windows_sys::" not in source.read_text(), source
+        assert "sha2::" not in source.read_text(), source

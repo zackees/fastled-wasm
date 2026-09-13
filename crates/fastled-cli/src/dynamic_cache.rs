@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
+use kernal_api::hash::Sha256Hasher as Sha256;
 use kernal_api::platform::fs::{PatternSet, PatternSetBuilder};
 use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::path::NormalizedPath;
 

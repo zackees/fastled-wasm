@@ -116,6 +116,33 @@ RED then GREEN. Native Windows fault-injection tests for assignment, resume,
 and duplication failures are added but await CI execution. One-agent pre-push
 review found no actionable issues. Neither upstream PR is a published release.
 
+### SHA-256 slice
+
+Tracking: https://github.com/zackees/fastled-wasm/issues/235 and
+https://github.com/zackees/kernal-api/issues/161.
+
+The sibling `feat/sha256-facade` branch adds optional `hash-sha256`, reusing
+the kernel's existing private SHA implementation dependency. Owned digests,
+incremental state, and bounded reader/file operations preserve all SHA-256
+encodings. The application removes direct `sha2` and uses the facade for cache
+keys, preprocessing, frontend/build fingerprints, archive seals, and watchers.
+Archive and watcher file hashing use an explicit 16 GiB application limit and
+64 KiB kernel streaming buffer. Other existing incremental application hash
+encodings remain unchanged. Two generic archive hash tests move upstream;
+artifact verification and FastLED cache-policy coverage remain here.
+
+The full application suite passes (251 library tests, two binary tests, one
+integration test, one doctest), as do Python tests (24 passed, one skipped).
+The kernel `fs,fs-watch,hash-sha256` suite passes, including known vectors,
+chunking, changed file contents, interruptions, read failures, and byte limits.
+Dependency-isolation checks prove SHA is absent by default and present with
+its feature. The one-agent review found no actionable issues. App strict
+Clippy passes with `-j1` in both repositories; initial concurrent lint attempts failed without
+preserved compiler diagnostics and required sequential retries.
+
+Tree PR #158 has now merged after all CI checks passed. Cleanup PR #160 targets
+main. Exact published release consumption remains pending for all slices.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
