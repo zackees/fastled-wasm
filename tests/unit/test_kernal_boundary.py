@@ -75,6 +75,20 @@ def test_toml_configuration_uses_kernel():
         assert "toml::" not in source.read_text(), source
 
 
+def test_project_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/project.rs").read_text()
+    assert "serde_json::" not in source
+    assert "kernal_api::json" in source
+
+
+def test_dwarf_smoke_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/dwarf_smoke.rs").read_text()
+    assert "serde_json::" not in source
+    assert "kernal_api::json" in source
+
+
 def test_cpp_source_analysis_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     for path in (root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"):

@@ -955,6 +955,31 @@ This change does not upgrade Emscripten or claim a measured build
 speedup. Remaining direct Rust dependencies are Clap, Serde, Serde JSON, Anyhow,
 and kernal-api; their migration remains required.
 
+### JSON adoption in progress
+
+Upstream issue zackees/kernal-api#211 and draft PR #212 provide bounded owned
+JSON values and parsing/encoding without public Serde contracts. The app's
+migration-only patch now points to `kernal-api-json` at upstream `b3896d2` and
+enables `json`. The lockfile aligns Serde/Serde Core/Serde Derive to 1.0.229 and
+Serde JSON to 1.0.151 to satisfy the kernel's exact private pins.
+
+Project discovery, ref settings, release-tag extraction, and the DWARF smoke
+client/source-map reader now use this API. Their field selection, non-string
+filtering, HTTP status policy, unknown-setting preservation and trailing newline
+remain local. Project updates propagate resource-limit failures before writing;
+they must not discard an oversized valid settings file. Malformed/non-object
+project settings retain the existing reset behavior. Kernel object encoding is
+key-sorted, and its documented source/node/depth/output limits now apply.
+
+Both module-specific dependency bans observed RED then GREEN. All 268 library,
+3 binary, 1 integration and 1 doc tests pass, including the DWARF HTTP smoke
+test. All 34 Python tests pass (1 skipped); formatting, Ruff, strict all-target
+Clippy and single-reviewer review pass. Final native/runtime verification remains
+pending. Direct Serde
+dependencies remain for the other eight JSON modules; this is not complete JSON
+adoption or a release-ready dependency graph. Published adoption, browser/Safari
+acceptance and measured build performance remain outstanding.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

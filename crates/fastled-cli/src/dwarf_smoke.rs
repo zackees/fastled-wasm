@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use anyhow::Context;
+use kernal_api::json::{self, Layout, Value};
 
 use crate::debug_symbols;
 use crate::server;
@@ -37,7 +38,10 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize>
         let client = kernal_api::http::Client::new(kernal_api::http::Limits::default())?;
         for path in &paths {
             let url = format!("http://{addr}/dwarfsource");
-            let body = serde_json::to_vec(&serde_json::json!({ "path": path }))?;
+            let body = json::encode(
+                &Value::Object([("path".into(), Value::String(path.clone()))].into()),
+                Layout::Compact,
+            )?;
             let resp = client
                 .execute(kernal_api::http::Request {
                     method: kernal_api::http::Method::Post,
@@ -73,7 +77,17 @@ fn source_smoke_uses_manifest_paths_and_reports_missing_source() {
     let source_path = format!("{}/demo.ino", config.prefixes.sketch_prefix);
     std::fs::write(
         output.join("fastled.wasm.map"),
-        serde_json::json!({"sources": [source_path]}).to_string(),
+        json::encode(
+            &Value::Object(
+                [(
+                    "sources".into(),
+                    Value::Array(vec![Value::String(source_path)]),
+                )]
+                .into(),
+            ),
+            Layout::Compact,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(run_dwarf_source_smoke(&output).unwrap(), 1);
@@ -102,11 +116,15 @@ pub(crate) fn collect_debug_source_paths(
     if source_map_path.is_file() {
         let json = std::fs::read_to_string(&source_map_path)
             .with_context(|| format!("read {}", source_map_path.display()))?;
-        let parsed: serde_json::Value = serde_json::from_str(&json)
+        let parsed = json::parse(json.as_bytes())
             .with_context(|| format!("parse {}", source_map_path.display()))?;
-        if let Some(sources) = parsed.get("sources").and_then(serde_json::Value::as_array) {
-            for source in sources.iter().filter_map(serde_json::Value::as_str) {
-                insert_debug_source_candidate(&mut paths, &prefixes, source);
+        if let Value::Object(parsed) = parsed {
+            if let Some(Value::Array(sources)) = parsed.get("sources") {
+                for source in sources {
+                    if let Value::String(source) = source {
+                        insert_debug_source_candidate(&mut paths, &prefixes, source);
+                    }
+                }
             }
         }
     }
