@@ -922,6 +922,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_requests_respect_the_browser_header_dispatch_boundary() {
+        let (addr, _dir) = setup_server().await;
+        let parser_error = raw_http(
+            addr,
+            "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: invalid\r\nConnection: close\r\n\r\n".into(),
+        )
+        .await;
+        assert!(parser_error.starts_with("HTTP/1.1 400"), "{parser_error}");
+        assert!(!parser_error.contains("cross-origin-opener-policy:"));
+        assert!(!parser_error.contains("access-control-allow-origin:"));
+
+        for target in ["/%zz", "/test-sleep?ms=%zz"] {
+            let response = raw_http(
+                addr,
+                format!("POST {target} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+            )
+            .await;
+            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            assert!(response.contains("cross-origin-opener-policy: same-origin\r\n"));
+            assert!(response.contains("cross-origin-embedder-policy: require-corp\r\n"));
+            assert!(response.contains("access-control-allow-origin: *\r\n"));
+            assert!(response.contains("cache-control: no-cache, no-store, must-revalidate\r\n"));
+        }
+    }
+
+    #[tokio::test]
     async fn test_viewer_log_endpoint_accepts_posts() {
         let (addr, _dir) = setup_server().await;
         let resp = http_request(
