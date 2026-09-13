@@ -103,7 +103,7 @@ impl Session {
         ))
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn input(&mut self, input: ClientMessage) -> Result<()> {
         let writer = self.writer.as_mut().context("writer already taken")?;
         match input {
