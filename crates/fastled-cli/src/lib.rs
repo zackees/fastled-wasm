@@ -413,16 +413,24 @@ mod tests {
     #[test]
     fn resolve_prompt_choice_accepts_default_selection() {
         let options = vec!["Blink".to_string(), "Noise".to_string()];
-        match resolve_prompt_choice("", &options, 1) {
+        match resolve_prompt_choice("", &options, 1).unwrap() {
             PromptChoice::Selected(choice) => assert_eq!(choice, "Noise"),
             _ => panic!("expected default selection"),
         }
     }
 
     #[test]
+    fn resolve_prompt_choice_propagates_similarity_limit_errors() {
+        let options = vec!["examples/Blink".to_string(), "examples/Fire".to_string()];
+        let error = resolve_prompt_choice(&"x".repeat(4097), &options, 0).unwrap_err();
+        assert!(error.contains("score sketch-name suggestion"));
+        assert!(error.contains("byte limit"));
+    }
+
+    #[test]
     fn resolve_prompt_choice_accepts_numeric_selection() {
         let options = vec!["Blink".to_string(), "Noise".to_string()];
-        match resolve_prompt_choice("2", &options, 0) {
+        match resolve_prompt_choice("2", &options, 0).unwrap() {
             PromptChoice::Selected(choice) => assert_eq!(choice, "Noise"),
             _ => panic!("expected numeric selection"),
         }
@@ -435,7 +443,7 @@ mod tests {
             "Fire2012WithPalette".to_string(),
             "Blink".to_string(),
         ];
-        match resolve_prompt_choice("Fire", &options, 0) {
+        match resolve_prompt_choice("Fire", &options, 0).unwrap() {
             PromptChoice::Narrowed(matches) => {
                 assert_eq!(
                     matches,
@@ -453,7 +461,7 @@ mod tests {
             "examples/BeatDetection".to_string(),
             "examples/Blink".to_string(),
         ];
-        match resolve_prompt_choice("beats", &options, 0) {
+        match resolve_prompt_choice("beats", &options, 0).unwrap() {
             PromptChoice::Selected(choice) => {
                 assert_eq!(choice, "examples/BeatDetection");
             }

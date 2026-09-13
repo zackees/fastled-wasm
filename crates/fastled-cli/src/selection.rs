@@ -25,15 +25,16 @@ fn option_basename(option: &str) -> &str {
         .unwrap_or(option)
 }
 
-fn fuzzy_match_options(input: &str, options: &[String]) -> Vec<String> {
+fn fuzzy_match_options(input: &str, options: &[String]) -> Result<Vec<String>, String> {
     let basenames: Vec<String> = options
         .iter()
         .map(|option| option_basename(option).to_string())
         .collect();
     let basename_refs: Vec<&str> = basenames.iter().map(String::as_str).collect();
-    let fuzzy_matches = project::best_sketch_match(input, &basename_refs);
+    let fuzzy_matches =
+        project::best_sketch_match(input, &basename_refs).map_err(|error| format!("{error:#}"))?;
     if fuzzy_matches.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let mut results = Vec::new();
@@ -42,22 +43,22 @@ fn fuzzy_match_options(input: &str, options: &[String]) -> Vec<String> {
             results.push(options[index].clone());
         }
     }
-    results
+    Ok(results)
 }
 
 pub fn resolve_prompt_choice(
     input: &str,
     options: &[String],
     default_index: usize,
-) -> PromptChoice {
+) -> Result<PromptChoice, String> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
-        return PromptChoice::Selected(options[default_index].clone());
+        return Ok(PromptChoice::Selected(options[default_index].clone()));
     }
 
     if let Ok(index) = trimmed.parse::<usize>() {
         if (1..=options.len()).contains(&index) {
-            return PromptChoice::Selected(options[index - 1].clone());
+            return Ok(PromptChoice::Selected(options[index - 1].clone()));
         }
     }
 
@@ -65,7 +66,7 @@ pub fn resolve_prompt_choice(
         .iter()
         .find(|option| option.eq_ignore_ascii_case(trimmed))
     {
-        return PromptChoice::Selected(exact.clone());
+        return Ok(PromptChoice::Selected(exact.clone()));
     }
 
     let input_lower = trimmed.to_lowercase();
@@ -75,17 +76,17 @@ pub fn resolve_prompt_choice(
         .cloned()
         .collect();
     match partial_matches.len() {
-        1 => return PromptChoice::Selected(partial_matches[0].clone()),
-        n if n > 1 => return PromptChoice::Narrowed(partial_matches),
+        1 => return Ok(PromptChoice::Selected(partial_matches[0].clone())),
+        n if n > 1 => return Ok(PromptChoice::Narrowed(partial_matches)),
         _ => {}
     }
 
-    let fuzzy_matches = fuzzy_match_options(trimmed, options);
-    match fuzzy_matches.len() {
+    let fuzzy_matches = fuzzy_match_options(trimmed, options)?;
+    Ok(match fuzzy_matches.len() {
         1 => PromptChoice::Selected(fuzzy_matches[0].clone()),
         n if n > 1 => PromptChoice::Narrowed(fuzzy_matches),
         _ => PromptChoice::Retry,
-    }
+    })
 }
 
 pub fn prepare_sketch_selection(
@@ -150,7 +151,7 @@ pub(crate) fn prompt_for_choice(
             .read_line(&mut input)
             .map_err(|err| format!("failed to read selection: {err}"))?;
 
-        match resolve_prompt_choice(&input, &current_options, current_default) {
+        match resolve_prompt_choice(&input, &current_options, current_default)? {
             PromptChoice::Selected(choice) => return Ok(choice),
             PromptChoice::Narrowed(matches) => {
                 let query = input.trim();

@@ -25,6 +25,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "tower-http" not in dependencies
     assert "getrandom" not in dependencies
     assert "tempfile" not in dependencies
+    assert "strsim" not in dependencies
     assert "tempfile" not in manifest.get("dev-dependencies", {})
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
@@ -41,6 +42,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
         assert "dirs::" not in source.read_text(), source
         assert "getrandom::" not in source.read_text(), source
         assert "tempfile::" not in source.read_text(), source
+        assert "strsim::" not in source.read_text(), source
         for backend in ("zip", "tar", "zstd", "flate2"):
             assert f"{backend}::" not in source.read_text(), source
 

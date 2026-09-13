@@ -639,7 +639,7 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
 
 /// Find the best-matching sketch name from `candidates` for a given `query`.
 ///
-/// Uses the Jaro-Winkler distance (via `strsim`) to score each candidate.
+/// Uses kernel-owned Jaro-Winkler similarity to score each candidate.
 /// Returns the candidate(s) with the highest score.
 ///
 /// When `query` is an exact substring of a candidate that candidate is
@@ -647,9 +647,10 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
 /// fast-path in `sketch.py::find_sketch_by_partial_name`).
 ///
 /// Returns an empty `Vec` when `candidates` is empty.
-pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Vec<String> {
+/// Returns an error if fuzzy scoring exceeds the kernel's resource limits.
+pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Result<Vec<String>> {
     if candidates.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let q_lower = query.to_lowercase();
@@ -661,25 +662,29 @@ pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Vec<String> {
         .filter(|c| c.to_lowercase().contains(&q_lower))
         .collect();
     if !substring_hits.is_empty() {
-        return substring_hits.iter().map(|s| s.to_string()).collect();
+        return Ok(substring_hits.iter().map(|s| s.to_string()).collect());
     }
 
     // Fuzzy: Jaro-Winkler distance.
     let mut scored: Vec<(f64, &str)> = candidates
         .iter()
-        .map(|c| (strsim::jaro_winkler(&q_lower, &c.to_lowercase()), *c))
-        .collect();
+        .map(|c| {
+            let score = kernal_api::text::name_similarity(&q_lower, &c.to_lowercase())
+                .context("score sketch-name suggestion")?;
+            Ok((score, *c))
+        })
+        .collect::<Result<_>>()?;
 
     // Sort descending by score.
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let best_score = scored[0].0;
     // Return all candidates tied at the best score (within floating-point epsilon).
-    scored
+    Ok(scored
         .iter()
         .take_while(|(s, _)| (s - best_score).abs() < 1e-9)
         .map(|(_, name)| name.to_string())
-        .collect()
+        .collect())
 }
 
 /// Find a sketch directory by partial name match using the Python-side rules.
@@ -1064,9 +1069,30 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
+    fn sketch_matching_preserves_substring_precedence_and_stable_ties() {
+        assert_eq!(
+            best_sketch_match("Blink", &["Blin", "BlinkFast", "Blink"]).unwrap(),
+            ["BlinkFast", "Blink"]
+        );
+        assert_eq!(
+            best_sketch_match("BLNK", &["Blink", "BLINK", "Fire"]).unwrap(),
+            ["Blink", "BLINK"]
+        );
+    }
+
+    #[test]
+    fn sketch_matching_reports_resource_errors_without_partial_ranking() {
+        let error = best_sketch_match(&"x".repeat(4097), &["Blink"]).unwrap_err();
+        assert!(format!("{error:#}").contains("byte limit"));
+        let candidate = "y".repeat(1024);
+        let error = best_sketch_match(&"x".repeat(1025), &["Blink", &candidate]).unwrap_err();
+        assert!(format!("{error:#}").contains("work limit"));
+    }
+
+    #[test]
     fn test_best_sketch_match_exact_substring() {
         let candidates = ["Blink", "BlinkFast", "Fire2012"];
-        let matches = best_sketch_match("Blink", &candidates);
+        let matches = best_sketch_match("Blink", &candidates).unwrap();
         assert!(
             matches.contains(&"Blink".to_owned()),
             "Blink should match: {matches:?}"
@@ -1084,7 +1110,7 @@ mod tests {
     #[test]
     fn test_best_sketch_match_fuzzy_fallback() {
         let candidates = ["Blink", "Fire2012", "Noise"];
-        let matches = best_sketch_match("blnk", &candidates);
+        let matches = best_sketch_match("blnk", &candidates).unwrap();
         // Jaro-Winkler should rank "Blink" highest.
         assert!(!matches.is_empty(), "fuzzy match should return results");
         assert_eq!(matches[0], "Blink", "best fuzzy match should be Blink");
@@ -1092,14 +1118,14 @@ mod tests {
 
     #[test]
     fn test_best_sketch_match_empty_candidates() {
-        let matches = best_sketch_match("anything", &[]);
+        let matches = best_sketch_match("anything", &[]).unwrap();
         assert!(matches.is_empty());
     }
 
     #[test]
     fn test_best_sketch_match_case_insensitive() {
         let candidates = ["Blink", "Fire2012"];
-        let matches = best_sketch_match("BLINK", &candidates);
+        let matches = best_sketch_match("BLINK", &candidates).unwrap();
         assert!(
             matches.contains(&"Blink".to_owned()),
             "case-insensitive match: {matches:?}"
