@@ -117,6 +117,22 @@ def test_installer_receipt_json_uses_kernel():
     assert "json::encode" in records
 
 
+def test_installer_production_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/install.rs").read_text()
+    assert "serde_json::" not in source
+    assert "serde::" not in source
+    assert "json!(" not in source
+    for path in (root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"):
+        data = tomllib.loads(path.read_text())
+        for dependencies in (
+            data.get("dependencies", {}),
+            data.get("workspace", {}).get("dependencies", {}),
+        ):
+            assert "serde" not in dependencies
+            assert "serde_json" not in dependencies
+
+
 def test_dwarf_smoke_json_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     source = (root / "crates/fastled-cli/src/dwarf_smoke.rs").read_text()

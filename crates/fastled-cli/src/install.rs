@@ -11,14 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(test)]
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use kernal_api::json::{self, Layout, Value as JsonValue};
-#[cfg(test)]
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 
 use crate::archive;
 
@@ -30,23 +26,22 @@ use crate::archive;
 /// `ctcb-manifest` releases expected version keys at the top level. Keeping
 /// the schema local insulates the CLI from upstream crate drift.
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct PlatformManifest {
     latest: String,
     versions: BTreeMap<String, VersionInfo>,
 }
 
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct VersionInfo {
     href: String,
     sha256: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     parts: Option<Vec<PartRef>>,
 }
 
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct PartRef {
     href: String,
     sha256: String,
@@ -96,28 +91,63 @@ fn toolchain_platform_arch(os: &str, architecture: &str) -> Result<(&'static str
 /// today, so the CLI has to handle both.
 #[cfg(test)]
 fn parse_platform_manifest(text: &str) -> Result<PlatformManifest> {
-    if let Ok(parsed) = serde_json::from_str::<PlatformManifest>(text) {
+    fn version(value: JsonValue) -> Result<VersionInfo> {
+        let value = match value {
+            JsonValue::Array(mut fields) if fields.len() == 2 => {
+                fields.push(JsonValue::Null);
+                JsonValue::Array(fields)
+            }
+            other => other,
+        };
+        let [href, sha256, parts] = toolchain_record_value(value, ["href", "sha256", "parts"])?;
+        let parts = match parts {
+            None | Some(JsonValue::Null) => None,
+            Some(JsonValue::Array(values)) => Some(
+                values
+                    .into_iter()
+                    .map(|value| {
+                        let [href, sha256] = toolchain_record_value(value, ["href", "sha256"])?;
+                        Ok(PartRef {
+                            href: toolchain_string(href)?,
+                            sha256: toolchain_string(sha256)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            _ => bail!("invalid archive parts"),
+        };
+        Ok(VersionInfo {
+            href: toolchain_string(href)?,
+            sha256: toolchain_string(sha256)?,
+            parts,
+        })
+    }
+    fn nested(text: &str) -> Result<PlatformManifest> {
+        let [latest, versions] = toolchain_record(text.as_bytes(), ["latest", "versions"])?;
+        let Some(JsonValue::ObjectMembers(members)) = versions else {
+            bail!("missing versions");
+        };
+        let mut versions = BTreeMap::new();
+        for (key, value) in members {
+            versions.insert(key, version(value)?);
+        }
+        Ok(PlatformManifest {
+            latest: toolchain_string(latest)?,
+            versions,
+        })
+    }
+    if let Ok(parsed) = nested(text) {
         return Ok(parsed);
     }
 
-    let value: serde_json::Value = serde_json::from_str(text)?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("manifest is not a JSON object"))?;
-
-    let latest = object
-        .get("latest")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("manifest is missing required field `latest`"))?
-        .to_string();
+    let JsonValue::Object(mut object) = json::parse(text.as_bytes())? else {
+        bail!("manifest is not a JSON object");
+    };
+    let latest = toolchain_string(object.remove("latest"))?;
 
     let mut versions = BTreeMap::new();
     for (key, value) in object {
-        if key == "latest" {
-            continue;
-        }
-        let info: VersionInfo = serde_json::from_value(value.clone())
-            .with_context(|| format!("parse version entry `{key}`"))?;
+        let info = version(value).with_context(|| format!("parse version entry `{key}`"))?;
         versions.insert(key.clone(), info);
     }
 
@@ -309,8 +339,19 @@ fn toolchain_record<const N: usize>(
     bytes: &[u8],
     names: [&str; N],
 ) -> Result<[Option<JsonValue>; N]> {
+    toolchain_record_value(json::parse_members(bytes)?, names)
+}
+
+fn toolchain_record_value<const N: usize>(
+    value: JsonValue,
+    names: [&str; N],
+) -> Result<[Option<JsonValue>; N]> {
     let mut fields = std::array::from_fn(|_| None);
-    match json::parse_members(bytes)? {
+    let value = match value {
+        JsonValue::Object(value) => JsonValue::ObjectMembers(value.into_iter().collect()),
+        other => other,
+    };
+    match value {
         JsonValue::ObjectMembers(members) => {
             for (name, value) in members {
                 let Some(index) = names.iter().position(|known| *known == name) else {
@@ -1453,11 +1494,13 @@ fn fetch_latest_release_tag() -> Option<String> {
         return None;
     }
     let bytes = resp.into_bytes().ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    value
-        .get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
+    let JsonValue::Object(mut value) = json::parse(&bytes).ok()? else {
+        return None;
+    };
+    match value.remove("tag_name") {
+        Some(JsonValue::String(value)) => Some(value),
+        _ => None,
+    }
 }
 
 fn head_check(url: &str) -> bool {
@@ -1782,11 +1825,10 @@ fn detect_fastled_project() -> bool {
     let Ok(text) = fs::read_to_string(library_json) else {
         return false;
     };
-    serde_json::from_str::<Value>(&text)
-        .ok()
-        .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
-        .map(|name| name == "FastLED")
-        .unwrap_or(false)
+    let Ok(JsonValue::Object(value)) = json::parse(text.as_bytes()) else {
+        return false;
+    };
+    matches!(value.get("name"), Some(JsonValue::String(name)) if name == "FastLED")
 }
 
 fn is_fastled_repository() -> bool {
@@ -1807,18 +1849,16 @@ fn is_fastled_repository() -> bool {
     let Ok(text) = fs::read_to_string(cwd.join("library.json")) else {
         return false;
     };
-    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+    let Ok(JsonValue::Object(value)) = json::parse(text.as_bytes()) else {
         return false;
     };
-    if value.get("name").and_then(Value::as_str) != Some("FastLED") {
+    if !matches!(value.get("name"), Some(JsonValue::String(name)) if name == "FastLED") {
         return false;
     }
-    if !value
-        .get("repository")
-        .and_then(|repo| repo.get("url"))
-        .and_then(Value::as_str)
-        .map(|url| url.contains("FastLED/FastLED"))
-        .unwrap_or(false)
+    let Some(JsonValue::Object(repository)) = value.get("repository") else {
+        return false;
+    };
+    if !matches!(repository.get("url"), Some(JsonValue::String(url)) if url.contains("FastLED/FastLED"))
     {
         return false;
     }
@@ -1864,304 +1904,121 @@ fn check_existing_arduino_content() -> bool {
     cwd.join("examples").exists() || has_ino_file(&cwd)
 }
 
-pub(crate) fn read_json_file(path: &Path, default: Value) -> Value {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .unwrap_or(default)
+fn read_editor_object(
+    path: &Path,
+    default: BTreeMap<String, JsonValue>,
+) -> Result<BTreeMap<String, JsonValue>> {
+    let Ok(bytes) = fs::read(path) else {
+        return Ok(default);
+    };
+    match json::parse(&bytes) {
+        Ok(JsonValue::Object(value)) => Ok(value),
+        Ok(_) | Err(json::Error::InvalidSyntax) => Ok(default),
+        Err(error) => Err(error).with_context(|| format!("parse {}", path.display())),
+    }
 }
 
-pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<()> {
+fn write_json_file(path: &Path, value: &JsonValue) -> Result<()> {
+    let mut bytes = json::encode(value, Layout::Pretty).context("serialize JSON")?;
+    bytes.push(b'\n');
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    let mut text = serde_json::to_string_pretty(value).context("serialize JSON")?;
-    text.push('\n');
-    fs::write(path, text).with_context(|| format!("write {}", path.display()))?;
+    fs::write(path, bytes).with_context(|| format!("write {}", path.display()))?;
     Ok(())
+}
+
+fn editor_templates() -> Result<BTreeMap<String, JsonValue>> {
+    match json::parse(include_bytes!("install_editor_templates.json"))? {
+        JsonValue::Object(value) => Ok(value),
+        _ => bail!("invalid bundled editor templates"),
+    }
 }
 
 fn update_launch_json_for_arduino() -> Result<()> {
     let cwd = std::env::current_dir().context("current dir")?;
-    let launch_json_path = cwd.join(".vscode").join("launch.json");
-    let mut data = read_json_file(
-        &launch_json_path,
-        json!({"version": "0.2.0", "configurations": []}),
-    );
+    update_launch_json_at(&cwd.join(".vscode").join("launch.json"))
+}
 
-    if !data.is_object() {
-        data = json!({"version": "0.2.0", "configurations": []});
-    }
-
-    let arduino_config = json!({
-        "name": "Auto Debug (Smart File Detection)",
-        "type": "auto-debug",
-        "request": "launch",
-        "map": {
-            "*.ino": "Arduino: Run .ino with FastLED",
-            "*.py": "Python: Current File (UV)"
-        }
-    });
-
-    let configs = data
-        .as_object_mut()
-        .expect("launch.json root object")
-        .entry("configurations")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if !configs.is_array() {
-        *configs = Value::Array(Vec::new());
-    }
-    let configs_array = configs.as_array_mut().expect("configurations array");
-    let exists = configs_array.iter().any(|cfg| {
-        cfg.get("name").and_then(Value::as_str)
-            == arduino_config.get("name").and_then(Value::as_str)
+fn update_launch_json_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(
+        path,
+        BTreeMap::from([
+            ("version".into(), JsonValue::String("0.2.0".into())),
+            ("configurations".into(), JsonValue::Array(Vec::new())),
+        ]),
+    )?;
+    let arduino_config = editor_templates()?
+        .remove("launch")
+        .context("missing bundled launch configuration")?;
+    let mut configurations = match data.remove("configurations") {
+        Some(JsonValue::Array(value)) => value,
+        _ => Vec::new(),
+    };
+    let exists = configurations.iter().any(|value| match value {
+        JsonValue::Object(value) => matches!(value.get("name"),
+            Some(JsonValue::String(name)) if name == "Auto Debug (Smart File Detection)"),
+        _ => false,
     });
     if !exists {
-        configs_array.insert(0, arduino_config);
+        configurations.insert(0, arduino_config);
     }
-
-    write_json_file(&launch_json_path, &data)?;
-    println!("Updated {}", launch_json_path.display());
+    data.insert("configurations".into(), JsonValue::Array(configurations));
+    write_json_file(path, &JsonValue::Object(data))?;
+    println!("Updated {}", path.display());
     Ok(())
 }
 
 fn generate_fastled_tasks() -> Result<()> {
     let cwd = std::env::current_dir().context("current dir")?;
-    let tasks_json_path = cwd.join(".vscode").join("tasks.json");
-    let mut data = read_json_file(&tasks_json_path, json!({"version": "2.0.0", "tasks": []}));
+    generate_fastled_tasks_at(&cwd.join(".vscode").join("tasks.json"))
+}
 
-    if !data.is_object() {
-        data = json!({"version": "2.0.0", "tasks": []});
-    }
-
-    let fastled_tasks = vec![
-        json!({
-            "type": "shell",
-            "label": "Run FastLED (Debug)",
-            "command": "fastled",
-            "args": ["${file}", "--debug"],
-            "options": {"cwd": "${workspaceFolder}"},
-            "group": {"kind": "build", "isDefault": true},
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "detail": "Run FastLED with debug mode and Tauri visualization",
-            "problemMatcher": []
-        }),
-        json!({
-            "type": "shell",
-            "label": "Run FastLED (Quick)",
-            "command": "fastled",
-            "args": ["${file}", "--quick"],
-            "options": {"cwd": "${workspaceFolder}"},
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "detail": "Run FastLED with quick build mode",
-            "problemMatcher": []
-        }),
-    ];
-
-    let tasks = data
-        .as_object_mut()
-        .expect("tasks.json root object")
-        .entry("tasks")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if !tasks.is_array() {
-        *tasks = Value::Array(Vec::new());
-    }
-    let tasks_array = tasks.as_array_mut().expect("tasks array");
-    let existing_labels: Vec<String> = tasks_array
+fn generate_fastled_tasks_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(
+        path,
+        BTreeMap::from([
+            ("version".into(), JsonValue::String("2.0.0".into())),
+            ("tasks".into(), JsonValue::Array(Vec::new())),
+        ]),
+    )?;
+    let Some(JsonValue::Array(fastled_tasks)) = editor_templates()?.remove("tasks") else {
+        bail!("missing bundled FastLED tasks");
+    };
+    let mut tasks = match data.remove("tasks") {
+        Some(JsonValue::Array(value)) => value,
+        _ => Vec::new(),
+    };
+    let labels: Vec<_> = tasks
         .iter()
-        .filter_map(|task| task.get("label").and_then(Value::as_str).map(str::to_owned))
+        .filter_map(|value| match value {
+            JsonValue::Object(value) => match value.get("label") {
+                Some(JsonValue::String(value)) => Some(value.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
         .collect();
-
     for task in fastled_tasks {
-        let Some(label) = task.get("label").and_then(Value::as_str) else {
-            continue;
+        let JsonValue::Object(ref fields) = task else {
+            bail!("invalid bundled task");
         };
-        if !existing_labels.iter().any(|existing| existing == label) {
-            tasks_array.push(task);
+        let Some(JsonValue::String(label)) = fields.get("label") else {
+            bail!("missing bundled task label");
+        };
+        if !labels.contains(label) {
+            tasks.push(task);
         }
     }
-
-    write_json_file(&tasks_json_path, &data)?;
-    println!("Updated {}", tasks_json_path.display());
+    data.insert("tasks".into(), JsonValue::Array(tasks));
+    write_json_file(path, &JsonValue::Object(data))?;
+    println!("Updated {}", path.display());
     Ok(())
 }
 
-fn fastled_repository_settings() -> Value {
-    json!({
-        "terminal.integrated.defaultProfile.windows": "Git Bash",
-        "terminal.integrated.shellIntegration.enabled": false,
-        "terminal.integrated.profiles.windows": {
-            "Command Prompt": {"path": "C:\\Windows\\System32\\cmd.exe"},
-            "Git Bash": {
-                "path": "C:\\Program Files\\Git\\bin\\bash.exe",
-                "args": ["--cd=."]
-            }
-        },
-        "files.eol": "\n",
-        "files.autoDetectEol": false,
-        "files.insertFinalNewline": true,
-        "files.trimFinalNewlines": true,
-        "editor.tabSize": 4,
-        "editor.insertSpaces": true,
-        "editor.detectIndentation": true,
-        "editor.formatOnSave": false,
-        "debug.defaultDebuggerType": "cppdbg",
-        "debug.toolBarLocation": "docked",
-        "debug.console.fontSize": 14,
-        "debug.console.lineHeight": 19,
-        "python.defaultInterpreterPath": "uv",
-        "python.debugger": "debugpy",
-        "[cpp]": {
-            "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "[c]": {
-            "editor.defaultFormatter": "ms-vscode.cpptools",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "[ino]": {
-            "editor.defaultFormatter": "ms-vscode.cpptools",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "clangd.arguments": [
-            "--compile-commands-dir=${workspaceFolder}",
-            "--clang-tidy",
-            "--header-insertion=never",
-            "--completion-style=detailed",
-            "--function-arg-placeholders=false",
-            "--background-index",
-            "--pch-storage=memory"
-        ],
-        "clangd.fallbackFlags": [
-            "-std=c++17",
-            "-I${workspaceFolder}/src",
-            "-I${workspaceFolder}/tests",
-            "-Wno-global-constructors"
-        ],
-        "C_Cpp.intelliSenseEngine": "disabled",
-        "C_Cpp.autocomplete": "disabled",
-        "C_Cpp.errorSquiggles": "disabled",
-        "C_Cpp.suggestSnippets": false,
-        "C_Cpp.intelliSenseEngineFallback": "disabled",
-        "C_Cpp.autocompleteAddParentheses": false,
-        "C_Cpp.formatting": "disabled",
-        "C_Cpp.vcpkg.enabled": false,
-        "C_Cpp.configurationWarnings": "disabled",
-        "C_Cpp.intelliSenseCachePath": "",
-        "C_Cpp.intelliSenseCacheSize": 0,
-        "C_Cpp.intelliSenseUpdateDelay": 0,
-        "C_Cpp.workspaceParsingPriority": "lowest",
-        "C_Cpp.disabled": true,
-        "files.associations": {
-            "*.ino": "cpp",
-            "*.h": "cpp",
-            "*.hpp": "cpp",
-            "*.cpp": "cpp",
-            "*.c": "c",
-            "*.inc": "cpp",
-            "*.tcc": "cpp",
-            "*.embeddedhtml": "html",
-            "compare": "cpp",
-            "type_traits": "cpp",
-            "cmath": "cpp",
-            "limits": "cpp",
-            "iostream": "cpp",
-            "random": "cpp",
-            "functional": "cpp",
-            "bit": "cpp",
-            "vector": "cpp",
-            "array": "cpp",
-            "string": "cpp",
-            "memory": "cpp",
-            "algorithm": "cpp",
-            "iterator": "cpp",
-            "utility": "cpp",
-            "optional": "cpp",
-            "variant": "cpp",
-            "numeric": "cpp",
-            "chrono": "cpp",
-            "thread": "cpp",
-            "mutex": "cpp",
-            "atomic": "cpp",
-            "future": "cpp",
-            "condition_variable": "cpp"
-        },
-        "java.enabled": false,
-        "java.jdt.ls.enabled": false,
-        "java.compile.nullAnalysis.mode": "disabled",
-        "java.configuration.checkProjectSettingsExclusions": false,
-        "java.import.gradle.enabled": false,
-        "java.import.maven.enabled": false,
-        "java.autobuild.enabled": false,
-        "java.maxConcurrentBuilds": 0,
-        "java.recommendations.enabled": false,
-        "java.help.showReleaseNotes": false,
-        "redhat.telemetry.enabled": false,
-        "java.project.sourcePaths": [],
-        "java.project.referencedLibraries": [],
-        "files.exclude": {
-            "**/.classpath": true,
-            "**/.project": true,
-            "**/.factorypath": true
-        },
-        "platformio.disableToolchainAutoInstaller": true,
-        "platformio-ide.autoRebuildAutocompleteIndex": false,
-        "platformio-ide.activateProjectOnTextEditorChange": false,
-        "platformio-ide.autoOpenPlatformIOIniFile": false,
-        "platformio-ide.autoPreloadEnvTasks": false,
-        "platformio-ide.autoCloseSerialMonitor": false,
-        "platformio-ide.disablePIOHomeStartup": true,
-        "extensions.ignoreRecommendations": true,
-        "editor.semanticTokenColorCustomizations": {
-            "rules": {
-                "class": "#4EC9B0",
-                "struct": "#4EC9B0",
-                "type": "#4EC9B0",
-                "enum": "#4EC9B0",
-                "enumMember": "#B5CEA8",
-                "typedef": "#4EC9B0",
-                "variable": "#FAFAFA",
-                "variable.local": "#FAFAFA",
-                "parameter": "#FF8C42",
-                "variable.parameter": "#FF8C42",
-                "property": "#D197D9",
-                "function": "#DCDCAA",
-                "method": "#DCDCAA",
-                "function.declaration": "#DCDCAA",
-                "method.declaration": "#DCDCAA",
-                "namespace": "#86C5F7",
-                "variable.readonly": {"foreground": "#B5CEA8", "fontStyle": "italic"},
-                "variable.defaultLibrary": "#B5CEA8",
-                "macro": "#E06C75",
-                "string": "#CE9178",
-                "number": "#B5CEA8",
-                "keyword": "#C586C0",
-                "keyword.storage": "#FF79C6",
-                "storageClass": "#FF79C6",
-                "type.builtin": "#569CD6",
-                "keyword.type": "#569CD6",
-                "comment": "#6A9955",
-                "comment.documentation": "#6A9955"
-            }
-        },
-        "editor.inlayHints.fontColor": "#808080",
-        "editor.inlayHints.background": "#3C3C3C20"
-    })
+fn fastled_repository_settings() -> Result<JsonValue> {
+    json::parse(include_bytes!("install_repository_settings.json"))
+        .context("parse bundled FastLED repository settings")
 }
 
 fn update_vscode_settings_for_fastled() -> Result<()> {
@@ -2171,24 +2028,21 @@ fn update_vscode_settings_for_fastled() -> Result<()> {
 
     let cwd = std::env::current_dir().context("current dir")?;
     let settings_json_path = cwd.join(".vscode").join("settings.json");
-    let mut data = read_json_file(&settings_json_path, json!({}));
-    if !data.is_object() {
-        data = json!({});
-    }
-
-    let settings = fastled_repository_settings();
-    let target = data.as_object_mut().expect("settings root object");
-    let source = settings.as_object().expect("settings object");
-    for (key, value) in source {
-        target.insert(key.clone(), value.clone());
-    }
-
-    write_json_file(&settings_json_path, &data)?;
+    update_repository_settings_at(&settings_json_path)?;
     println!(
         "Updated {} with comprehensive FastLED development settings",
         settings_json_path.display()
     );
     Ok(())
+}
+
+fn update_repository_settings_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(path, BTreeMap::new())?;
+    let JsonValue::Object(settings) = fastled_repository_settings()? else {
+        bail!("invalid bundled repository settings");
+    };
+    data.extend(settings);
+    write_json_file(path, &JsonValue::Object(data))
 }
 
 fn download_to_path(url: &str, dest: &Path) -> Result<()> {
@@ -2482,8 +2336,8 @@ mod tests {
 
     #[test]
     fn parses_nested_versions_manifest_without_parts() {
-        let manifest: PlatformManifest =
-            serde_json::from_str(DARWIN_ARM64_MANIFEST).expect("parse darwin/arm64 manifest");
+        let manifest =
+            parse_platform_manifest(DARWIN_ARM64_MANIFEST).expect("parse darwin/arm64 manifest");
         assert_eq!(
             manifest.latest,
             "releases-d70a5da89b3e673bf6a482724478fc17e81e575e"
@@ -2712,12 +2566,13 @@ mod tests {
 
     #[test]
     fn parses_manifest_with_multipart_archive_and_extra_size_field() {
-        let manifest: PlatformManifest = serde_json::from_str(LINUX_X86_64_MANIFEST_WITH_PARTS)
+        let manifest = parse_platform_manifest(LINUX_X86_64_MANIFEST_WITH_PARTS)
             .expect("parse linux/x86_64 manifest");
         let entry = manifest.versions.get("4.0.21").expect("entry for 4.0.21");
         let parts = multipart_parts(entry).expect("parts present");
         assert_eq!(parts.len(), 1);
         assert!(parts[0].href.ends_with(".part-aa"));
+        assert!(!parts[0].sha256.is_empty());
     }
 
     #[cfg(unix)]
@@ -2770,6 +2625,123 @@ mod tests {
             .expect("entry for latest version");
         assert_eq!(entry.sha256.len(), 64);
         assert!(entry.href.ends_with(".tar.zst"));
+    }
+
+    #[test]
+    fn installer_editor_json_preserves_custom_entries_and_is_idempotent() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let launch = temp.path().join("launch.json");
+        let tasks = temp.path().join("tasks.json");
+        let settings = temp.path().join("settings.json");
+        fs::write(
+            &launch,
+            r#"{"custom":"λ","configurations":[null,{"name":"user"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            &tasks,
+            r#"{"custom":true,"tasks":[{"label":"Run FastLED (Debug)","command":"user"},7]}"#,
+        )
+        .unwrap();
+        fs::write(&settings, r#"{"custom":[1,2],"editor.tabSize":2}"#).unwrap();
+        update_launch_json_at(&launch).unwrap();
+        generate_fastled_tasks_at(&tasks).unwrap();
+        update_repository_settings_at(&settings).unwrap();
+        let parse = |path: &Path| match json::parse(&fs::read(path).unwrap()).unwrap() {
+            JsonValue::Object(value) => value,
+            _ => panic!("expected editor object"),
+        };
+        let launch_value = parse(&launch);
+        assert_eq!(launch_value["custom"], JsonValue::String("λ".into()));
+        let JsonValue::Array(configs) = &launch_value["configurations"] else {
+            panic!("configs");
+        };
+        assert_eq!(configs.len(), 3);
+        assert_eq!(
+            configs[0],
+            editor_templates().unwrap().remove("launch").unwrap()
+        );
+        assert_eq!(configs[1], JsonValue::Null);
+        let task_value = parse(&tasks);
+        let JsonValue::Array(task_entries) = &task_value["tasks"] else {
+            panic!("tasks");
+        };
+        assert_eq!(task_entries.len(), 3);
+        assert_eq!(
+            task_entries[0],
+            json::parse(br#"{"label":"Run FastLED (Debug)","command":"user"}"#).unwrap()
+        );
+        assert_eq!(task_entries[1], JsonValue::Signed(7));
+        let JsonValue::Array(expected_tasks) = editor_templates().unwrap().remove("tasks").unwrap()
+        else {
+            panic!("template tasks");
+        };
+        assert_eq!(task_entries[2], expected_tasks[1]);
+        let settings_value = parse(&settings);
+        let JsonValue::Object(mut expected_settings) = fastled_repository_settings().unwrap()
+        else {
+            panic!("settings");
+        };
+        expected_settings.insert("custom".into(), json::parse(b"[1,2]").unwrap());
+        assert_eq!(settings_value, expected_settings);
+        let before = [&launch, &tasks, &settings].map(|path| fs::read(path).unwrap());
+        update_launch_json_at(&launch).unwrap();
+        generate_fastled_tasks_at(&tasks).unwrap();
+        update_repository_settings_at(&settings).unwrap();
+        assert_eq!(
+            before,
+            [&launch, &tasks, &settings].map(|path| fs::read(path).unwrap())
+        );
+        assert!(before.iter().all(|bytes| bytes.last() == Some(&b'\n')));
+    }
+
+    #[test]
+    fn installer_editor_json_repairs_invalid_shapes_but_preserves_oversized_files() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let path = temp.path().join("editor.json");
+        for invalid in ["{", "[]", "null"] {
+            fs::write(&path, invalid).unwrap();
+            update_launch_json_at(&path).unwrap();
+            let JsonValue::Object(value) = json::parse(&fs::read(&path).unwrap()).unwrap() else {
+                panic!("object");
+            };
+            assert_eq!(value["version"], JsonValue::String("0.2.0".into()));
+        }
+        fs::write(&path, r#"{"custom":1,"tasks":false}"#).unwrap();
+        generate_fastled_tasks_at(&path).unwrap();
+        let JsonValue::Object(value) = json::parse(&fs::read(&path).unwrap()).unwrap() else {
+            panic!("object");
+        };
+        assert_eq!(value["custom"], JsonValue::Signed(1));
+        assert!(matches!(&value["tasks"], JsonValue::Array(values) if values.len() == 2));
+        let oversized = format!(r#"{{"custom":"{}"}}"#, "x".repeat(json::MAX_INPUT_BYTES));
+        fs::write(&path, &oversized).unwrap();
+        assert!(update_launch_json_at(&path).is_err());
+        assert!(generate_fastled_tasks_at(&path).is_err());
+        assert!(update_repository_settings_at(&path).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), oversized);
+        let unpublished = temp.path().join("absent/settings.json");
+        assert!(write_json_file(
+            &unpublished,
+            &JsonValue::String("x".repeat(json::MAX_OUTPUT_BYTES))
+        )
+        .is_err());
+        assert!(!unpublished.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn manifest_positional_version_preserves_optional_trailing_parts() {
+        for source in [
+            r#"{"latest":"v","versions":{"v":["url","hash"]}}"#,
+            r#"{"latest":"v","v":["url","hash"]}"#,
+            r#"["v",{"v":["url","hash",null]}]"#,
+        ] {
+            let parsed = parse_platform_manifest(source).unwrap();
+            let version = &parsed.versions["v"];
+            assert_eq!(version.href, "url");
+            assert_eq!(version.sha256, "hash");
+            assert!(version.parts.is_none());
+        }
     }
 
     #[test]

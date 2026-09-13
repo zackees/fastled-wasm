@@ -1005,8 +1005,6 @@ dependencies = [
  "anyhow",
  "clap",
  "kernal-api",
- "serde",
- "serde_json",
 ]
 
 [[package]]
