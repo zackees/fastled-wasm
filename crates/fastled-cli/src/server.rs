@@ -6,23 +6,16 @@
 //! is returned that polls `/build-status.json` for live updates.
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use kernal_api::async_engine;
+use kernal_api::{
+    async_engine,
+    http_server::{Limits, Request, Response, Server},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 
@@ -357,9 +350,6 @@ self.addEventListener('message', (event) => {
 #[derive(Clone)]
 struct AppState {
     serve_dir: Arc<PathBuf>,
-    terminal_cwd: Arc<crate::path::NormalizedPath>,
-    terminal_origin: Arc<String>,
-    terminal_slots: Arc<tokio::sync::Semaphore>,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
     build_tx: Option<async_engine::BroadcastSender<String>>,
@@ -368,343 +358,319 @@ struct AppState {
     debug_symbols: DebugSymbolHandle,
     test: Option<Arc<TestServerOptions>>,
     screenshot_io: kernal_api::platform::fs::AsyncFileIo,
+    file_responses: kernal_api::http_server::FileResponses,
 }
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// The static router permits CORS; shell access explicitly does not.
-async fn terminal_socket(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    upgrade: axum::extract::ws::WebSocketUpgrade,
-) -> Response {
-    if headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(state.terminal_origin.as_str())
-        || headers
-            .get(header::HOST)
-            .and_then(|value| value.to_str().ok())
-            != state.terminal_origin.strip_prefix("http://")
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let Ok(permit) = state.terminal_slots.clone().try_acquire_owned() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    };
-    upgrade
-        .max_message_size(64 * 1024)
-        .max_frame_size(64 * 1024)
-        .on_upgrade(move |socket| crate::terminal::connect(socket, state.terminal_cwd, permit))
+type Reply = std::io::Result<Response>;
+
+fn empty(status: u16) -> Reply {
+    Response::new(status, Vec::new())
 }
 
-/// Serve index.html or the loading page if it doesn't exist yet.
-async fn serve_index(State(state): State<AppState>) -> Response {
+fn text(status: u16, body: impl Into<String>) -> Reply {
+    Response::new(status, body.into().into_bytes())?
+        .with_header("content-type", "text/plain; charset=utf-8")
+}
+
+fn json_reply(status: u16, value: impl Serialize) -> Reply {
+    Response::new(
+        status,
+        serde_json::to_vec(&value).map_err(std::io::Error::other)?,
+    )?
+    .with_header("content-type", "application/json")
+}
+
+async fn stream_file(state: &AppState, path: &std::path::Path, prefix: &[u8], mime: &str) -> Reply {
+    state
+        .file_responses
+        .open(path.to_path_buf(), prefix.to_vec())
+        .await?
+        .with_header("content-type", mime)
+}
+
+async fn serve_index(state: &AppState) -> Reply {
     let index = state.serve_dir.join("index.html");
     if index.is_file() {
-        match tokio::fs::read(&index).await {
-            Ok(data) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                data,
-            )
-                .into_response(),
-            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        }
+        stream_file(state, &index, &[], "text/html; charset=utf-8").await
     } else {
-        Html(LOADING_PAGE).into_response()
+        Response::new(200, LOADING_PAGE.as_bytes().to_vec())?
+            .with_header("content-type", "text/html; charset=utf-8")
     }
 }
 
-/// Serve any file from the output directory.
-async fn serve_file(
-    State(state): State<AppState>,
-    axum::extract::Path(path): axum::extract::Path<String>,
-) -> Response {
-    let file_path = state.serve_dir.join(&path);
-
-    // Prevent directory traversal.
+async fn serve_file(state: &AppState, path: &str) -> Reply {
+    let file_path = state.serve_dir.join(path);
     let canonical = match file_path.canonicalize() {
-        Ok(p) => p,
+        Ok(path) => path,
         Err(_) => {
-            return serve_debug_source_url(&state, &path)
+            return serve_debug_source_url(state, path)
                 .await
-                .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
+                .unwrap_or_else(|| empty(404))
         }
     };
-    let serve_canonical = match state.serve_dir.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
+    let serve_canonical = state.serve_dir.canonicalize()?;
     if !canonical.starts_with(&serve_canonical) {
-        return StatusCode::FORBIDDEN.into_response();
+        return empty(403);
     }
-
-    match tokio::fs::read(&file_path).await {
-        Ok(mut data) => {
-            if state.test.is_some() && path == "fastled_background_worker.js" {
-                let mut patched = TEST_WORKER_WEBGL_PREFIX.as_bytes().to_vec();
-                patched.extend_from_slice(&data);
-                data = patched;
-            }
-            let mime = mime_for_path(&path);
-            (StatusCode::OK, [(header::CONTENT_TYPE, mime)], data).into_response()
-        }
-        Err(_) => serve_debug_source_url(&state, &path)
+    let prefix = if state.test.is_some() && path == "fastled_background_worker.js" {
+        TEST_WORKER_WEBGL_PREFIX.as_bytes()
+    } else {
+        &[]
+    };
+    match stream_file(state, &canonical, prefix, mime_for_path(path)).await {
+        Ok(response) => Ok(response),
+        Err(_) => serve_debug_source_url(state, path)
             .await
-            .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response()),
+            .unwrap_or_else(|| empty(404)),
     }
 }
 
-async fn serve_debug_source_url(state: &AppState, request_path: &str) -> Option<Response> {
+async fn serve_debug_source_url(state: &AppState, path: &str) -> Option<Reply> {
     let resolver = state.debug_symbols.read().ok()?.clone()?;
-    match resolver.resolve(request_path, true) {
-        Ok(file) => match tokio::fs::read(&file).await {
-            Ok(bytes) => Some(
-                (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                    bytes,
-                )
-                    .into_response(),
-            ),
-            Err(_) => Some(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-        },
-        Err(ResolveError::NotFound(_)) => Some(StatusCode::NOT_FOUND.into_response()),
+    match resolver.resolve(path, true) {
+        Ok(file) => Some(stream_file(state, &file, &[], "text/plain; charset=utf-8").await),
+        Err(ResolveError::NotFound(_)) => Some(empty(404)),
         Err(ResolveError::Invalid(_)) => None,
     }
 }
 
-/// SSE endpoint that streams build log lines and status events.
-async fn build_stream(State(state): State<AppState>) -> Response {
-    let tx = match &state.build_tx {
-        Some(tx) => tx,
-        None => return StatusCode::NOT_FOUND.into_response(),
+fn build_stream(state: &AppState) -> Reply {
+    let Some(tx) = &state.build_tx else {
+        return empty(404);
     };
-
-    let rx = tx.subscribe();
-    let stream = rx.into_stream_with(|result| {
-        result
-            .ok()
-            .map(|data| Ok::<_, Infallible>(Event::default().data(data)))
-    });
-
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    let stream = tx
+        .subscribe()
+        .into_stream_with(|result| result.ok().map(Ok));
+    Response::event_stream(stream, std::time::Duration::from_secs(15))
 }
 
-/// `POST /viewer-log` — receive console/error lines forwarded from the Tauri
-/// viewer's injected logging script and echo them to stderr so viewer-side
-/// failures are always diagnosable.
-fn test_request_authorized(test: &TestServerOptions, headers: &HeaderMap) -> bool {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+fn test_request_authorized(test: &TestServerOptions, request: &Request) -> bool {
+    request
+        .header("authorization")
+        .and_then(|value| std::str::from_utf8(value).ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .is_some_and(|value| value == test.token)
 }
 
-async fn viewer_log(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
-    if let Some(test) = &state.test {
-        if !test_request_authorized(test, &headers) {
-            return StatusCode::UNAUTHORIZED.into_response();
+fn required_query(request: &Request, name: &str) -> std::io::Result<String> {
+    let mut value = None;
+    for pair in request.query_pairs() {
+        let (key, candidate) = pair?;
+        if key == name && value.replace(candidate).is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate query field",
+            ));
         }
     }
-    for line in body.lines() {
-        eprintln!("[viewer] {line}");
-        if let Some(test) = &state.test {
-            let _ = test.events.send(TestEvent::ViewerLog(line.to_string()));
-        }
-    }
-    StatusCode::NO_CONTENT.into_response()
+    value
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing query field"))
 }
 
-async fn test_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    match &state.test {
-        Some(test) if test_request_authorized(test, &headers) => {
-            Json(test.runtime.clone()).into_response()
-        }
-        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-async fn test_ready(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    match &state.test {
-        Some(test) if test_request_authorized(test, &headers) => {
-            let _ = test.events.send(TestEvent::Ready);
-            StatusCode::NO_CONTENT.into_response()
-        }
-        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct TestSleepQuery {
-    ms: f64,
-}
-
-async fn test_sleep(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<TestSleepQuery>,
-) -> Response {
-    let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
+async fn test_sleep(state: &AppState, request: &Request) -> Reply {
+    let ms = match required_query(request, "ms")
+        .and_then(|value| value.parse::<f64>().map_err(std::io::Error::other))
+    {
+        Ok(ms) => ms,
+        Err(error) => return text(400, error.to_string()),
     };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    let Some(test) = &state.test else {
+        return empty(404);
+    };
+    if !test_request_authorized(test, request) {
+        return empty(401);
     }
-    let Ok(duration) = std::time::Duration::try_from_secs_f64(query.ms / 1_000.0) else {
-        return (StatusCode::BAD_REQUEST, "invalid sleep duration").into_response();
+    let Ok(duration) = std::time::Duration::try_from_secs_f64(ms / 1000.0) else {
+        return text(400, "invalid sleep duration");
     };
     let max_ms = test
         .runtime
         .interval_ms
         .unwrap_or(0.0)
         .max(test.runtime.wait_ms);
-    if query.ms > max_ms {
-        return (StatusCode::BAD_REQUEST, "sleep exceeds test schedule").into_response();
+    if ms > max_ms {
+        return text(400, "sleep exceeds test schedule");
     }
     let Some(_permit) = test.sleep_permits.try_acquire() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+        return empty(429);
     };
     async_engine::sleep(duration).await;
-    StatusCode::NO_CONTENT.into_response()
+    empty(204)
 }
 
-#[derive(Deserialize)]
-struct ScreenshotQuery {
-    name: String,
-}
-
-async fn viewer_screenshot(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<ScreenshotQuery>,
-    body: Bytes,
-) -> Response {
+async fn viewer_screenshot(state: &AppState, request: &Request) -> Reply {
+    let name = match required_query(request, "name") {
+        Ok(name) => name,
+        Err(error) => return text(400, error.to_string()),
+    };
     let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
+        return empty(404);
     };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    if !test_request_authorized(test, request) {
+        return empty(401);
     }
-    let Some(path) = test.screenshot_paths.get(&query.name) else {
-        return (StatusCode::BAD_REQUEST, "unknown screenshot name").into_response();
+    let Some(path) = test.screenshot_paths.get(&name) else {
+        return text(400, "unknown screenshot name");
     };
+    let body = request.body();
     if body.len() < 8 || body[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
         let message = format!("viewer returned invalid PNG data for {}", path.display());
         let _ = test.events.send(TestEvent::Failure(message.clone()));
-        return (StatusCode::BAD_REQUEST, message).into_response();
+        return text(400, message);
     }
     if let Err(error) = state.screenshot_io.write(path.clone(), body.to_vec()).await {
         let message = format!("could not write screenshot {}: {error}", path.display());
         let _ = test.events.send(TestEvent::Failure(message.clone()));
-        return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
+        return text(500, message);
     }
     let _ = test.events.send(TestEvent::ScreenshotSaved {
-        name: query.name,
+        name,
         path: path.clone(),
     });
-    StatusCode::NO_CONTENT.into_response()
+    empty(204)
 }
-
-async fn test_done(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
-    let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
-    }
-    let code = body.trim().parse::<u8>().unwrap_or(1);
-    let _ = test.events.send(TestEvent::Done(code));
-    StatusCode::NO_CONTENT.into_response()
-}
-
-// ---------------------------------------------------------------------------
-// DWARF debug source handlers
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 struct DwarfSourceRequest {
     path: String,
 }
 
-/// `POST /dwarfsource` — given `{"path": "<dwarf-path>"}`, return the source
-/// text for the file the path maps to. Empty/missing payload, or a path that
-/// escapes the configured roots, returns 400. Unknown files return 404.
-async fn dwarf_source(
-    State(state): State<AppState>,
-    Json(payload): Json<DwarfSourceRequest>,
-) -> Response {
-    let resolver = match state.debug_symbols.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-    };
-
-    let Some(resolver) = resolver else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "debug source resolver unavailable"})),
-        )
-            .into_response();
-    };
-
-    let request_path = payload.path.trim();
-    if request_path.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "missing path"})),
-        )
-            .into_response();
+async fn dwarf_source(state: &AppState, request: &Request) -> Reply {
+    let content_type = request
+        .header("content-type")
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if content_type != "application/json"
+        && !(content_type.starts_with("application/") && content_type.ends_with("+json"))
+    {
+        return text(415, "expected application/json");
     }
-
-    match resolver.resolve(request_path, true) {
-        Ok(file) => match tokio::fs::read(&file).await {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                bytes,
-            )
-                .into_response(),
-            Err(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": err.to_string()})),
-            )
-                .into_response(),
+    let payload = match serde_json::from_slice::<DwarfSourceRequest>(request.body()) {
+        Ok(payload) => payload,
+        Err(error) => return text(if error.is_data() { 422 } else { 400 }, error.to_string()),
+    };
+    let resolver = state
+        .debug_symbols
+        .read()
+        .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
+        .clone();
+    let Some(resolver) = resolver else {
+        return json_reply(400, json!({"error": "debug source resolver unavailable"}));
+    };
+    let path = payload.path.trim();
+    if path.is_empty() {
+        return json_reply(400, json!({"error": "missing path"}));
+    }
+    match resolver.resolve(path, true) {
+        Ok(file) => match stream_file(state, &file, &[], "text/plain; charset=utf-8").await {
+            Ok(response) => Ok(response),
+            Err(error) => json_reply(500, json!({"error": error.to_string()})),
         },
-        Err(ResolveError::NotFound(msg)) => {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": msg }))).into_response()
-        }
-        Err(ResolveError::Invalid(msg)) => {
-            (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()
-        }
+        Err(ResolveError::NotFound(message)) => json_reply(404, json!({"error": message})),
+        Err(ResolveError::Invalid(message)) => json_reply(400, json!({"error": message})),
     }
 }
 
-/// `GET /debug/source-roots` — return the named source roots the resolver
-/// knows about. Useful for tooling that wants to verify configuration.
-async fn debug_source_roots(State(state): State<AppState>) -> Response {
-    let resolver = match state.debug_symbols.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-    };
+fn debug_source_roots(state: &AppState) -> Reply {
+    let resolver = state
+        .debug_symbols
+        .read()
+        .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
+        .clone();
+    let roots =
+        resolver
+            .map(|resolver| {
+                resolver.config().source_roots().into_iter()
+        .map(|(prefix, path)| json!({"prefix": prefix, "path": path.display().to_string()}))
+        .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+    json_reply(200, json!({"roots": roots}))
+}
 
-    let roots = match resolver {
-        Some(resolver) => resolver
-            .config()
-            .source_roots()
-            .into_iter()
-            .map(|(prefix, path)| json!({"prefix": prefix, "path": path.display().to_string()}))
-            .collect::<Vec<_>>(),
-        None => Vec::new(),
+async fn route(state: &AppState, request: Request) -> Reply {
+    if request.method() == "OPTIONS" {
+        return empty(200)?
+            .with_header(
+                "access-control-allow-methods",
+                "GET,POST,PUT,DELETE,OPTIONS",
+            )?
+            .with_header("access-control-allow-headers", "content-type,authorization");
+    }
+    let path = match request.decoded_path() {
+        Ok(path) => path,
+        Err(error) => return text(400, error.to_string()),
     };
-    Json(json!({ "roots": roots })).into_response()
+    let post = matches!(
+        path.as_str(),
+        "/dwarfsource"
+            | "/viewer-log"
+            | "/test-ready"
+            | "/test-sleep"
+            | "/viewer-screenshot"
+            | "/test-done"
+    );
+    if (post && request.method() != "POST")
+        || (!post && !matches!(request.method(), "GET" | "HEAD"))
+    {
+        return empty(405)?.with_header("allow", if post { "POST" } else { "GET,HEAD" });
+    }
+    match path.as_str() {
+        "/" => serve_index(state).await,
+        "/build-stream" => build_stream(state),
+        "/dwarfsource" => dwarf_source(state, &request).await,
+        "/debug/source-roots" => debug_source_roots(state),
+        "/test-sleep" => test_sleep(state, &request).await,
+        "/viewer-screenshot" => viewer_screenshot(state, &request).await,
+        "/test-config" | "/test-ready" | "/test-done" | "/viewer-log" => {
+            let body = if matches!(path.as_str(), "/test-done" | "/viewer-log") {
+                match std::str::from_utf8(request.body()) {
+                    Ok(body) => body,
+                    Err(_) => return text(400, "invalid UTF-8 body"),
+                }
+            } else {
+                ""
+            };
+            if let Some(test) = &state.test {
+                if !test_request_authorized(test, &request) {
+                    return empty(401);
+                }
+                match path.as_str() {
+                    "/test-config" => return json_reply(200, &test.runtime),
+                    "/test-ready" => {
+                        let _ = test.events.send(TestEvent::Ready);
+                    }
+                    "/test-done" => {
+                        let _ = test
+                            .events
+                            .send(TestEvent::Done(body.trim().parse::<u8>().unwrap_or(1)));
+                    }
+                    _ => {}
+                }
+            } else if path != "/viewer-log" {
+                return empty(404);
+            }
+            if path == "/viewer-log" {
+                for line in body.lines() {
+                    eprintln!("[viewer] {line}");
+                    if let Some(test) = &state.test {
+                        let _ = test.events.send(TestEvent::ViewerLog(line.to_string()));
+                    }
+                }
+            }
+            empty(204)
+        }
+        _ => serve_file(state, path.strip_prefix('/').unwrap_or(&path)).await,
+    }
 }
 
 fn mime_for_path(path: &str) -> &'static str {
@@ -730,7 +696,25 @@ fn mime_for_path(path: &str) -> &'static str {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Start the HTTP server in a background tokio task.
+fn server_limits(runtime: Option<&TestRuntimeConfig>) -> std::io::Result<Limits> {
+    let schedule = runtime
+        .map(|runtime| runtime.wait_ms.max(runtime.interval_ms.unwrap_or(0.0)))
+        .unwrap_or(0.0);
+    let wait =
+        std::time::Duration::try_from_secs_f64(schedule / 1000.0).map_err(std::io::Error::other)?;
+    let deadline = wait
+        .checked_add(std::time::Duration::from_secs(60))
+        .ok_or_else(|| std::io::Error::other("test schedule deadline overflow"))?
+        .max(std::time::Duration::from_secs(3600));
+    Ok(Limits {
+        max_request_body_bytes: 64 * 1024 * 1024,
+        handler_timeout: deadline,
+        connection_timeout: deadline,
+        ..Limits::default()
+    })
+}
+
+/// Start the kernel HTTP server in a caller-runtime-owned background task.
 ///
 /// Returns the actual address the server bound to (useful when port 0 is
 /// requested for automatic assignment). `debug_symbols` is shared with the
@@ -742,21 +726,17 @@ pub async fn start_server(
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
 ) -> anyhow::Result<SocketAddr> {
-    // Serving never changes cwd. Capture it separately from output/sketch paths
-    // so the terminal follows the app launch, including --serve and --test.
-    let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(std::env::current_dir()?));
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
-    let addr = listener.local_addr()?;
     let state = AppState {
-        terminal_cwd,
-        terminal_origin: Arc::new(format!("http://{addr}")),
-        terminal_slots: Arc::new(tokio::sync::Semaphore::new(4)),
         serve_dir: Arc::new(serve_dir),
         build_tx,
         debug_symbols,
         test: test.map(Arc::new),
         // One shared budget per server, including native writes still completing
         // after timeout. PNG validation and destination policy stay in this app.
+        file_responses: kernal_api::http_server::FileResponses::new(
+            4,
+            std::time::Duration::from_secs(30),
+        )?,
         screenshot_io: kernal_api::platform::fs::AsyncFileIo::new(
             4,
             64 * 1024 * 1024,
@@ -764,52 +744,40 @@ pub async fn start_server(
         )?,
     };
 
-    let app = Router::new()
-        .route("/", get(serve_index))
-        .route("/build-stream", get(build_stream))
-        .route("/terminal/ws", get(terminal_socket))
-        .route("/dwarfsource", post(dwarf_source))
-        .route("/viewer-log", post(viewer_log))
-        .route("/test-config", get(test_config))
-        .route("/test-ready", post(test_ready))
-        .route("/test-sleep", post(test_sleep))
-        .route("/viewer-screenshot", post(viewer_screenshot))
-        .route("/test-done", post(test_done))
-        .route("/debug/source-roots", get(debug_source_roots))
-        .route("/{*path}", get(serve_file))
-        .layer(SetResponseHeaderLayer::overriding(
-            axum::http::HeaderName::from_static("cross-origin-embedder-policy"),
-            HeaderValue::from_static("require-corp"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            axum::http::HeaderName::from_static("cross-origin-opener-policy"),
-            HeaderValue::from_static("same-origin"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-cache, no-store, must-revalidate"),
-        ))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::PUT,
-                    Method::DELETE,
-                    Method::OPTIONS,
-                ])
-                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
-        )
-        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
-    let addr = listener.local_addr()?;
-
-    // This server currently lives until its caller-owned runtime shuts down.
+    let server = Server::bind(
+        SocketAddr::from(([127, 0, 0, 1], port)),
+        server_limits(state.test.as_ref().map(|test| &test.runtime))?,
+    )
+    .await?
+    .with_response_header("cross-origin-embedder-policy", "require-corp")?
+    .with_response_header("cross-origin-opener-policy", "same-origin")?
+    .with_response_header("cache-control", "no-cache, no-store, must-revalidate")?
+    .with_response_header("access-control-allow-origin", "*")?
+    .with_response_header(
+        "vary",
+        "origin, access-control-request-method, access-control-request-headers",
+    )?;
+    let addr = server.local_addr()?;
+    let diagnostics = server.diagnostics();
     async_engine::launch(async move {
-        axum::serve(listener, app).await.ok();
+        let result = server
+            .serve(move |request| {
+                let state = state.clone();
+                async move {
+                    match route(&state, request).await {
+                        Ok(response) => response,
+                        Err(error) => {
+                            eprintln!("[server] response preparation failed: {error}");
+                            Response::default()
+                        }
+                    }
+                }
+            })
+            .await;
+        if let Err(error) = result {
+            eprintln!("[server] listener failed: {error}");
+        }
+        eprintln!("[server] stopped: {:?}", diagnostics.snapshot());
     })
     .detach();
 
@@ -859,6 +827,22 @@ mod tests {
 
     fn empty_handle() -> DebugSymbolHandle {
         Arc::new(RwLock::new(None))
+    }
+
+    #[test]
+    fn server_deadlines_cover_every_accepted_test_sleep() {
+        for ms in [25.0, 3_600_001.0, f64::from(i32::MAX)] {
+            let runtime = TestRuntimeConfig {
+                wait_ms: ms,
+                interval_ms: Some(ms),
+                screenshot_names: Vec::new(),
+            };
+            let limits = server_limits(Some(&runtime)).unwrap();
+            let wait = std::time::Duration::from_secs_f64(ms / 1000.0);
+            assert!(limits.handler_timeout > wait);
+            assert!(limits.connection_timeout > wait);
+            assert_eq!(limits.handler_timeout, limits.connection_timeout);
+        }
     }
 
     /// Helper: create a temp dir, start the server, return (addr, dir).
@@ -991,7 +975,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED.as_u16());
+        assert_eq!(unauthorized.status(), 401);
         let config_response = http_request(
             HttpMethod::Get,
             &format!("http://{addr}/test-config"),
@@ -1018,7 +1002,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(saturated.status(), StatusCode::TOO_MANY_REQUESTS.as_u16());
+        assert_eq!(saturated.status(), 429);
         drop(occupied.pop());
         let response = http_request(
             HttpMethod::Post,
@@ -1028,7 +1012,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(response.status(), 204);
         assert_eq!(sleep_permits.available_permits(), 1);
         drop(occupied);
         let response = http_request(
@@ -1039,7 +1023,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status(), 400);
         let response = http_request(
             HttpMethod::Post,
             &format!("http://{addr}/test-sleep?ms=26"),
@@ -1048,7 +1032,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status(), 400);
 
         let worker = response_text(
             http_get(format!("http://{addr}/fastled_background_worker.js"))
@@ -1070,7 +1054,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST.as_u16());
+        assert_eq!(response.status(), 400);
         assert!(!dir.path().join("escape").exists());
 
         let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
@@ -1082,7 +1066,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(response.status(), 204);
         assert_eq!(fs::read(&screenshot).unwrap(), png);
         assert!(matches!(
             rx.recv().await,
@@ -1101,10 +1085,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(
-            response.status(),
-            StatusCode::INTERNAL_SERVER_ERROR.as_u16()
-        );
+        assert_eq!(response.status(), 500);
         assert!(matches!(
             rx.recv().await,
             Some(TestEvent::Failure(message)) if message.contains("could not write screenshot")
