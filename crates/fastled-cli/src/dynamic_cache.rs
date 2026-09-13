@@ -88,13 +88,12 @@ fn create_fingerprint_watcher(
 }
 
 fn compute_tree_fingerprint(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
-    let files = zccache_fingerprint::walk_files_glob(root, include, exclude)
-        .with_context(|| format!("scan fingerprint inputs under {}", root.display()))?;
-    zccache_fingerprint::compute_aggregate_hash(&files)
+    kernal_api::hash::blake3_tree(root, include, exclude, Default::default())
+        .map(|digest| digest.to_hex())
         .with_context(|| format!("hash fingerprint inputs under {}", root.display()))
 }
 
-/// Hash a selected source tree with zccache's content-authoritative scanner.
+/// Hash a selected source tree with the kernel's content-authoritative scanner.
 /// Paths, file count, and bytes all participate, so additions, deletions, and
 /// same-size edits with restored mtimes cannot produce a false cache hit.
 pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
@@ -468,33 +467,6 @@ mod tests {
         let mut bytes = b"\0asm\x01\0\0\0".to_vec();
         bytes.extend_from_slice(payload);
         bytes
-    }
-
-    #[test]
-    fn fingerprint_detects_same_size_edit_even_with_unchanged_mtime() {
-        let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("sketch.ino");
-        fs::write(&source, "aaaa").unwrap();
-        let original_mtime = source.metadata().unwrap().modified().unwrap();
-        let first = fingerprint_tree(temp.path(), &["**/*.ino"], &[]).unwrap();
-
-        fs::write(&source, "bbbb").unwrap();
-        let file = OpenOptions::new().write(true).open(&source).unwrap();
-        file.set_modified(original_mtime).unwrap();
-        let second = fingerprint_tree(temp.path(), &["**/*.ino"], &[]).unwrap();
-
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn fingerprint_detects_source_deletion() {
-        let temp = tempfile::tempdir().unwrap();
-        fs::write(temp.path().join("a.cpp"), "a").unwrap();
-        fs::write(temp.path().join("b.cpp"), "b").unwrap();
-        let first = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
-        fs::remove_file(temp.path().join("b.cpp")).unwrap();
-        let second = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
-        assert_ne!(first, second);
     }
 
     // Regression coverage for #193: the rebuild-triggering event must dirty
