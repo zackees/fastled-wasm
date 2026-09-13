@@ -862,6 +862,38 @@ local uv graph dropped 23 packages, but `uv.lock` is intentionally ignored by
 the repository and is not a committed release artifact. No Rust implementation
 or native compiler behavior changed, and no build-time improvement is claimed.
 
+## Bounded tool argument decoding
+
+Upstream https://github.com/zackees/kernal-api/pull/205 owns POSIX quoting,
+escaping, Unicode handling, semantic parse errors and resource bounds behind
+`command-arguments`. The private `shell-words` implementation is absent from
+the kernel's default feature graph. FastLED removes its direct dependency and
+retains `em++ --cflags` discovery, caching and the empty-output product error.
+The app boundary regression observed RED then GREEN; the generic parser's
+tests, strict Clippy, dependency isolation and Windows/macOS cross-checks pass.
+
+Real Linux validation used an isolated Blink sketch and the existing catalog
+Emscripten 4.0.21 release default with `/home/niteris/dev/fastled` source. A fresh
+direct-cflags cache confirmed the parser ran; sketch compilation and final
+static WASM linking succeeded. The output has a valid WASM header, and a scan
+of emitted artifacts found none of `WebAssembly.Suspending`,
+`WebAssembly.promising`, `-sJSPI` or `JSPI_EXPORTS`. This is compiler/artifact
+evidence, not Safari browser validation or a build-speed comparison.
+
+That real compile exposed issue #246: catalog publication retained absolute
+staging paths in its generated `.emscripten` file. Publication now writes final
+paths before the directory rename, and managed health checks refresh older
+generated configurations. The relocation test observed RED then GREEN; static
+and dynamic compiler health checks then passed. No compiler version or linking
+defaults changed. This Emscripten-specific installation policy stays local.
+
+Post-fix Rust workspace tests, strict all-target Clippy, formatting, Python
+tests (30 passed, one skipped), and Ruff pass. The real native-viewer run did
+not pass: worker capabilities reported `webgl2: false`, the frontend rejected
+OffscreenCanvas WebGL2, and no canvas appeared before the readiness deadline.
+Issue #247 tracks this real WASM worker/render gap; the earlier synthetic
+canvas fixture is not a substitute. No browser check was weakened.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

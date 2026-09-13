@@ -491,7 +491,8 @@ fn direct_clang_cflags(
         );
     }
     let stdout = String::from_utf8(output.stdout).context("em++ --cflags returned non-UTF-8")?;
-    let flags = shell_words::split(stdout.trim()).context("parse em++ --cflags output")?;
+    let flags =
+        kernal_api::arguments::parse_posix(stdout.trim()).context("parse em++ --cflags output")?;
     if flags.is_empty() {
         bail!("em++ --cflags returned no backend flags");
     }
