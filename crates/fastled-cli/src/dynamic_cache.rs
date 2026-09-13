@@ -473,6 +473,44 @@ mod tests {
         bytes
     }
 
+    #[test]
+    fn sha256_cache_encoding_preserves_domain_lengths_and_leading_zeroes() {
+        // Fixed legacy encodings, independently checked with Python hashlib.
+        // These protect FastLED's cache protocol; generic SHA vectors live upstream.
+        for (values, expected) in [
+            (
+                vec![],
+                "a176241cca24eb86c1fc3b441c63aa8d37d409f5821163583f3ce7320e625e81",
+            ),
+            (
+                vec![&b"ab"[..], &b"c"[..]],
+                "0d9a687b8e558f37b5d34c32b8a27fdd0c34b90e2313c922b977a1fbfd8c2979",
+            ),
+            (
+                vec![&b"a"[..], &b"bc"[..]],
+                "8cf4aafa0e399335648f6c2dc69f36b88f4608dfecc89dbe37fdd8e2d1c3d7ca",
+            ),
+            (
+                vec![&b""[..], &b"ab"[..], &b"c"[..]],
+                "fe43050a4dd2a7da0ae131b5c170ed024abc0544f71ea44e1778ff9f8de8c36a",
+            ),
+        ] {
+            assert_eq!(fingerprint_values(values), expected);
+        }
+    }
+
+    #[test]
+    fn sha256_artifact_record_preserves_serialized_encoding() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let path = temp.path().join("firmware.wasm");
+        fs::write(&path, wasm_bytes(b"")).unwrap();
+        let record = hash_file(&path).unwrap();
+        assert_eq!(
+            serde_json::to_string(&record).unwrap(),
+            r#"{"bytes":8,"sha256":"93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476"}"#
+        );
+    }
+
     // Regression coverage for #193: the rebuild-triggering event must dirty
     // the persistent fingerprint before the next lookup.
     #[test]

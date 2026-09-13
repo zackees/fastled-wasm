@@ -62,6 +62,29 @@ def test_obsolete_manifest_dependencies_are_removed():
     assert "thiserror" not in workspace["workspace"]["dependencies"]
 
 
+def test_sha256_backend_is_absent_from_all_dependency_sections():
+    root = Path(__file__).resolve().parents[2]
+
+    def check_sections(table):
+        for name, value in table.items():
+            if not isinstance(value, dict):
+                continue
+            if name in ("dependencies", "dev-dependencies", "build-dependencies"):
+                for alias, dependency in value.items():
+                    assert alias != "sha2"
+                    if isinstance(dependency, dict):
+                        assert dependency.get("package") != "sha2"
+            check_sections(value)
+
+    for path in [root / "Cargo.toml", *sorted((root / "crates").rglob("Cargo.toml"))]:
+        check_sections(tomllib.loads(path.read_text()))
+    workspace = tomllib.loads((root / "Cargo.toml").read_text())
+    assert (
+        "hash-sha256"
+        in workspace["workspace"]["dependencies"]["kernal-api"]["features"]
+    )
+
+
 def test_http_callers_use_kernel():
     root = Path(__file__).resolve().parents[2]
     package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())

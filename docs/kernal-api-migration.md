@@ -132,6 +132,44 @@ review found no actionable issues. Neither upstream PR is a published release.
 
 ### SHA-256 slice
 
+Issue #235 follow-up audit (base `423761c`): commit `871787c` already migrated
+all seven SHA call sites, removed the direct workspace/package dependency,
+and moved generic archive hash tests upstream. The current sibling checkout
+at `b9f0f73` exports SHA types/functions directly from `kernal_api::hash`;
+its `hash::sha256` module is private. No upstream API change is needed.
+`Sha256Digest` owns 32 bytes, incremental state consumes on finalize, and
+reader/file helpers use a fixed 64 KiB buffer with an explicit byte limit.
+They retry interrupted reads, return `InvalidData` on overflow, and preserve
+other standard I/O error kinds. Daemon identity continues to delegate to the
+private running-process backend; this follow-up introduces no parallel hash
+implementation or dependency.
+
+The follow-up adds fixed FastLED cache framing and serialized artifact-record
+fixtures, independently checked with Python `hashlib`, plus uppercase seal
+acceptance and missing-artifact error policy tests. Existing checked digests
+remain unchanged. The boundary now rejects SHA backend dependencies across
+workspace, package, target, development, and build sections, including renamed
+dependencies, and requires the kernel feature. Temporarily restoring a
+workspace `sha2` entry makes the new check fail (RED); removing it restores
+all six boundary tests (GREEN).
+
+Validation for this follow-up uses the Nix native-library environment documented
+above and `CARGO_BUILD_JOBS=1`. `bash test` passes: 262 library tests, two binary
+tests, one CLI integration test, one doctest, and 29 Python tests (one skipped).
+`soldr cargo test --locked --manifest-path
+/home/niteris/dev/fastled-wasm-extern/kernal-api-text/Cargo.toml --target-dir
+/home/niteris/dev/fastled-wasm-235/target/kernel-tests --features
+hash-sha256,archive --test sha256_facade --test archive_facade` passes three SHA
+and 14 archive tests; three archive tests require external fixtures and remain
+ignored. Kernel source and lockfile are unchanged. No full WASM compile was
+run: production build behavior, linker flags, and JavaScript are unchanged.
+`bash lint` also passes in full: formatting, strict Clippy, the pinned
+`ban_std_pathbuf` dylint, and all Python checks. On this host the command needs
+`/home/niteris/.soldr/bin/cargo-dylint-6.0.3` and
+`/home/niteris/.soldr/bin/dylint-link-6.0.3` prepended to `PATH`. Initial attempts
+failed on missing OpenSSL discovery/cached metadata, then on dylint discovery;
+the documented native environment and existing tool paths resolved them.
+
 Tracking: https://github.com/zackees/fastled-wasm/issues/235 and
 https://github.com/zackees/kernal-api/issues/161.
 

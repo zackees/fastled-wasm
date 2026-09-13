@@ -84,7 +84,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 
 /// Return `true` when the SHA-256 digest of `path` matches `expected`.
 ///
-/// `expected` must be a lower-case hex string (64 characters).
+/// `expected` is a 64-character hex string, compared case-insensitively.
 ///
 /// # Errors
 /// Returns an error if the file cannot be read.
@@ -337,6 +337,20 @@ mod tests {
 
         let ok = verify_sha256(&file, HELLO_SHA256).expect("verify_sha256");
         assert!(!ok, "digest should not match different content");
+    }
+
+    #[test]
+    fn test_verify_sha256_accepts_uppercase_seal() {
+        let dir = temp_dir();
+        let file = dir.path().join("data.bin");
+        fs::write(&file, b"hello fastled").unwrap();
+        assert!(verify_sha256(&file, &HELLO_SHA256.to_uppercase()).unwrap());
+    }
+
+    #[test]
+    fn test_verify_sha256_missing_artifact_is_an_error() {
+        let dir = temp_dir();
+        assert!(verify_sha256(&dir.path().join("missing.bin"), HELLO_SHA256).is_err());
     }
 
     // ------------------------------------------------------------------
