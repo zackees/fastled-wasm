@@ -27,7 +27,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 ctcb-core = { workspace = true }
-strsim = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }

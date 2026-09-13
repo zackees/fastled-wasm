@@ -624,6 +624,30 @@ FastLED's full Rust workspace tests, strict all-target Clippy and formatting
 pass; Python tests pass (28 passed, one skipped). This remains local adoption,
 not an exact published dependency, and no build-speed improvement is claimed.
 
+### Name-similarity adoption checkpoint
+
+Issue https://github.com/zackees/kernal-api/issues/184 moves Jaro-Winkler scoring
+behind the opt-in kernel text capability. FastLED retains lowercase conversion,
+substring precedence, candidate selection, stable best-score ties and prompts.
+Direct `strsim` is removed and banned by the boundary test (observed RED then
+GREEN); the package remains transitive through the kernel and other consumers.
+
+`best_sketch_match` and `resolve_prompt_choice` are now fallible public helpers.
+Scoring rejects inputs over 4096 UTF-8 bytes or scalar-count products over
+1,048,576. Errors propagate through the interactive prompt; no partial ranking,
+truncation or replacement score is used. Existing exact/substring fast paths
+remain application policy and do not invoke fuzzy scoring. Generic Unicode,
+score-vector and resource-limit tests live upstream; application tests cover
+substring precedence, stable ties and error propagation.
+
+The current migration-only patch points at
+`../fastled-wasm-extern/kernal-api-text` on `feat/text-similarity`.
+Upstream focused and broad feature tests, default-feature check, strict Clippy
+and dependency-isolation checks pass locally. Python tests pass (28 passed,
+one skipped). Full application Rust tests and strict all-target Clippy pass;
+the cross-repository source review is clean. Publication and exact adoption remain required;
+no speed improvement is claimed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
