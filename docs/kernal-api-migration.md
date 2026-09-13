@@ -11,7 +11,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 
 ## Capability inventory
 
-| Capability | Current direct dependencies | Migration work |
+| Capability | Original direct dependencies | Migration work |
 | --- | --- | --- |
 | Advisory locks | fs2 | #230: all six call sites migrated to kernal-api guards; headless Rust suite passes |
 | Glob matching and watchers | globset, notify | #231/#232: migrated to filesystem patterns and fs-watch; lost watches trigger recovery and rescan |
@@ -752,6 +752,32 @@ observed RED then GREEN. The lockfile removes the `ctcb-core` package without
 adding a replacement package; no build-speed improvement is claimed. The
 migration-only path patch now points to the process-target sibling, stacked
 on interrupt notifications, pending publication and exact registry adoption.
+
+### Native viewer adoption gaps
+
+The dependency inventory above records the original migration inputs, not the
+current manifests. After `904b8fb`, remaining direct Rust dependencies are Clap,
+Serde/JSON/TOML, Anyhow, Tauri/build/GTK/WebKitGTK, shell-words, and the two
+Tree-sitter crates. The application has no direct Tokio or ctcb-core edge.
+
+Source comparison of `tauri_viewer.rs` and the kernel's isolated webview host
+identifies these remaining viewer requirements:
+
+- Product title and logical window dimensions: kernel issue
+  https://github.com/zackees/kernal-api/issues/193 adds bounded presentation
+  options through the existing native host and resource lifecycle.
+- Pre-page script delivery: preserve test-token extraction, console forwarding,
+  WebGL capture setup and FastLED's screenshot schedule, including reloads.
+  These scripts and HTTP endpoints remain product policy. Do not weaken the
+  isolated webview's no-native-IPC contract to obtain script delivery.
+- Windows DPI/zoom policy: preserve the existing Windows-only adjustment and
+  avoid applying it on Linux/macOS. Validate on native hosts.
+- Media and graphics parity: the kernel already contains the Linux renderer
+  environment, font-DPI and opt-in user-media mechanisms, but adoption still
+  needs real viewer tests for microphone, rendering, logs, captures and teardown.
+
+The native viewer dependencies remain until these behaviors are integrated and
+verified. Window-configuration groundwork alone does not complete GUI migration.
 
 ### Final migration audit
 
