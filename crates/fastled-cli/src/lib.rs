@@ -49,16 +49,38 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match cli::management_command_from(std::env::args_os()) {
-        Ok(Some(command)) => return run_management_command(command),
-        Ok(None) => {}
-        Err(error) => {
-            eprintln!("fastled: {error}");
-            return ExitCode::FAILURE;
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    let presentation_request = arguments.iter().skip(1).any(|argument| {
+        matches!(
+            argument.to_str(),
+            Some("--help" | "-h" | "--version" | "-V")
+        )
+    });
+    // The bounded schema intentionally accepts UTF-8 arguments. Retain the
+    // existing native Clap path when a caller supplies a non-UTF-8 path so
+    // path-valued options remain lossless during the staged migration.
+    let has_non_utf8_argument = arguments.iter().any(|argument| argument.to_str().is_none());
+    if !presentation_request && !has_non_utf8_argument {
+        match cli::management_command_from(&arguments) {
+            Ok(Some(command)) => return run_management_command(command),
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("fastled: {error}");
+                return ExitCode::FAILURE;
+            }
         }
     }
-
-    let mut cli = cli::Cli::parse();
+    let mut cli = if presentation_request || has_non_utf8_argument {
+        cli::Cli::parse()
+    } else {
+        match cli::primary_cli_from(&arguments) {
+            Ok(cli) => cli,
+            Err(error) => {
+                eprintln!("fastled: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
     cli::apply_test_implications(&mut cli);
 
     if let Err(message) = cli::validate_init_ref_flags(&cli) {

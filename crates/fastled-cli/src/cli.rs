@@ -83,12 +83,6 @@ where
         .into_iter()
         .map(|argument| argument.as_ref().to_os_string())
         .collect::<Vec<OsString>>();
-    let Some(tree) = arguments.get(1).and_then(|argument| argument.to_str()) else {
-        return Ok(None);
-    };
-    if !matches!(tree, "toolchain" | "source") {
-        return Ok(None);
-    }
     if arguments
         .iter()
         .skip(1)
@@ -96,7 +90,10 @@ where
     {
         return Ok(None);
     }
-    let schema = SchemaCommand::new("fastled")
+    // Keep the root build options on this tree so options preceding a
+    // management subcommand retain the same acceptance as the former Clap
+    // grammar (for example, `--no-interactive source status`).
+    let schema = primary_schema()
         .subcommand(
             SchemaCommand::new("toolchain")
                 .subcommand(SchemaCommand::new("status"))
@@ -124,6 +121,11 @@ where
                 .subcommand(SchemaCommand::new("purge")),
         );
     let parsed = schema.parse(arguments).map_err(|error| error.to_string())?;
+    validate_ref_options(
+        parsed.flag("latest").unwrap_or(false),
+        parsed.value("branch").is_some(),
+        parsed.value("commit").is_some(),
+    )?;
     let path = parsed.command_path();
     let command = match path {
         [_, tree, action] if tree == "toolchain" => Command::Toolchain {
@@ -161,7 +163,10 @@ where
                 _ => return Err("invalid source command".to_owned()),
             },
         },
-        _ => return Err("invalid management command".to_owned()),
+        [_, tree] if matches!(tree.as_str(), "toolchain" | "source") => {
+            return Err("invalid management command".to_owned());
+        }
+        _ => return Ok(None),
     };
     Ok(Some(command))
 }
@@ -177,25 +182,66 @@ pub(crate) fn primary_schema() -> kernal_api::command::Command {
         .option(OptionSpec::value("init", ValueKind::string()).optional_value("__init__"))
         .option(OptionSpec::flag("just-compile"))
         .option(OptionSpec::flag("no-app"))
-        .option(OptionSpec::value("link", ValueKind::enumeration(["static", "dynamic"])).default("static"))
+        .option(
+            OptionSpec::value("link", ValueKind::enumeration(["static", "dynamic"]))
+                .default("static"),
+        )
         .option(OptionSpec::flag("profile"))
         .option(OptionSpec::flag("install"))
         .option(OptionSpec::flag("dry-run"))
         .option(OptionSpec::flag("no-interactive"))
         .option(OptionSpec::flag("no-https"))
-        .option(OptionSpec::flag("test").conflicts("just-compile").conflicts("no-app"))
-        .option(OptionSpec::flag("check").conflicts("just-compile").conflicts("no-app"))
+        .option(
+            OptionSpec::flag("test")
+                .conflicts("just-compile")
+                .conflicts("no-app"),
+        )
+        .option(
+            OptionSpec::flag("check")
+                .conflicts("just-compile")
+                .conflicts("no-app"),
+        )
         .exclusive_group("production-test", ["test", "check"])
-        .option(OptionSpec::value("test-wait-secs", ValueKind::f64()).default("1").requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-screenshot", ValueKind::string()).requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-interval-secs", ValueKind::f64()).requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-count", ValueKind::u32()).requires_any(["test", "check"]).conflicts("test-duration-secs"))
-        .option(OptionSpec::value("test-duration-secs", ValueKind::f64()).requires_any(["test", "check"]).conflicts("test-count"))
+        .option(
+            OptionSpec::value("test-wait-secs", ValueKind::f64())
+                .default("1")
+                .requires_any(["test", "check"]),
+        )
+        .option(
+            OptionSpec::value("test-screenshot", ValueKind::string())
+                .requires_any(["test", "check"]),
+        )
+        .option(
+            OptionSpec::value("test-interval-secs", ValueKind::f64())
+                .requires_any(["test", "check"]),
+        )
+        .option(
+            OptionSpec::value("test-count", ValueKind::u32())
+                .requires_any(["test", "check"])
+                .conflicts("test-duration-secs"),
+        )
+        .option(
+            OptionSpec::value("test-duration-secs", ValueKind::f64())
+                .requires_any(["test", "check"])
+                .conflicts("test-count"),
+        )
         .option(OptionSpec::value("test-log", ValueKind::string()).requires_any(["test", "check"]))
         .option(OptionSpec::flag("test-exit-on-error").requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-timeout-secs", ValueKind::f64()).default("120").requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-ready-timeout-secs", ValueKind::f64()).default("15").requires_any(["test", "check"]))
-        .option(OptionSpec::value("test-cmd", ValueKind::string()).repeated().requires_any(["test", "check"]))
+        .option(
+            OptionSpec::value("test-timeout-secs", ValueKind::f64())
+                .default("120")
+                .requires_any(["test", "check"]),
+        )
+        .option(
+            OptionSpec::value("test-ready-timeout-secs", ValueKind::f64())
+                .default("15")
+                .requires_any(["test", "check"]),
+        )
+        .option(
+            OptionSpec::value("test-cmd", ValueKind::string())
+                .repeated()
+                .requires_any(["test", "check"]),
+        )
         .option(OptionSpec::flag("latest"))
         .option(OptionSpec::value("branch", ValueKind::string()))
         .option(OptionSpec::value("commit", ValueKind::string()))
@@ -204,12 +250,85 @@ pub(crate) fn primary_schema() -> kernal_api::command::Command {
         .option(OptionSpec::flag("clangd"))
         .option(OptionSpec::value("write-clangd", ValueKind::string()).optional_value("__cwd__"))
         .option(OptionSpec::flag("write-intellisense-snapshot").hidden())
-        .option(OptionSpec::value("internal-ensure-fastled-repo", ValueKind::string()).optional_value("__latest__").hidden())
+        .option(
+            OptionSpec::value("internal-ensure-fastled-repo", ValueKind::string())
+                .optional_value("__latest__")
+                .hidden(),
+        )
         .option(OptionSpec::flag("internal-dwarf-smoke").hidden())
         .option(OptionSpec::value("internal-serve-dir-headless", ValueKind::string()).hidden())
-        .option(OptionSpec::flag("debug").conflicts("quick").conflicts("release"))
-        .option(OptionSpec::flag("quick").conflicts("debug").conflicts("release"))
-        .option(OptionSpec::flag("release").conflicts("debug").conflicts("quick"))
+        .option(
+            OptionSpec::flag("debug")
+                .conflicts("quick")
+                .conflicts("release"),
+        )
+        .option(
+            OptionSpec::flag("quick")
+                .conflicts("debug")
+                .conflicts("release"),
+        )
+        .option(
+            OptionSpec::flag("release")
+                .conflicts("debug")
+                .conflicts("quick"),
+        )
+}
+
+pub(crate) fn primary_cli_from<I, S>(arguments: I) -> Result<Cli, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let parsed = primary_schema()
+        .parse(arguments)
+        .map_err(|error| error.to_string())?;
+    let flag = |name| parsed.flag(name).unwrap_or(false);
+    let string = |name| parsed.value(name).map(str::to_owned);
+    let link_mode = match parsed.value("link") {
+        Some("dynamic") => LinkMode::Dynamic,
+        Some("static") | None => LinkMode::Static,
+        Some(_) => return Err("invalid link mode".to_owned()),
+    };
+    Ok(Cli {
+        command: None,
+        directory: string("directory"),
+        serve_dir: string("serve-dir"),
+        init: string("init"),
+        just_compile: flag("just-compile"),
+        no_app: flag("no-app"),
+        link_mode,
+        profile: flag("profile"),
+        install: flag("install"),
+        dry_run: flag("dry-run"),
+        no_interactive: flag("no-interactive"),
+        no_https: flag("no-https"),
+        test: flag("test"),
+        check: flag("check"),
+        test_wait_secs: parsed.f64("test-wait-secs").unwrap_or(1.0),
+        test_screenshot: string("test-screenshot").map(PathBuf::from),
+        test_interval_secs: parsed.f64("test-interval-secs"),
+        test_count: parsed.u32("test-count"),
+        test_duration_secs: parsed.f64("test-duration-secs"),
+        test_log: string("test-log").map(PathBuf::from),
+        test_exit_on_error: flag("test-exit-on-error"),
+        test_timeout_secs: parsed.f64("test-timeout-secs").unwrap_or(120.0),
+        test_ready_timeout_secs: parsed.f64("test-ready-timeout-secs").unwrap_or(15.0),
+        test_cmd: parsed.values("test-cmd").unwrap_or_default().to_vec(),
+        latest: flag("latest"),
+        branch: string("branch"),
+        commit: string("commit"),
+        fastled_path: string("fastled-path"),
+        purge: flag("purge"),
+        clangd: flag("clangd"),
+        write_clangd: string("write-clangd"),
+        write_intellisense_snapshot: flag("write-intellisense-snapshot"),
+        internal_ensure_fastled_repo: string("internal-ensure-fastled-repo"),
+        internal_dwarf_smoke: flag("internal-dwarf-smoke"),
+        internal_serve_dir_headless: string("internal-serve-dir-headless"),
+        debug: flag("debug"),
+        quick: flag("quick"),
+        release: flag("release"),
+    })
 }
 
 /// How the sketch code is linked into the generated WASM program.
@@ -453,7 +572,15 @@ pub(crate) struct Cli {
 }
 
 pub(crate) fn validate_init_ref_flags(cli: &Cli) -> Result<(), &'static str> {
-    if cli.latest && (cli.branch.is_some() || cli.commit.is_some()) {
+    validate_ref_options(cli.latest, cli.branch.is_some(), cli.commit.is_some())
+}
+
+fn validate_ref_options(
+    latest: bool,
+    has_branch: bool,
+    has_commit: bool,
+) -> Result<(), &'static str> {
+    if latest && (has_branch || has_commit) {
         return Err("--latest cannot be used with --branch or --commit");
     }
     Ok(())
@@ -507,8 +634,22 @@ mod tests {
             })) if reference == "main"
         ));
         assert!(matches!(
+            management_command_from(["fastled", "--no-interactive", "source", "status"]),
+            Ok(Some(Command::Source {
+                action: SourceAction::Status { reference }
+            })) if reference == "master"
+        ));
+        assert!(matches!(
             management_command_from(["fastled", "source", "--help"]),
             Ok(None)
+        ));
+        assert!(matches!(
+            management_command_from(["fastled", "source"]),
+            Err(message) if message == "invalid management command"
+        ));
+        assert!(matches!(
+            management_command_from(["fastled", "--latest", "--branch", "main", "source", "status"]),
+            Err(message) if message == "--latest cannot be used with --branch or --commit"
         ));
         assert!(matches!(
             management_command_from(["fastled", "source", "update", "--unknown"]),
@@ -536,7 +677,29 @@ mod tests {
         assert_eq!(parsed.u32("test-count"), Some(2));
         assert_eq!(parsed.values("test-cmd").unwrap().len(), 2);
         assert!(parsed.flag("write-intellisense-snapshot").unwrap());
-        assert!(!primary_schema().render_help().contains("write-intellisense-snapshot"));
+        assert!(!primary_schema()
+            .render_help()
+            .contains("write-intellisense-snapshot"));
+    }
+
+    #[test]
+    fn primary_cli_mapping_preserves_typed_defaults_and_paths() {
+        let cli = primary_cli_from([
+            "fastled",
+            "sketch",
+            "--test",
+            "--test-count=2",
+            "--test-screenshot=out.png",
+            "--link=dynamic",
+        ])
+        .unwrap();
+        assert_eq!(cli.directory.as_deref(), Some("sketch"));
+        assert_eq!(cli.test_count, Some(2));
+        assert_eq!(cli.test_screenshot, Some(PathBuf::from("out.png")));
+        assert_eq!(cli.test_timeout_secs, 120.0);
+        assert_eq!(cli.link_mode, LinkMode::Dynamic);
+        let defaults = primary_cli_from(["fastled", "sketch"]);
+        assert!(defaults.is_ok(), "default controls must not require --test");
     }
 
     #[test]
