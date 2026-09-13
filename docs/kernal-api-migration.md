@@ -52,11 +52,14 @@ remain part of the final migration audit.
 To reproduce the default-feature Rust test run on this NixOS host:
 
 ```bash
-FASTLED_PKG_CONFIG_PATH=$(printf '%s:' /nix/store/*-dev/lib/pkgconfig /nix/store/*/share/pkgconfig)
-FASTLED_NATIVE_LIB_PATH=$(PKG_CONFIG_PATH="$FASTLED_PKG_CONFIG_PATH" pkg-config --libs-only-L gtk+-3.0 webkit2gtk-4.1 openssl liblzma | sed 's/-L//g; s/ /:/g')
-FASTLED_BZIP_LIB_PATH=$(printf '%s:' /nix/store/*bzip2*/lib)
-PKG_CONFIG_PATH="$FASTLED_PKG_CONFIG_PATH" LD_LIBRARY_PATH="$FASTLED_NATIVE_LIB_PATH:$FASTLED_BZIP_LIB_PATH" soldr cargo test --workspace
+FASTLED_PKG_CONFIG_PATH=/nix/store/gbzc2cpjmhylnmwljbqa1pwmli5a2n1v-xz-5.8.3-dev/lib/pkgconfig:/nix/store/9vxrnnhc400s1rgq801wqfdxhzpcl1z1-bzip2-1.0.8-dev/lib/pkgconfig:$(printf '%s:' /nix/store/*-dev/lib/pkgconfig /nix/store/*/share/pkgconfig)
+FASTLED_NATIVE_LIB_PATH=$(PKG_CONFIG_PATH="$FASTLED_PKG_CONFIG_PATH" pkg-config --libs-only-L gtk+-3.0 webkit2gtk-4.1 openssl liblzma bzip2 | sed 's/-L//g; s/ /:/g')
+PKG_CONFIG_PATH="$FASTLED_PKG_CONFIG_PATH" LD_LIBRARY_PATH="$FASTLED_NATIVE_LIB_PATH" soldr cargo test --workspace -j1
 ```
+
+These are host-specific store paths. The explicit native xz/bzip2 prefixes avoid
+32-bit libraries also present in this store; an unfiltered glob selected those
+and failed the x86-64 link during archive adoption.
 
 ## Completion checks
 
@@ -160,7 +163,7 @@ The full kernel `fs,fs-watch,hash-sha256` suite and strict Clippy in both
 repositories pass. One-agent pre-push review found no actionable issues.
 Archive extraction migration is next, tracked in application issue #237.
 
-### Archive slice (in progress; not adopted)
+### Archive slice (locally adopted; publication pending)
 
 Tracking: application #237 and https://github.com/zackees/kernal-api/issues/165.
 The sibling `feat/archive-facade` branch contains an unpublished ZIP foundation:
@@ -193,10 +196,21 @@ Its npm symlinks include literal backslashes and are dangling on Linux, requirin
 the explicit policy above to preserve the old extractor's behavior. No archive
 contents were executed. Fixtures were extracted only into fresh temporary dirs.
 
-No archive dependencies or tests have been removed from FastLED yet. Application
-adoption, isolated-feature CI, native Windows coverage, and upstream publication
-remain pending. All installer full-extraction call sites use empty staging
-directories; esbuild removes an existing selected binary before extraction.
+FastLED now delegates all three extraction wrappers to the facade and removes
+direct zip/tar/zstd/flate2 dependencies. Two generic ZIP tests and their fixture
+builder are removed; their extraction coverage lives upstream. Promotion,
+catalog checksums, esbuild member selection, and Emscripten configuration remain
+FastLED policy. The lockfile moves the four backends under kernal-api, updates
+tar to the facade's exact version, and drops xattr.
+
+The application boundary regression was RED before adoption and is now GREEN.
+All 249 library tests, two binary tests, one CLI integration test and one doctest
+pass; strict workspace Clippy and formatting pass. Python has 24 passed and one skipped. The boundary test passes Ruff,
+Black, isort and Pyright. One-agent application review found no actionable
+issues. Isolated-feature CI, native Windows coverage, upstream publication and
+replacement of the temporary path override remain pending. All full-extraction
+call sites use empty staging directories; esbuild removes an existing selected
+binary before extraction.
 
 ### Final migration audit
 

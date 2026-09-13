@@ -7,10 +7,11 @@
 //! * Writing the `.emscripten` config file after installation
 
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use kernal_api::archive::{ArchiveFormat, DanglingLinks, ExtractionLimits};
 
 // ---------------------------------------------------------------------------
 // Download
@@ -93,25 +94,25 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
 ///
 /// If the archive contains a single top-level directory, its contents are
 /// promoted one level up (mirrors the Python behaviour in `_extract_archive`).
+/// The caller owns an absent or empty staging directory; failures may leave
+/// partial output for the caller to clean up.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or if any entry cannot be
 /// written to `dest`.
 pub fn extract_tar_zst(archive: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)
-        .with_context(|| format!("cannot create destination {}", dest.display()))?;
-
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open archive {}", archive.display()))?;
-    let buf_reader = BufReader::new(file);
-
-    let zstd_decoder = zstd::stream::read::Decoder::new(buf_reader)
-        .context("failed to initialise zstd decoder")?;
-
-    let mut tar_archive = tar::Archive::new(zstd_decoder);
-    tar_archive
-        .unpack(dest)
-        .with_context(|| format!("failed to unpack tar archive to {}", dest.display()))?;
+    // The pinned Linux toolchain contains dangling npm links with literal
+    // backslashes. Preserve their payloads, while requiring confined targets.
+    kernal_api::archive::extract(
+        archive,
+        dest,
+        ArchiveFormat::TarZstd,
+        ExtractionLimits {
+            dangling_links: DanglingLinks::PreserveMissingLeaf,
+            ..ExtractionLimits::default()
+        },
+    )
+    .with_context(|| format!("failed to unpack tar archive to {}", dest.display()))?;
 
     // Promote single top-level directory (mirrors Python's behaviour).
     _promote_single_child(dest)?;
@@ -125,50 +126,20 @@ pub fn extract_tar_zst(archive: &Path, dest: &Path) -> Result<()> {
 
 /// Extract a `.zip` archive to `dest`.
 ///
-/// Creates `dest` if it does not exist. All entries (files and directories)
-/// are extracted, preserving relative paths.
+/// Requires an absent or empty, caller-exclusive staging directory. Entries
+/// are extracted preserving relative paths; failure may leave partial output.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or any entry cannot be
 /// written.
 pub fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)
-        .with_context(|| format!("cannot create destination {}", dest.display()))?;
-
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open zip archive {}", archive.display()))?;
-    let buf_reader = BufReader::new(file);
-    let mut zip = zip::ZipArchive::new(buf_reader)
-        .with_context(|| format!("cannot parse zip archive {}", archive.display()))?;
-
-    for i in 0..zip.len() {
-        let mut entry = zip
-            .by_index(i)
-            .with_context(|| format!("cannot read zip entry {i}"))?;
-
-        let entry_path: PathBuf = entry
-            .enclosed_name()
-            .with_context(|| format!("zip entry {i} has an unsafe path"))?
-            .to_path_buf();
-
-        let out_path = dest.join(&entry_path);
-
-        if entry.is_dir() {
-            fs::create_dir_all(&out_path)
-                .with_context(|| format!("cannot create dir {}", out_path.display()))?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("cannot create parent {}", parent.display()))?;
-            }
-            let mut out_file = File::create(&out_path)
-                .with_context(|| format!("cannot create {}", out_path.display()))?;
-            std::io::copy(&mut entry, &mut out_file)
-                .with_context(|| format!("cannot write {}", out_path.display()))?;
-        }
-    }
-
-    Ok(())
+    kernal_api::archive::extract(
+        archive,
+        dest,
+        ArchiveFormat::Zip,
+        ExtractionLimits::default(),
+    )
+    .with_context(|| format!("failed to unpack zip archive to {}", dest.display()))
 }
 
 // ---------------------------------------------------------------------------
@@ -179,37 +150,20 @@ pub fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
 ///
 /// Used to pluck the esbuild binary out of an npm-style tarball (`package/...`
 /// layout) without unpacking the whole archive.
+/// The destination file must not exist; the caller owns cleanup on failure.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or if `member` is not
 /// present in the archive.
 pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Result<()> {
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open archive {}", archive.display()))?;
-    let gz = flate2::read::GzDecoder::new(BufReader::new(file));
-    let mut tar_archive = tar::Archive::new(gz);
-
-    for entry in tar_archive
-        .entries()
-        .with_context(|| format!("cannot iterate entries of {}", archive.display()))?
-    {
-        let mut entry = entry.with_context(|| format!("bad entry in {}", archive.display()))?;
-        let path = entry
-            .path()
-            .with_context(|| format!("bad entry path in {}", archive.display()))?;
-        if path.to_string_lossy() == member {
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("cannot create parent {}", parent.display()))?;
-            }
-            let mut out =
-                File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
-            std::io::copy(&mut entry, &mut out)
-                .with_context(|| format!("cannot write {}", dest.display()))?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!("member {member} not found in {}", archive.display());
+    kernal_api::archive::extract_member(
+        archive,
+        member,
+        dest,
+        ArchiveFormat::TarGzip,
+        ExtractionLimits::default(),
+    )
+    .with_context(|| format!("cannot extract {member} from {}", archive.display()))
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +262,6 @@ fn _promote_single_child(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
 
     fn temp_dir() -> TempDir {
@@ -343,57 +296,6 @@ mod tests {
 
         let ok = verify_sha256(&file, HELLO_SHA256).expect("verify_sha256");
         assert!(!ok, "digest should not match different content");
-    }
-
-    // ------------------------------------------------------------------
-    // ZIP extraction
-    // ------------------------------------------------------------------
-
-    /// Build a minimal in-memory zip containing two files and return the bytes.
-    fn make_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut zip = zip::ZipWriter::new(buf);
-        let options = zip::write::SimpleFileOptions::default();
-        for (name, content) in files {
-            zip.start_file(*name, options).unwrap();
-            zip.write_all(content).unwrap();
-        }
-        zip.finish().unwrap().into_inner()
-    }
-
-    #[test]
-    fn test_extract_zip_basic() {
-        let dir = temp_dir();
-        let zip_path = dir.path().join("test.zip");
-
-        let zip_bytes = make_zip(&[
-            ("hello.txt", b"hello world"),
-            ("sub/world.txt", b"sub content"),
-        ]);
-        fs::write(&zip_path, &zip_bytes).unwrap();
-
-        let out = dir.path().join("out");
-        extract_zip(&zip_path, &out).expect("extract_zip");
-
-        assert_eq!(fs::read(out.join("hello.txt")).unwrap(), b"hello world");
-        assert_eq!(
-            fs::read(out.join("sub").join("world.txt")).unwrap(),
-            b"sub content"
-        );
-    }
-
-    #[test]
-    fn test_extract_zip_creates_dest() {
-        let dir = temp_dir();
-        let zip_path = dir.path().join("test.zip");
-        let zip_bytes = make_zip(&[("file.txt", b"data")]);
-        fs::write(&zip_path, &zip_bytes).unwrap();
-
-        // Destination does not exist yet.
-        let out = dir.path().join("nested").join("dest");
-        extract_zip(&zip_path, &out).expect("extract_zip");
-
-        assert_eq!(fs::read(out.join("file.txt")).unwrap(), b"data");
     }
 
     // ------------------------------------------------------------------

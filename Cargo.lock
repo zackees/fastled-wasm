@@ -1128,7 +1128,6 @@ dependencies = [
  "clap",
  "crossterm",
  "ctcb-core",
- "flate2",
  "getrandom 0.3.4",
  "gtk",
  "indexmap 1.9.3",
@@ -1141,7 +1140,6 @@ dependencies = [
  "serde_json",
  "shell-words",
  "strsim",
- "tar",
  "tauri",
  "tauri-build",
  "tempfile",
@@ -1152,8 +1150,6 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-cpp",
  "webkit2gtk",
- "zip",
- "zstd",
 ]
 
 [[package]]
@@ -2299,6 +2295,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "dirs",
+ "flate2",
  "globset",
  "jwalk",
  "libc",
@@ -2309,12 +2306,15 @@ dependencies = [
  "running-process",
  "sha2",
  "sysinfo",
+ "tar",
  "thiserror 2.0.20",
  "tokio",
  "toml 0.8.23",
  "widestring",
  "winapi",
  "windows-sys 0.61.2",
+ "zip",
+ "zstd",
 ]
 
 [[package]]
@@ -4528,13 +4528,12 @@ dependencies = [
 
 [[package]]
 name = "tar"
-version = "0.4.45"
+version = "0.4.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
 dependencies = [
  "filetime",
  "libc",
- "xattr",
 ]
 
 [[package]]
@@ -6341,16 +6340,6 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
-
-[[package]]
-name = "xattr"
-version = "1.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
-dependencies = [
- "libc",
- "rustix 1.1.4",
-]
 
 [[package]]
 name = "xz2"
