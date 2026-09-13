@@ -18,6 +18,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use kernal_api::async_engine;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -574,7 +575,7 @@ async fn test_sleep(
     let Ok(_permit) = test.sleep_permits.clone().try_acquire_owned() else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
-    tokio::time::sleep(duration).await;
+    async_engine::sleep(duration).await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -867,7 +868,7 @@ mod tests {
             .await
             .unwrap();
         // Give the server a moment to bind.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
     }
 
@@ -1195,7 +1196,7 @@ mod tests {
         )
         .await
         .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         let url = format!("http://{addr}/build-stream");
 
@@ -1209,7 +1210,7 @@ mod tests {
         );
 
         // Give the server handler a moment to subscribe to the broadcast.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         // Send test events.
         tx.send(r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string())
@@ -1221,7 +1222,7 @@ mod tests {
         let mut collected = String::new();
         let deadline = std::time::Duration::from_secs(3);
         let mut buffer = [0; 4096];
-        while let Ok(Ok(n)) = tokio::time::timeout(deadline, resp.read(&mut buffer)).await {
+        while let Ok(Ok(n)) = async_engine::timeout(deadline, resp.read(&mut buffer)).await {
             if n == 0 {
                 break;
             }
@@ -1345,7 +1346,7 @@ mod tests {
         let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
             .await
             .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = post_json(
             addr,
@@ -1385,7 +1386,7 @@ mod tests {
         let addr = start_server(serve_dir, 0, None, handle, None)
             .await
             .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
             .await
@@ -1429,7 +1430,7 @@ mod tests {
         let addr = start_server(serve_dir, 0, None, handle, None)
             .await
             .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
             .await
@@ -1451,7 +1452,7 @@ mod tests {
         let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
             .await
             .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
         let resp = post_json(
             addr,

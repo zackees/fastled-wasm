@@ -1,3 +1,4 @@
+use kernal_api::async_engine;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::Command;
@@ -154,7 +155,7 @@ async fn run_test_commands_inner(
                     }
                     None => { output_open = false; }
                 },
-                _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
+                _ = async_engine::sleep(std::time::Duration::from_millis(10)) => {
                     if let Some(code) = child.try_wait().map_err(|e| format!("test command {index} wait failed: {e}"))? {
                         break code;
                     }
@@ -175,7 +176,7 @@ async fn run_test_commands_inner(
                     COMMAND_OUTPUT_DRAIN_TIMEOUT.as_millis(),
                 ));
             }
-            match tokio::time::timeout(remaining, output_rx.recv()).await {
+            match async_engine::timeout(remaining, output_rx.recv()).await {
                 Ok(Some((stream, line))) => {
                     if tx
                         .send(TestCommandEvent::Output {
@@ -278,7 +279,7 @@ pub(crate) async fn run_contained_command(
                 drop(child);
                 return Ok(TimedCommandResult::Interrupted);
             }
-            _ = tokio::time::sleep(Duration::from_millis(10)) => {}
+            _ = async_engine::sleep(Duration::from_millis(10)) => {}
         }
     }
 }
@@ -461,7 +462,7 @@ pub(crate) async fn wait_for_ready(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<TestEvent>,
     timeout: Duration,
 ) -> TestOutcome {
-    match tokio::time::timeout(timeout, async {
+    match async_engine::timeout(timeout, async {
         while let Some(event) = rx.recv().await {
             if matches!(event, TestEvent::Ready) {
                 return true;
@@ -485,7 +486,7 @@ mod tests {
     const COMMAND_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     async fn next_command_event(rx: &mut mpsc::Receiver<TestCommandEvent>) -> TestCommandEvent {
-        tokio::time::timeout(COMMAND_TEST_TIMEOUT, rx.recv())
+        async_engine::timeout(COMMAND_TEST_TIMEOUT, rx.recv())
             .await
             .expect("command runner did not emit an event before the test deadline")
             .expect("command runner closed its event channel before Done")
@@ -639,7 +640,7 @@ mod tests {
                 TestCommandEvent::Start { .. } | TestCommandEvent::Exit { .. } => {}
             }
         };
-        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
             .await
             .expect("command runner task did not complete before the test deadline")
             .unwrap();
@@ -683,7 +684,7 @@ mod tests {
                 break value;
             }
         };
-        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
             .await
             .expect("command runner task did not complete before the test deadline")
             .unwrap();
@@ -714,12 +715,12 @@ mod tests {
                 break value;
             }
         };
-        tokio::time::timeout(COMMAND_TEST_TIMEOUT, task)
+        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
             .await
             .expect("command runner task did not complete before the test deadline")
             .unwrap();
         assert!(result.is_ok());
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        async_engine::sleep(Duration::from_millis(300)).await;
         assert!(!temp.path().join("late.txt").exists());
     }
 
@@ -736,10 +737,10 @@ mod tests {
             NormalizedPath::new(temp.path()),
             tx,
         ));
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        async_engine::sleep(Duration::from_millis(100)).await;
         task.abort();
         let _ = task.await;
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        async_engine::sleep(Duration::from_millis(250)).await;
         assert!(!temp.path().join("late.txt").exists());
     }
 }

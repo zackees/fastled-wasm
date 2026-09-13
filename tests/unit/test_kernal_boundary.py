@@ -54,3 +54,15 @@ def test_http_callers_use_kernel():
     for name in ("install.rs", "project.rs", "dwarf_smoke.rs", "server.rs"):
         source = (root / "crates/fastled-cli/src" / name).read_text()
         assert "reqwest::" not in source, name
+
+
+def test_runtime_and_basic_timers_use_kernel():
+    root = Path(__file__).resolve().parents[2]
+    for path in (root / "crates/fastled-cli/src").rglob("*.rs"):
+        source = path.read_text()
+        for backend in (
+            "tokio::runtime::",
+            "tokio::time::sleep(",
+            "tokio::time::timeout(",
+        ):
+            assert backend not in source, path
