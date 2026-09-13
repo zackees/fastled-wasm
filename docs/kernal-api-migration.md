@@ -736,6 +736,23 @@ Clippy, formatting and Python checks (28 passed, one skipped). Compiler
 flags and native backend logic are unchanged. The path patch still points at
 the interrupt sibling pending upstream publication and exact registry adoption.
 
+### Compile-target identity checkpoint
+
+Kernel issue https://github.com/zackees/kernal-api/issues/190 adds
+`platform::host::process_target()`: compile-time OS and architecture facts,
+not physical hardware or emulation detection. FastLED now consumes that API
+instead of `ctcb-core`. Catalog aliases (`win`, `darwin`, `arm64`) and supported
+toolchain choices remain product policy. All six supported OS/architecture
+mappings and unsupported-target errors are covered locally; the target-fact
+contract is tested upstream. Toolchain versions, URLs, compiler flags, and
+compiler invocation logic are unchanged.
+
+The upstream missing-API test and local forbidden-dependency check were both
+observed RED then GREEN. The lockfile removes the `ctcb-core` package without
+adding a replacement package; no build-speed improvement is claimed. The
+migration-only path patch now points to the process-target sibling, stacked
+on interrupt notifications, pending publication and exact registry adoption.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

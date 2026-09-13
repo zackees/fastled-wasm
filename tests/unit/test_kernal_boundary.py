@@ -28,8 +28,10 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "strsim" not in dependencies
     assert "crossterm" not in dependencies
     assert "tokio" not in dependencies
+    assert "ctcb-core" not in dependencies
     workspace = tomllib.loads((root / "Cargo.toml").read_text())
     assert "tokio" not in workspace["workspace"]["dependencies"]
+    assert "ctcb-core" not in workspace["workspace"]["dependencies"]
     assert "tempfile" not in manifest.get("dev-dependencies", {})
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
@@ -48,6 +50,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
         assert "tempfile::" not in source.read_text(), source
         assert "strsim::" not in source.read_text(), source
         assert "crossterm::" not in source.read_text(), source
+        assert "ctcb_core::" not in source.read_text(), source
         for backend in ("zip", "tar", "zstd", "flate2"):
             assert f"{backend}::" not in source.read_text(), source
 

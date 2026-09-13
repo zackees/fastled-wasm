@@ -18,7 +18,6 @@ kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
-ctcb-core = "0.4.1"
 toml = "0.8"
 tauri = { version = "2", features = ["devtools"] }
 tauri-build = { version = "2", features = [] }
@@ -33,7 +32,7 @@ strip = "none"
 
 # Temporary migration override; replace with the verified published release.
 [patch.crates-io]
-kernal-api = { path = "../fastled-wasm-extern/kernal-api-interrupt" }
+kernal-api = { path = "../fastled-wasm-extern/kernal-api-target" }
 
 [profile.dev.package.kernal-api]
 codegen-units = 1

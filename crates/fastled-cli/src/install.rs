@@ -15,7 +15,6 @@ use std::sync::{Mutex, OnceLock};
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
-use ctcb_core::Target;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -67,8 +66,26 @@ fn fastled_root() -> Result<PathBuf> {
 }
 
 fn detect_platform_arch() -> Result<(String, String)> {
-    let target = Target::current().context("detect host clang-tool-chain target")?;
-    Ok((target.platform.to_string(), target.arch.to_string()))
+    let target = kernal_api::platform::host::process_target();
+    toolchain_platform_arch(target.os, target.architecture)
+        .context("detect host clang-tool-chain target")
+        .map(|(platform, arch)| (platform.to_owned(), arch.to_owned()))
+}
+
+/// Clang-tool-chain catalog names and supported targets are product policy.
+fn toolchain_platform_arch(os: &str, architecture: &str) -> Result<(&'static str, &'static str)> {
+    let platform = match os {
+        "windows" => "win",
+        "linux" => "linux",
+        "macos" => "darwin",
+        _ => bail!("unsupported operating system"),
+    };
+    let arch = match architecture {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        other => bail!("unsupported architecture: {other}"),
+    };
+    Ok((platform, arch))
 }
 
 /// Parse a platform manifest, accepting both the current schema (`versions`
@@ -2147,6 +2164,30 @@ pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn toolchain_target_aliases_preserve_supported_binary_targets() {
+        for (os, platform) in [("windows", "win"), ("linux", "linux"), ("macos", "darwin")] {
+            for (architecture, arch) in [("x86_64", "x86_64"), ("aarch64", "arm64")] {
+                assert_eq!(
+                    super::toolchain_platform_arch(os, architecture).unwrap(),
+                    (platform, arch)
+                );
+            }
+        }
+        assert_eq!(
+            super::toolchain_platform_arch("freebsd", "x86_64")
+                .unwrap_err()
+                .to_string(),
+            "unsupported operating system"
+        );
+        assert_eq!(
+            super::toolchain_platform_arch("linux", "x86")
+                .unwrap_err()
+                .to_string(),
+            "unsupported architecture: x86"
+        );
+    }
+
     use super::*;
 
     const DARWIN_ARM64_MANIFEST: &str = r#"{
