@@ -328,6 +328,19 @@ source review, and client adoption remain pending.
 Strict all-target host HTTP Clippy also passes. The complete HTTP draft is
 rebased onto merged archive main `299735e`; no HTTP PR or release is published.
 
+Nineteen focused HTTP tests now pass. New socket-observed cancellation tests
+verify that dropping a pending request or a response closes the connection;
+the runtime remains running while closure is observed. A relative-redirect
+matrix verifies HEAD preservation, same-origin application-header retention,
+POST-to-GET for 301/302/303, and POST body replay for 307/308. Strict host Clippy
+also passes. These are upstream mechanism tests; FastLED adoption is still pending.
+
+Initial parser-allocation inspection found the locked private Hyper 1.11.0
+HTTP/1 backend defaults to 100 headers and a 417792-byte read-buffer ceiling.
+The facade's configurable header ceiling is still checked after parsing, and
+these transitive implementation defaults are not a published facade guarantee.
+That distinction must be resolved or explicitly contracted before release.
+
 This is not the complete HTTP capability: streamed artifact sinks,
 SSE integration, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
