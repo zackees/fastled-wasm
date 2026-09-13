@@ -49,6 +49,15 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    match cli::management_command_from(std::env::args_os()) {
+        Ok(Some(command)) => return run_management_command(command),
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("fastled: {error}");
+            return ExitCode::FAILURE;
+        }
+    }
+
     let mut cli = cli::Cli::parse();
     cli::apply_test_implications(&mut cli);
 
@@ -57,24 +66,8 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    if let Some(cli::Command::Toolchain { action }) = cli.command.clone() {
-        return match install::run_toolchain_action(action) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("fastled: toolchain command failed: {error:#}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-
-    if let Some(cli::Command::Source { action }) = cli.command.clone() {
-        return match source::run_source_action(action) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("fastled: source command failed: {error:#}");
-                ExitCode::FAILURE
-            }
-        };
+    if let Some(command) = cli.command.clone() {
+        return run_management_command(command);
     }
 
     // Hidden plumbing for the Python side: download the FastLED repo and
@@ -193,6 +186,25 @@ pub fn run() -> ExitCode {
 
     eprintln!("fastled: no sketch directory specified");
     ExitCode::FAILURE
+}
+
+fn run_management_command(command: cli::Command) -> ExitCode {
+    match command {
+        cli::Command::Toolchain { action } => match install::run_toolchain_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: toolchain command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
+        cli::Command::Source { action } => match source::run_source_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: source command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
+    }
 }
 
 /// Map serve-dir CLI flags to `(directory, launch_viewer)`.

@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -65,6 +68,102 @@ pub(crate) enum SourceAction {
         #[arg(long = "ref", default_value = "master")]
         reference: String,
     },
+}
+
+/// Parse the standalone management trees through kernal-api. The primary
+/// build grammar remains on the staged migration path below.
+pub(crate) fn management_command_from<I, S>(arguments: I) -> Result<Option<Command>, String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    use kernal_api::command::{Command as SchemaCommand, OptionSpec, ValueKind};
+
+    let arguments = arguments
+        .into_iter()
+        .map(|argument| argument.as_ref().to_os_string())
+        .collect::<Vec<OsString>>();
+    let Some(tree) = arguments.get(1).and_then(|argument| argument.to_str()) else {
+        return Ok(None);
+    };
+    if !matches!(tree, "toolchain" | "source") {
+        return Ok(None);
+    }
+    if arguments
+        .iter()
+        .skip(1)
+        .any(|argument| matches!(argument.to_str(), Some("--help" | "-h")))
+    {
+        return Ok(None);
+    }
+    let schema = SchemaCommand::new("fastled")
+        .subcommand(
+            SchemaCommand::new("toolchain")
+                .subcommand(SchemaCommand::new("status"))
+                .subcommand(
+                    SchemaCommand::new("install")
+                        .option(OptionSpec::value("package-id", ValueKind::string())),
+                )
+                .subcommand(
+                    SchemaCommand::new("activate")
+                        .positional("activate-package-id", ValueKind::string()),
+                )
+                .subcommand(SchemaCommand::new("update"))
+                .subcommand(
+                    SchemaCommand::new("repair")
+                        .optional_positional("repair-package-id", ValueKind::string()),
+                )
+                .subcommand(SchemaCommand::new("rollback"))
+                .subcommand(SchemaCommand::new("prune")),
+        )
+        .subcommand(
+            SchemaCommand::new("source")
+                .option(OptionSpec::value("ref", ValueKind::string()).default("master"))
+                .subcommand(SchemaCommand::new("status"))
+                .subcommand(SchemaCommand::new("update"))
+                .subcommand(SchemaCommand::new("purge")),
+        );
+    let parsed = schema.parse(arguments).map_err(|error| error.to_string())?;
+    let path = parsed.command_path();
+    let command = match path {
+        [_, tree, action] if tree == "toolchain" => Command::Toolchain {
+            action: match action.as_str() {
+                "status" => ToolchainAction::Status,
+                "install" => ToolchainAction::Install {
+                    package_id: parsed.value("package-id").map(str::to_owned),
+                },
+                "activate" => ToolchainAction::Activate {
+                    package_id: parsed
+                        .value("activate-package-id")
+                        .unwrap_or_default()
+                        .to_owned(),
+                },
+                "update" => ToolchainAction::Update,
+                "repair" => ToolchainAction::Repair {
+                    package_id: parsed.value("repair-package-id").map(str::to_owned),
+                },
+                "rollback" => ToolchainAction::Rollback,
+                "prune" => ToolchainAction::Prune,
+                _ => return Err("invalid toolchain command".to_owned()),
+            },
+        },
+        [_, tree, action] if tree == "source" => Command::Source {
+            action: match action.as_str() {
+                "status" => SourceAction::Status {
+                    reference: parsed.value("ref").unwrap_or_default().to_owned(),
+                },
+                "update" => SourceAction::Update {
+                    reference: parsed.value("ref").unwrap_or_default().to_owned(),
+                },
+                "purge" => SourceAction::Purge {
+                    reference: parsed.value("ref").unwrap_or_default().to_owned(),
+                },
+                _ => return Err("invalid source command".to_owned()),
+            },
+        },
+        _ => return Err("invalid management command".to_owned()),
+    };
+    Ok(Some(command))
 }
 
 /// How the sketch code is linked into the generated WASM program.
@@ -346,6 +445,30 @@ pub(crate) fn requested_init_ref(cli: &Cli) -> Option<&str> {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+
+    #[test]
+    fn management_commands_use_the_kernel_schema() {
+        assert!(matches!(
+            management_command_from(["fastled", "toolchain", "install", "--package-id", "package-a"]),
+            Ok(Some(Command::Toolchain {
+                action: ToolchainAction::Install { package_id: Some(package_id) }
+            })) if package_id == "package-a"
+        ));
+        assert!(matches!(
+            management_command_from(["fastled", "source", "update", "--ref", "main"]),
+            Ok(Some(Command::Source {
+                action: SourceAction::Update { reference }
+            })) if reference == "main"
+        ));
+        assert!(matches!(
+            management_command_from(["fastled", "source", "--help"]),
+            Ok(None)
+        ));
+        assert!(matches!(
+            management_command_from(["fastled", "source", "update", "--unknown"]),
+            Err(message) if message == "invalid command-line arguments"
+        ));
+    }
 
     #[test]
     fn clangd_emission_is_opt_in() {
