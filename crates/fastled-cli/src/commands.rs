@@ -61,7 +61,13 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     }
 
     // Broadcast channel for SSE streaming to browser.
-    let (tx, _rx) = tokio::sync::broadcast::channel::<String>(256);
+    let (tx, _rx) = match async_engine::broadcast_channel::<String>(256) {
+        Ok(channel) => channel,
+        Err(error) => {
+            eprintln!("fastled: could not create build event channel: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Shared DWARF source resolver populated after the first successful build.
     let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
@@ -240,7 +246,13 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             return test_exit(TestOutcome::Failure);
         }
     };
-    let (build_tx, _build_rx) = tokio::sync::broadcast::channel::<String>(256);
+    let (build_tx, _build_rx) = match async_engine::broadcast_channel::<String>(256) {
+        Ok(channel) => channel,
+        Err(error) => {
+            eprintln!("fastled: could not create build event channel: {error}");
+            return test_exit(TestOutcome::Failure);
+        }
+    };
     let (test_tx, mut test_rx) = async_engine::unbounded_channel();
     let mut token_bytes = [0_u8; 32];
     if let Err(error) = getrandom::fill(&mut token_bytes) {

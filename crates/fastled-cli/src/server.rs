@@ -21,9 +21,6 @@ use axum::{Json, Router};
 use kernal_api::async_engine;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 
@@ -365,7 +362,7 @@ struct AppState {
     terminal_slots: Arc<tokio::sync::Semaphore>,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
-    build_tx: Option<broadcast::Sender<String>>,
+    build_tx: Option<async_engine::BroadcastSender<String>>,
     /// Shared resolver for DWARF source paths. Empty until a successful
     /// build populates it.
     debug_symbols: DebugSymbolHandle,
@@ -487,7 +484,7 @@ async fn build_stream(State(state): State<AppState>) -> Response {
     };
 
     let rx = tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| {
+    let stream = rx.into_stream_with(|result| {
         result
             .ok()
             .map(|data| Ok::<_, Infallible>(Event::default().data(data)))
@@ -750,7 +747,7 @@ fn mime_for_path(path: &str) -> &'static str {
 pub async fn start_server(
     serve_dir: PathBuf,
     port: u16,
-    build_tx: Option<broadcast::Sender<String>>,
+    build_tx: Option<async_engine::BroadcastSender<String>>,
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
 ) -> anyhow::Result<SocketAddr> {
@@ -1209,7 +1206,7 @@ mod tests {
     #[tokio::test]
     async fn test_sse_endpoint_streams_events() {
         let dir = tempfile::tempdir().unwrap();
-        let (tx, _rx) = broadcast::channel::<String>(16);
+        let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
         let addr = start_server(
             dir.path().to_path_buf(),
             0,

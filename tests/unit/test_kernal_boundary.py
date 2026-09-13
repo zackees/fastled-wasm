@@ -20,6 +20,7 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "running-process" not in dependencies
     assert "sha2" not in dependencies
     assert "dirs" not in dependencies
+    assert "tokio-stream" not in dependencies
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
     for target in manifest.get("target", {}).values():
@@ -67,5 +68,7 @@ def test_migrated_async_operations_use_kernel():
             "tokio::spawn(",
             "tokio::task::JoinHandle",
             "tokio::sync::mpsc",
+            "tokio::sync::broadcast",
+            "tokio_stream::",
         ):
             assert backend not in source, path
