@@ -262,6 +262,12 @@ tests enabled on Windows. Strict Windows all-target archive Clippy and the
 additional Windows test compilation both pass. Fresh native CI is required;
 the HTTP draft is rebased onto the fix.
 
+Run `34737890123` completed successfully on archive head `9c176b9`, including
+native Windows positive/negative archive link tests. PR #166 is merged as
+`299735e`. The optional native macOS ARM execution job remains skipped by the
+repository's runner policy; macOS cross-compilation/archive checks passed.
+This is not yet a published release, and the application path patch remains.
+
 ### HTTP client slice (draft; not adopted)
 
 Tracking: https://github.com/zackees/fastled-wasm/issues/238 and
@@ -309,6 +315,18 @@ create neither a runtime nor a worker. Calls from an entered runtime fail with
 Thirteen HTTP regressions, the broader HTTP-enabled kernel suite, and strict
 all-target host Clippy pass. Default-versus-enabled dependency graph checks prove
 reqwest isolation, and HTTP is added to the individual-feature CI matrix.
+
+The HTTP draft now implements opt-in redirects (default zero, maximum 32),
+validating each intermediate response before following it. Cross-origin hops
+drop application headers, HTTPS downgrades fail, and POST redirects use explicit
+301/302/303-to-GET versus 307/308 replay semantics. Seventeen focused HTTP tests
+and the broader HTTP-enabled kernel suite pass. A buffered-body deadline bypass
+was reproduced RED then fixed GREEN by retaining the absolute deadline in the
+response, so caller pauses cannot bypass the cumulative request deadline.
+Additional redirect method/relative-location and TLS/cancellation coverage,
+source review, and client adoption remain pending.
+Strict all-target host HTTP Clippy also passes. The complete HTTP draft is
+rebased onto merged archive main `299735e`; no HTTP PR or release is published.
 
 This is not the complete HTTP capability: streamed artifact sinks,
 SSE integration, redirect
