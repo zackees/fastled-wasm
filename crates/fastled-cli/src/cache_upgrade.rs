@@ -3,7 +3,6 @@ use std::io::{self, IsTerminal};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
 
 use crate::path::NormalizedPath;
 
@@ -93,7 +92,7 @@ where
         .write(true)
         .open(&lock_path)
         .with_context(|| format!("open cache upgrade lock {}", lock_path.display()))?;
-    FileExt::lock_exclusive(&lock)
+    let _guard = kernal_api::platform::fs::lock_exclusive(&lock)
         .with_context(|| format!("lock cache upgrade state {}", lock_path.display()))?;
 
     // Another process may have completed the cleanup while this process was

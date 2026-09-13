@@ -7,10 +7,9 @@
 
 use crate::archive;
 use anyhow::{Context, Result};
-use fs2::FileExt;
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -543,7 +542,7 @@ fn purge_stale_update_files_in_dir(dir: &Path, cutoff: u64, summary: &mut GcSumm
     Ok(())
 }
 
-fn lock_runtime_root(run_root: &Path) -> Result<File> {
+fn lock_runtime_root(run_root: &Path) -> Result<kernal_api::platform::fs::OwnedFileLock> {
     fs::create_dir_all(run_root)
         .with_context(|| format!("cannot create {}", run_root.display()))?;
     let lock_path = run_root.join(LOCK_FILENAME);
@@ -554,9 +553,8 @@ fn lock_runtime_root(run_root: &Path) -> Result<File> {
         .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("cannot open {}", lock_path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("cannot lock {}", lock_path.display()))?;
-    Ok(file)
+    kernal_api::platform::fs::lock_exclusive_owned(file)
+        .with_context(|| format!("cannot lock {}", lock_path.display()))
 }
 
 fn exe_hash_matches(path: &Path, expected_hash: &str) -> bool {
@@ -672,6 +670,7 @@ fn version_from_name(name: &str) -> Option<(String, ParsedVersion)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
     use std::io::Write;
     use tempfile::TempDir;
 

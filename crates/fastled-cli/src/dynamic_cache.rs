@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
-use globset::{Glob, GlobSet, GlobSetBuilder};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use kernal_api::platform::fs::{PatternSet, PatternSetBuilder};
+use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -29,20 +29,21 @@ struct WatchedFingerprint {
     value: String,
     observed_generation: u64,
     generation: Arc<AtomicU64>,
-    _watcher: RecommendedWatcher,
+    watch_lost: Arc<AtomicBool>,
+    _watcher: Watcher,
 }
 
 static FINGERPRINT_CACHE: OnceLock<
     Mutex<std::collections::HashMap<FingerprintSpec, WatchedFingerprint>>,
 > = OnceLock::new();
 
-fn build_glob_set(patterns: &[String], default_all: bool) -> Result<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
+fn build_glob_set(patterns: &[String], default_all: bool) -> Result<PatternSet> {
+    let mut builder = PatternSetBuilder::new();
     if patterns.is_empty() && default_all {
-        builder.add(Glob::new("**/*")?);
+        builder = builder.add_pattern("**/*");
     } else {
         for pattern in patterns {
-            builder.add(Glob::new(pattern)?);
+            builder = builder.add_pattern(pattern);
         }
     }
     Ok(builder.build()?)
@@ -55,25 +56,27 @@ fn mark_fingerprint_dirty(generation: &AtomicU64) {
 fn create_fingerprint_watcher(
     spec: &FingerprintSpec,
     generation: Arc<AtomicU64>,
-) -> Result<RecommendedWatcher> {
+    watch_lost: Arc<AtomicBool>,
+) -> Result<Watcher> {
     let root = spec.root.clone();
     let include = build_glob_set(&spec.include, true)?;
     let exclude = build_glob_set(&spec.exclude, false)?;
     let callback_generation = Arc::clone(&generation);
-    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+    let mut watcher = Watcher::new(move |result| {
         let relevant = match result {
             Err(_) => true, // overflow/backend uncertainty: force a full rescan
-            Ok(event) => {
-                matches!(
-                    event.kind,
-                    EventKind::Create(_)
-                        | EventKind::Modify(_)
-                        | EventKind::Remove(_)
-                        | EventKind::Any
-                ) && event.paths.iter().any(|path| {
-                    let relative = path.strip_prefix(root.as_path()).unwrap_or(path);
-                    include.is_match(relative) && !exclude.is_match(relative)
-                })
+            Ok(WatchNotification::RescanRequired(rescan)) => {
+                if rescan.watch_lost() {
+                    watch_lost.store(true, Ordering::Release);
+                }
+                true
+            }
+            Ok(WatchNotification::Change(event)) => {
+                event.kind() != ChangeKind::Accessed
+                    && event.paths().iter().any(|path| {
+                        let relative = path.strip_prefix(root.as_path()).unwrap_or(path);
+                        include.is_match(relative) && !exclude.is_match(relative)
+                    })
             }
         };
         if relevant {
@@ -112,6 +115,15 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
         .lock()
         .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
 
+    // Recreate dead watchers before trusting a cached value. If registration
+    // fails, the normal construction path below performs an authoritative scan.
+    if cache
+        .get(&spec)
+        .is_some_and(|entry| entry.watch_lost.load(Ordering::Acquire))
+    {
+        cache.remove(&spec);
+    }
+
     if let Some(entry) = cache.get_mut(&spec) {
         let current = entry.generation.load(Ordering::Acquire);
         if current == entry.observed_generation {
@@ -128,10 +140,12 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
     }
 
     let generation = Arc::new(AtomicU64::new(0));
-    let watcher = match create_fingerprint_watcher(&spec, Arc::clone(&generation)) {
-        Ok(watcher) => watcher,
-        Err(_) => return compute_tree_fingerprint(root, include, exclude),
-    };
+    let watch_lost = Arc::new(AtomicBool::new(false));
+    let watcher =
+        match create_fingerprint_watcher(&spec, Arc::clone(&generation), Arc::clone(&watch_lost)) {
+            Ok(watcher) => watcher,
+            Err(_) => return compute_tree_fingerprint(root, include, exclude),
+        };
     let before = generation.load(Ordering::Acquire);
     let value = compute_tree_fingerprint(root, include, exclude)?;
     let after = generation.load(Ordering::Acquire);
@@ -141,6 +155,7 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
             value: value.clone(),
             observed_generation: if before == after { after } else { before },
             generation,
+            watch_lost,
             _watcher: watcher,
         },
     );
@@ -350,7 +365,7 @@ pub(crate) fn staging_dir(cache_root: &Path, prefix: &str) -> Result<tempfile::T
 }
 
 pub(crate) struct CacheLock {
-    _file: File,
+    _lock: kernal_api::platform::fs::OwnedFileLock,
 }
 
 impl CacheLock {
@@ -365,9 +380,9 @@ impl CacheLock {
             .truncate(false)
             .open(&path)
             .with_context(|| format!("open cache lock {}", path.display()))?;
-        fs2::FileExt::lock_exclusive(&file)
+        let lock = kernal_api::platform::fs::lock_exclusive_owned(file)
             .with_context(|| format!("lock cache key {fingerprint}"))?;
-        Ok(Self { _file: file })
+        Ok(Self { _lock: lock })
     }
 }
 
@@ -525,6 +540,32 @@ mod tests {
             .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn lost_fingerprint_watch_discards_cached_value_and_registers_again() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("sketch.ino"), "aaaa").unwrap();
+        let expected = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
+        let spec = FingerprintSpec {
+            root: NormalizedPath::new(temp.path()),
+            include: vec!["**/*.ino".to_owned()],
+            exclude: vec![],
+        };
+        {
+            let mut cache = FINGERPRINT_CACHE.get().unwrap().lock().unwrap();
+            let entry = cache.get_mut(&spec).unwrap();
+            entry._watcher.unwatch(temp.path()).unwrap();
+            entry.value = "stale value from before the lost watch".to_owned();
+            entry.observed_generation = entry.generation.load(Ordering::Acquire);
+            entry.watch_lost.store(true, Ordering::Release);
+        }
+        assert_eq!(
+            fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap(),
+            expected
+        );
+        let cache = FINGERPRINT_CACHE.get().unwrap().lock().unwrap();
+        assert!(!cache.get(&spec).unwrap().watch_lost.load(Ordering::Acquire));
     }
 
     #[test]

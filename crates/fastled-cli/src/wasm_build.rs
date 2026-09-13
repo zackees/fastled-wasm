@@ -460,7 +460,7 @@ fn direct_clang_cflags(
         .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("open direct cflags lock {}", lock_path.display()))?;
-    fs2::FileExt::lock_exclusive(&lock)
+    let _guard = kernal_api::platform::fs::lock_exclusive(&lock)
         .with_context(|| format!("lock direct cflags cache {}", cache_path.display()))?;
 
     let key = direct_cflags_key(toolchain_fingerprint, driver_args);

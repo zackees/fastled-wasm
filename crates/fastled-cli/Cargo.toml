@@ -22,9 +22,8 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
-notify = { workspace = true }
 sha2 = { workspace = true }
-fs2 = { workspace = true }
+kernal-api = { workspace = true }
 reqwest = { workspace = true }
 running-process = { workspace = true }
 zip = { workspace = true }
@@ -47,7 +46,6 @@ tauri = { workspace = true, optional = true }
 tempfile = "3"
 zccache-fingerprint = { workspace = true }
 shell-words = { workspace = true }
-globset = { workspace = true }
 getrandom = "0.3"
 tree-sitter = { workspace = true }
 tree-sitter-cpp = { workspace = true }

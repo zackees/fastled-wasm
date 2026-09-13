@@ -1,7 +1,7 @@
 //! File-system watcher that ports the core logic from `filewatcher.py`.
 //!
 //! Key behaviours mirrored from Python:
-//! * Watch a directory recursively via the [`notify`] crate.
+//! * Watch a directory recursively through kernal-api.
 //! * Filter out paths that contain any of the standard ignored segments.
 //! * Detect *real* changes by comparing SHA-256 digests (avoids spurious
 //!   events from editors that touch mtime without changing content).
@@ -19,9 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use notify::{
-    event::ModifyKind, Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
-};
+use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
 use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
@@ -114,13 +112,14 @@ pub struct FileWatcher {
     debounce_ms: u64,
     ignored_segments: Vec<String>,
     stop_flag: Arc<AtomicBool>,
+    watch_lost: Arc<AtomicBool>,
     // Keep the notify watcher alive for the lifetime of FileWatcher.
-    _watcher: Option<RecommendedWatcher>,
+    _watcher: Option<Arc<Mutex<Watcher>>>,
 }
 
 impl FileWatcher {
     /// Create a new watcher (does not start watching yet — call [`start`]).
-    pub fn new(watch_dir: PathBuf, debounce_ms: u64) -> Result<Self, notify::Error> {
+    pub fn new(watch_dir: PathBuf, debounce_ms: u64) -> std::io::Result<Self> {
         Ok(Self {
             watch_dir,
             debounce_ms,
@@ -129,6 +128,7 @@ impl FileWatcher {
                 .map(|s| s.to_string())
                 .collect(),
             stop_flag: Arc::new(AtomicBool::new(false)),
+            watch_lost: Arc::new(AtomicBool::new(false)),
             _watcher: None,
         })
     }
@@ -152,11 +152,22 @@ impl FileWatcher {
         let state = Arc::new(Mutex::new(State::new()));
         let state_for_cb = Arc::clone(&state);
         let ignored = self.ignored_segments.clone();
+        let watch_lost = Arc::clone(&self.watch_lost);
+        let callback_watch_lost = Arc::clone(&watch_lost);
 
         // --- notify event callback -------------------------------------------
-        let notify_cb = move |res: notify::Result<Event>| {
+        let notify_cb = move |res| {
             let event = match res {
-                Ok(e) => e,
+                Ok(WatchNotification::Change(e)) => e,
+                Ok(WatchNotification::RescanRequired(rescan)) => {
+                    if rescan.watch_lost() {
+                        callback_watch_lost.store(true, Ordering::Release);
+                    }
+                    let mut s = state_for_cb.lock().unwrap();
+                    s.force_rescan = true;
+                    s.last_event = Some(Instant::now());
+                    return;
+                }
                 Err(_) => {
                     let mut s = state_for_cb.lock().unwrap();
                     s.force_rescan = true;
@@ -166,18 +177,15 @@ impl FileWatcher {
             };
 
             // Only act on create / modify / remove events (not access).
-            let relevant = matches!(
-                event.kind,
-                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) | EventKind::Any
-            );
+            let relevant = event.kind() != ChangeKind::Accessed;
             if !relevant {
                 return;
             }
 
-            let is_remove = matches!(event.kind, EventKind::Remove(_));
-            let is_rename = matches!(event.kind, EventKind::Modify(ModifyKind::Name(_)));
+            let is_remove = matches!(event.kind(), ChangeKind::Removed(_));
+            let is_rename = matches!(event.kind(), ChangeKind::NameModified(_));
 
-            for path in event.paths {
+            for path in event.paths().iter().cloned() {
                 // Filter ignored segments.
                 if path_contains_ignored(&path, &ignored) {
                     continue;
@@ -228,23 +236,40 @@ impl FileWatcher {
         };
 
         // --- start notify watcher --------------------------------------------
-        let mut watcher =
-            RecommendedWatcher::new(notify_cb, Config::default()).expect("notify watcher failed");
+        let mut watcher = Watcher::new(notify_cb).expect("filesystem watcher failed");
         watcher
             .watch(&self.watch_dir, RecursiveMode::Recursive)
-            .expect("notify watch failed");
-        self._watcher = Some(watcher);
+            .expect("filesystem watch failed");
+        let watcher = Arc::new(Mutex::new(watcher));
+        self._watcher = Some(Arc::clone(&watcher));
+        let watch_dir = self.watch_dir.clone();
 
         // --- debounce thread -------------------------------------------------
         let debounce = Duration::from_millis(self.debounce_ms);
         let stop_flag = Arc::clone(&self.stop_flag);
 
         std::thread::spawn(move || {
+            let mut next_restore = Instant::now();
             loop {
                 if stop_flag.load(Ordering::Relaxed) {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
+
+                if Instant::now() >= next_restore && watch_lost.swap(false, Ordering::AcqRel) {
+                    // Registration cannot run in the backend callback. Restore
+                    // it here and invalidate changes from the unobserved window.
+                    let mut watcher = watcher.lock().unwrap();
+                    let _ = watcher.unwatch(&watch_dir);
+                    if let Err(error) = watcher.watch(&watch_dir, RecursiveMode::Recursive) {
+                        eprintln!("Cannot restore filesystem watch: {error}");
+                        watch_lost.store(true, Ordering::Release);
+                        next_restore = Instant::now() + Duration::from_secs(1);
+                    }
+                    let mut s = state.lock().unwrap();
+                    s.force_rescan = true;
+                    s.last_event.get_or_insert_with(Instant::now);
+                }
 
                 let should_flush = {
                     let s = state.lock().unwrap();
@@ -290,6 +315,12 @@ impl FileWatcher {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+impl Drop for FileWatcher {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
 
 fn path_contains_ignored(path: &Path, ignored: &[String]) -> bool {
     path.components().any(|c| {
@@ -381,6 +412,53 @@ mod tests {
     // ------------------------------------------------------------------
     // FileWatcher integration tests
     // ------------------------------------------------------------------
+
+    #[test]
+    fn dropping_watcher_stops_monitoring_and_closes_receiver() {
+        let dir = temp_dir();
+        let mut watcher = FileWatcher::new(dir.path().to_path_buf(), 50).unwrap();
+        let rx = watcher.start();
+        drop(watcher);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(2)),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected)
+        );
+    }
+
+    #[test]
+    fn lost_watch_forces_rescan_and_restores_change_delivery() {
+        let dir = temp_dir();
+        let root = dir.path().canonicalize().unwrap();
+        let mut watcher = FileWatcher::new(root.clone(), 50).unwrap();
+        let rx = watcher.start();
+        watcher
+            ._watcher
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .unwatch(&root)
+            .unwrap();
+        watcher.watch_lost.store(true, Ordering::Release);
+        assert!(
+            rx.recv_timeout(Duration::from_secs(2))
+                .unwrap()
+                .force_rescan
+        );
+
+        let file = root.join("restored.ino");
+        fs::write(&file, b"void setup() {}").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let batch = rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("restored watch must deliver file changes");
+            if batch.paths.contains(&file) {
+                break;
+            }
+        }
+        watcher.stop();
+    }
 
     /// Creating / modifying a file triggers a change event.
     #[test]

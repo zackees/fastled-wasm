@@ -7,7 +7,7 @@ members = [
 [workspace.package]
 version = "2.0.20"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.95"
 license = "MIT"
 repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
@@ -15,9 +15,8 @@ homepage = "https://github.com/zackees/fastled-wasm"
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
-notify = { version = "7", features = ["macos_fsevent"] }
 sha2 = "0.10"
-fs2 = "0.4"
+kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch"] }
 reqwest = { version = "0.12", features = ["blocking"] }
 running-process = { version = "4.0.0", default-features = false }
 zip = "2"
@@ -42,7 +41,6 @@ windows-sys = "0.61"
 # Parallel content-authoritative walker/hasher; remains compatible with Rust 1.85.
 zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "a7c84de53105ce41b2060bd9dd7730ef226e78a1" }
 shell-words = "1"
-globset = "0.4"
 tree-sitter = "0.26.9"
 tree-sitter-cpp = "0.23.4"
 
@@ -50,3 +48,13 @@ tree-sitter-cpp = "0.23.4"
 debug = "line-tables-only"
 split-debuginfo = "packed"
 strip = "none"
+
+# Temporary migration override; replace with the verified published release.
+[patch.crates-io]
+kernal-api = { path = "../fastled-wasm-extern/kernal-api" }
+
+[profile.dev.package.kernal-api]
+codegen-units = 1
+
+[profile.test.package.kernal-api]
+codegen-units = 1
