@@ -553,6 +553,25 @@ deadlines shorter than accepted test schedules; both are fixed and re-reviewed.
 Generic file-preparation and cancellation-admission regressions live upstream;
 the application retains a regression covering its maximum accepted sleep.
 
+### Registry release gate
+
+HTTP server PR https://github.com/zackees/kernal-api/pull/177 is merged, but
+that is not a published release. Extracted-package verification exposed a
+viewer feature build failure hidden by the upstream checkout's Git patches.
+The registry-only correction and all-features packaging gate are tracked in
+https://github.com/zackees/kernal-api/pull/179. The corrected graph passes six
+native Linux browser scenarios, targeted Rust tests, strict Clippy and
+formatting. Full extracted-package verification and cross-platform CI remain
+pending at this checkpoint; do not remove the migration patch until a usable
+release actually exists. Publishing credentials also need configuration.
+
+Next capability gaps include bounded terminal key polling and styling
+(https://github.com/zackees/kernal-api/issues/178) and secure entropy
+(https://github.com/zackees/kernal-api/issues/180). FastLED keeps rebuild-key
+selection, warning text, token length/encoding and authorization policy. The
+kernel owns the underlying terminal and OS-random mechanisms and generic tests.
+Neither issue is implemented or adopted yet.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
