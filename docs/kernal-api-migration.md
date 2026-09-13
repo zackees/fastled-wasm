@@ -166,6 +166,8 @@ Archive extraction migration is next, tracked in application issue #237.
 ### Archive slice (locally adopted; publication pending)
 
 Tracking: application #237 and https://github.com/zackees/kernal-api/issues/165.
+Upstream implementation: https://github.com/zackees/kernal-api/pull/166,
+stacked on home-resolution PR #164 and SHA-256 PR #162.
 The sibling `feat/archive-facade` branch contains an unpublished ZIP foundation:
 owned format/limit types, empty caller-exclusive destination contract, input,
 metadata, entry, path and output ceilings, fixed-buffer copying, and executable
@@ -207,10 +209,19 @@ The application boundary regression was RED before adoption and is now GREEN.
 All 249 library tests, two binary tests, one CLI integration test and one doctest
 pass; strict workspace Clippy and formatting pass. Python has 24 passed and one skipped. The boundary test passes Ruff,
 Black, isort and Pyright. One-agent application review found no actionable
-issues. Isolated-feature CI, native Windows coverage, upstream publication and
+issues. Archive-only CI and ZIP/tar/zstd dependency-isolation checks are now
+included in PR #166; the local isolation checks pass. Native Windows coverage, upstream publication and
 replacement of the temporary path override remain pending. All full-extraction
 call sites use empty staging directories; esbuild removes an existing selected
 binary before extraction.
+
+The SHA/home/archive stack was rebased onto upstream main `1181fdf`, preserving
+the newer Linux WebKit changes. `git range-diff` confirms all five migration
+patches are identical after rebase. New heads are SHA `40fcb18`, home `4efac1c`,
+and archive `6c32591` (including CI checks). The migrated-feature kernel suite
+passes after rebase; the first attempt ended in a Soldr relay error, followed
+by a successful unchanged retry. PR #162 is now mergeable and its fresh CI
+checks are queued. No release has been published.
 
 ### Final migration audit
 
