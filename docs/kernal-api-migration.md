@@ -160,6 +160,24 @@ The full kernel `fs,fs-watch,hash-sha256` suite and strict Clippy in both
 repositories pass. One-agent pre-push review found no actionable issues.
 Archive extraction migration is next, tracked in application issue #237.
 
+### Archive slice (in progress; not adopted)
+
+Tracking: application #237 and https://github.com/zackees/kernal-api/issues/165.
+The sibling `feat/archive-facade` branch contains an unpublished ZIP foundation:
+owned format/limit types, empty caller-exclusive destination contract, input,
+metadata, entry, path and output ceilings, fixed-buffer copying, and executable
+bit preservation. Four focused tests and strict archive-feature Clippy pass.
+The focused test first failed because the archive feature did not exist.
+
+This is not yet the required archive capability: ZIP symlinks currently fail
+explicitly; tar.zst, selected tgz members, internal symlinks/hardlinks, extended
+tar metadata bounds, ZIP64 adversarial metadata validation, and real artifact
+checks remain required before adoption. No archive dependencies or tests have
+been removed from FastLED yet. All installer full-extraction call sites use
+empty staging directories. A real esbuild fixture is cached at
+`~/.fastled/toolchains/archives/esbuild-linux-x64-0.28.0.tgz`; use it read-only
+and extract into a fresh temporary directory for the acceptance check.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
