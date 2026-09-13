@@ -513,6 +513,11 @@ review covered the Rust, Python and documentation changes with no findings.
 
 ### Final migration audit
 
+The Axum baseline now has a raw-wire parity test for missing-file 404,
+unsupported-method 405, HEAD content length with no body, browser-isolation and
+cache headers, wildcard CORS, and OPTIONS preflight methods/headers. This test
+passes before transport replacement and must remain green after adoption.
+
 - Resolve every inventory row with code and dependency-graph evidence.
 - Move generic mechanism tests upstream while retaining application integration
   and product-policy coverage here.

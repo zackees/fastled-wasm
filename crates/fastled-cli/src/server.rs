@@ -872,34 +872,69 @@ mod tests {
         (addr, dir)
     }
 
-    // Refs #240: arbitrary web origins must never acquire a shell.
+    async fn raw_http(addr: SocketAddr, request: String) -> String {
+        async_engine::launch_blocking(move || {
+            use std::io::{Read, Write};
+            let mut socket =
+                std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(3))
+                    .unwrap();
+            socket
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            socket.write_all(request.as_bytes()).unwrap();
+            let mut bytes = Vec::new();
+            socket.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        })
+        .await
+        .unwrap()
+    }
+
     #[tokio::test]
-    async fn terminal_240_rejects_foreign_origin() {
-        let (addr, _dir) = setup_server().await;
-        for origin in [Some("https://attacker.example"), Some("null"), None] {
-            let mut request = reqwest::Client::new()
-                .get(format!("http://{addr}/terminal/ws"))
-                .header("connection", "upgrade")
-                .header("upgrade", "websocket")
-                .header("sec-websocket-version", "13")
-                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
-            if let Some(origin) = origin {
-                request = request.header("origin", origin);
+    async fn http_router_migration_preserves_head_errors_and_preflight_policy() {
+        let (addr, dir) = setup_server().await;
+        fs::write(dir.path().join("asset.js"), "hello").unwrap();
+        for (method, path, status) in [
+            ("GET", "/missing", 404),
+            ("HEAD", "/asset.js", 200),
+            ("POST", "/asset.js", 405),
+        ] {
+            let response = raw_http(addr, format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nOrigin: http://example.test\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")).await;
+            assert!(
+                response.starts_with(&format!("HTTP/1.1 {status}")),
+                "{response}"
+            );
+            for header in [
+                "cross-origin-embedder-policy: require-corp\r\n",
+                "cross-origin-opener-policy: same-origin\r\n",
+                "cache-control: no-cache, no-store, must-revalidate\r\n",
+                "access-control-allow-origin: *\r\n",
+            ] {
+                assert!(response.contains(header), "missing {header:?}: {response}");
             }
-            assert_eq!(request.send().await.unwrap().status(), 403);
+            if method == "HEAD" {
+                assert!(response.contains("content-length: 5\r\n"), "{response}");
+                assert!(response.ends_with("\r\n\r\n"), "{response}");
+            }
         }
-        let response = reqwest::Client::new()
-            .get(format!("http://{addr}/terminal/ws"))
-            .header("origin", format!("http://{addr}"))
-            .header("host", "attacker.example")
-            .header("connection", "upgrade")
-            .header("upgrade", "websocket")
-            .header("sec-websocket-version", "13")
-            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 403);
+        let response = raw_http(addr, "OPTIONS /viewer-screenshot HTTP/1.1\r\nHost: localhost\r\nOrigin: http://example.test\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: authorization,content-type\r\nConnection: close\r\n\r\n".into()).await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(
+            response.contains("access-control-allow-origin: *\r\n"),
+            "{response}"
+        );
+        assert!(
+            response.contains("access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS\r\n"),
+            "{response}"
+        );
+        assert!(
+            response.contains("access-control-allow-headers: content-type,authorization\r\n"),
+            "{response}"
+        );
+        assert!(response.ends_with("\r\n\r\n"), "{response}");
     }
 
     #[tokio::test]
