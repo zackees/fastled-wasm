@@ -456,6 +456,18 @@ Kernel async_engine explicitly leaves select/attribute macro calls as a separate
 macro-boundary decision; this slice does not add a generic race combinator or
 claim those dependencies have been removed.
 
+Task launch/handles and unbounded test-event channels now use kernel-owned
+types. The application-specific command-task Drop guard is removed because
+kernel Task already cancels on drop; the HTTP server explicitly detaches its
+task to retain its existing runtime-owned lifetime. Test-runner command and
+output-drain deadlines use kernel Deadline. The cancellation product regression
+now waits for a READY event, covers explicit cancellation and handle drop, and
+waits beyond normal command completion before checking for escaped-shell output.
+The async source boundary was observed RED then GREEN. Bounded channels still
+need a kernel blocking-send operation for the synchronous reader threads.
+All 255 Rust tests, strict all-target Clippy and 27 Python tests pass (one
+Python test skipped) after this task/channel migration.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
