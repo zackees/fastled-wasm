@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 
 use kernal_api::{
     async_engine,
-    http_server::{Limits, Request, Response, Server},
+    http_server::{Limits, Request, Response, Server, WebSocketLimits},
     json::{self, Layout, Value},
 };
 
@@ -379,6 +379,9 @@ self.addEventListener('message', (event) => {
 #[derive(Clone)]
 struct AppState {
     serve_dir: Arc<PathBuf>,
+    terminal_cwd: Arc<crate::path::NormalizedPath>,
+    terminal_origin: Arc<String>,
+    terminal_slots: async_engine::Semaphore,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
     build_tx: Option<async_engine::BroadcastSender<String>>,
@@ -701,6 +704,30 @@ async fn route(state: &AppState, request: Request) -> Reply {
             | "/viewer-screenshot"
             | "/test-done"
     );
+    if path == "/terminal/ws" {
+        if request.method() != "GET" {
+            return empty(405)?.with_header("allow", "GET");
+        }
+        let origin = request
+            .header("origin")
+            .and_then(|value| std::str::from_utf8(value).ok());
+        let host = request
+            .header("host")
+            .and_then(|value| std::str::from_utf8(value).ok());
+        if origin != Some(state.terminal_origin.as_str())
+            || host != state.terminal_origin.strip_prefix("http://")
+        {
+            return empty(403);
+        }
+        let Some(permit) = state.terminal_slots.try_acquire() else {
+            return empty(429);
+        };
+        let upgrade = request.into_websocket()?;
+        return upgrade.on_upgrade(WebSocketLimits::default(), {
+            let cwd = state.terminal_cwd.clone();
+            move |socket| crate::terminal::connect(socket, cwd, permit)
+        });
+    }
     if (post && request.method() != "POST")
         || (!post && !matches!(request.method(), "GET" | "HEAD"))
     {
@@ -808,8 +835,24 @@ pub async fn start_server(
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
 ) -> crate::error_compat::Result<SocketAddr> {
+    let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(std::env::current_dir()?));
+    let limits = server_limits(test.as_ref().map(|test| &test.runtime))?;
+    let server = Server::bind(SocketAddr::from(([127, 0, 0, 1], port)), limits)
+        .await?
+        .with_response_header("cross-origin-embedder-policy", "require-corp")?
+        .with_response_header("cross-origin-opener-policy", "same-origin")?
+        .with_response_header("cache-control", "no-cache, no-store, must-revalidate")?
+        .with_response_header("access-control-allow-origin", "*")?
+        .with_response_header(
+            "vary",
+            "origin, access-control-request-method, access-control-request-headers",
+        )?;
+    let addr = server.local_addr()?;
     let state = AppState {
         serve_dir: Arc::new(serve_dir),
+        terminal_cwd,
+        terminal_origin: Arc::new(format!("http://{addr}")),
+        terminal_slots: async_engine::Semaphore::new(4),
         build_tx,
         debug_symbols,
         test: test.map(Arc::new),
@@ -825,21 +868,6 @@ pub async fn start_server(
             std::time::Duration::from_secs(30),
         )?,
     };
-
-    let server = Server::bind(
-        SocketAddr::from(([127, 0, 0, 1], port)),
-        server_limits(state.test.as_ref().map(|test| &test.runtime))?,
-    )
-    .await?
-    .with_response_header("cross-origin-embedder-policy", "require-corp")?
-    .with_response_header("cross-origin-opener-policy", "same-origin")?
-    .with_response_header("cache-control", "no-cache, no-store, must-revalidate")?
-    .with_response_header("access-control-allow-origin", "*")?
-    .with_response_header(
-        "vary",
-        "origin, access-control-request-method, access-control-request-headers",
-    )?;
-    let addr = server.local_addr()?;
     let diagnostics = server.diagnostics();
     async_engine::launch(async move {
         let result = server

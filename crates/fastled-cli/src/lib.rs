@@ -28,8 +28,7 @@ mod selection;
 mod server;
 mod sketch_preprocessor;
 mod source;
-// The terminal route is being reintroduced through kernal-api's owned
-// WebSocket/PTY facade; do not compile the former Axum/portable-pty adapter.
+mod terminal;
 mod test_events;
 mod test_mode;
 pub mod viewer;
