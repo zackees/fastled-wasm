@@ -412,6 +412,16 @@ suite and FastLED's full 255-test Rust workspace suite also pass. Local TLS
 rejection/hostname/downgrade coverage remains outstanding. These are upstream
 mechanism tests, not FastLED protocol tests.
 
+Four deterministic loopback TLS tests now cover trusted HTTPS, default rejection
+of an untrusted certificate, rejection of a trusted certificate with the wrong
+hostname, and downgrade rejection before any plaintext connection. A public
+test-only PKCS#12 identity and certificate are checked in upstream; trust is
+scoped to the test client, never installed in the OS. Disabling verification
+and the downgrade guard produced three expected failures; restoring them makes
+all four tests pass. Strict HTTP-feature Clippy and the broader kernel suite
+also pass. These tests run in the existing native all-features CI lanes, but
+supported-platform results and the metadata-allocation contract remain pending.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
