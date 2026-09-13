@@ -679,6 +679,32 @@ for the latest upstream feature split remains pending.
 Publication and exact registry adoption remain required; no build-speed
 improvement is claimed.
 
+### Interrupt-notification adoption checkpoint
+
+Issue https://github.com/zackees/kernal-api/issues/187 adds kernel-owned Ctrl+C
+notifications using the existing private signal driver, without a new runtime,
+dependency or signal-handler stack. Eager listeners borrow an owned runtime;
+registration without enabled drivers fails explicitly. Notifications can
+coalesce, pending waits are cancellation-safe, and process-wide handler effects
+persist after a listener is dropped. Generic native-delivery and ownership
+tests live upstream in isolated child processes.
+
+FastLED now uses `Runtime::wait_for_interrupt`, whose registration happens on
+first poll just as the previous wait did. It retains existing signal timing,
+watch-mode cleanup, contained-command deadlines and command-specific exit
+policy. Standard-library pinning replaces backend pinning. Direct signal and
+pin calls are banned by the boundary check (observed RED then GREEN). One
+contained-command policy test now runs on a kernel runtime rather than a
+backend test attribute. Event selection and remaining test attributes still
+require a separate migration; this checkpoint does not remove Tokio entirely.
+
+The migration-only patch points at
+`../fastled-wasm-extern/kernal-api-interrupt` on `feat/interrupt-notification`.
+Source review, the focused boundary check, full Rust workspace tests, strict
+all-target Clippy and formatting pass. Python tests pass (28 passed, one skipped).
+Native upstream CI remains pending. Exact published adoption and build measurements
+remain outstanding; no build-speed improvement is claimed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

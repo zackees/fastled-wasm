@@ -250,6 +250,7 @@ pub(crate) enum TimedCommandResult {
 }
 
 pub(crate) async fn run_contained_command(
+    rt: &async_engine::Runtime,
     command: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<TimedCommandResult> {
@@ -263,8 +264,8 @@ pub(crate) async fn run_contained_command(
         kernal_api::platform::process::SyncEnvironment::Inherit,
     )?;
     let deadline = async_engine::Deadline::after(timeout);
-    let ctrl_c = tokio::signal::ctrl_c();
-    tokio::pin!(ctrl_c);
+    let ctrl_c = rt.wait_for_interrupt();
+    let mut ctrl_c = std::pin::pin!(ctrl_c);
     loop {
         if let Some(code) = child.try_wait()? {
             return Ok(TimedCommandResult::Exited(code));
@@ -591,26 +592,32 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn contained_command_is_stopped_at_the_hard_deadline() {
-        #[cfg(windows)]
-        let mut command = {
-            let mut command = Command::new("cmd");
-            command.args(["/C", "ping -n 3 127.0.0.1 >NUL"]);
-            command
-        };
-        #[cfg(not(windows))]
-        let mut command = {
-            let mut command = Command::new("sh");
-            command.args(["-c", "sleep 2"]);
-            command
-        };
-        let started = std::time::Instant::now();
-        let result = run_contained_command(&mut command, Duration::from_millis(30))
-            .await
+    #[test]
+    fn contained_command_is_stopped_at_the_hard_deadline() {
+        let rt = async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap();
-        assert_eq!(result, TimedCommandResult::TimedOut);
-        assert!(started.elapsed() < Duration::from_secs(1));
+        rt.run(async {
+            #[cfg(windows)]
+            let mut command = {
+                let mut command = Command::new("cmd");
+                command.args(["/C", "ping -n 3 127.0.0.1 >NUL"]);
+                command
+            };
+            #[cfg(not(windows))]
+            let mut command = {
+                let mut command = Command::new("sh");
+                command.args(["-c", "sleep 2"]);
+                command
+            };
+            let started = std::time::Instant::now();
+            let result = run_contained_command(&rt, &mut command, Duration::from_millis(30))
+                .await
+                .unwrap();
+            assert_eq!(result, TimedCommandResult::TimedOut);
+            assert!(started.elapsed() < Duration::from_secs(1));
+        });
     }
 
     #[tokio::test]

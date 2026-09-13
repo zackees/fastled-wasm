@@ -83,6 +83,8 @@ def test_migrated_async_operations_use_kernel():
         for backend in (
             "tokio::runtime::",
             "tokio::time::",
+            "tokio::signal::",
+            "tokio::pin!",
             "tokio::sync::Semaphore",
             "tokio::spawn(",
             "tokio::task::JoinHandle",

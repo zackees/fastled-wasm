@@ -132,14 +132,14 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("fastled: file watcher failed: {e}");
-                tokio::signal::ctrl_c().await.ok();
+                rt.wait_for_interrupt().await.ok();
                 return ExitCode::SUCCESS;
             }
         };
         let rx = file_watcher.start();
 
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
+        let ctrl_c = rt.wait_for_interrupt();
+        let mut ctrl_c = std::pin::pin!(ctrl_c);
         let mut rebuild_keys = keyboard::RebuildKeys::default();
         let mut watch_exit = ExitCode::SUCCESS;
         let mut input_tick = match async_engine::PeriodicTimer::new(std::time::Duration::from_millis(100)) {
@@ -364,7 +364,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                 return test_exit(TestOutcome::Failure);
             }
         };
-        let compile_result = match test_mode::run_contained_command(&mut compile, compile_budget).await
+        let compile_result = match test_mode::run_contained_command(&rt, &mut compile, compile_budget).await
         {
             Ok(result) => result,
             Err(error) => {
@@ -402,8 +402,8 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         };
         let total_deadline = async_engine::Deadline::after(remaining);
         let ready_deadline = async_engine::Deadline::after(plan.ready_timeout);
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
+        let ctrl_c = rt.wait_for_interrupt();
+        let mut ctrl_c = std::pin::pin!(ctrl_c);
         let mut liveness = match async_engine::PeriodicTimer::new(
             std::time::Duration::from_millis(100),
         ) {
@@ -855,8 +855,8 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         match viewer {
             Some(mut viewer) => {
                 // Exit on Ctrl+C or when the viewer window is closed.
-                let ctrl_c = tokio::signal::ctrl_c();
-                tokio::pin!(ctrl_c);
+                let ctrl_c = rt.wait_for_interrupt();
+                let mut ctrl_c = std::pin::pin!(ctrl_c);
                 loop {
                     tokio::select! {
                         _ = &mut ctrl_c => {
@@ -874,7 +874,7 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
             }
             None => {
                 // Headless serve has no viewer to watch; run until Ctrl+C.
-                tokio::signal::ctrl_c().await.ok();
+                rt.wait_for_interrupt().await.ok();
                 println!("\nShutting down...");
             }
         }
