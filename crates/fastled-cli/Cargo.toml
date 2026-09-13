@@ -38,7 +38,8 @@ ctcb-core = { workspace = true }
 strsim = { workspace = true }
 crossterm = { workspace = true }
 tokio = { workspace = true }
-axum = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
+portable-pty = "=0.9.0"
 tower-http = { workspace = true }
 tokio-stream = { workspace = true }
 dirs = { workspace = true }
@@ -55,6 +56,9 @@ tree-sitter-cpp = { workspace = true }
 [build-dependencies]
 indexmap = { version = "1.9.3", features = ["std"] }
 tauri-build = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Same gtk 0.18 that tauri/tao link; used to correct GTK's font DPI before the webview exists.

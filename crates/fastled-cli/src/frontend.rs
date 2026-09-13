@@ -344,7 +344,17 @@ fn build_dist(source_dir: &Path) -> Result<PathBuf> {
     fs::write(dist_dir.join("index.html"), index_html)
         .with_context(|| format!("write {}", dist_dir.join("index.html").display()))?;
 
-    copy_file(&source_dir.join("index.css"), &dist_dir.join("index.css"))?;
+    run_esbuild(
+        &esbuild,
+        source_dir,
+        &[
+            source_dir.join("index.css").to_string_lossy().into_owned(),
+            "--bundle".to_string(),
+            "--external:./assets/*".to_string(),
+            "--target=es2021".to_string(),
+            format!("--outfile={}", dist_dir.join("index.css").display()),
+        ],
+    )?;
     copy_file(
         &source_dir
             .join("modules")
