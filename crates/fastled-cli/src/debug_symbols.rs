@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use kernal_api::json::{self, Layout, Value};
 
 pub const DEFAULT_FASTLED_PREFIX: &str = "fastledsource";
 pub const DEFAULT_SKETCH_PREFIX: &str = "sketchsource";
@@ -22,17 +22,12 @@ pub const DWARF_ROOTS_MANIFEST: &str = "dwarf-roots.json";
 
 /// Configurable DWARF path prefixes loaded from
 /// `<fastled-src>/platforms/wasm/compiler/build_flags.toml`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct DwarfPrefixConfig {
-    #[serde(default = "default_fastled_prefix")]
     pub fastled_prefix: String,
-    #[serde(default = "default_sketch_prefix")]
     pub sketch_prefix: String,
-    #[serde(default = "default_dwarf_prefix")]
     pub dwarf_prefix: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_prefix_map_from: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_prefix_map_to: Option<String>,
 }
 
@@ -83,7 +78,7 @@ impl DwarfPrefixConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone)]
 pub struct DebugSymbolConfig {
     pub sketch_dir: PathBuf,
     pub fastled_dir: Option<PathBuf>,
@@ -158,10 +153,153 @@ fn read_dwarf_prefixes(fastled_dir: &Path) -> Option<DwarfPrefixConfig> {
     DwarfPrefixConfig::from_config(fields.get("dwarf")?).ok()
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-struct DebugSymbolManifest {
-    version: u32,
-    config: DebugSymbolConfig,
+// These record layouts and duplicate-field rules belong to the manifest
+// schema. JSON syntax, resource bounds and member preservation live upstream.
+fn manifest_fields<const N: usize>(
+    value: Value,
+    names: [&str; N],
+    minimum_sequence_len: usize,
+) -> Result<[Option<Value>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    match value {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if let Some(index) = names.iter().position(|field| *field == name) {
+                    if fields[index].replace(value).is_some() {
+                        anyhow::bail!("duplicate debug manifest field {}", names[index]);
+                    }
+                }
+            }
+        }
+        Value::Array(values) if (minimum_sequence_len..=N).contains(&values.len()) => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => anyhow::bail!("invalid debug manifest record"),
+    }
+    Ok(fields)
+}
+
+fn manifest_string(value: Option<Value>, name: &str, default: Option<&str>) -> Result<String> {
+    match (value, default) {
+        (Some(Value::String(value)), _) => Ok(value),
+        (None, Some(default)) => Ok(default.to_owned()),
+        _ => anyhow::bail!("debug manifest {name} must be a string"),
+    }
+}
+
+fn manifest_optional_string(value: Option<Value>, name: &str) -> Result<Option<String>> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        value => manifest_string(value, name, None).map(Some),
+    }
+}
+
+fn manifest_config(value: Value) -> Result<DebugSymbolConfig> {
+    let [sketch, fastled, emsdk, prefixes] = manifest_fields(
+        value,
+        ["sketch_dir", "fastled_dir", "emsdk_path", "prefixes"],
+        4,
+    )?;
+    let [fastled_prefix, sketch_prefix, dwarf_prefix, map_from, map_to] = manifest_fields(
+        prefixes.context("missing debug manifest prefixes")?,
+        [
+            "fastled_prefix",
+            "sketch_prefix",
+            "dwarf_prefix",
+            "file_prefix_map_from",
+            "file_prefix_map_to",
+        ],
+        0,
+    )?;
+    Ok(DebugSymbolConfig {
+        sketch_dir: manifest_string(sketch, "sketch_dir", None)?.into(),
+        fastled_dir: manifest_optional_string(fastled, "fastled_dir")?.map(PathBuf::from),
+        emsdk_path: manifest_optional_string(emsdk, "emsdk_path")?.map(PathBuf::from),
+        prefixes: DwarfPrefixConfig {
+            fastled_prefix: manifest_string(
+                fastled_prefix,
+                "fastled_prefix",
+                Some(DEFAULT_FASTLED_PREFIX),
+            )?,
+            sketch_prefix: manifest_string(
+                sketch_prefix,
+                "sketch_prefix",
+                Some(DEFAULT_SKETCH_PREFIX),
+            )?,
+            dwarf_prefix: manifest_string(
+                dwarf_prefix,
+                "dwarf_prefix",
+                Some(DEFAULT_DWARF_PREFIX),
+            )?,
+            file_prefix_map_from: manifest_optional_string(map_from, "file_prefix_map_from")?,
+            file_prefix_map_to: manifest_optional_string(map_to, "file_prefix_map_to")?,
+        },
+    })
+}
+
+fn manifest_document(config: &DebugSymbolConfig) -> Result<Value> {
+    let path = |path: &Path| -> Result<Value> {
+        Ok(Value::String(
+            path.to_str()
+                .context("debug manifest path must be UTF-8")?
+                .to_owned(),
+        ))
+    };
+    let mut prefixes = vec![
+        (
+            "fastled_prefix".into(),
+            Value::String(config.prefixes.fastled_prefix.clone()),
+        ),
+        (
+            "sketch_prefix".into(),
+            Value::String(config.prefixes.sketch_prefix.clone()),
+        ),
+        (
+            "dwarf_prefix".into(),
+            Value::String(config.prefixes.dwarf_prefix.clone()),
+        ),
+    ];
+    for (name, value) in [
+        (
+            "file_prefix_map_from",
+            &config.prefixes.file_prefix_map_from,
+        ),
+        ("file_prefix_map_to", &config.prefixes.file_prefix_map_to),
+    ] {
+        if let Some(value) = value {
+            prefixes.push((name.into(), Value::String(value.clone())));
+        }
+    }
+    Ok(Value::ObjectMembers(vec![
+        ("version".into(), Value::Unsigned(1)),
+        (
+            "config".into(),
+            Value::ObjectMembers(vec![
+                ("sketch_dir".into(), path(&config.sketch_dir)?),
+                (
+                    "fastled_dir".into(),
+                    config
+                        .fastled_dir
+                        .as_deref()
+                        .map(path)
+                        .transpose()?
+                        .unwrap_or(Value::Null),
+                ),
+                (
+                    "emsdk_path".into(),
+                    config
+                        .emsdk_path
+                        .as_deref()
+                        .map(path)
+                        .transpose()?
+                        .unwrap_or(Value::Null),
+                ),
+                ("prefixes".into(), Value::ObjectMembers(prefixes)),
+            ]),
+        ),
+    ]))
 }
 
 pub fn write_debug_symbol_manifest(
@@ -171,11 +309,7 @@ pub fn write_debug_symbol_manifest(
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("create {}", output_dir.display()))?;
     let path = output_dir.join(DWARF_ROOTS_MANIFEST);
-    let manifest = DebugSymbolManifest {
-        version: 1,
-        config: config.clone(),
-    };
-    let json = serde_json::to_string_pretty(&manifest)?;
+    let json = json::encode(&manifest_document(config)?, Layout::Pretty)?;
     std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
 }
@@ -187,16 +321,31 @@ pub fn read_debug_symbol_manifest(output_dir: &Path) -> Result<Option<DebugSymbo
     }
     let json =
         std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let manifest: DebugSymbolManifest =
-        serde_json::from_str(&json).with_context(|| format!("parse {}", path.display()))?;
-    if manifest.version != 1 {
+    let parse = || -> Result<(u32, DebugSymbolConfig)> {
+        let [version, config] = manifest_fields(
+            json::parse_members(json.as_bytes())?,
+            ["version", "config"],
+            2,
+        )?;
+        let version = match version {
+            Some(Value::Signed(value)) => u32::try_from(value)?,
+            Some(Value::Unsigned(value)) => u32::try_from(value)?,
+            _ => anyhow::bail!("debug manifest version must be an unsigned integer"),
+        };
+        Ok((
+            version,
+            manifest_config(config.context("missing debug manifest config")?)?,
+        ))
+    };
+    let (version, config) = parse().with_context(|| format!("parse {}", path.display()))?;
+    if version != 1 {
         anyhow::bail!(
             "unsupported debug symbol manifest version {} in {}",
-            manifest.version,
+            version,
             path.display()
         );
     }
-    Ok(Some(manifest.config))
+    Ok(Some(config))
 }
 
 /// Resolves browser-issued DWARF paths to absolute file paths on disk.
@@ -393,6 +542,46 @@ mod tests {
     use std::fs;
 
     #[test]
+    fn manifest_json_schema_preserves_defaults_and_nested_duplicates() {
+        let tmp = TemporaryDirectory::new().unwrap();
+        let path = tmp.path().join(DWARF_ROOTS_MANIFEST);
+        for source in [
+            r#"{"version":1,"config":{"sketch_dir":"日本","prefixes":{}}}"#,
+            r#"{"version":1,"config":{"sketch_dir":"日本","fastled_dir":null,"prefixes":{"future":1,"future":2}}}"#,
+            r#"[1,["日本",null,null,[]]]"#,
+        ] {
+            fs::write(&path, source).unwrap();
+            let config = read_debug_symbol_manifest(tmp.path()).unwrap().unwrap();
+            assert_eq!(config.sketch_dir, PathBuf::from("日本"));
+            assert_eq!(config.fastled_dir, None);
+            assert_eq!(config.emsdk_path, None);
+            assert_eq!(config.prefixes.sketch_prefix, DEFAULT_SKETCH_PREFIX);
+            assert_eq!(config.prefixes.file_prefix_map_from, None);
+            write_debug_symbol_manifest(tmp.path(), &config).unwrap();
+            let output = fs::read_to_string(&path).unwrap();
+            assert!(output.contains("\"fastled_dir\": null"));
+            assert!(!output.contains("file_prefix_map_from"));
+            assert!(!output.ends_with('\n'));
+        }
+        for source in [
+            r#"{"version":2,"config":{"sketch_dir":"a","prefixes":{}}}"#,
+            r#"{"version":1.0,"config":{"sketch_dir":"a","prefixes":{}}}"#,
+            r#"{"version":1,"version":1,"config":{"sketch_dir":"a","prefixes":{}}}"#,
+            r#"{"version":1,"config":{"sketch_dir":"a","fastled_dir":null,"fastled_dir":null,"prefixes":{}}}"#,
+            r#"{"version":1,"config":{"sketch_dir":"a","prefixes":{"sketch_prefix":"a","sketch_prefix":"b"}}}"#,
+            r#"{"version":1,"config":{"sketch_dir":"a","prefixes":{"sketch_prefix":null}}}"#,
+            r#"{"version":1,"config":{"sketch_dir":"a"}}"#,
+            r#"[1,["a"]]"#,
+        ] {
+            fs::write(&path, source).unwrap();
+            assert!(
+                read_debug_symbol_manifest(tmp.path()).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+
+    #[test]
     fn dwarf_schema_ignores_unrelated_sections_and_defaults_invalid_overrides() {
         let tmp = TemporaryDirectory::new().unwrap();
         let compiler = tmp.path().join("src/platforms/wasm/compiler");
@@ -416,6 +605,22 @@ mod tests {
             );
             assert_eq!(config.prefixes.sketch_prefix, DEFAULT_SKETCH_PREFIX);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manifest_json_rejects_non_utf8_paths_before_replacing_file() {
+        use std::os::unix::ffi::OsStringExt;
+        let tmp = TemporaryDirectory::new().unwrap();
+        let path = tmp.path().join(DWARF_ROOTS_MANIFEST);
+        fs::write(&path, "original").unwrap();
+        let config = load_debug_symbol_config(
+            PathBuf::from(std::ffi::OsString::from_vec(vec![0xff])),
+            None,
+            None,
+        );
+        assert!(write_debug_symbol_manifest(tmp.path(), &config).is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), "original");
     }
 
     fn setup_dirs() -> (TemporaryDirectory, PathBuf, PathBuf, PathBuf) {

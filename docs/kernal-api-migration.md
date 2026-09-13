@@ -1012,6 +1012,18 @@ tests pass; Python passes 36 with 1 skipped. Strict all-target Clippy, formattin
 Ruff and single-reviewer review pass. No compiler backend or flags changed in
 this checkpoint; it does not add native-browser or Safari acceptance evidence.
 
+Debugger manifests now use kernel member-preserving JSON values as well.
+Manifest version checks, nested defaults, optional/null path handling, known-
+field duplicate rejection, positional layouts and source-root policy stay in
+FastLED. Non-UTF-8 paths fail before replacing a manifest, rather than being
+lossily converted. Baseline schema and path-failure tests passed with the old
+implementation before migration; the module dependency boundary went RED to
+GREEN. Five JSON modules remain; no registry release or browser acceptance is
+implied by this metadata migration.
+Verification passes 275 library, 3 binary, 1 integration and 1 doc tests;
+Python passes 37 with 1 skipped. Strict all-target Clippy, formatting, Ruff and
+single-reviewer review pass. Compiler behavior is unchanged.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,
