@@ -797,8 +797,56 @@ identifies these remaining viewer requirements:
   environment, font-DPI and opt-in user-media mechanisms, but adoption still
   needs real viewer tests for microphone, rendering, logs, captures and teardown.
 
-The native viewer dependencies remain until these behaviors are integrated and
-verified. Window-configuration groundwork alone does not complete GUI migration.
+The following adoption checkpoint supersedes the dependency-retention statements
+in this historical inventory; it does not claim complete viewer parity.
+
+## Native viewer adoption checkpoint
+
+The application now uses `kernal_api::webview` for window creation, Linux
+graphics/font/media mechanisms, bootstrap installation and interactive lifetime.
+Direct `tauri`, `tauri-build`, `gtk` and `webkit2gtk` dependencies, the Tauri
+build hook/config and the duplicated Linux graphics module are removed. Their
+implementation dependencies remain transitive through the opt-in kernel viewer
+feature. Existing generic Linux policy tests already live upstream (#154).
+
+FastLED retains its capability-token, console forwarding and test/capture
+scripts unchanged, in the same order. The Windows-only `0.92 / nativeScale`
+policy remains local and consumes the creation-time snapshot from kernel issue
+https://github.com/zackees/kernal-api/issues/200 / draft PR
+https://github.com/zackees/kernal-api/pull/201. The kernel query happens outside
+the UI callback; the snapshot is not browser DPR or a live monitor-change feed.
+The app creates a current-thread kernel runtime and the main-thread UI host
+before starting its lifecycle thread; it adds no second runtime. Normal window
+closure is success; other terminal events are errors. Dropping the lifecycle
+exit guard requests event-loop shutdown, including during unwinding.
+
+The migration-only path patch now points to the `kernal-api-webview-scale`
+sibling at upstream `8f23200`. Upstream full GUI tests, strict Clippy, dependency
+isolation, Linux native proofs and Windows MSVC/macOS ARM crosschecks pass.
+Bootstrap PR #197 previously failed native Windows CI because the test server
+mistook an automatic favicon request for its iframe request. Fix `46344dc`
+answers only exact favicon GETs within existing limits; a socket regression
+observed RED then GREEN. The fix is included in the lifetime/scale stack; native
+Windows reruns remain required.
+
+App validation: the new GUI boundary test observed RED then GREEN; full Rust
+tests, strict all-target Clippy, formatting, Ruff and Python tests pass (29
+passed, one skipped). `ci/native_viewer_smoke.py`, run against the built binary
+under Linux Xvfb, verifies before-page token stripping and IPC absence through
+authenticated logs, a real 32x32 canvas PNG upload, successful test completion,
+and process teardown after prohibited cross-origin navigation. This fixture
+explicitly exercises the canvas fallback with a minimal ready-event source,
+not a WASM sketch/render worker, and does not prove pixel correctness.
+
+Remaining viewer acceptance: real sketch/worker rendering and capture, media,
+normal user-close behavior in the app, Windows executable-resource/DPI parity,
+and native macOS/Safari coverage. Linux graphics decisions now come from the
+kernel, so the old app-specific workaround diagnostic lines are no longer
+emitted. Default isolated-host security (including no native IPC and
+same-origin bootstrap navigation) is intentional and must remain documented.
+Remaining direct CLI/configuration/parser dependencies and a usable exact
+published release without any path patch still block overall completion. No
+build-speed improvement is claimed.
 
 ### Final migration audit
 

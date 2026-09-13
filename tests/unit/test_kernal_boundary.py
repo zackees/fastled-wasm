@@ -62,6 +62,24 @@ def test_archive_download_uses_kernel_http():
     assert "kernal_api::http::" in source
 
 
+def test_viewer_backend_is_owned_by_kernel():
+    root = Path(__file__).resolve().parents[2]
+    manifests = [root / "Cargo.toml", root / "crates/fastled-cli/Cargo.toml"]
+    for path in manifests:
+        data = tomllib.loads(path.read_text())
+        sections = [data, data.get("workspace", {})]
+        sections.extend(data.get("target", {}).values())
+        for section in sections:
+            for kind in ("dependencies", "build-dependencies", "dev-dependencies"):
+                for backend in ("tauri", "tauri-build", "gtk", "webkit2gtk"):
+                    assert backend not in section.get(kind, {}), (path, backend)
+    for source in (root / "crates/fastled-cli").rglob("*.rs"):
+        if "target" in source.parts or "gen" in source.parts:
+            continue
+        for backend in ("tauri::", "tauri_build::", "gtk::", "webkit2gtk::"):
+            assert backend not in source.read_text(), (source, backend)
+
+
 def test_obsolete_manifest_dependencies_are_removed():
     root = Path(__file__).resolve().parents[2]
     package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())
