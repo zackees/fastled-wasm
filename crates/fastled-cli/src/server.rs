@@ -49,7 +49,7 @@ pub(crate) struct TestRuntimeConfig {
 pub(crate) struct TestServerOptions {
     pub(crate) runtime: TestRuntimeConfig,
     pub(crate) screenshot_paths: HashMap<String, PathBuf>,
-    pub(crate) events: tokio::sync::mpsc::UnboundedSender<TestEvent>,
+    pub(crate) events: async_engine::UnboundedSender<TestEvent>,
     pub(crate) token: String,
     pub(crate) sleep_permits: Arc<tokio::sync::Semaphore>,
 }
@@ -774,9 +774,11 @@ pub async fn start_server(
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
     let addr = listener.local_addr()?;
 
-    tokio::spawn(async move {
+    // This server currently lives until its caller-owned runtime shuts down.
+    async_engine::launch(async move {
         axum::serve(listener, app).await.ok();
-    });
+    })
+    .detach();
 
     Ok(addr)
 }
@@ -860,7 +862,7 @@ mod tests {
         )
         .unwrap();
         let screenshot = dir.path().join("artifacts").join("frame.png");
-        let (events, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (events, mut rx) = async_engine::unbounded_channel();
         let options = TestServerOptions {
             runtime: TestRuntimeConfig {
                 wait_ms: 25.0,

@@ -56,7 +56,7 @@ def test_http_callers_use_kernel():
         assert "reqwest::" not in source, name
 
 
-def test_runtime_and_basic_timers_use_kernel():
+def test_migrated_async_operations_use_kernel():
     root = Path(__file__).resolve().parents[2]
     for path in (root / "crates/fastled-cli/src").rglob("*.rs"):
         source = path.read_text()
@@ -64,5 +64,9 @@ def test_runtime_and_basic_timers_use_kernel():
             "tokio::runtime::",
             "tokio::time::sleep(",
             "tokio::time::timeout(",
+            "tokio::spawn(",
+            "tokio::task::JoinHandle",
+            "tokio::sync::mpsc::unbounded_channel",
+            "tokio::sync::mpsc::Unbounded",
         ):
             assert backend not in source, path

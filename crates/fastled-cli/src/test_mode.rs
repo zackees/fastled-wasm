@@ -167,9 +167,9 @@ async fn run_test_commands_inner(
         // closes inherited writers held by descendants, then lets every reader
         // deliver final bytes before Exit and Done are emitted.
         drop(child);
-        let drain_deadline = tokio::time::Instant::now() + COMMAND_OUTPUT_DRAIN_TIMEOUT;
+        let drain_deadline = async_engine::Deadline::after(COMMAND_OUTPUT_DRAIN_TIMEOUT);
         while output_open {
-            let remaining = drain_deadline.saturating_duration_since(tokio::time::Instant::now());
+            let remaining = drain_deadline.remaining();
             if remaining.is_zero() {
                 return Err(format!(
                     "test command {index} exited with code {code}, but {readers} output reader(s) did not close within {} ms",
@@ -263,14 +263,14 @@ pub(crate) async fn run_contained_command(
         kernal_api::platform::process::SpawnStdio::default(),
         kernal_api::platform::process::SyncEnvironment::Inherit,
     )?;
-    let deadline = tokio::time::Instant::now() + timeout;
+    let deadline = async_engine::Deadline::after(timeout);
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
     loop {
         if let Some(code) = child.try_wait()? {
             return Ok(TimedCommandResult::Exited(code));
         }
-        if tokio::time::Instant::now() >= deadline {
+        if deadline.is_elapsed() {
             drop(child);
             return Ok(TimedCommandResult::TimedOut);
         }
@@ -459,7 +459,7 @@ pub(crate) fn is_viewer_error_line(line: &str) -> bool {
 
 #[cfg(test)]
 pub(crate) async fn wait_for_ready(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<TestEvent>,
+    rx: &mut async_engine::UnboundedReceiver<TestEvent>,
     timeout: Duration,
 ) -> TestOutcome {
     match async_engine::timeout(timeout, async {
@@ -532,7 +532,7 @@ mod tests {
 
     #[tokio::test]
     async fn waiting_for_ready_has_a_distinct_timeout() {
-        let (_tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_tx, mut rx) = async_engine::unbounded_channel();
         let outcome = wait_for_ready(&mut rx, Duration::from_millis(1)).await;
         assert_eq!(outcome, TestOutcome::ReadyTimeout);
     }
@@ -626,7 +626,7 @@ mod tests {
             "printf B >> order.txt; printf out; printf err >&2".to_string(),
         ];
         let (tx, mut rx) = mpsc::channel(256);
-        let task = tokio::spawn(run_test_commands(
+        let task = async_engine::launch(run_test_commands(
             commands,
             NormalizedPath::new(temp.path()),
             tx,
@@ -673,7 +673,7 @@ mod tests {
             "echo SHOULD_NOT_RUN > later.txt".to_string(),
         ];
         let (tx, mut rx) = mpsc::channel(256);
-        let task = tokio::spawn(run_test_commands(
+        let task = async_engine::launch(run_test_commands(
             commands,
             NormalizedPath::new(temp.path()),
             tx,
@@ -704,7 +704,7 @@ mod tests {
         #[cfg(not(windows))]
         let command = "(sleep 20; echo LATE > late.txt) &";
         let (tx, mut rx) = mpsc::channel(256);
-        let task = tokio::spawn(run_test_commands(
+        let task = async_engine::launch(run_test_commands(
             vec![command.to_string()],
             NormalizedPath::new(temp.path()),
             tx,
@@ -726,21 +726,35 @@ mod tests {
 
     #[tokio::test]
     async fn issue_200_cancelling_runner_kills_the_contained_shell() {
-        let temp = tempfile::tempdir().unwrap();
-        #[cfg(windows)]
-        let command = "ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt";
-        #[cfg(not(windows))]
-        let command = "sleep 2; echo LATE > late.txt";
-        let (tx, _rx) = mpsc::channel(256);
-        let task = tokio::spawn(run_test_commands(
-            vec![command.to_string()],
-            NormalizedPath::new(temp.path()),
-            tx,
-        ));
-        async_engine::sleep(Duration::from_millis(100)).await;
-        task.abort();
-        let _ = task.await;
-        async_engine::sleep(Duration::from_millis(250)).await;
-        assert!(!temp.path().join("late.txt").exists());
+        for drop_handle in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            #[cfg(windows)]
+            let command = "echo READY & ping -n 3 127.0.0.1 >NUL & echo LATE > late.txt";
+            #[cfg(not(windows))]
+            let command = "echo READY; sleep 1; echo LATE > late.txt";
+            let (tx, mut rx) = mpsc::channel(256);
+            let task = async_engine::launch(run_test_commands(
+                vec![command.to_string()],
+                NormalizedPath::new(temp.path()),
+                tx,
+            ));
+            loop {
+                match next_command_event(&mut rx).await {
+                    TestCommandEvent::Output { line, .. } if line.trim() == "READY" => break,
+                    TestCommandEvent::Start { .. } => {}
+                    event => panic!("unexpected event before cancellation: {event:?}"),
+                }
+            }
+            if drop_handle {
+                drop(task);
+            } else {
+                task.cancel();
+                let _ = task.await;
+            }
+            // Wait beyond the command's normal completion time, so a live
+            // escaped shell would actually have written the failure marker.
+            async_engine::sleep(Duration::from_secs(3)).await;
+            assert!(!temp.path().join("late.txt").exists());
+        }
     }
 }

@@ -241,7 +241,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         }
     };
     let (build_tx, _build_rx) = tokio::sync::broadcast::channel::<String>(256);
-    let (test_tx, mut test_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (test_tx, mut test_rx) = async_engine::unbounded_channel();
     let mut token_bytes = [0_u8; 32];
     if let Err(error) = getrandom::fill(&mut token_bytes) {
         eprintln!("fastled: could not create test capability: {error}");
@@ -366,7 +366,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         let mut commands_done = plan.commands.is_empty();
         let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(256);
         let mut command_tx = Some(command_tx);
-        let mut _command_task: Option<CommandTaskGuard> = None;
+        let mut _command_task: Option<async_engine::Task<()>> = None;
 
         loop {
             tokio::select! {
@@ -402,13 +402,13 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                                         eprintln!("fastled: command runner was already started");
                                         return test_exit(TestOutcome::Failure);
                                     };
-                                    _command_task = Some(CommandTaskGuard(tokio::spawn(
+                                    _command_task = Some(async_engine::launch(
                                         test_mode::run_test_commands(
                                             plan.commands.clone(),
                                             NormalizedPath::new(&sketch_dir),
                                             command_sender,
                                         ),
-                                    )));
+                                    ));
                                 }
                             }
                         }
@@ -488,14 +488,6 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             }
         }
     })
-}
-
-struct CommandTaskGuard(tokio::task::JoinHandle<()>);
-
-impl Drop for CommandTaskGuard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
 }
 
 fn test_exit(outcome: TestOutcome) -> ExitCode {
