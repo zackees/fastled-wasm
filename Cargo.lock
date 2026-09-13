@@ -2024,7 +2024,7 @@ dependencies = [
 [[package]]
 name = "kernal-api"
 version = "0.1.2"
-source = "git+https://github.com/zackees/kernal-api.git?rev=1fdd2a5f0bc567068684aba552fee8cf153988ee#1fdd2a5f0bc567068684aba552fee8cf153988ee"
+source = "git+https://github.com/zackees/kernal-api.git?rev=8078ce8c95e55811ce3f359ac424340199f0e5c7#8078ce8c95e55811ce3f359ac424340199f0e5c7"
 dependencies = [
  "blake3",
  "bytes",
