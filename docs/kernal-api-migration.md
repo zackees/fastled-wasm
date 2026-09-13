@@ -302,8 +302,16 @@ An impossible-deadline regression was observed RED then GREEN; client
 construction now rejects zero or greater-than-365-day timeouts. These generic
 mechanism tests live upstream, not in FastLED. HTTP is still not adopted.
 
-This is not the complete HTTP capability: runtime-owned blocking access,
-streamed artifact sinks, SSE integration, redirect
+The draft now includes blocking client/response adapters borrowing a caller-owned
+kernel runtime. They reuse the async transport, implement streaming `Read`, and
+create neither a runtime nor a worker. Calls from an entered runtime fail with
+`WouldBlock`; tests verify rejected nested reads leave the stream usable later.
+Thirteen HTTP regressions, the broader HTTP-enabled kernel suite, and strict
+all-target host Clippy pass. Default-versus-enabled dependency graph checks prove
+reqwest isolation, and HTTP is added to the individual-feature CI matrix.
+
+This is not the complete HTTP capability: streamed artifact sinks,
+SSE integration, redirect
 policy, explicit cancellation/drop tests, TLS fixtures and pre-allocation
 metadata analysis remain required, along with isolation/platform CI and review.
 FastLED still directly depends on reqwest. No HTTP PR or release is published.
