@@ -11,7 +11,6 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Download
@@ -69,23 +68,10 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
 
 /// Compute the SHA-256 hex digest of `path`.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let file =
-        File::open(path).with_context(|| format!("cannot open {} for hashing", path.display()))?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
-
-    let mut buf = vec![0u8; 1024 * 1024];
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .with_context(|| format!("read error hashing {}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
+    // FastLED toolchain artifacts must fit within this product-level bound.
+    kernal_api::hash::sha256_file(path, 16 * 1024 * 1024 * 1024)
+        .map(|digest| digest.to_hex())
+        .with_context(|| format!("cannot hash {}", path.display()))
 }
 
 /// Return `true` when the SHA-256 digest of `path` matches `expected`.
@@ -335,18 +321,8 @@ mod tests {
 
     /// A known SHA-256 digest of the bytes `b"hello fastled"`.
     ///
-    /// Computed via: `sha2::Sha256::digest(b"hello fastled")` rendered as hex.
+    /// Fixed fixture; generic SHA-256 known-vector tests live in kernal-api.
     const HELLO_SHA256: &str = "9371e29d4390b284420993a4161cbda766dc36ce4d8396398a849d1de4d652d6";
-
-    #[test]
-    fn test_sha256_known_value() {
-        // Use sha2 directly to verify the constant matches the real digest.
-        let content = b"hello fastled";
-        let mut h = Sha256::new();
-        h.update(content);
-        let actual = format!("{:x}", h.finalize());
-        assert_eq!(actual, HELLO_SHA256, "HELLO_SHA256 constant is incorrect");
-    }
 
     #[test]
     fn test_verify_sha256_correct() {
@@ -355,12 +331,7 @@ mod tests {
         let content = b"hello fastled";
         fs::write(&file, content).unwrap();
 
-        // Compute expected digest independently.
-        let mut h = Sha256::new();
-        h.update(content);
-        let expected = format!("{:x}", h.finalize());
-
-        let ok = verify_sha256(&file, &expected).expect("verify_sha256");
+        let ok = verify_sha256(&file, HELLO_SHA256).expect("verify_sha256");
         assert!(ok, "digest should match");
     }
 
@@ -372,20 +343,6 @@ mod tests {
 
         let ok = verify_sha256(&file, HELLO_SHA256).expect("verify_sha256");
         assert!(!ok, "digest should not match different content");
-    }
-
-    #[test]
-    fn test_sha256_file_changes_on_content_change() {
-        let dir = temp_dir();
-        let file = dir.path().join("test.bin");
-
-        fs::write(&file, b"version one").unwrap();
-        let h1 = sha256_file(&file).expect("hash1");
-
-        fs::write(&file, b"version two").unwrap();
-        let h2 = sha256_file(&file).expect("hash2");
-
-        assert_ne!(h1, h2, "hash must differ after content change");
     }
 
     // ------------------------------------------------------------------

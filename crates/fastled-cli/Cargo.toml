@@ -22,7 +22,6 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { workspace = true }
-sha2 = { workspace = true }
 kernal-api = { workspace = true }
 reqwest = { workspace = true }
 zip = { workspace = true }

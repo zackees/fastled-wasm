@@ -10,7 +10,6 @@
 
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -20,7 +19,6 @@ use std::{
 };
 
 use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
-use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -59,9 +57,9 @@ pub(crate) struct WatchBatch {
 /// Return the SHA-256 hex digest of a file, or `None` if the file cannot be
 /// read (e.g. it was deleted between the notification and the read).
 fn file_hash(path: &Path) -> Option<String> {
-    let bytes = fs::read(path).ok()?;
-    let digest = Sha256::digest(&bytes);
-    Some(format!("{digest:x}"))
+    kernal_api::hash::sha256_file(path, 16 * 1024 * 1024 * 1024)
+        .ok()
+        .map(|digest| digest.to_hex())
 }
 
 // ---------------------------------------------------------------------------
