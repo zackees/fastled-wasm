@@ -31,7 +31,7 @@ dependencies = [
     # Build-system dependencies for the FastLED C++ -> WASM compile.
     # `meson` configures the build; `ninja` is meson's backend. Both ship
     # standalone executables when pip-installed. Rust owns Emscripten
-    # resolution via linked ctcb crates and invokes the checked-in
+    # resolution using kernel host/process capabilities and invokes the checked-in
     # emcc.py/em++.py/emar.py entry points directly.
     "meson>=1.4",
     "ninja>=1.11",
@@ -39,8 +39,6 @@ dependencies = [
     # Node runtimes. Keeping uv in the wheel environment makes first-run WASM
     # builds independent of Homebrew or a user-managed shell installation.
     "uv>=0.5",
-    "typeguard>=4.4.4",
-    "zcmds_win32; sys_platform == 'win32'",
 ]
 
 [tool.setuptools]

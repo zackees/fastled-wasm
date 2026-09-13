@@ -848,6 +848,20 @@ Remaining direct CLI/configuration/parser dependencies and a usable exact
 published release without any path patch still block overall completion. No
 build-speed improvement is claimed.
 
+## Python shim dependency cleanup
+
+Issue https://github.com/zackees/fastled-wasm/issues/245 removes unused
+`typeguard` and Windows-only `zcmds_win32` runtime requirements. Searches across
+the remaining Python shim, Rust sources, packaging and CI found no callers.
+Meson, Ninja and uv remain required by native compilation/runtime provisioning;
+this cleanup does not replace those active build tools.
+
+The metadata regression observed RED then GREEN; Python tests pass (30 passed,
+one skipped), Ruff and local lock consistency checks pass. The regenerated
+local uv graph dropped 23 packages, but `uv.lock` is intentionally ignored by
+the repository and is not a committed release artifact. No Rust implementation
+or native compiler behavior changed, and no build-time improvement is claimed.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

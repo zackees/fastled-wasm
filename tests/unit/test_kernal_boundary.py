@@ -88,6 +88,16 @@ def test_obsolete_manifest_dependencies_are_removed():
     assert "thiserror" not in workspace["workspace"]["dependencies"]
 
 
+def test_python_shim_has_no_obsolete_runtime_requirements():
+    root = Path(__file__).resolve().parents[2]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+    requirements = project["dependencies"]
+    for obsolete in ("typeguard", "zcmds_win32", "zcmds-win32"):
+        assert not any(requirement.startswith(obsolete) for requirement in requirements)
+    for required in ("meson", "ninja", "uv"):
+        assert any(requirement.startswith(required + ">=") for requirement in requirements)
+
+
 def test_http_callers_use_kernel():
     root = Path(__file__).resolve().parents[2]
     package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())
