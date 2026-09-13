@@ -176,6 +176,34 @@ pub fn ensure_font_dpi() {
     }
 }
 
+/// Lets the page use the microphone. WebKitGTK ships with media streams
+/// disabled and, unlike a browser, has no built-in permission prompt: every
+/// `getUserMedia()` call is refused unless the embedding application enables
+/// the setting and answers the `permission-request` signal. The viewer only
+/// ever shows the user's own sketch, so user-media requests are allowed;
+/// anything else (geolocation, notifications) is left to WebKit's default,
+/// which is to deny.
+#[cfg(feature = "viewer")]
+pub fn allow_user_media(webview: &webkit2gtk::WebView) {
+    use gtk::glib::Cast;
+    use webkit2gtk::{PermissionRequestExt, SettingsExt, WebViewExt};
+    if let Some(settings) = webview.settings() {
+        settings.set_enable_media_stream(true);
+        settings.set_enable_webaudio(true);
+    }
+    webview.connect_permission_request(|_, request| {
+        if request
+            .downcast_ref::<webkit2gtk::UserMediaPermissionRequest>()
+            .is_some()
+        {
+            request.allow();
+            true
+        } else {
+            false
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

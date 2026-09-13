@@ -350,6 +350,11 @@ pub fn run(options: ViewerOptions) -> ExitCode {
             #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
             let window = builder.build()?;
 
+            #[cfg(target_os = "linux")]
+            window.with_webview(|webview| {
+                fastled_cli::linux_graphics::allow_user_media(&webview.inner());
+            })?;
+
             // Counteract WebView2 DPI auto-scaling while keeping the UI readable.
             // Windows only: WebKitGTK and WKWebView already render at the
             // window's scale factor, so this zoom would halve the page on a

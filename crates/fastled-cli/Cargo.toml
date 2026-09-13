@@ -10,7 +10,7 @@ description = "FastLED WASM compilation CLI"
 
 [features]
 default = ["viewer"]
-viewer = ["dep:tauri", "dep:tauri-build", "dep:gtk"]
+viewer = ["dep:tauri", "dep:tauri-build", "dep:gtk", "dep:webkit2gtk"]
 
 [lib]
 name = "fastled_cli"
@@ -59,6 +59,8 @@ tauri-build = { workspace = true, optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 # Same gtk 0.18 that tauri/tao link; used to correct GTK's font DPI before the webview exists.
 gtk = { version = "0.18", optional = true }
+# Same webkit2gtk that wry links; used to grant microphone access to the page.
+webkit2gtk = { version = "2.0", features = ["v2_40"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
