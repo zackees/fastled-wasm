@@ -811,6 +811,9 @@ fn run_health_checks(install: &Path) -> Result<()> {
         let empp = install.join("emscripten").join("em++.py");
         let python = resolve_managed_python()?;
         let node = resolve_managed_node(None)?;
+        // Older managed installs may retain their pre-publication staging path.
+        // Restore our generated configuration before probing the actual install.
+        archive::write_emscripten_config(install, &node)?;
         let run = |args: &[&str]| -> Result<()> {
             let mut command = Command::new(&python);
             command
@@ -925,6 +928,7 @@ fn install_spec(
         bail!("checksum mismatch for catalog package {}", spec.package_id);
     }
 
+    let node = resolve_managed_node(None)?;
     let staging = base.join(format!(
         ".{}.staging-{}",
         package_key(spec),
@@ -938,7 +942,6 @@ fn install_spec(
         archive::extract_tar_zst(&archive_path, &staging)?;
         ensure_toolchain_executables(&staging)?;
         validate_emscripten_payload(&staging)?;
-        let node = resolve_managed_node(None)?;
         archive::write_emscripten_config(&staging, &node)?;
         fs::write(staging.join("done.txt"), "ok\n")?;
         write_receipt(&staging, spec, false)?;
@@ -969,9 +972,17 @@ fn install_spec(
         fs::rename(&destination, &quarantine)
             .with_context(|| format!("quarantine invalid toolchain {}", destination.display()))?;
     }
-    fs::rename(&staging, &destination)
-        .with_context(|| format!("publish toolchain {}", destination.display()))?;
+    publish_toolchain(&staging, &destination, &node)?;
     Ok(destination)
+}
+
+fn publish_toolchain(staging: &Path, destination: &Path, node: &Path) -> Result<()> {
+    // Health checks ran against staging. Rewrite only our generated config for
+    // the destination before the directory rename makes the package visible.
+    archive::write_emscripten_config_at(staging, destination, node)?;
+    fs::rename(staging, destination)
+        .with_context(|| format!("publish toolchain {}", destination.display()))?;
+    Ok(())
 }
 
 fn activate_install(base: &Path, install: &Path, spec: ToolchainSpec) -> Result<()> {
@@ -2164,6 +2175,34 @@ pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn published_toolchain_config_does_not_retain_staging_paths() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let staging = temp.path().join(".toolchain.staging");
+        let destination = temp.path().join("toolchain");
+        let node = temp.path().join("node");
+        std::fs::create_dir_all(&staging).unwrap();
+        crate::archive::write_emscripten_config(&staging, &node).unwrap();
+        super::publish_toolchain(&staging, &destination, &node).unwrap();
+        let config = std::fs::read_to_string(destination.join(".emscripten")).unwrap();
+        assert!(!config.contains(".toolchain.staging"), "{config}");
+        assert!(config.contains(&destination.to_string_lossy().replace('\\', "/")));
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn invalid_config_does_not_publish_toolchain() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let staging = temp.path().join("staging");
+        let destination = temp.path().join("final");
+        std::fs::create_dir_all(&staging).unwrap();
+        assert!(
+            super::publish_toolchain(&staging, &destination, std::path::Path::new("node")).is_err()
+        );
+        assert!(staging.exists());
+        assert!(!destination.exists());
+    }
+
     #[test]
     fn toolchain_target_aliases_preserve_supported_binary_targets() {
         for (os, platform) in [("windows", "win"), ("linux", "linux"), ("macos", "darwin")] {

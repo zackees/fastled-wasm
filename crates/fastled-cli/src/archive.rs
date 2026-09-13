@@ -190,6 +190,15 @@ pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Res
 /// # Errors
 /// Returns an error if the file cannot be written.
 pub fn write_emscripten_config(install_dir: &Path, node_path: &Path) -> Result<()> {
+    write_emscripten_config_at(install_dir, install_dir, node_path)
+}
+
+/// Write configuration for its final location while it is still staged.
+pub(crate) fn write_emscripten_config_at(
+    config_dir: &Path,
+    install_dir: &Path,
+    node_path: &Path,
+) -> Result<()> {
     if !node_path.is_absolute() {
         anyhow::bail!(
             "NODE_JS must be an absolute path, got {}",
@@ -212,7 +221,7 @@ pub fn write_emscripten_config(install_dir: &Path, node_path: &Path) -> Result<(
         path_to_forward_slash(node_path),
     );
 
-    let config_path = install_dir.join(".emscripten");
+    let config_path = config_dir.join(".emscripten");
     if fs::read_to_string(&config_path).ok().as_deref() == Some(config.as_str()) {
         return Ok(());
     }
