@@ -225,6 +225,15 @@ have now merged after their complete CI checks passed. Archive PR #166 has
 been retargeted to main; its remaining release gates still apply. No release
 has been published.
 
+Archive run `34736578924` ended with a Windows native test failure in
+`strict_worker_assigns_before_resume_and_job_close_reaps_tree`: the readiness
+marker lacked the expected `ready:` prefix. Inspection found the helper writes
+the marker non-atomically while `wait_for_text` accepts any successful read,
+including empty/partial content. That race is a concrete candidate requiring
+a regression and fix, not grounds to declare Windows validation complete.
+Retargeting archive PR #166 also exposed a merge conflict; refresh its stack
+after saving the HTTP draft. No failed job has been blindly restarted.
+
 ### HTTP client slice (draft; not adopted)
 
 Tracking: https://github.com/zackees/fastled-wasm/issues/238 and
