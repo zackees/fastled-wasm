@@ -66,7 +66,6 @@ def test_migrated_async_operations_use_kernel():
             "tokio::time::timeout(",
             "tokio::spawn(",
             "tokio::task::JoinHandle",
-            "tokio::sync::mpsc::unbounded_channel",
-            "tokio::sync::mpsc::Unbounded",
+            "tokio::sync::mpsc",
         ):
             assert backend not in source, path

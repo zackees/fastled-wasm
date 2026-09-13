@@ -364,7 +364,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         let mut saved = HashSet::new();
         let mut viewer_done: Option<u8> = None;
         let mut commands_done = plan.commands.is_empty();
-        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(256);
+        let (command_tx, mut command_rx) = async_engine::channel(256);
         let mut command_tx = Some(command_tx);
         let mut _command_task: Option<async_engine::Task<()>> = None;
 

@@ -3,7 +3,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc;
 
 use crate::cli::Cli;
 use crate::path::NormalizedPath;
@@ -93,7 +92,7 @@ pub(crate) fn shell_command(command: &str, sketch_dir: &Path) -> Command {
 pub(crate) async fn run_test_commands(
     commands: Vec<String>,
     sketch_dir: NormalizedPath,
-    tx: mpsc::Sender<TestCommandEvent>,
+    tx: async_engine::Sender<TestCommandEvent>,
 ) {
     let result = run_test_commands_inner(commands, sketch_dir, &tx).await;
     let _ = tx.send(TestCommandEvent::Done(result)).await;
@@ -102,7 +101,7 @@ pub(crate) async fn run_test_commands(
 async fn run_test_commands_inner(
     commands: Vec<String>,
     sketch_dir: NormalizedPath,
-    tx: &mpsc::Sender<TestCommandEvent>,
+    tx: &async_engine::Sender<TestCommandEvent>,
 ) -> Result<(), String> {
     for (index, command_text) in commands.iter().enumerate() {
         if tx.send(TestCommandEvent::Start { index }).await.is_err() {
@@ -125,7 +124,7 @@ async fn run_test_commands_inner(
             kernal_api::platform::process::SyncEnvironment::Inherit,
         )
         .map_err(|e| format!("could not spawn test command {index}: {e}"))?;
-        let (output_tx, mut output_rx) = mpsc::channel::<(CommandStream, String)>(256);
+        let (output_tx, mut output_rx) = async_engine::channel::<(CommandStream, String)>(256);
         let mut readers = 0usize;
         if let Some(stdout) = child.stdout.take() {
             readers += 1;
@@ -216,7 +215,7 @@ async fn run_test_commands_inner(
 fn spawn_reader<R: std::io::Read + Send + 'static>(
     reader: R,
     stream: CommandStream,
-    tx: mpsc::Sender<(CommandStream, String)>,
+    tx: async_engine::Sender<(CommandStream, String)>,
 ) {
     std::thread::spawn(move || {
         let mut reader = BufReader::new(reader);
@@ -485,7 +484,9 @@ mod tests {
 
     const COMMAND_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-    async fn next_command_event(rx: &mut mpsc::Receiver<TestCommandEvent>) -> TestCommandEvent {
+    async fn next_command_event(
+        rx: &mut async_engine::Receiver<TestCommandEvent>,
+    ) -> TestCommandEvent {
         async_engine::timeout(COMMAND_TEST_TIMEOUT, rx.recv())
             .await
             .expect("command runner did not emit an event before the test deadline")
@@ -625,7 +626,7 @@ mod tests {
             "printf A >> order.txt".to_string(),
             "printf B >> order.txt; printf out; printf err >&2".to_string(),
         ];
-        let (tx, mut rx) = mpsc::channel(256);
+        let (tx, mut rx) = async_engine::channel(256);
         let task = async_engine::launch(run_test_commands(
             commands,
             NormalizedPath::new(temp.path()),
@@ -647,7 +648,7 @@ mod tests {
         assert!(done.is_ok());
         assert!(matches!(
             rx.try_recv(),
-            Err(mpsc::error::TryRecvError::Disconnected)
+            Err(async_engine::TryRecvError::Disconnected)
         ));
         let order = std::fs::read_to_string(temp.path().join("order.txt")).unwrap();
         assert_eq!(order.split_whitespace().collect::<String>(), "AB");
@@ -672,7 +673,7 @@ mod tests {
             "exit 7".to_string(),
             "echo SHOULD_NOT_RUN > later.txt".to_string(),
         ];
-        let (tx, mut rx) = mpsc::channel(256);
+        let (tx, mut rx) = async_engine::channel(256);
         let task = async_engine::launch(run_test_commands(
             commands,
             NormalizedPath::new(temp.path()),
@@ -691,7 +692,7 @@ mod tests {
         assert!(result.is_err());
         assert!(matches!(
             rx.try_recv(),
-            Err(mpsc::error::TryRecvError::Disconnected)
+            Err(async_engine::TryRecvError::Disconnected)
         ));
         assert!(!temp.path().join("later.txt").exists());
     }
@@ -703,7 +704,7 @@ mod tests {
         let command = "start /B cmd /C \"ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt\"";
         #[cfg(not(windows))]
         let command = "(sleep 20; echo LATE > late.txt) &";
-        let (tx, mut rx) = mpsc::channel(256);
+        let (tx, mut rx) = async_engine::channel(256);
         let task = async_engine::launch(run_test_commands(
             vec![command.to_string()],
             NormalizedPath::new(temp.path()),
@@ -732,7 +733,7 @@ mod tests {
             let command = "echo READY & ping -n 3 127.0.0.1 >NUL & echo LATE > late.txt";
             #[cfg(not(windows))]
             let command = "echo READY; sleep 1; echo LATE > late.txt";
-            let (tx, mut rx) = mpsc::channel(256);
+            let (tx, mut rx) = async_engine::channel(256);
             let task = async_engine::launch(run_test_commands(
                 vec![command.to_string()],
                 NormalizedPath::new(temp.path()),
