@@ -17,7 +17,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 | Glob matching and watchers | globset, notify | #231/#232: migrated to filesystem patterns and fs-watch; lost watches trigger recovery and rescan |
 | Tree fingerprints | zccache-fingerprint | #233 / kernal-api#157: moved content hashing and generic tests upstream; removed the zccache dependency graph |
 | Paths | dirs | Adapt existing filesystem facade while preserving FastLED directory layout |
-| Process lifecycle and native containment | running-process, windows-sys | Adapt semantic process API; preserve pipe draining, cancellation, and descendant cleanup |
+| Process lifecycle and native containment | running-process, windows-sys | #234: command runner and viewer use kernel-owned contained children; removed direct backend dependencies and native handle code |
 | Async runtime, channels, clocks | tokio, tokio-stream | Use async_engine types and operations; coordinate HTTP/SSE consumer types |
 | HTTP download, archive extraction, hashes | reqwest, zip, tar, zstd, flate2, sha2 | Add shared streaming APIs and move generic archive tests upstream; retain toolchain URLs/configuration here |
 | HTTP server and SSE | axum, tower-http | Add shared server capability; retain routes, payloads, and FastLED policy here |
@@ -84,6 +84,28 @@ The lockfile loses 11 packages relative to `909740b`: `zccache-fingerprint`,
 `crash-handler`, `doctest-file`, `fs2`, `interprocess`, `recvmsg`, and
 `tracing-attributes`. This is graph reduction evidence, not a build-time
 comparison. Publication and exact release consumption remain pending.
+
+### Process containment slice
+
+Tracking: https://github.com/zackees/fastled-wasm/issues/234
+
+The test-command runner and native viewer use kernel `spawn_sync` and its
+facade-owned child and stdio types. FastLED retains command construction,
+discovery labels, timeout/cancellation policy, and output delivery. The kernel
+owns process groups, Windows job handles, argument quoting, and child cleanup.
+The existing runner cancellation and inherited-output-pipe regressions pass;
+the viewer liveness regression now covers the same facade on every platform.
+Direct `running-process` and `windows-sys` dependencies are removed, although
+their private kernel implementations remain in the transitive graph.
+
+The default-feature Rust suite passes (253 library tests, two binary tests,
+one integration test, one doctest), as do Python tests (24 passed, one skipped).
+Strict default-feature Clippy passes with warnings denied. The Windows MSVC
+headless all-targets cross-check passes with `-j1`; the initial attempt was
+terminated by the shared build scheduler, not a compiler diagnostic. Native
+Windows execution remains pending. Review found a kernel startup-error cleanup
+gap tracked in https://github.com/zackees/kernal-api/issues/159; preserving the
+old viewer's failed-resume handling is a prerequisite for release consumption.
 
 ### Final migration audit
 

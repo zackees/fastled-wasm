@@ -18,7 +18,6 @@ thiserror = "2"
 sha2 = "0.10"
 kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch"] }
 reqwest = { version = "0.12", features = ["blocking"] }
-running-process = { version = "4.0.0", default-features = false }
 zip = "2"
 tar = "0.4"
 zstd = "0.13"
@@ -37,7 +36,6 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 toml = "0.8"
 tauri = { version = "2", features = ["devtools"] }
 tauri-build = { version = "2", features = [] }
-windows-sys = "0.61"
 shell-words = "1"
 tree-sitter = "0.26.9"
 tree-sitter-cpp = "0.23.4"

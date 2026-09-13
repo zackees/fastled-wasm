@@ -108,20 +108,22 @@ async fn run_test_commands_inner(
             return Ok(());
         }
         let mut command = shell_command(command_text, sketch_dir.as_path());
-        let group = running_process::ContainedProcessGroup::with_originator("FASTLED_TEST_CMD")
-            .map_err(|e| format!("could not create command process group: {e}"))?;
-        let mut child = group
-            .spawn(
-                &mut command,
-                running_process::SpawnStdio {
-                    stdin: running_process::StdioSource::Null,
-                    stdout: running_process::StdioSource::Pipe,
-                    stderr: running_process::StdioSource::Pipe,
-                    drain_timeout: Some(std::time::Duration::from_secs(2)),
-                    show_console: false,
-                },
-            )
-            .map_err(|e| format!("could not spawn test command {index}: {e}"))?;
+        command.env(
+            "RUNNING_PROCESS_ORIGINATOR",
+            format!("FASTLED_TEST_CMD:{}", std::process::id()),
+        );
+        let mut child = kernal_api::platform::process::spawn_sync(
+            &mut command,
+            kernal_api::platform::process::SpawnStdio {
+                stdin: kernal_api::platform::process::StdioSource::Null,
+                stdout: kernal_api::platform::process::StdioSource::Pipe,
+                stderr: kernal_api::platform::process::StdioSource::Pipe,
+                drain_timeout: Some(std::time::Duration::from_secs(2)),
+                show_console: false,
+            },
+            kernal_api::platform::process::SyncEnvironment::Inherit,
+        )
+        .map_err(|e| format!("could not spawn test command {index}: {e}"))?;
         let (output_tx, mut output_rx) = mpsc::channel::<(CommandStream, String)>(256);
         let mut readers = 0usize;
         if let Some(stdout) = child.stdout.take() {
@@ -251,8 +253,15 @@ pub(crate) async fn run_contained_command(
     command: &mut Command,
     timeout: Duration,
 ) -> std::io::Result<TimedCommandResult> {
-    let group = running_process::ContainedProcessGroup::with_originator("FASTLED_TEST")?;
-    let mut child = group.spawn(command, running_process::SpawnStdio::default())?;
+    command.env(
+        "RUNNING_PROCESS_ORIGINATOR",
+        format!("FASTLED_TEST:{}", std::process::id()),
+    );
+    let mut child = kernal_api::platform::process::spawn_sync(
+        command,
+        kernal_api::platform::process::SpawnStdio::default(),
+        kernal_api::platform::process::SyncEnvironment::Inherit,
+    )?;
     let deadline = tokio::time::Instant::now() + timeout;
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
