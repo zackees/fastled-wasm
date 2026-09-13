@@ -169,9 +169,16 @@ metadata, entry, path and output ceilings, fixed-buffer copying, and executable
 bit preservation. Four focused tests and strict archive-feature Clippy pass.
 The focused test first failed because the archive feature did not exist.
 
-This is not yet the required archive capability: ZIP symlinks currently fail
-explicitly; tar.zst, selected tgz members, internal symlinks/hardlinks, extended
-tar metadata bounds, ZIP64 adversarial metadata validation, and real artifact
+ZIP links now use a deferred, bounded virtual graph: relative internal chains
+are preserved, while escaping/cyclic/dangling links fail before link creation.
+ZIP64 preflight validates metadata before backend allocation. Eight regressions
+pass, plus read-only acceptance of a cached PlatformIO ZIP extracted into fresh
+temporary staging. Strict archive-feature Clippy passes. Native Windows link
+creation still needs execution coverage; post-creation resolution semantics and
+additional malformed ZIP64 cases remain review targets.
+
+This is not yet the required archive capability: tar.zst, selected tgz members,
+tar symlinks/hardlinks, bounded extended tar metadata, and real toolchain artifact
 checks remain required before adoption. No archive dependencies or tests have
 been removed from FastLED yet. All installer full-extraction call sites use
 empty staging directories. A real esbuild fixture is cached at
