@@ -151,6 +151,17 @@
     </div>
 
     <!-- Main application entry point — Vite bundles this -->
+    <button id="terminal-open" type="button">Terminal</button>
+    <dialog id="terminal-dialog" aria-labelledby="terminal-title">
+        <div class="terminal-toolbar">
+            <strong id="terminal-title">Terminal</strong>
+            <button id="terminal-copy" type="button">Copy</button>
+            <button id="terminal-restart" type="button">Restart</button>
+            <button id="terminal-close" type="button">Close</button>
+        </div>
+        <span id="terminal-status" role="status" aria-live="polite"></span>
+        <div id="terminal-container" aria-label="Interactive shell"></div>
+    </dialog>
     <script type="module" src="./app.ts"></script>
 
 </body>

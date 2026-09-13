@@ -6,6 +6,8 @@
  * so that Vite can process and bundle it properly.
  */
 
+import { installTerminal } from './terminal.ts';
+
 // Three.js imports are vendored locally so the frontend can build without npm.
 import * as THREE from './vendor/three/build/three.module.js';
 import Stats from './vendor/three/examples/jsm/libs/stats.module.js';
@@ -578,3 +580,5 @@ const loadFastLedOnce = () => {
 
 window.addEventListener('load', loadFastLedOnce);
 setTimeout(loadFastLedOnce, 100);
+
+installTerminal();

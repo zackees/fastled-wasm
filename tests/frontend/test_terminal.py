@@ -1,0 +1,286 @@
+"""Refs #240: real xterm -> WebSocket -> native PTY, without compiling WASM.
+
+Run with FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD set to local binaries:
+uv run --with playwright pytest tests/frontend/test_terminal.py -v
+Install matching Playwright browsers separately; no npm is used.
+"""
+
+import os
+import re
+import subprocess
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+FRONTEND = ROOT / "src/fastled/frontend"
+
+
+@pytest.fixture(scope="module")
+def terminal_server(tmp_path_factory: Any) -> Any:
+    binary = os.environ.get("FASTLED_TERMINAL_BINARY")
+    esbuild = os.environ.get("FASTLED_ESBUILD")
+    if not binary or not esbuild:
+        pytest.skip("set FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
+    root = tmp_path_factory.mktemp("terminal-240")
+    served = root / "served"
+    served.mkdir()
+    launch = root / "launch project"
+    launch.mkdir()
+    html = (FRONTEND / "index.html").read_text()
+    controls = html[html.index('    <button id="terminal-open"') :]
+    controls = controls[: controls.index('    <script type="module"')]
+    (served / "index.html").write_text(
+        '<link rel="stylesheet" href="/index.css"><pre id="output"></pre>'
+        + controls
+        + '<script type="module" src="/fixture.js"></script>'
+    )
+    entry = root / "fixture.ts"
+    entry.write_text(
+        f"import {{ installTerminal }} from '{FRONTEND}/terminal.ts';\n"
+        f"import {{ state }} from '{FRONTEND}/state.ts';\n"
+        f"import {{ installConsoleOverride, customPrintFunction }} from '{FRONTEND}/logging_setup.ts';\n"
+        "state.containerId = 'fixture'; state.outputId = 'output';\n"
+        "state.print = customPrintFunction; installConsoleOverride();\n"
+        "console.log('SEPARATE_SKETCH_LOG'); installTerminal();\n"
+    )
+    subprocess.run(
+        [
+            esbuild,
+            str(entry),
+            "--bundle",
+            "--format=esm",
+            "--platform=browser",
+            "--target=es2021",
+            f"--outfile={served}/fixture.js",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            esbuild,
+            str(FRONTEND / "index.css"),
+            "--bundle",
+            "--target=es2021",
+            "--external:./assets/*",
+            f"--outfile={served}/index.css",
+        ],
+        check=True,
+    )
+    env = dict(os.environ, FASTLED_MANAGED_RUNTIME="1")
+    # Desktop-like stripped parent PATH; the PTY must restore uv tool access.
+    if os.name != "nt":
+        env["PATH"] = "/usr/bin:/bin"
+    process = subprocess.Popen(
+        [binary, "--internal-serve-dir-headless", str(served)],
+        cwd=launch,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    lines: list[str] = []
+
+    def read_output() -> None:
+        assert process.stdout is not None
+        while line := process.stdout.readline():
+            lines.append(line)
+
+    threading.Thread(target=read_output, daemon=True).start()
+    try:
+        deadline = time.monotonic() + 20
+        url = None
+        while time.monotonic() < deadline:
+            match = re.search(r"http://127\.0\.0\.1:\d+", "".join(lines))
+            if match:
+                url = match.group()
+                break
+            assert process.poll() is None, "".join(lines)
+            time.sleep(0.05)
+        assert url, "server did not announce its URL: " + "".join(lines)
+        yield url, launch
+    finally:
+        process.terminate()
+        process.wait(timeout=10)
+
+
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_terminal_240_interactive_browser(
+    terminal_server: Any, browser_name: str
+) -> None:
+    playwright = pytest.importorskip("playwright.sync_api")
+    url, launch = terminal_server
+    with playwright.sync_playwright() as manager:
+        browser = getattr(manager, browser_name).launch()
+        page = browser.new_page(viewport={"width": 1200, "height": 900})
+        errors: list[str] = []
+        output: list[str] = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+
+        def capture_socket(socket: Any) -> None:
+            socket.on(
+                "framereceived",
+                lambda data: output.append(
+                    data.decode("utf-8", errors="replace")
+                    if isinstance(data, bytes)
+                    else data
+                ),
+            )
+
+        page.on("websocket", capture_socket)
+        page.goto(url)
+        page.evaluate("""() => {
+            window.copied = '';
+            Object.defineProperty(navigator, 'clipboard', { value: {
+                writeText: async text => { window.copied = text; }
+            }});
+        }""")
+        page.locator("#terminal-open").click()
+        playwright.expect(page.locator("#terminal-status")).to_contain_text("Connected")
+
+        def command(text: str) -> None:
+            page.locator(".xterm-helper-textarea").focus()
+            page.keyboard.insert_text(text)
+            page.keyboard.press("Enter")
+
+        def wait_output(text: str) -> None:
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if text in "".join(output):
+                    return
+                page.wait_for_timeout(50)
+            pytest.fail(
+                f"missing {text!r} from terminal output: {''.join(output)[-3000:]}"
+            )
+
+        command(
+            "printf '\\nCWD=%s\\n' \"$PWD\"; printf '\\033[31mCOLOR_é_OK\\033[0m\\n'"
+        )
+        wait_output(f"CWD={launch}\r\n")
+        wait_output("\x1b[31mCOLOR_é_OK\x1b[0m")
+        playwright.expect(page.locator(".xterm-rows")).to_contain_text("COLOR_é_OK")
+        assert "SEPARATE_SKETCH_LOG" in page.locator("#output").inner_text()
+        page.locator("#terminal-copy").click()
+        copied = page.evaluate("window.copied")
+        assert f"CWD={launch}" in copied
+        assert "SEPARATE_SKETCH_LOG" not in copied
+        command("export TERMINAL_240_KEEP=retained")
+        page.locator("#terminal-close").click()
+        assert page.locator("#terminal-open").evaluate(
+            "element => element === document.activeElement"
+        )
+        page.locator("#terminal-open").click()
+        command("printf '\\nKEEP=%s\\n' \"$TERMINAL_240_KEEP\"")
+        wait_output("\r\nKEEP=retained\r\n")
+        page.set_viewport_size({"width": 500, "height": 700})
+        page.wait_for_timeout(200)
+        command("stty size")
+        wait_output("stty size")
+        # The fitted PTY must now be narrower than its initial 80 columns.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            sizes = re.findall(r"(?:\r|\n)(\d+) (\d+)\r?\n", "".join(output))
+            if sizes:
+                assert 1 <= int(sizes[-1][0]) <= 300
+                assert 2 <= int(sizes[-1][1]) < 80
+                break
+            page.wait_for_timeout(50)
+        else:
+            pytest.fail(
+                "stty did not report the resized PTY dimensions: "
+                + "".join(output)[-2000:]
+            )
+        # A UTF-8 paste larger than one backend frame must be chunked intact.
+        command("stty -echo; printf '\\nPASTE_%s\\n' READY; cat > paste-240.txt")
+        wait_output("PASTE_READY\r\n")
+        payload = ("é😀" * 50 + "\n") * 400
+        page.evaluate(
+            """text => {
+            const clipboardData = new DataTransfer();
+            clipboardData.setData('text/plain', text);
+            document.querySelector('.xterm-helper-textarea').dispatchEvent(
+                new ClipboardEvent('paste', {clipboardData, bubbles: true, cancelable: true}));
+        }""",
+            payload,
+        )
+        deadline = time.monotonic() + 10
+        paste_file = launch / "paste-240.txt"
+        while time.monotonic() < deadline:
+            if paste_file.exists() and paste_file.stat().st_size == len(
+                payload.encode()
+            ):
+                break
+            page.wait_for_timeout(50)
+        assert paste_file.read_bytes() == payload.encode(), (
+            paste_file.stat().st_size,
+            page.locator("#terminal-status").inner_text(),
+        )
+        page.keyboard.press("Control+d")
+        command("stty echo; printf '\\nPASTE_BYTES='; wc -c < paste-240.txt")
+        wait_output(f"PASTE_BYTES={len(payload.encode())}\r\n")
+        # Optional host-specific check, never install or invoke an agent task.
+        if os.environ.get("FASTLED_TEST_REAL_CLUD") == "1":
+            command(
+                "printf '\\nCLUD_PATH='; command -v clud; clud --help; printf '\\nCLUD_HELP_EXIT=%s\\n' \"$?\""
+            )
+            wait_output("CLUD_PATH=" + str(Path.home() / ".local/bin/clud"))
+            wait_output("CLUD_HELP_EXIT=0\r\n")
+        command("exit")
+        playwright.expect(page.locator("#terminal-restart")).to_be_enabled(
+            timeout=10000
+        )
+        page.locator("#terminal-restart").click()
+        playwright.expect(page.locator("#terminal-status")).to_contain_text("Connected")
+        command("printf '\\nNEW=%s\\n' \"${TERMINAL_240_KEEP-unset}\"")
+        wait_output("NEW=unset\r\n")
+        page.keyboard.press("Escape")
+        assert page.locator("#terminal-dialog").evaluate("element => element.open")
+        assert not errors
+        browser.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix stty regression")
+def test_terminal_240_disconnect_with_blocked_stdin(terminal_server: Any) -> None:
+    """RED: four blocked writers leaked every slot; fifth upgrade was HTTP 429."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    url, _ = terminal_server
+    with playwright.sync_playwright() as manager:
+        browser = manager.chromium.launch()
+        page = browser.new_page()
+        page.goto(url)
+        result = page.evaluate("""async () => {
+            const url = location.origin.replace('http:', 'ws:') + '/terminal/ws';
+            for (let i = 0; i < 4; i++) {
+                await new Promise((resolve, reject) => {
+                    const ws = new WebSocket(url);
+                    ws.binaryType = 'arraybuffer';
+                    const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 10000);
+                    let output = '';
+                    let blocked = false;
+                    ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
+                    ws.onopen = () => ws.send(JSON.stringify({type: 'input', data:
+                        "stty raw -echo; printf 'BLOCK%s\\n' READY240; sleep 30\\r"}));
+                    ws.onmessage = event => {
+                        if (!(event.data instanceof ArrayBuffer)) return;
+                        ws.send(JSON.stringify({type: 'ack'}));
+                        output += new TextDecoder().decode(event.data);
+                        if (!blocked && output.includes('BLOCKREADY240')) {
+                            blocked = true;
+                            ws.send(JSON.stringify({type: 'input', data: 'x'.repeat(60000)}));
+                            setTimeout(() => { clearTimeout(timer); ws.close(); resolve(true); }, 200);
+                        }
+                    };
+                });
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+            return await new Promise(resolve => {
+                const ws = new WebSocket(url);
+                ws.onopen = () => { ws.close(); resolve(true); };
+                ws.onerror = () => resolve(false);
+            });
+        }""")
+        assert result, "disconnected blocked writers leaked all terminal slots"
+        browser.close()

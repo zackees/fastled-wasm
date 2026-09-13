@@ -9,3 +9,4 @@ include src/fastled/assets/localhost-key.pem
 recursive-include src/fastled/frontend *.ts *.js *.css *.html *.json *.d.ts *.h *.ttf *.map
 recursive-include crates/fastled-cli *.rs *.toml *.json *.ico *.png *.html
 prune src/fastled/bin
+recursive-include src/fastled/frontend/vendor/xterm LICENSE.* README.md

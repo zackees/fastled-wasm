@@ -359,6 +359,9 @@ self.addEventListener('message', (event) => {
 #[derive(Clone)]
 struct AppState {
     serve_dir: Arc<PathBuf>,
+    terminal_cwd: Arc<crate::path::NormalizedPath>,
+    terminal_origin: Arc<String>,
+    terminal_slots: Arc<tokio::sync::Semaphore>,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
     build_tx: Option<broadcast::Sender<String>>,
@@ -371,6 +374,32 @@ struct AppState {
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+/// The static router permits CORS; shell access explicitly does not.
+async fn terminal_socket(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    upgrade: axum::extract::ws::WebSocketUpgrade,
+) -> Response {
+    if headers
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        != Some(state.terminal_origin.as_str())
+        || headers
+            .get(header::HOST)
+            .and_then(|value| value.to_str().ok())
+            != state.terminal_origin.strip_prefix("http://")
+    {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Ok(permit) = state.terminal_slots.clone().try_acquire_owned() else {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    };
+    upgrade
+        .max_message_size(64 * 1024)
+        .max_frame_size(64 * 1024)
+        .on_upgrade(move |socket| crate::terminal::connect(socket, state.terminal_cwd, permit))
+}
 
 /// Serve index.html or the loading page if it doesn't exist yet.
 async fn serve_index(State(state): State<AppState>) -> Response {
@@ -724,7 +753,15 @@ pub async fn start_server(
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
 ) -> anyhow::Result<SocketAddr> {
+    // Serving never changes cwd. Capture it separately from output/sketch paths
+    // so the terminal follows the app launch, including --serve and --test.
+    let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(std::env::current_dir()?));
+    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
+    let addr = listener.local_addr()?;
     let state = AppState {
+        terminal_cwd,
+        terminal_origin: Arc::new(format!("http://{addr}")),
+        terminal_slots: Arc::new(tokio::sync::Semaphore::new(4)),
         serve_dir: Arc::new(serve_dir),
         build_tx,
         debug_symbols,
@@ -734,6 +771,7 @@ pub async fn start_server(
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/build-stream", get(build_stream))
+        .route("/terminal/ws", get(terminal_socket))
         .route("/dwarfsource", post(dwarf_source))
         .route("/viewer-log", post(viewer_log))
         .route("/test-config", get(test_config))
@@ -770,9 +808,6 @@ pub async fn start_server(
         .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
-    let addr = listener.local_addr()?;
-
     tokio::spawn(async move {
         axum::serve(listener, app).await.ok();
     });
@@ -802,6 +837,36 @@ mod tests {
         // Give the server a moment to bind.
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
+    }
+
+    // Refs #240: arbitrary web origins must never acquire a shell.
+    #[tokio::test]
+    async fn terminal_240_rejects_foreign_origin() {
+        let (addr, _dir) = setup_server().await;
+        for origin in [Some("https://attacker.example"), Some("null"), None] {
+            let mut request = reqwest::Client::new()
+                .get(format!("http://{addr}/terminal/ws"))
+                .header("connection", "upgrade")
+                .header("upgrade", "websocket")
+                .header("sec-websocket-version", "13")
+                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
+            if let Some(origin) = origin {
+                request = request.header("origin", origin);
+            }
+            assert_eq!(request.send().await.unwrap().status(), 403);
+        }
+        let response = reqwest::Client::new()
+            .get(format!("http://{addr}/terminal/ws"))
+            .header("origin", format!("http://{addr}"))
+            .header("host", "attacker.example")
+            .header("connection", "upgrade")
+            .header("upgrade", "websocket")
+            .header("sec-websocket-version", "13")
+            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 403);
     }
 
     #[tokio::test]

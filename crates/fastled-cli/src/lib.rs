@@ -30,6 +30,7 @@ mod selection;
 mod server;
 mod sketch_preprocessor;
 mod source;
+mod terminal;
 mod test_mode;
 pub mod viewer;
 pub mod wasm_build;

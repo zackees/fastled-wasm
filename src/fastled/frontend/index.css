@@ -1,3 +1,4 @@
+@import "./vendor/xterm/css/xterm.css";
 /* Import JSON Inspector CSS */
 @import url('./modules/utils/json_inspector.css');
 
@@ -1969,3 +1970,19 @@ audio::-moz-range-track {
 #video-settings-popup {
     z-index: 1099;
 }
+
+/* Separate from sketch output: a live shell needs an uninterrupted byte stream. */
+#terminal-open { position: fixed; bottom: 16px; right: 16px; z-index: 1000; padding: 10px 18px; }
+#terminal-dialog { width: min(1100px, 94vw); height: min(700px, 85dvh); max-width: 96vw;
+    max-height: 94dvh; box-sizing: border-box; padding: 14px; color: #eee; background: #111;
+    border: 1px solid #666; border-radius: 8px; }
+#terminal-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
+#terminal-dialog::backdrop { background: #0009; }
+.terminal-toolbar { display: flex; align-items: center; gap: 8px; }
+#terminal-title { margin-right: auto; }
+#terminal-status { font: 12px sans-serif; min-height: 16px; }
+#terminal-container { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+#terminal-dialog button, #terminal-open { background: #303030; color: white; border: 1px solid #888;
+    border-radius: 4px; cursor: pointer; }
+#terminal-dialog button:focus-visible, #terminal-open:focus-visible { outline: 2px solid #4fc3f7; }
+@media (max-width: 600px) { #terminal-dialog { width: 96vw; height: 90dvh; padding: 8px; } }
