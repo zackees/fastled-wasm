@@ -396,6 +396,22 @@ fixtures, the pre-allocation metadata contract, and supported-platform CI still
 need resolution. No HTTP PR or release is published, and the temporary local
 path override must be removed before release.
 
+Pre-publication HTTP review found that 307/308 could replay a POST body across
+origins after stripping its headers. A socket-observed regression reproduced
+the second connection, then passed after rejecting cross-origin POST replay;
+same-origin replay and 301/302/303 conversion remain covered. Twenty local HTTP
+tests pass (one external trusted-HTTPS test is ignored by default). Review also
+identified automatic decompression drift under downstream Reqwest feature
+unification. A gzip-enabled regression failed when the backend removed the
+encoding header, then passed after disabling all four automatic decoders.
+Twenty-one HTTP tests and strict all-target Clippy pass with gzip enabled; a
+native CI step now exercises this feature-unification regression after locked
+checks, resolving its deliberately additional backend feature independently.
+No production dependency change is needed. The broader HTTP-enabled kernel
+suite and FastLED's full 255-test Rust workspace suite also pass. Local TLS
+rejection/hostname/downgrade coverage remains outstanding. These are upstream
+mechanism tests, not FastLED protocol tests.
+
 ### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
