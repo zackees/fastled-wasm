@@ -51,7 +51,7 @@ pub(crate) struct TestServerOptions {
     pub(crate) screenshot_paths: HashMap<String, PathBuf>,
     pub(crate) events: async_engine::UnboundedSender<TestEvent>,
     pub(crate) token: String,
-    pub(crate) sleep_permits: Arc<tokio::sync::Semaphore>,
+    pub(crate) sleep_permits: async_engine::Semaphore,
 }
 
 #[derive(Debug)]
@@ -572,7 +572,7 @@ async fn test_sleep(
     if query.ms > max_ms {
         return (StatusCode::BAD_REQUEST, "sleep exceeds test schedule").into_response();
     }
-    let Ok(_permit) = test.sleep_permits.clone().try_acquire_owned() else {
+    let Some(_permit) = test.sleep_permits.try_acquire() else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
     async_engine::sleep(duration).await;
@@ -931,6 +931,7 @@ mod tests {
         .unwrap();
         let screenshot = dir.path().join("artifacts").join("frame.png");
         let (events, mut rx) = async_engine::unbounded_channel();
+        let sleep_permits = async_engine::Semaphore::new(4);
         let options = TestServerOptions {
             runtime: TestRuntimeConfig {
                 wait_ms: 25.0,
@@ -940,7 +941,7 @@ mod tests {
             screenshot_paths: HashMap::from([("frame-0".to_string(), screenshot.clone())]),
             events,
             token: "test-token".to_string(),
-            sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+            sleep_permits: sleep_permits.clone(),
         };
         let addr = start_server(
             dir.path().to_path_buf(),
@@ -974,6 +975,21 @@ mod tests {
         assert_eq!(config["waitMs"].as_f64(), Some(25.0));
         assert_eq!(config["screenshotNames"][0], "frame-0");
 
+        // Product policy: four occupied slots reject another authorized sleep
+        // with HTTP 429; releasing a slot admits the next request.
+        let mut occupied: Vec<_> = (0..4)
+            .map(|_| sleep_permits.try_acquire().unwrap())
+            .collect();
+        let saturated = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(saturated.status(), StatusCode::TOO_MANY_REQUESTS.as_u16());
+        drop(occupied.pop());
         let response = http_request(
             HttpMethod::Post,
             &format!("http://{addr}/test-sleep?ms=1"),
@@ -983,6 +999,8 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(response.status(), StatusCode::NO_CONTENT.as_u16());
+        assert_eq!(sleep_permits.available_permits(), 1);
+        drop(occupied);
         let response = http_request(
             HttpMethod::Post,
             &format!("http://{addr}/test-sleep?ms=-1"),

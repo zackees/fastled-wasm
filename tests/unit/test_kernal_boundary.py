@@ -62,8 +62,8 @@ def test_migrated_async_operations_use_kernel():
         source = path.read_text()
         for backend in (
             "tokio::runtime::",
-            "tokio::time::sleep(",
-            "tokio::time::timeout(",
+            "tokio::time::",
+            "tokio::sync::Semaphore",
             "tokio::spawn(",
             "tokio::task::JoinHandle",
             "tokio::sync::mpsc",
