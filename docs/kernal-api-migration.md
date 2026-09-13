@@ -231,8 +231,21 @@ marker lacked the expected `ready:` prefix. Inspection found the helper writes
 the marker non-atomically while `wait_for_text` accepts any successful read,
 including empty/partial content. That race is a concrete candidate requiring
 a regression and fix, not grounds to declare Windows validation complete.
-Retargeting archive PR #166 also exposed a merge conflict; refresh its stack
-after saving the HTTP draft. No failed job has been blindly restarted.
+Tracked at https://github.com/zackees/kernal-api/issues/168. A deterministic
+test reproduces partial visibility during the original create/write sequence.
+The fix stages each test marker with the existing tempfile dev dependency,
+then atomically publishes without overwriting an existing marker. Two local
+regressions pass, including failed-write cleanup and no-clobber behavior;
+production process containment and shutdown assertions are unchanged.
+
+Archive and HTTP branches have been rebased on merged SHA/home main `63ce8ae`;
+the four archive patches compare identically before/after rebase. Positive
+ZIP link-chain and tar symlink/hardlink tests now run on Windows as well as
+Unix. All 14 archive regressions, both marker regressions, and the combined
+archive/fs/fs-watch/hash-sha256 kernel suite pass locally. Strict Windows-target
+archive Clippy (all targets) also passes. Updated archive head `8c27706` is
+pushed to PR #166; native Windows execution still requires fresh CI. The HTTP
+draft is rebased onto this fix. No failed job has been blindly restarted.
 
 ### HTTP client slice (draft; not adopted)
 
