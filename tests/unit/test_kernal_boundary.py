@@ -16,7 +16,9 @@ def test_migrated_filesystem_capabilities_are_owned_by_kernal_api():
     assert "fs2" not in dependencies
     assert "globset" not in dependencies
     assert "notify" not in dependencies
+    assert "zccache-fingerprint" not in dependencies
     for source in (root / "crates/fastled-cli/src").rglob("*.rs"):
         assert "fs2::" not in source.read_text(), source
         assert "globset::" not in source.read_text(), source
         assert "notify::" not in source.read_text(), source
+        assert "zccache_fingerprint::" not in source.read_text(), source

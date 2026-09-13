@@ -15,7 +15,8 @@ capability migration, with the same toolchain, features, and cache conditions.
 | --- | --- | --- |
 | Advisory locks | fs2 | #230: all six call sites migrated to kernal-api guards; headless Rust suite passes |
 | Glob matching and watchers | globset, notify | #231/#232: migrated to filesystem patterns and fs-watch; lost watches trigger recovery and rescan |
-| Paths and tree fingerprints | dirs, zccache-fingerprint | Adapt existing filesystem/hash facade; preserve content-authoritative invalidation |
+| Tree fingerprints | zccache-fingerprint | #233 / kernal-api#157: moved content hashing and generic tests upstream; removed the zccache dependency graph |
+| Paths | dirs | Adapt existing filesystem facade while preserving FastLED directory layout |
 | Process lifecycle and native containment | running-process, windows-sys | Adapt semantic process API; preserve pipe draining, cancellation, and descendant cleanup |
 | Async runtime, channels, clocks | tokio, tokio-stream | Use async_engine types and operations; coordinate HTTP/SSE consumer types |
 | HTTP download, archive extraction, hashes | reqwest, zip, tar, zstd, flate2, sha2 | Add shared streaming APIs and move generic archive tests upstream; retain toolchain URLs/configuration here |
@@ -58,6 +59,33 @@ PKG_CONFIG_PATH="$FASTLED_PKG_CONFIG_PATH" LD_LIBRARY_PATH="$FASTLED_NATIVE_LIB_
 ```
 
 ## Completion checks
+
+### Tree fingerprint slice
+
+The sibling kernel branch `feat/tree-fingerprint` (commit `87e937d`,
+https://github.com/zackees/kernal-api/pull/158) adds the fs-gated
+`hash::blake3_tree` capability without new dependencies. Generic same-size-edit
+and deletion coverage moved upstream; FastLED retains its persistent
+invalidation, source-selection, and cache matrix tests. The kernel encoding is
+versioned and frames relative paths and fixed-size content hashes explicitly;
+existing zccache-format cache keys receive a one-time cache miss.
+
+The default-feature application suite passes: 253 library tests, two binary
+tests, one integration test, and one doctest. Python: 24 passed, one skipped.
+The upstream `fs,fs-watch` suite passes, including seven tree-hash tests; a
+subsequent invalid-filename regression also passes (eight focused tests). On
+this host it needs `RUSTFLAGS='-C link-arg=-Wl,--build-id=sha1'` because an
+existing process identity test requires the linker to emit a GNU build ID.
+Strict Clippy passes in both repositories. The one-agent pre-push review found
+no blockers; its documentation precision suggestion was addressed and tested.
+
+The lockfile loses 11 packages relative to `909740b`: `zccache-fingerprint`,
+`zccache-core`, `zccache-hash`, `zccache-platform`, `crash-context`,
+`crash-handler`, `doctest-file`, `fs2`, `interprocess`, `recvmsg`, and
+`tracing-attributes`. This is graph reduction evidence, not a build-time
+comparison. Publication and exact release consumption remain pending.
+
+### Final migration audit
 
 - Resolve every inventory row with code and dependency-graph evidence.
 - Move generic mechanism tests upstream while retaining application integration
