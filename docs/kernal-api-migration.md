@@ -561,9 +561,12 @@ viewer feature build failure hidden by the upstream checkout's Git patches.
 The registry-only correction and all-features packaging gate are tracked in
 https://github.com/zackees/kernal-api/pull/179. The corrected graph passes six
 native Linux browser scenarios, targeted Rust tests, strict Clippy and
-formatting. Full extracted-package verification and cross-platform CI remain
-pending at this checkpoint; do not remove the migration patch until a usable
-release actually exists. Publishing credentials also need configuration.
+formatting. Full all-features extracted-package verification now passes, and
+PR #179 is merged after green cross-platform CI, including the native Windows
+external-page isolation proof. Native macOS execution remains disabled by
+repository policy; cross-compilation is not a substitute for that proof.
+Do not remove the migration patch until a usable release actually exists.
+Publishing credentials still need configuration.
 
 Next capability gaps include bounded terminal key polling and styling
 (https://github.com/zackees/kernal-api/issues/178) and secure entropy
@@ -588,7 +591,7 @@ by the app boundary test (observed RED then GREEN). The transitive 0.4.2 pin
 updates to the kernel-selected 0.4.3; its obsolete WASI 0.3 binding packages
 leave the lockfile, but other transitive random dependencies remain.
 
-During this slice the migration-only patch points at
+During the entropy slice the migration-only patch pointed at
 `../fastled-wasm-extern/kernal-api-entropy` on `feat/secure-entropy`, not the
 original sibling checkout. Restore the canonical checkout after upstream merge,
 then remove the patch entirely when adopting the exact published release.
@@ -596,6 +599,30 @@ All 259 Rust workspace tests passed. Strict all-target Clippy and the focused
 token-format test pass after moving its test module to the end of the file.
 The single reviewer confirmed the corrected async integration; Python tests
 pass (28 passed, one skipped). This is not published adoption.
+
+### Temporary-directory adoption
+
+FastLED now uses the kernel-owned `TemporaryDirectory` for production staging,
+downloads and test fixtures. Direct `tempfile` is removed from the manifest and
+its direct lockfile edge moves to the kernel; the backend remains transitive.
+The boundary test bans direct manifest and source use (observed RED then GREEN).
+Cache naming, publication by rename, invalid-entry handling and download policy
+stay in FastLED. This does not change compiler flags or native build logic.
+
+The upstream guard and generic lifecycle tests are in
+https://github.com/zackees/kernal-api/pull/183 (issue #182), stacked on entropy
+PR #181. Five Linux tests cover lifecycle, prefix validation, absolute-path
+cleanup across cwd changes, restrictive creation permissions and symlink
+cleanup. Full fs tests pass serially, strict Clippy and default-feature checks
+pass, and the upstream review is clean. The Windows exclusive-handle cleanup
+test awaits native CI. Native recursive cleanup has no wall-clock bound and
+drop cleanup remains best-effort; persistence explicitly transfers ownership.
+
+The current migration-only patch points at
+`../fastled-wasm-extern/kernal-api-temporary` on `feat/temporary-directories`.
+FastLED's full Rust workspace tests, strict all-target Clippy and formatting
+pass; Python tests pass (28 passed, one skipped). This remains local adoption,
+not an exact published dependency, and no build-speed improvement is claimed.
 
 ### Final migration audit
 

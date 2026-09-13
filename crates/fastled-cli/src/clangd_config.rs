@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn writes_all_three_files_with_expected_contents() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let inputs = stub_inputs(tmp.path());
 
         write_clangd_config(&inputs).unwrap();
@@ -664,7 +664,7 @@ mod tests {
 
     #[test]
     fn merges_existing_vscode_settings() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let inputs = stub_inputs(tmp.path());
         let settings_path = inputs.sketch_dir.join(".vscode").join("settings.json");
         fs::create_dir_all(settings_path.parent().unwrap()).unwrap();
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn regenerating_is_idempotent() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let inputs = stub_inputs(tmp.path());
         write_clangd_config(&inputs).unwrap();
         let first = fs::read_to_string(inputs.sketch_dir.join("compile_commands.json")).unwrap();
@@ -697,7 +697,7 @@ mod tests {
 
     #[test]
     fn emits_a_forced_prelude_entry_for_every_ino_tab() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let mut inputs = stub_inputs(tmp.path());
         let utility = inputs.sketch_dir.join("Utility.ino");
         fs::write(&utility, "void utility() {}\n").unwrap();

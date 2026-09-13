@@ -494,7 +494,8 @@ pub fn init_example(example_name: &str, dest: &Path, branch: Option<&str>) -> Re
     let (_ref_name, url) = resolve_ref(branch);
 
     // Download the zip to a temp file.
-    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let tmp_dir = kernal_api::platform::fs::TemporaryDirectory::new()
+        .context("failed to create temp directory")?;
     let zip_path = tmp_dir.path().join("fastled.zip");
 
     crate::archive::download(&url, &zip_path)
@@ -782,11 +783,11 @@ pub fn find_sketch_by_partial_name(partial_name: &str, search_dir: &Path) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
-    use tempfile::TempDir;
 
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+    fn temp_dir() -> TemporaryDirectory {
+        kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir")
     }
 
     // ------------------------------------------------------------------

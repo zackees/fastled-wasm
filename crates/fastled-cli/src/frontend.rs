@@ -451,10 +451,10 @@ pub fn remove_app_from_output(output_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::sync::{Mutex, OnceLock};
     use std::thread;
     use std::time::Duration;
-    use tempfile::TempDir;
 
     fn write(path: &Path, content: &[u8]) {
         if let Some(parent) = path.parent() {
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn compute_dir_hash_is_deterministic() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         // Create files in mixed order; the function must sort internally.
         write(&root.join("b.txt"), b"bravo");
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn compute_dir_hash_changes_on_content_change() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         write(&root.join("a.txt"), b"alpha");
 
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn walk_files_skips_dist_subtree() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         write(&root.join("app.ts"), b"// app");
         write(&root.join("dist").join("index.js"), b"// built");
@@ -557,7 +557,7 @@ mod tests {
         // that *already* has a populated dist + matching marker, so build_dist
         // returns immediately. Then run copy twice and confirm the second
         // invocation short-circuits on the hash marker.
-        let workspace = TempDir::new().unwrap();
+        let workspace = TemporaryDirectory::new().unwrap();
         let source = workspace.path().join("frontend");
         let dist = source.join("dist");
         fs::create_dir_all(&dist).unwrap();
@@ -568,7 +568,7 @@ mod tests {
         // is <= it.
         write(&dist.join(".esbuild_marker"), b"9999999999.0");
 
-        let output = TempDir::new().unwrap();
+        let output = TemporaryDirectory::new().unwrap();
         copy_frontend_to_output(output.path(), Some(&source)).expect("first copy");
         assert!(output.path().join("index.js").exists());
         let hash_after_first = fs::read_to_string(output.path().join(".frontend_hash")).unwrap();
@@ -602,7 +602,7 @@ mod tests {
         // usable path on the host. The installed Python launcher must provide
         // the packaged frontend through FASTLED_FRONTEND_DIR instead.
         let _guard = frontend_env_lock().lock().unwrap();
-        let package = TempDir::new().unwrap();
+        let package = TemporaryDirectory::new().unwrap();
         let frontend = package.path().join("site-packages/fastled/frontend");
         write_frontend_source(&frontend);
 
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn installed_wheel_frontend_must_be_complete() {
         let _guard = frontend_env_lock().lock().unwrap();
-        let package = TempDir::new().unwrap();
+        let package = TemporaryDirectory::new().unwrap();
         let frontend = package.path().join("site-packages/fastled/frontend");
         fs::create_dir_all(&frontend).unwrap();
 
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn remove_app_from_output_preserves_runtime_and_assets_manifest() {
-        let output = TempDir::new().unwrap();
+        let output = TemporaryDirectory::new().unwrap();
         write(&output.path().join("index.js"), b"app");
         write(&output.path().join("index.html"), b"html");
         write(&output.path().join("index.css"), b"css");

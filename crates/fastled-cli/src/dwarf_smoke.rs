@@ -61,7 +61,7 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> anyhow::Result<usize>
 #[cfg(test)]
 #[test]
 fn source_smoke_uses_manifest_paths_and_reports_missing_source() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
     let sketch = dir.path().join("sketch");
     std::fs::create_dir(&sketch).unwrap();
     let source = sketch.join("demo.ino");

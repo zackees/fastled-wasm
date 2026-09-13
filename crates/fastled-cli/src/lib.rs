@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn collect_debug_source_paths_finds_wasm_and_source_map_entries() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let output_dir = temp.path().join("fastled_js");
         fs::create_dir_all(&output_dir).unwrap();
         fs::write(
@@ -337,7 +337,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let sketch_dir = temp.path().join("Blink");
         fs::create_dir_all(&sketch_dir).unwrap();
         fs::write(sketch_dir.join("Blink.ino"), b"void setup() {}").unwrap();
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn resolve_compile_directory_accepts_file_inside_sketch() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let sketch_dir = temp.path().join("Blink");
         let source_file = sketch_dir.join("Blink.ino");
         fs::create_dir_all(&sketch_dir).unwrap();
@@ -372,7 +372,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let examples_dir = temp.path().join("examples").join("FxWave2d");
         fs::create_dir_all(&examples_dir).unwrap();
         fs::write(examples_dir.join("FxWave2d.ino"), b"void setup() {}").unwrap();
@@ -398,7 +398,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let repo_root = temp.path().join("FastLED");
         let nested = repo_root.join("examples").join("Blink");
         fs::create_dir_all(&nested).unwrap();

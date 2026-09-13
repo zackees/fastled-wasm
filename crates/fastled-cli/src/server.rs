@@ -846,8 +846,8 @@ mod tests {
     }
 
     /// Helper: create a temp dir, start the server, return (addr, dir).
-    async fn setup_server() -> (SocketAddr, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
+    async fn setup_server() -> (SocketAddr, kernal_api::platform::fs::TemporaryDirectory) {
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let addr = start_server(dir.path().to_path_buf(), 0, None, empty_handle(), None)
             .await
             .unwrap();
@@ -963,7 +963,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(
             dir.path().join("fastled_background_worker.js"),
             "console.log('worker');",
@@ -1266,7 +1266,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sse_endpoint_streams_events() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
         let addr = start_server(
             dir.path().to_path_buf(),
@@ -1415,7 +1415,7 @@ mod tests {
     async fn dwarfsource_returns_resolved_file() {
         use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch_dir = dir.path().join("sketch");
         fs::create_dir_all(sketch_dir.join("src")).unwrap();
         let sketch_file = sketch_dir.join("src").join("demo.ino");
@@ -1454,7 +1454,7 @@ mod tests {
     async fn source_map_style_get_returns_resolved_file() {
         use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let serve_dir = dir.path().join("fastled_js");
         let sketch_dir = dir.path().join("sketch");
         fs::create_dir_all(sketch_dir.join("src")).unwrap();
@@ -1493,7 +1493,7 @@ mod tests {
             DebugSymbolResolver,
         };
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let serve_dir = dir.path().join("fastled_js");
         let sketch_dir = dir.path().join("sketch");
         fs::create_dir_all(sketch_dir.join("src")).unwrap();
@@ -1524,7 +1524,7 @@ mod tests {
     async fn dwarfsource_rejects_traversal() {
         use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
 
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch_dir = dir.path().join("sketch");
         fs::create_dir_all(&sketch_dir).unwrap();
         let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));

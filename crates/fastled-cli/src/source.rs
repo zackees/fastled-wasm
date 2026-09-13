@@ -318,7 +318,7 @@ fn unique_sibling(cache_base: &Path, requested_ref: &str, purpose: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use kernal_api::platform::fs::TemporaryDirectory;
 
     fn receipt(ref_name: &str, fetched_at: SystemTime) -> SourceReceipt {
         SourceReceipt::new(
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn master_warning_uses_exact_command_and_dynamic_days() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = UNIX_EPOCH + Duration::from_secs(5 * 24 * 60 * 60);
         let old = receipt("master", now - Duration::from_secs(2 * 24 * 60 * 60));
         update_checkout(cache.path(), &old, |staging| {
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn master_freshness_uses_a_strict_24_hour_boundary() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = UNIX_EPOCH + Duration::from_secs(10 * 24 * 60 * 60);
         for (ref_name, age, warns) in [
             ("master", Duration::from_secs(23 * 60 * 60), false),
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn master_without_receipt_is_stale() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let repo = repo_dir(cache.path(), "master").unwrap();
         fs::create_dir_all(&repo).unwrap();
         fs::write(repo.join("library.json"), "{}").unwrap();
@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn tags_shas_and_non_master_branches_never_warn() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = SystemTime::now();
         for ref_name in ["3.10.0", "abcdef0", "main"] {
             let old = receipt(ref_name, now - Duration::from_secs(7 * 24 * 60 * 60));
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn failed_staged_update_preserves_existing_checkout() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let old = receipt("master", SystemTime::now());
         let live = update_checkout(cache.path(), &old, |staging| {
             fs::write(staging.join("library.json"), "{}").context("write library")?;
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn update_replaces_checkout_and_receipt_together() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let old = receipt("master", UNIX_EPOCH + Duration::from_secs(1));
         update_checkout(cache.path(), &old, |staging| {
             fs::write(staging.join("library.json"), "{}").context("write library")?;
@@ -437,7 +437,7 @@ mod tests {
 
     #[test]
     fn purge_is_scoped_to_one_safe_checkout() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let master = repo_dir(cache.path(), "master").unwrap();
         let tag = repo_dir(cache.path(), "3.10.0").unwrap();
         fs::create_dir_all(&master).unwrap();

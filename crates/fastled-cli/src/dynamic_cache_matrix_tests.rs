@@ -27,7 +27,7 @@ struct OutputHashes {
 }
 
 struct FakeRepository {
-    _temp: tempfile::TempDir,
+    _temp: kernal_api::platform::fs::TemporaryDirectory,
     root: NormalizedPath,
     fastled: NormalizedPath,
     app: NormalizedPath,
@@ -39,7 +39,7 @@ struct FakeRepository {
 
 impl FakeRepository {
     fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = NormalizedPath::new(temp.path());
         let fastled = root.join("FastLED");
         write(&fastled.join("src/core.cpp"), "core-v1");

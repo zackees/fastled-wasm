@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn unlock_creates_old_sibling_and_fresh_canonical_copy() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let exe = dir.path().join("myapp.exe");
         fs::write(&exe, b"binary-bytes").expect("write exe");
 
@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn sweep_removes_stale_old_siblings() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let exe = dir.path().join("myapp.exe");
         fs::write(&exe, b"bytes").expect("write exe");
         let stale = dir.path().join("myapp.exe.old.deadbeef");
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn no_unlock_env_var_disables_trampoline() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let exe = dir.path().join("myapp.exe");
         fs::write(&exe, b"bytes").expect("write exe");
 
@@ -156,7 +156,7 @@ mod tests {
     #[test]
     fn already_renamed_image_only_sweeps() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let renamed = dir.path().join("myapp.exe.old.123abc");
         fs::write(&renamed, b"bytes").expect("write renamed");
         let stale = dir.path().join("myapp.exe.old.456def");
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn missing_exe_is_tolerated() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let dir = tempfile::tempdir().expect("tempdir");
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let exe = dir.path().join("ghost.exe");
         unlock_install_exe(&exe);
         assert!(!exe.exists());

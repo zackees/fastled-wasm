@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn first_version_clears_only_shared_cache_and_records_breadcrumb() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         write(&root.join("cache/legacy.txt"), "stale");
         write(&root.join("toolchains/keep.txt"), "toolchain");
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn same_version_preserves_new_cache_and_emits_no_warning() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         write(&root.join("cache/legacy.txt"), "stale");
         ensure_cache_version(root, "2.0.16").unwrap();
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn changed_version_clears_cache_once_again() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         ensure_cache_version(root, "2.0.16").unwrap();
         write(&root.join("cache/from-old-version.txt"), "stale");
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn missing_cache_records_version_silently() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
 
         let outcome = ensure_cache_version(temp.path(), "2.0.16").unwrap();
 
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn deletion_failure_does_not_publish_breadcrumb() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         write(&root.join("cache/legacy.txt"), "stale");
 
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn breadcrumb_failure_does_not_publish_success() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         write(&root.join("cache/legacy.txt"), "stale");
         fs::create_dir_all(breadcrumb_temp_path(root, "2.0.16")).unwrap();
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn concurrent_first_runs_clear_once_after_rechecking_under_lock() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path().to_path_buf();
         write(&root.join("cache/legacy.txt"), "stale");
         let barrier = Arc::new(Barrier::new(3));

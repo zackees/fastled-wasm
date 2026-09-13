@@ -12,7 +12,7 @@ fn run_fastled(root: &std::path::Path) -> Output {
 
 #[test]
 fn cli_upgrade_clears_the_shared_cache_exactly_once_per_version() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
     let root = temp.path();
     fs::create_dir_all(root.join("cache")).unwrap();
     fs::write(root.join("cache/stale.txt"), "stale").unwrap();

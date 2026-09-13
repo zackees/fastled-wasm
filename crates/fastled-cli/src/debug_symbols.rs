@@ -368,11 +368,11 @@ pub fn guess_emsdk_path() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
-    use tempfile::TempDir;
 
-    fn setup_dirs() -> (TempDir, PathBuf, PathBuf, PathBuf) {
-        let tmp = TempDir::new().unwrap();
+    fn setup_dirs() -> (TemporaryDirectory, PathBuf, PathBuf, PathBuf) {
+        let tmp = TemporaryDirectory::new().unwrap();
         let sketch_dir = tmp.path().join("sketch");
         let fastled_dir = tmp.path().join("FastLED");
         let emsdk_dir = tmp.path().join("emsdk");
