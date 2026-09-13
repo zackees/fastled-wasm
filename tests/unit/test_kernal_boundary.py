@@ -95,6 +95,14 @@ def test_direct_cflags_cache_json_uses_kernel():
     assert "json::encode" in cache_code
 
 
+def test_wasm_build_json_uses_kernel():
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/wasm_build.rs").read_text()
+    assert "serde_json::" not in source
+    assert "serde::" not in source
+    assert "kernal_api::json" in source
+
+
 def test_dwarf_smoke_json_uses_kernel():
     root = Path(__file__).resolve().parents[2]
     source = (root / "crates/fastled-cli/src/dwarf_smoke.rs").read_text()

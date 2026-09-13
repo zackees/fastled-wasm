@@ -372,7 +372,10 @@ fn resolve_tool_paths(install_dir: &Path, fastled_dir: &Path) -> Result<ToolPath
     let wasm_finalize = tool_name("wasm-emscripten-finalize");
     let emscripten_version = fs::read_to_string(emscripten_dir.join("emscripten-version.txt"))
         .ok()
-        .and_then(|value| serde_json::from_str::<String>(value.trim()).ok())
+        .and_then(|value| match json::parse(value.trim().as_bytes()).ok()? {
+            Value::String(value) => Some(value),
+            _ => None,
+        })
         .unwrap_or_default();
     if !emcc.is_file() {
         bail!("missing emcc.py at {}", emcc.display());
@@ -2102,13 +2105,25 @@ fn copy_dynamic_output(
 }
 
 fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
-    let mut files = Vec::<serde_json::Value>::new();
+    let mut files = Vec::new();
     collect_data_files(example_dir, example_dir, &mut files)?;
-    for file in &files {
-        let relative = file
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("generated asset manifest entry has no path"))?;
+    let local_document = Value::Array(
+        files
+            .iter()
+            .map(|(path, size)| {
+                Value::Object(BTreeMap::from([
+                    ("path".into(), Value::String(path.clone())),
+                    ("size".into(), Value::Unsigned(*size)),
+                ]))
+            })
+            .collect(),
+    );
+    // Resolve and encode both documents before changing published assets.
+    let local_bytes = json::encode(&local_document, Layout::Pretty)?;
+    let remote_assets = scan_remote_assets(example_dir)?;
+    let mut remote_bytes = json::encode(&Value::Object(remote_assets), Layout::Pretty)?;
+    remote_bytes.push(b'\n');
+    for (relative, _) in &files {
         let source = example_dir.join(relative);
         let target = output_dir.join(relative);
         if let Some(parent) = target.parent() {
@@ -2127,15 +2142,8 @@ fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
         fs::remove_file(&legacy)
             .with_context(|| format!("remove legacy asset manifest {}", legacy.display()))?;
     }
-    fs::write(
-        output_dir.join("sketch_assets.json"),
-        serde_json::to_string_pretty(&files)?,
-    )?;
-    let remote_assets = scan_remote_assets(example_dir)?;
-    fs::write(
-        output_dir.join("asset_manifest.json"),
-        format!("{}\n", serde_json::to_string_pretty(&remote_assets)?),
-    )?;
+    fs::write(output_dir.join("sketch_assets.json"), local_bytes)?;
+    fs::write(output_dir.join("asset_manifest.json"), remote_bytes)?;
     Ok(())
 }
 
@@ -2145,57 +2153,57 @@ fn remote_asset_record(
     sha256: Option<String>,
     size: Option<u64>,
     storage: Option<String>,
-) -> serde_json::Value {
-    let mut record = serde_json::Map::new();
-    record.insert("url".into(), url.into());
-    record.insert(
-        "sha256".into(),
-        sha256.map_or(serde_json::Value::Null, serde_json::Value::String),
-    );
+) -> Value {
+    let mut record = BTreeMap::new();
+    record.insert("url".into(), Value::String(url));
+    record.insert("sha256".into(), sha256.map_or(Value::Null, Value::String));
     record.insert(
         "fallback".into(),
-        fallback.map_or(serde_json::Value::Null, serde_json::Value::String),
+        fallback.map_or(Value::Null, Value::String),
     );
     if let Some(size) = size {
-        record.insert("size".into(), size.into());
+        record.insert("size".into(), Value::Unsigned(size));
     }
     if let Some(storage) = storage {
-        record.insert("storage".into(), storage.into());
+        record.insert("storage".into(), Value::String(storage));
     }
-    record.into()
+    Value::Object(record)
 }
 
-fn normalized_storage(value: Option<&serde_json::Value>) -> Option<String> {
-    let direct = value.and_then(serde_json::Value::as_str);
-    direct
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_ascii_lowercase)
+fn normalized_storage(value: Option<&Value>) -> Option<String> {
+    let Value::String(value) = value? else {
+        return None;
+    };
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_ascii_lowercase())
 }
 
-fn storage_from_spec(
-    spec: &serde_json::Map<String, serde_json::Value>,
-    default: Option<&str>,
-) -> Option<String> {
+fn storage_from_spec(spec: &BTreeMap<String, Value>, default: Option<&str>) -> Option<String> {
     normalized_storage(spec.get("storage")).or_else(|| {
         spec.get("dest")
-            .and_then(serde_json::Value::as_object)
+            .and_then(|value| match value {
+                Value::Object(value) => Some(value),
+                _ => None,
+            })
             .and_then(|dest| normalized_storage(dest.get("target")))
             .or_else(|| default.map(ToOwned::to_owned))
     })
 }
 
-fn urls_from_spec(spec: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+fn urls_from_spec(spec: &BTreeMap<String, Value>) -> Vec<String> {
     let value = spec.get("urls").or_else(|| spec.get("url"));
     match value {
-        Some(serde_json::Value::Array(values)) => values
+        Some(Value::Array(values)) => values
             .iter()
-            .filter_map(serde_json::Value::as_str)
+            .filter_map(|value| match value {
+                Value::String(value) => Some(value.as_str()),
+                _ => None,
+            })
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
             .collect(),
-        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+        Some(Value::String(value)) if !value.trim().is_empty() => {
             vec![value.trim().to_owned()]
         }
         _ => Vec::new(),
@@ -2203,23 +2211,30 @@ fn urls_from_spec(spec: &serde_json::Map<String, serde_json::Value>) -> Vec<Stri
 }
 
 fn parse_json_asset(
-    spec: &serde_json::Map<String, serde_json::Value>,
+    spec: &BTreeMap<String, Value>,
     default_storage: Option<&str>,
-) -> Option<serde_json::Value> {
+) -> Option<Value> {
     let urls = urls_from_spec(spec);
     let url = urls.first()?.clone();
     let fallback = urls
         .get(1)
         .cloned()
-        .or_else(|| spec.get("fallback")?.as_str().map(ToOwned::to_owned));
-    let sha256 = spec
-        .get("sha256")
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned);
+        .or_else(|| match spec.get("fallback")? {
+            Value::String(value) => Some(value.clone()),
+            _ => None,
+        });
+    let sha256 = spec.get("sha256").and_then(|value| match value {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    });
     let size = spec
         .get("size_bytes")
         .or_else(|| spec.get("size"))
-        .and_then(serde_json::Value::as_u64);
+        .and_then(|value| match value {
+            Value::Unsigned(value) => Some(*value),
+            Value::Signed(value) => u64::try_from(*value).ok(),
+            _ => None,
+        });
     Some(remote_asset_record(
         url,
         fallback,
@@ -2229,14 +2244,16 @@ fn parse_json_asset(
     ))
 }
 
-fn parse_lnk(content: &str) -> Option<serde_json::Value> {
+fn parse_lnk(content: &str) -> Option<Value> {
     let first = content
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty() && !line.starts_with('#'))?;
     if first.starts_with('{') {
-        let value: serde_json::Value = serde_json::from_str(content).ok()?;
-        return parse_json_asset(value.as_object()?, None);
+        let Value::Object(value) = json::parse(content.as_bytes()).ok()? else {
+            return None;
+        };
+        return parse_json_asset(&value, None);
     }
 
     let mut urls = Vec::new();
@@ -2282,7 +2299,7 @@ fn safe_manifest_name(name: &str) -> Option<String> {
     Some(normalized)
 }
 
-fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
+fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, Value>> {
     let data_dir = example_dir.join("data");
     let mut manifest = BTreeMap::new();
     if !data_dir.is_dir() {
@@ -2291,19 +2308,21 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
 
     let assets_json = data_dir.join("assets.json");
     if assets_json.is_file() {
-        let value: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(&assets_json)
-                .with_context(|| format!("read {}", assets_json.display()))?,
+        let value = json::parse(
+            &fs::read(&assets_json).with_context(|| format!("read {}", assets_json.display()))?,
         )
         .with_context(|| format!("parse {}", assets_json.display()))?;
-        let root = value.as_object().ok_or_else(|| {
-            anyhow::anyhow!("{} must contain a JSON object", assets_json.display())
-        })?;
+        let Value::Object(root) = value else {
+            bail!("{} must contain a JSON object", assets_json.display());
+        };
         let default_storage = root
             .get("defaults")
-            .and_then(serde_json::Value::as_object)
+            .and_then(|value| match value {
+                Value::Object(value) => Some(value),
+                _ => None,
+            })
             .and_then(|defaults| storage_from_spec(defaults, None));
-        if let Some(assets) = root.get("assets").and_then(serde_json::Value::as_object) {
+        if let Some(Value::Object(assets)) = root.get("assets") {
             for (name, spec) in assets {
                 let Some(name) = safe_manifest_name(name) else {
                     eprintln!(
@@ -2312,10 +2331,10 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
                     );
                     continue;
                 };
-                let Some(record) = spec
-                    .as_object()
-                    .and_then(|spec| parse_json_asset(spec, default_storage.as_deref()))
-                else {
+                let Some(record) = (match spec {
+                    Value::Object(spec) => parse_json_asset(spec, default_storage.as_deref()),
+                    _ => None,
+                }) else {
                     eprintln!(
                         "fastled: ignoring asset without a URL in {}: {name}",
                         assets_json.display()
@@ -2353,7 +2372,7 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
     Ok(manifest)
 }
 
-fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>) -> Result<()> {
+fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -2378,10 +2397,7 @@ fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>)
             )
         {
             let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
-            out.push(serde_json::json!({
-                "path": rel.replace('\\', "/"),
-                "size": path.metadata()?.len(),
-            }));
+            out.push((rel.replace('\\', "/"), path.metadata()?.len()));
         }
     }
     Ok(())
@@ -3426,34 +3442,23 @@ link_flags = []
 
         generate_manifest(&example, &output).unwrap();
 
-        let manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(output.join("asset_manifest.json")).unwrap())
-                .unwrap();
-        assert_eq!(
-            manifest["data/track.mp3"]["url"],
-            "https://cdn.example/track.mp3"
-        );
-        assert_eq!(manifest["data/track.mp3"]["sha256"], "abc123");
-        assert_eq!(
-            manifest["data/track.mp3"]["fallback"],
-            "https://mirror.example/track.mp3"
-        );
-        assert_eq!(manifest["data/track.mp3"]["storage"], "littlefs");
-        assert_eq!(
-            manifest["data/video.rgb"]["url"],
-            "https://cdn.example/video.rgb"
-        );
-        assert_eq!(
-            manifest["data/video.rgb"]["fallback"],
-            "https://mirror.example/video.rgb"
-        );
-        assert_eq!(manifest["data/video.rgb"]["size"], 42);
-        assert_eq!(manifest["data/video.rgb"]["storage"], "vfs");
-
-        let local: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(output.join("sketch_assets.json")).unwrap())
-                .unwrap();
-        assert_eq!(local, serde_json::json!([]));
+        let manifest = json::parse(&fs::read(output.join("asset_manifest.json")).unwrap()).unwrap();
+        let expected = json::parse(
+            br#"{
+            "data/track.mp3": {
+                "url": "https://cdn.example/track.mp3", "sha256": "abc123",
+                "fallback": "https://mirror.example/track.mp3", "storage": "littlefs"
+            },
+            "data/video.rgb": {
+                "url": "https://cdn.example/video.rgb", "sha256": "def456",
+                "fallback": "https://mirror.example/video.rgb", "size": 42, "storage": "vfs"
+            }
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(manifest, expected);
+        let local = json::parse(&fs::read(output.join("sketch_assets.json")).unwrap()).unwrap();
+        assert_eq!(local, Value::Array(Vec::new()));
     }
 
     #[test]
@@ -3462,19 +3467,100 @@ link_flags = []
             "url=https://cdn.example/a.bin\nurl=https://mirror.example/a.bin\nsize_bytes=7\n",
         )
         .unwrap();
-        assert_eq!(keyed["url"], "https://cdn.example/a.bin");
-        assert_eq!(keyed["fallback"], "https://mirror.example/a.bin");
-        assert_eq!(keyed["size"], 7);
+        assert_eq!(json::encode(&keyed, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://mirror.example/a.bin","sha256":null,"size":7,"url":"https://cdn.example/a.bin"}"#);
 
         let json = parse_lnk(
             r#"{"v":1,"url":["https://cdn.example/b.bin","https://mirror.example/b.bin"],"sha256":"abc","size":9,"storage":"VFS"}"#,
         )
         .unwrap();
-        assert_eq!(json["url"], "https://cdn.example/b.bin");
-        assert_eq!(json["fallback"], "https://mirror.example/b.bin");
-        assert_eq!(json["sha256"], "abc");
-        assert_eq!(json["size"], 9);
-        assert_eq!(json["storage"], "vfs");
+        assert_eq!(json::encode(&json, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://mirror.example/b.bin","sha256":"abc","size":9,"storage":"vfs","url":"https://cdn.example/b.bin"}"#);
+    }
+
+    #[test]
+    fn asset_json_preserves_field_precedence_and_unsigned_sizes() {
+        let Value::Object(spec) = json::parse(
+            br#"{
+            "urls":[null," "," https://first "," https://second "],
+            "url":"ignored", "fallback":"ignored", "sha256":false,
+            "size_bytes":18446744073709551615,
+            "storage":" ","dest":{"target":" LITTLEFS "}
+        }"#,
+        )
+        .unwrap() else {
+            panic!("object");
+        };
+        let record = parse_json_asset(&spec, Some("vfs")).unwrap();
+        assert_eq!(json::encode(&record, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://second","sha256":null,"size":18446744073709551615,"storage":"littlefs","url":"https://first"}"#);
+        for source in [
+            r#"{"url":"valid","urls":null}"#,
+            r#"{"url":"valid","urls":[]}"#,
+            r#"{"url":false}"#,
+        ] {
+            assert!(parse_lnk(source).is_none(), "{source}");
+        }
+        for size in ["-1", "1.5", "18446744073709551616", "null"] {
+            let source = format!(r#"{{"url":"a","size":7,"size_bytes":{size}}}"#);
+            assert_eq!(
+                json::encode(&parse_lnk(&source).unwrap(), Layout::Compact).unwrap(),
+                br#"{"fallback":null,"sha256":null,"url":"a"}"#
+            );
+        }
+        let duplicate = parse_lnk(r#"{"url":null,"url":"a","fallback":" b "}"#).unwrap();
+        assert_eq!(
+            json::encode(&duplicate, Layout::Compact).unwrap(),
+            br#"{"fallback":" b ","sha256":null,"url":"a"}"#
+        );
+        // JSON descriptors parse the entire file, unlike line-oriented links.
+        assert!(parse_lnk("# comment\n{\"url\":\"a\"}").is_none());
+    }
+
+    #[test]
+    fn asset_json_failure_preserves_published_files() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let example = tmp.path();
+        let data = example.join("data");
+        let output = example.join("fastled_js");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(output.join("data")).unwrap();
+        fs::write(data.join("local.txt"), "new").unwrap();
+        let previous = [
+            "sketch_assets.json",
+            "asset_manifest.json",
+            "files.json",
+            "data/local.txt",
+        ];
+        for name in previous {
+            fs::write(output.join(name), "previous").unwrap();
+        }
+        for invalid in [
+            "[]".to_string(),
+            "{".to_string(),
+            " ".repeat(json::MAX_INPUT_BYTES + 1),
+        ] {
+            fs::write(data.join("assets.json"), invalid).unwrap();
+            assert!(generate_manifest(example, &output).is_err());
+            for name in previous {
+                assert_eq!(fs::read_to_string(output.join(name)).unwrap(), "previous");
+            }
+        }
+        // A shared default is replicated into each output record, so valid
+        // bounded input can still exceed the encoded document's byte limit.
+        let expanding = format!(
+            r#"{{"defaults":{{"storage":"{}"}},"assets":{{"a":{{"url":"a"}},"b":{{"url":"b"}}}}}}"#,
+            "x".repeat(json::MAX_OUTPUT_BYTES / 2)
+        );
+        fs::write(data.join("assets.json"), expanding).unwrap();
+        let error = generate_manifest(example, &output).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        for name in previous {
+            assert_eq!(fs::read_to_string(output.join(name)).unwrap(), "previous");
+        }
     }
 
     #[test]
