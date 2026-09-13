@@ -367,6 +367,7 @@ struct AppState {
     /// build populates it.
     debug_symbols: DebugSymbolHandle,
     test: Option<Arc<TestServerOptions>>,
+    screenshot_io: kernal_api::platform::fs::AsyncFileIo,
 }
 
 // ---------------------------------------------------------------------------
@@ -601,17 +602,7 @@ async fn viewer_screenshot(
         let _ = test.events.send(TestEvent::Failure(message.clone()));
         return (StatusCode::BAD_REQUEST, message).into_response();
     }
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        if let Err(error) = tokio::fs::create_dir_all(parent).await {
-            let message = format!("could not create screenshot directory: {error}");
-            let _ = test.events.send(TestEvent::Failure(message.clone()));
-            return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
-        }
-    }
-    if let Err(error) = tokio::fs::write(path, &body).await {
+    if let Err(error) = state.screenshot_io.write(path.clone(), body.to_vec()).await {
         let message = format!("could not write screenshot {}: {error}", path.display());
         let _ = test.events.send(TestEvent::Failure(message.clone()));
         return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
@@ -764,6 +755,13 @@ pub async fn start_server(
         build_tx,
         debug_symbols,
         test: test.map(Arc::new),
+        // One shared budget per server, including native writes still completing
+        // after timeout. PNG validation and destination policy stay in this app.
+        screenshot_io: kernal_api::platform::fs::AsyncFileIo::new(
+            4,
+            64 * 1024 * 1024,
+            std::time::Duration::from_secs(30),
+        )?,
     };
 
     let app = Router::new()
@@ -1054,6 +1052,27 @@ mod tests {
         assert!(matches!(
             rx.recv().await,
             Some(TestEvent::ScreenshotSaved { name, .. }) if name == "frame-0"
+        ));
+
+        // A persistence error must remain a product failure, never a saved
+        // event. Turn this test's temporary output into a directory to force it.
+        fs::remove_file(&screenshot).unwrap();
+        fs::create_dir(&screenshot).unwrap();
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=frame-0"),
+            &[("Authorization", "Bearer test-token")],
+            &png,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR.as_u16()
+        );
+        assert!(matches!(
+            rx.recv().await,
+            Some(TestEvent::Failure(message)) if message.contains("could not write screenshot")
         ));
     }
 
