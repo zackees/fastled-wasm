@@ -1043,6 +1043,25 @@ all 27 server tests were rerun after the final Clippy-only style correction.
 The upstream JSON head d2879eb has 53 successful/skipped CI checks, but the
 earlier webview PR #199 still has failing checks and the stack is not landed.
 
+Dynamic cache metadata and attempt receipts now use kernel JSON. Artifact shape,
+hash validation, fingerprint/schema matching and staging publication remain
+FastLED policy. Schema baselines passed before migration, including the
+distinction between duplicate known fields and last-valid-entry artifact maps:
+every repeated artifact record is decoded before replacement, so an invalid
+earlier record still rejects the cache. Attempt nulls and positional layouts
+are preserved. Three JSON modules remain; the module boundary test went RED to
+GREEN. This does not remove the final Serde dependency or the local path patch.
+Verification: 281 library, 3 binary, 1 integration and 1 doc tests pass; Python
+passes 39 with 1 skipped. Strict all-target Clippy, formatting, Ruff and review
+pass. A freshly verified CLI compiled a temporary Blink sketch with quick-mode
+dynamic linking, publishing both runtime and sketch metadata. A repeat build
+hit both caches with zero output changes. Injecting a duplicate `bytes` field
+into that temporary sketch cache caused metadata rejection and a sketch-only
+relink while the runtime remained a cache hit. The published sketch hash matches
+its receipt; both WASM headers are valid, and generated runtime JS has no JSPI
+entry points. This is compile/cache evidence, not browser/Safari acceptance or
+a measured before/after migration speedup.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

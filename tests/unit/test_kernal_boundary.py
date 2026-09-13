@@ -208,3 +208,11 @@ def test_server_json_uses_kernal() -> None:
     assert "serde::" not in source
     assert "serde_json::" not in source
     assert "json::parse_members" in source
+
+
+def test_cache_json_uses_kernal() -> None:
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "crates/fastled-cli/src/dynamic_cache.rs").read_text()
+    assert "serde::" not in source
+    assert "serde_json::" not in source
+    assert "json::parse_members" in source

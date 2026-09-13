@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use kernal_api::hash::Sha256Hasher as Sha256;
+use kernal_api::json::{self, Layout, Value};
 use kernal_api::platform::fs::{PatternSet, PatternSetBuilder};
 use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
-use serde::{Deserialize, Serialize};
 
 use crate::path::NormalizedPath;
 
@@ -224,17 +224,111 @@ pub(crate) fn fingerprint_values<'a>(values: impl IntoIterator<Item = &'a [u8]>)
     format!("{:x}", hasher.finalize())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct ArtifactRecord {
     bytes: u64,
     sha256: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct CacheMetadata {
     schema: u32,
     fingerprint: String,
     artifacts: BTreeMap<String, ArtifactRecord>,
+}
+
+// Cache schema adapters: unknown fields are ignored, known fields may not be
+// repeated, and positional records require every declared slot.
+fn cache_fields<const N: usize>(value: Value, names: [&str; N]) -> Result<[Option<Value>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    match value {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if let Some(index) = names.iter().position(|field| *field == name) {
+                    if fields[index].replace(value).is_some() {
+                        anyhow::bail!("duplicate cache metadata field {}", names[index]);
+                    }
+                }
+            }
+        }
+        Value::Array(values) if values.len() == N => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => anyhow::bail!("invalid cache metadata record"),
+    }
+    Ok(fields)
+}
+
+fn cache_string(value: Option<Value>, name: &str) -> Result<String> {
+    let Some(Value::String(value)) = value else {
+        anyhow::bail!("cache metadata {name} must be a string");
+    };
+    Ok(value)
+}
+
+fn cache_unsigned(value: Option<Value>, name: &str) -> Result<u64> {
+    match value {
+        Some(Value::Unsigned(value)) => Ok(value),
+        Some(Value::Signed(value)) if value >= 0 => Ok(value as u64),
+        _ => anyhow::bail!("cache metadata {name} must be an unsigned integer"),
+    }
+}
+
+impl CacheMetadata {
+    fn parse(source: &str) -> Result<Self> {
+        let [schema, fingerprint, artifacts] = cache_fields(
+            json::parse_members(source.as_bytes())?,
+            ["schema", "fingerprint", "artifacts"],
+        )?;
+        let schema = u32::try_from(cache_unsigned(schema, "schema")?)?;
+        let fingerprint = cache_string(fingerprint, "fingerprint")?;
+        let Some(Value::ObjectMembers(members)) = artifacts else {
+            anyhow::bail!("cache metadata artifacts must be an object");
+        };
+        let mut artifacts = BTreeMap::new();
+        for (name, value) in members {
+            // Validate every record before replacing a repeated map entry.
+            let [bytes, sha256] = cache_fields(value, ["bytes", "sha256"])?;
+            artifacts.insert(
+                name,
+                ArtifactRecord {
+                    bytes: cache_unsigned(bytes, "bytes")?,
+                    sha256: cache_string(sha256, "sha256")?,
+                },
+            );
+        }
+        Ok(Self {
+            schema,
+            fingerprint,
+            artifacts,
+        })
+    }
+
+    fn document(&self) -> Value {
+        let artifacts = self
+            .artifacts
+            .iter()
+            .map(|(name, record)| {
+                (
+                    name.clone(),
+                    Value::ObjectMembers(vec![
+                        ("bytes".into(), Value::Unsigned(record.bytes)),
+                        ("sha256".into(), Value::String(record.sha256.clone())),
+                    ]),
+                )
+            })
+            .collect();
+        Value::ObjectMembers(vec![
+            ("schema".into(), Value::Unsigned(self.schema.into())),
+            (
+                "fingerprint".into(),
+                Value::String(self.fingerprint.clone()),
+            ),
+            ("artifacts".into(), Value::Object(artifacts)),
+        ])
+    }
 }
 
 fn hash_file(path: &Path) -> Result<ArtifactRecord> {
@@ -284,7 +378,7 @@ pub(crate) fn validate_entry(
     let metadata_path = entry.join(METADATA_FILE);
     let source = fs::read_to_string(&metadata_path)
         .map_err(|err| format!("cannot read {}: {err}", metadata_path.display()))?;
-    let metadata: CacheMetadata = serde_json::from_str(&source)
+    let metadata = CacheMetadata::parse(&source)
         .map_err(|err| format!("invalid {}: {err}", metadata_path.display()))?;
     if metadata.schema != CACHE_SCHEMA {
         return Err(format!(
@@ -326,7 +420,7 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
     };
     fs::write(
         staging.join(METADATA_FILE),
-        serde_json::to_vec_pretty(&metadata)?,
+        json::encode(&metadata.document(), Layout::Pretty)?,
     )
     .with_context(|| format!("write cache metadata under {}", staging.display()))?;
     Ok(())
@@ -393,11 +487,43 @@ pub(crate) fn entry_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath
     NormalizedPath::new(cache_root.join(fingerprint))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct AttemptMetadata {
     status: String,
     phase: String,
     message: Option<String>,
+}
+
+impl AttemptMetadata {
+    fn parse(source: &str) -> Result<Self> {
+        let [status, phase, message] = cache_fields(
+            json::parse_members(source.as_bytes())?,
+            ["status", "phase", "message"],
+        )?;
+        let message = match message {
+            None | Some(Value::Null) => None,
+            value => Some(cache_string(value, "message")?),
+        };
+        Ok(Self {
+            status: cache_string(status, "status")?,
+            phase: cache_string(phase, "phase")?,
+            message,
+        })
+    }
+
+    fn document(&self) -> Value {
+        Value::ObjectMembers(vec![
+            ("status".into(), Value::String(self.status.clone())),
+            ("phase".into(), Value::String(self.phase.clone())),
+            (
+                "message".into(),
+                self.message
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            ),
+        ])
+    }
 }
 
 fn attempt_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
@@ -407,7 +533,7 @@ fn attempt_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
 pub(crate) fn previous_attempt(cache_root: &Path, fingerprint: &str) -> Option<String> {
     let path = attempt_path(cache_root, fingerprint);
     let source = fs::read_to_string(path).ok()?;
-    let attempt: AttemptMetadata = serde_json::from_str(&source).ok()?;
+    let attempt = AttemptMetadata::parse(&source).ok()?;
     Some(match attempt.message {
         Some(message) => format!("{} {}: {message}", attempt.status, attempt.phase),
         None => format!("{} {}", attempt.status, attempt.phase),
@@ -448,7 +574,7 @@ fn write_attempt(
     };
     fs::write(
         attempt_path(cache_root, fingerprint),
-        serde_json::to_vec_pretty(&attempt)?,
+        json::encode(&attempt.document(), Layout::Pretty)?,
     )?;
     Ok(())
 }
@@ -612,6 +738,98 @@ mod tests {
 
         fs::write(entry.join("fastled.wasm"), b"\0asm\x02\0\0\0").unwrap();
         assert!(write_metadata(&entry, "key", &["fastled.js", "fastled.wasm"]).is_err());
+    }
+
+    #[test]
+    fn cache_json_schema_preserves_record_and_artifact_map_rules() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(temp.path().join("a.js"), "js").unwrap();
+        let digest = hash_file(&temp.path().join("a.js")).unwrap().sha256;
+        let record = format!(r#"{{"bytes":2,"sha256":"{digest}"}}"#);
+        for source in [
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{record}}},"future":1,"future":2}}"#
+            ),
+            format!(r#"[1,"key",{{"a.js":[2,"{digest}"]}}]"#),
+            // Map keys keep their last valid record, unlike known struct fields.
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":1,"sha256":"old"}},"a.js":{record}}}}}"#
+            ),
+        ] {
+            fs::write(temp.path().join(METADATA_FILE), source).unwrap();
+            assert!(validate_entry(temp.path(), "key", &["a.js"]).is_ok());
+        }
+        for source in [
+            format!(
+                r#"{{"schema":1,"schema":1,"fingerprint":"key","artifacts":{{"a.js":{record}}}}}"#
+            ),
+            format!(r#"{{"schema":1.0,"fingerprint":"key","artifacts":{{"a.js":{record}}}}}"#),
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":2,"bytes":2,"sha256":"{digest}"}}}}}}"#
+            ),
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":null}},"a.js":{record}}}}}"#
+            ),
+        ] {
+            fs::write(temp.path().join(METADATA_FILE), source).unwrap();
+            assert!(validate_entry(temp.path(), "key", &["a.js"]).is_err());
+        }
+    }
+
+    #[test]
+    fn attempt_json_schema_preserves_nulls_duplicates_and_positional_records() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for (source, expected) in [
+            (
+                r#"{"status":"pending","phase":"日本"}"#,
+                Some("pending 日本"),
+            ),
+            (
+                r#"{"status":"pending","phase":"日本","message":null}"#,
+                Some("pending 日本"),
+            ),
+            (
+                r#"["failure","link","failed"]"#,
+                Some("failure link: failed"),
+            ),
+            (r#"["pending","link"]"#, None),
+            (
+                r#"{"status":"pending","phase":"link","message":null,"message":null}"#,
+                None,
+            ),
+            (
+                r#"{"status":"pending","phase":"link","message":false}"#,
+                None,
+            ),
+        ] {
+            fs::write(attempt_path(temp.path(), "key"), source).unwrap();
+            assert_eq!(previous_attempt(temp.path(), "key").as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn cache_json_preserves_unsigned_ranges_and_ordered_output() {
+        let metadata =
+            CacheMetadata::parse(r#"[4294967295,"key",{"a.js":[18446744073709551615,"digest"]}]"#)
+                .unwrap();
+        assert_eq!(metadata.schema, u32::MAX);
+        assert_eq!(metadata.artifacts["a.js"].bytes, u64::MAX);
+        for source in [
+            r#"[4294967296,"key",{}]"#,
+            r#"[1,"key",{"a.js":[-1,"digest"]}]"#,
+            r#"[1,"key",{"a.js":[1.0,"digest"]}]"#,
+            r#"[1,"key",{"a.js":[18446744073709551616,"digest"]}]"#,
+        ] {
+            assert!(CacheMetadata::parse(source).is_err(), "accepted {source}");
+        }
+        let metadata = CacheMetadata::parse(r#"[1,"key",{"b":[2,"b"],"a":[1,"a"]}]"#).unwrap();
+        assert_eq!(json::encode(&metadata.document(), Layout::Compact).unwrap(), br#"{"schema":1,"fingerprint":"key","artifacts":{"a":{"bytes":1,"sha256":"a"},"b":{"bytes":2,"sha256":"b"}}}"#);
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        mark_pending(temp.path(), "key", "link").unwrap();
+        assert_eq!(
+            fs::read_to_string(attempt_path(temp.path(), "key")).unwrap(),
+            "{\n  \"status\": \"pending\",\n  \"phase\": \"link\",\n  \"message\": null\n}"
+        );
     }
 
     #[test]
