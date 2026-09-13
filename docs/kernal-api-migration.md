@@ -511,6 +511,37 @@ Clippy pass; Python reports 27 passed and one skipped. The boundary test was
 observed RED before removing the Tokio calls and GREEN afterward. One local
 review covered the Rust, Python and documentation changes with no findings.
 
+### HTTP transport adoption draft
+
+The current local draft replaces Axum/Tower routing with kernel HTTP serving.
+FastLED retains the route table, JSON payloads, authorization, screenshot names,
+sleep scheduling, MIME mapping, source-root policy and browser headers. Files
+and worker-prefix injection now stream through kernel response bodies; build
+events use kernel SSE encoding. The source boundary bans direct Axum, Tower HTTP,
+Tokio filesystem reads and Tokio listeners. Axum and its private routing helpers
+leave the lockfile; Tower HTTP remains transitive through other facilities.
+The only updated package version is `http-body-util` 0.1.3 -> 0.1.5, matching the
+kernel's exact requirement.
+
+This is not release-ready adoption: native path selection/canonicalization still
+run synchronously as in the baseline; native CI and exact published kernel
+adoption remain required. Opening and response metadata preparation use one
+shared kernel `FileResponses` pool with four slots and a 30-second deadline.
+Workers retain admission after cancellation until native work really ends.
+Kernel transport limits
+now bound requests, responses, streams, connections and native reads. The app
+retains a 64 MiB request limit. Handler and absolute connection deadlines both
+cover the largest accepted test wait/interval plus 60 seconds, with a one-hour
+minimum; they no longer cut off an accepted long sleep after one hour.
+Parser-generated errors remain outside application header policy.
+
+Validation: all 257 Rust workspace tests and strict all-target Clippy pass;
+Python reports 27 passed and one skipped. The raw-wire Axum baseline remains
+green with kernel serving. Review identified blocking file preparation and
+deadlines shorter than accepted test schedules; both are fixed and re-reviewed.
+Generic file-preparation and cancellation-admission regressions live upstream;
+the application retains a regression covering its maximum accepted sleep.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

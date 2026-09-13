@@ -15,7 +15,7 @@ homepage = "https://github.com/zackees/fastled-wasm"
 [workspace.dependencies]
 clap = { version = "4", features = ["derive"] }
 thiserror = "2"
-kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "event-stream"] }
+kernal-api = { version = "=0.1.0", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "event-stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -23,8 +23,6 @@ ctcb-core = "0.4.1"
 strsim = "0.11"
 crossterm = "0.28"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs", "signal"] }
-axum = "0.8"
-tower-http = { version = "0.6", features = ["fs", "cors", "set-header"] }
 toml = "0.8"
 tauri = { version = "2", features = ["devtools"] }
 tauri-build = { version = "2", features = [] }

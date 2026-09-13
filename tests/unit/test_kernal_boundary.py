@@ -21,6 +21,8 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "sha2" not in dependencies
     assert "dirs" not in dependencies
     assert "tokio-stream" not in dependencies
+    assert "axum" not in dependencies
+    assert "tower-http" not in dependencies
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
     for target in manifest.get("target", {}).values():
@@ -72,5 +74,9 @@ def test_migrated_async_operations_use_kernel():
             "tokio_stream::",
             "tokio::fs::write",
             "tokio::fs::create_dir_all",
+            "tokio::fs::read",
+            "tokio::net::TcpListener",
+            "axum::",
+            "tower_http::",
         ):
             assert backend not in source, path
