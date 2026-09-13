@@ -779,8 +779,20 @@ identifies these remaining viewer requirements:
 - Windows DPI/zoom policy: preserve the existing Windows-only adjustment and
   avoid applying it on Linux/macOS. Validate on native hosts.
 - Interactive lifetime: preserve waiting for the user to close the window,
-  without introducing an arbitrary lifetime timeout. The current kernel
-  terminal-wait API requires a timeout that revokes the window on expiry.
+  without introducing an arbitrary lifetime timeout. Kernel issue
+  https://github.com/zackees/kernal-api/issues/198 and draft upstream PR
+  https://github.com/zackees/kernal-api/pull/199 add `wait_for_terminal()`
+  alongside the existing timed API. Linux native tests verify that cancelling
+  the wait preserves the window, a resumed wait observes closure, and timed
+  expiry/handle cancellation retain their existing behavior. No timer, polling
+  loop or new runtime is introduced. A review found that overlapping waits
+  could strand a waiter; cancellation-released admission now rejects a second
+  timed or untimed wait with `TerminalWaitInProgress`. Linux native regression
+  tests pass for both initial waiter types; full GUI-support tests, strict
+  Clippy, dependency isolation and Windows MSVC cross-compilation pass. Two
+  macOS ARM64 cross-check attempts failed in the build-cache relay while
+  compiling a dependency, before checking the facade. Native Windows
+  execution, macOS validation and app adoption remain.
 - Media and graphics parity: the kernel already contains the Linux renderer
   environment, font-DPI and opt-in user-media mechanisms, but adoption still
   needs real viewer tests for microphone, rendering, logs, captures and teardown.
