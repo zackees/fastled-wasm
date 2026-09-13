@@ -705,6 +705,37 @@ all-target Clippy and formatting pass. Python tests pass (28 passed, one skipped
 Native upstream CI remains pending. Exact published adoption and build measurements
 remain outstanding; no build-speed improvement is claimed.
 
+### Direct Tokio removal checkpoint
+
+Issue https://github.com/zackees/fastled-wasm/issues/243 removes the final direct
+Tokio manifest edge and all source references. The boundary check covers both
+workspace and crate manifests plus production and test Rust sources (observed
+RED then GREEN). The package still exists transitively behind the kernel and
+other private implementations; no package-count or build-speed gain is claimed.
+
+All 28 remaining backend async test attributes now use ordinary Rust tests and
+kernel-owned current-thread runtimes, preserving their assertions. FastLED's
+production-test event selector uses standard future polling over kernel-owned
+inputs. It preserves total timeout, readiness timeout while unready, interrupt,
+liveness, viewer and command priority, without introducing a generic select
+macro, runtime or abstraction crate. Focused policy tests cover simultaneous
+ready sources and disabled-command nonconsumption.
+
+Watch polling still checks interruption before the tick that enables terminal
+capture. Serve and contained-command polling use kernel timeouts around the
+same pinned interrupt future. Their simultaneous-ready ties now favor the
+interrupt rather than randomized selection. Command-output arrivals no longer
+reset the 10 ms child-exit checkpoint; the checkpoint is checked between output
+deliveries, so continuous output cannot indefinitely postpone exit observation.
+Existing output backpressure and post-exit drain limits are retained. A Unix
+regression test exercises an exited shell with a continuously writing descendant.
+
+Focused tests and source review pass. Full Rust checks pass (263 library tests,
+two binary tests, one integration test and one doc test), as do strict all-target
+Clippy, formatting and Python checks (28 passed, one skipped). Compiler
+flags and native backend logic are unchanged. The path patch still points at
+the interrupt sibling pending upstream publication and exact registry adoption.
+
 ### Final migration audit
 
 The Axum baseline now has a raw-wire parity test for missing-file 404,

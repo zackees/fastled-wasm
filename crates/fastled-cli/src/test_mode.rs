@@ -136,9 +136,25 @@ async fn run_test_commands_inner(
         }
         drop(output_tx);
         let mut output_open = readers != 0;
+        let mut next_exit_check = async_engine::Deadline::after(Duration::from_millis(10));
         let code = loop {
-            tokio::select! {
-                item = output_rx.recv(), if output_open => match item {
+            // A fixed checkpoint survives output arrivals. Recreating a sleep
+            // for each line can starve exit observation under continuous output.
+            if next_exit_check.is_elapsed() {
+                if let Some(code) = child
+                    .try_wait()
+                    .map_err(|e| format!("test command {index} wait failed: {e}"))?
+                {
+                    break code;
+                }
+                next_exit_check = async_engine::Deadline::after(Duration::from_millis(10));
+            }
+            if !output_open {
+                async_engine::sleep_until(next_exit_check).await;
+                continue;
+            }
+            if let Ok(item) = async_engine::timeout_at(next_exit_check, output_rx.recv()).await {
+                match item {
                     Some((stream, line)) => {
                         if tx
                             .send(TestCommandEvent::Output {
@@ -152,11 +168,8 @@ async fn run_test_commands_inner(
                             return Ok(());
                         }
                     }
-                    None => { output_open = false; }
-                },
-                _ = async_engine::sleep(std::time::Duration::from_millis(10)) => {
-                    if let Some(code) = child.try_wait().map_err(|e| format!("test command {index} wait failed: {e}"))? {
-                        break code;
+                    None => {
+                        output_open = false;
                     }
                 }
             }
@@ -274,12 +287,12 @@ pub(crate) async fn run_contained_command(
             drop(child);
             return Ok(TimedCommandResult::TimedOut);
         }
-        tokio::select! {
-            _ = &mut ctrl_c => {
-                drop(child);
-                return Ok(TimedCommandResult::Interrupted);
-            }
-            _ = async_engine::sleep(Duration::from_millis(10)) => {}
+        if async_engine::timeout(Duration::from_millis(10), &mut ctrl_c)
+            .await
+            .is_ok()
+        {
+            drop(child);
+            return Ok(TimedCommandResult::Interrupted);
         }
     }
 }
@@ -532,11 +545,17 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn waiting_for_ready_has_a_distinct_timeout() {
-        let (_tx, mut rx) = async_engine::unbounded_channel();
-        let outcome = wait_for_ready(&mut rx, Duration::from_millis(1)).await;
-        assert_eq!(outcome, TestOutcome::ReadyTimeout);
+    #[test]
+    fn waiting_for_ready_has_a_distinct_timeout() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (_tx, mut rx) = async_engine::unbounded_channel();
+                let outcome = wait_for_ready(&mut rx, Duration::from_millis(1)).await;
+                assert_eq!(outcome, TestOutcome::ReadyTimeout);
+            });
     }
 
     #[test]
@@ -592,6 +611,42 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn exited_command_is_observed_despite_continuous_descendant_output() {
+        async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let (tx, mut rx) = async_engine::channel(256);
+                let task = async_engine::launch(run_test_commands(
+                    vec!["(while :; do printf 'output\\n'; done) & sleep 0.05".to_string()],
+                    NormalizedPath::new(temp.path()),
+                    tx,
+                ));
+                let mut saw_output = false;
+                let result = async_engine::timeout(Duration::from_secs(3), async {
+                    while let Some(event) = rx.recv().await {
+                        saw_output |= matches!(&event, TestCommandEvent::Output { .. });
+                        if let TestCommandEvent::Done(result) = event {
+                            return result;
+                        }
+                    }
+                    Err("command channel closed without completion".to_string())
+                })
+                .await
+                .expect("continuous descendant output starved shell exit observation");
+                assert!(result.is_ok(), "{result:?}");
+                assert!(saw_output, "the fixture must exercise the output path");
+                async_engine::timeout(Duration::from_secs(1), task)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            });
+    }
+
     #[test]
     fn contained_command_is_stopped_at_the_hard_deadline() {
         let rt = async_engine::RuntimeBuilder::current_thread()
@@ -620,149 +675,184 @@ mod tests {
         });
     }
 
-    #[tokio::test]
-    async fn issue_200_commands_run_sequentially_and_capture_both_streams() {
-        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        #[cfg(windows)]
-        let commands = vec![
-            "echo A>order.txt".to_string(),
-            "echo B>>order.txt & echo out & echo err 1>&2".to_string(),
-        ];
-        #[cfg(not(windows))]
-        let commands = vec![
-            "printf A >> order.txt".to_string(),
-            "printf B >> order.txt; printf out; printf err >&2".to_string(),
-        ];
-        let (tx, mut rx) = async_engine::channel(256);
-        let task = async_engine::launch(run_test_commands(
-            commands,
-            NormalizedPath::new(temp.path()),
-            tx,
-        ));
-        let mut outputs = Vec::new();
-        let done = loop {
-            let event = next_command_event(&mut rx).await;
-            match event {
-                TestCommandEvent::Output { stream, line, .. } => outputs.push((stream, line)),
-                TestCommandEvent::Done(result) => break result,
-                TestCommandEvent::Start { .. } | TestCommandEvent::Exit { .. } => {}
-            }
-        };
-        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
-            .await
-            .expect("command runner task did not complete before the test deadline")
-            .unwrap();
-        assert!(done.is_ok());
-        assert!(matches!(
-            rx.try_recv(),
-            Err(async_engine::TryRecvError::Disconnected)
-        ));
-        let order = std::fs::read_to_string(temp.path().join("order.txt")).unwrap();
-        assert_eq!(order.split_whitespace().collect::<String>(), "AB");
-        assert!(outputs
-            .iter()
-            .any(|(stream, line)| *stream == CommandStream::Stdout && line.contains("out")));
-        assert!(outputs
-            .iter()
-            .any(|(stream, line)| *stream == CommandStream::Stderr && line.contains("err")));
+    #[test]
+    fn issue_200_commands_run_sequentially_and_capture_both_streams() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                #[cfg(windows)]
+                let commands = vec![
+                    "echo A>order.txt".to_string(),
+                    "echo B>>order.txt & echo out & echo err 1>&2".to_string(),
+                ];
+                #[cfg(not(windows))]
+                let commands = vec![
+                    "printf A >> order.txt".to_string(),
+                    "printf B >> order.txt; printf out; printf err >&2".to_string(),
+                ];
+                let (tx, mut rx) = async_engine::channel(256);
+                let task = async_engine::launch(run_test_commands(
+                    commands,
+                    NormalizedPath::new(temp.path()),
+                    tx,
+                ));
+                let mut outputs = Vec::new();
+                let done = loop {
+                    let event = next_command_event(&mut rx).await;
+                    match event {
+                        TestCommandEvent::Output { stream, line, .. } => {
+                            outputs.push((stream, line))
+                        }
+                        TestCommandEvent::Done(result) => break result,
+                        TestCommandEvent::Start { .. } | TestCommandEvent::Exit { .. } => {}
+                    }
+                };
+                async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
+                    .await
+                    .expect("command runner task did not complete before the test deadline")
+                    .unwrap();
+                assert!(done.is_ok());
+                assert!(matches!(
+                    rx.try_recv(),
+                    Err(async_engine::TryRecvError::Disconnected)
+                ));
+                let order = std::fs::read_to_string(temp.path().join("order.txt")).unwrap();
+                assert_eq!(order.split_whitespace().collect::<String>(), "AB");
+                assert!(
+                    outputs
+                        .iter()
+                        .any(|(stream, line)| *stream == CommandStream::Stdout
+                            && line.contains("out"))
+                );
+                assert!(
+                    outputs
+                        .iter()
+                        .any(|(stream, line)| *stream == CommandStream::Stderr
+                            && line.contains("err"))
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn issue_200_nonzero_command_stops_the_sequence() {
-        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        #[cfg(windows)]
-        let commands = vec![
-            "exit /b 7".to_string(),
-            "echo SHOULD_NOT_RUN > later.txt".to_string(),
-        ];
-        #[cfg(not(windows))]
-        let commands = vec![
-            "exit 7".to_string(),
-            "echo SHOULD_NOT_RUN > later.txt".to_string(),
-        ];
-        let (tx, mut rx) = async_engine::channel(256);
-        let task = async_engine::launch(run_test_commands(
-            commands,
-            NormalizedPath::new(temp.path()),
-            tx,
-        ));
-        let result = loop {
-            let event = next_command_event(&mut rx).await;
-            if let TestCommandEvent::Done(value) = event {
-                break value;
-            }
-        };
-        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
-            .await
-            .expect("command runner task did not complete before the test deadline")
-            .unwrap();
-        assert!(result.is_err());
-        assert!(matches!(
-            rx.try_recv(),
-            Err(async_engine::TryRecvError::Disconnected)
-        ));
-        assert!(!temp.path().join("later.txt").exists());
+    #[test]
+    fn issue_200_nonzero_command_stops_the_sequence() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                #[cfg(windows)]
+                let commands = vec![
+                    "exit /b 7".to_string(),
+                    "echo SHOULD_NOT_RUN > later.txt".to_string(),
+                ];
+                #[cfg(not(windows))]
+                let commands = vec![
+                    "exit 7".to_string(),
+                    "echo SHOULD_NOT_RUN > later.txt".to_string(),
+                ];
+                let (tx, mut rx) = async_engine::channel(256);
+                let task = async_engine::launch(run_test_commands(
+                    commands,
+                    NormalizedPath::new(temp.path()),
+                    tx,
+                ));
+                let result = loop {
+                    let event = next_command_event(&mut rx).await;
+                    if let TestCommandEvent::Done(value) = event {
+                        break value;
+                    }
+                };
+                async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
+                    .await
+                    .expect("command runner task did not complete before the test deadline")
+                    .unwrap();
+                assert!(result.is_err());
+                assert!(matches!(
+                    rx.try_recv(),
+                    Err(async_engine::TryRecvError::Disconnected)
+                ));
+                assert!(!temp.path().join("later.txt").exists());
+            });
     }
 
-    #[tokio::test]
-    async fn issue_208_runner_finishes_after_closing_descendant_pipe_writers() {
-        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        #[cfg(windows)]
-        let command = "start /B cmd /C \"ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt\"";
-        #[cfg(not(windows))]
-        let command = "(sleep 20; echo LATE > late.txt) &";
-        let (tx, mut rx) = async_engine::channel(256);
-        let task = async_engine::launch(run_test_commands(
-            vec![command.to_string()],
-            NormalizedPath::new(temp.path()),
-            tx,
-        ));
+    #[test]
+    fn issue_208_runner_finishes_after_closing_descendant_pipe_writers() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                #[cfg(windows)]
+                let command =
+                    "start /B cmd /C \"ping -n 20 127.0.0.1 >NUL & echo LATE > late.txt\"";
+                #[cfg(not(windows))]
+                let command = "(sleep 20; echo LATE > late.txt) &";
+                let (tx, mut rx) = async_engine::channel(256);
+                let task = async_engine::launch(run_test_commands(
+                    vec![command.to_string()],
+                    NormalizedPath::new(temp.path()),
+                    tx,
+                ));
 
-        let result = loop {
-            if let TestCommandEvent::Done(value) = next_command_event(&mut rx).await {
-                break value;
-            }
-        };
-        async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
-            .await
-            .expect("command runner task did not complete before the test deadline")
-            .unwrap();
-        assert!(result.is_ok());
-        async_engine::sleep(Duration::from_millis(300)).await;
-        assert!(!temp.path().join("late.txt").exists());
+                let result = loop {
+                    if let TestCommandEvent::Done(value) = next_command_event(&mut rx).await {
+                        break value;
+                    }
+                };
+                async_engine::timeout(COMMAND_TEST_TIMEOUT, task)
+                    .await
+                    .expect("command runner task did not complete before the test deadline")
+                    .unwrap();
+                assert!(result.is_ok());
+                async_engine::sleep(Duration::from_millis(300)).await;
+                assert!(!temp.path().join("late.txt").exists());
+            });
     }
 
-    #[tokio::test]
-    async fn issue_200_cancelling_runner_kills_the_contained_shell() {
-        for drop_handle in [false, true] {
-            let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-            #[cfg(windows)]
-            let command = "echo READY & ping -n 3 127.0.0.1 >NUL & echo LATE > late.txt";
-            #[cfg(not(windows))]
-            let command = "echo READY; sleep 1; echo LATE > late.txt";
-            let (tx, mut rx) = async_engine::channel(256);
-            let task = async_engine::launch(run_test_commands(
-                vec![command.to_string()],
-                NormalizedPath::new(temp.path()),
-                tx,
-            ));
-            loop {
-                match next_command_event(&mut rx).await {
-                    TestCommandEvent::Output { line, .. } if line.trim() == "READY" => break,
-                    TestCommandEvent::Start { .. } => {}
-                    event => panic!("unexpected event before cancellation: {event:?}"),
+    #[test]
+    fn issue_200_cancelling_runner_kills_the_contained_shell() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                for drop_handle in [false, true] {
+                    let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                    #[cfg(windows)]
+                    let command = "echo READY & ping -n 3 127.0.0.1 >NUL & echo LATE > late.txt";
+                    #[cfg(not(windows))]
+                    let command = "echo READY; sleep 1; echo LATE > late.txt";
+                    let (tx, mut rx) = async_engine::channel(256);
+                    let task = async_engine::launch(run_test_commands(
+                        vec![command.to_string()],
+                        NormalizedPath::new(temp.path()),
+                        tx,
+                    ));
+                    loop {
+                        match next_command_event(&mut rx).await {
+                            TestCommandEvent::Output { line, .. } if line.trim() == "READY" => {
+                                break
+                            }
+                            TestCommandEvent::Start { .. } => {}
+                            event => panic!("unexpected event before cancellation: {event:?}"),
+                        }
+                    }
+                    if drop_handle {
+                        drop(task);
+                    } else {
+                        task.cancel();
+                        let _ = task.await;
+                    }
+                    // Wait beyond the command's normal completion time, so a live
+                    // escaped shell would actually have written the failure marker.
+                    async_engine::sleep(Duration::from_secs(3)).await;
+                    assert!(!temp.path().join("late.txt").exists());
                 }
-            }
-            if drop_handle {
-                drop(task);
-            } else {
-                task.cancel();
-                let _ = task.await;
-            }
-            // Wait beyond the command's normal completion time, so a live
-            // escaped shell would actually have written the failure marker.
-            async_engine::sleep(Duration::from_secs(3)).await;
-            assert!(!temp.path().join("late.txt").exists());
-        }
+            });
     }
 }

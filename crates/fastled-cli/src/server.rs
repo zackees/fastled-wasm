@@ -877,8 +877,13 @@ mod tests {
         .unwrap()
     }
 
-    #[tokio::test]
-    async fn http_router_migration_preserves_head_errors_and_preflight_policy() {
+    #[test]
+    fn http_router_migration_preserves_head_errors_and_preflight_policy() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
         let (addr, dir) = setup_server().await;
         fs::write(dir.path().join("asset.js"), "hello").unwrap();
         for (method, path, status) in [
@@ -919,10 +924,16 @@ mod tests {
             "{response}"
         );
         assert!(response.ends_with("\r\n\r\n"), "{response}");
+            });
     }
 
-    #[tokio::test]
-    async fn malformed_requests_respect_the_browser_header_dispatch_boundary() {
+    #[test]
+    fn malformed_requests_respect_the_browser_header_dispatch_boundary() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
         let (addr, _dir) = setup_server().await;
         let parser_error = raw_http(
             addr,
@@ -945,24 +956,36 @@ mod tests {
             assert!(response.contains("access-control-allow-origin: *\r\n"));
             assert!(response.contains("cache-control: no-cache, no-store, must-revalidate\r\n"));
         }
+            });
     }
 
-    #[tokio::test]
-    async fn test_viewer_log_endpoint_accepts_posts() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_request(
-            HttpMethod::Post,
-            &format!("http://{addr}/viewer-log"),
-            &[],
-            b"error: something broke",
-        )
-        .await
-        .unwrap();
-        assert_eq!(resp.status(), 204);
+    #[test]
+    fn test_viewer_log_endpoint_accepts_posts() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_request(
+                    HttpMethod::Post,
+                    &format!("http://{addr}/viewer-log"),
+                    &[],
+                    b"error: something broke",
+                )
+                .await
+                .unwrap();
+                assert_eq!(resp.status(), 204);
+            });
     }
 
-    #[tokio::test]
-    async fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
+    #[test]
+    fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
         let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(
             dir.path().join("fastled_background_worker.js"),
@@ -1116,226 +1139,302 @@ mod tests {
             rx.recv().await,
             Some(TestEvent::Failure(message)) if message.contains("could not write screenshot")
         ));
+            });
     }
 
-    #[tokio::test]
-    async fn test_loading_page_when_no_index_html() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = response_text(resp).await;
-        assert!(
-            body.contains("Compiling..."),
-            "expected loading page, got: {body}"
-        );
+    #[test]
+    fn test_loading_page_when_no_index_html() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("Compiling..."),
+                    "expected loading page, got: {body}"
+                );
+            });
     }
 
     /// Instant-launch failure UX (#148 acceptance criterion 5):
     /// when a compile has failed and `index.html` is absent, `/` must still
     /// return the in-browser loading page (which surfaces the error log) —
     /// it must NOT 404 or navigate to a stale page.
-    #[tokio::test]
-    async fn test_loading_page_stays_when_build_failed_and_no_index_html() {
-        let (addr, dir) = setup_server().await;
-        fs::write(
-            dir.path().join("build-status.json"),
-            r#"{"status":"error","message":"Compilation failed"}"#,
-        )
-        .unwrap();
-        let resp = http_get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(
-            resp.status(),
-            200,
-            "viewer should land on the loading page, not 404/redirect, when compile failed"
-        );
-        let body = response_text(resp).await;
-        assert!(
-            body.contains("Compiling..."),
-            "expected loading page, got: {body}"
-        );
-        // Sanity check: the embedded JS knows how to render the error state.
-        assert!(
-            body.contains("setError"),
-            "loading page must include error-handling branch"
-        );
+    #[test]
+    fn test_loading_page_stays_when_build_failed_and_no_index_html() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(
+                    dir.path().join("build-status.json"),
+                    r#"{"status":"error","message":"Compilation failed"}"#,
+                )
+                .unwrap();
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(
+                    resp.status(),
+                    200,
+                    "viewer should land on the loading page, not 404/redirect, when compile failed"
+                );
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("Compiling..."),
+                    "expected loading page, got: {body}"
+                );
+                // Sanity check: the embedded JS knows how to render the error state.
+                assert!(
+                    body.contains("setError"),
+                    "loading page must include error-handling branch"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_serves_index_html_when_present() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
-        let resp = http_get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = response_text(resp).await;
-        assert!(
-            body.contains("OK"),
-            "expected index.html content, got: {body}"
-        );
+    #[test]
+    fn test_serves_index_html_when_present() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("OK"),
+                    "expected index.html content, got: {body}"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_serves_js_with_correct_mime() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
-        let resp = http_get(format!("http://{addr}/app.js")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = header_text(&resp, "content-type");
-        assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
+    #[test]
+    fn test_serves_js_with_correct_mime() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
+                let resp = http_get(format!("http://{addr}/app.js")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
+            });
     }
 
-    #[tokio::test]
-    async fn test_serves_wasm_with_correct_mime() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
-        let resp = http_get(format!("http://{addr}/fastled.wasm"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = header_text(&resp, "content-type");
-        assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
+    #[test]
+    fn test_serves_wasm_with_correct_mime() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
+                let resp = http_get(format!("http://{addr}/fastled.wasm"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
+            });
     }
 
-    #[tokio::test]
-    async fn test_safari_compatible_coop_coep_headers() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/")).await.unwrap();
-        let coep = header_text(&resp, "cross-origin-embedder-policy");
-        let coop = header_text(&resp, "cross-origin-opener-policy");
-        assert_eq!(coep, "require-corp");
-        assert_eq!(coop, "same-origin");
+    #[test]
+    fn test_safari_compatible_coop_coep_headers() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                let coep = header_text(&resp, "cross-origin-embedder-policy");
+                let coop = header_text(&resp, "cross-origin-opener-policy");
+                assert_eq!(coep, "require-corp");
+                assert_eq!(coop, "same-origin");
+            });
     }
 
-    #[tokio::test]
-    async fn test_404_for_missing_file() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/nonexistent.js"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
+    #[test]
+    fn test_404_for_missing_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/nonexistent.js"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
+            });
     }
 
-    #[tokio::test]
-    async fn test_build_status_json_served() {
-        let (addr, dir) = setup_server().await;
-        // Initially no build-status.json -> 404
-        let resp = http_get(format!("http://{addr}/build-status.json"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
+    #[test]
+    fn test_build_status_json_served() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                // Initially no build-status.json -> 404
+                let resp = http_get(format!("http://{addr}/build-status.json"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
 
-        // Write status file -> 200
-        fs::write(
-            dir.path().join("build-status.json"),
-            r#"{"status":"compiling","message":"Building..."}"#,
-        )
-        .unwrap();
-        let resp = http_get(format!("http://{addr}/build-status.json"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = response_text(resp).await;
-        assert!(body.contains("compiling"));
+                // Write status file -> 200
+                fs::write(
+                    dir.path().join("build-status.json"),
+                    r#"{"status":"compiling","message":"Building..."}"#,
+                )
+                .unwrap();
+                let resp = http_get(format!("http://{addr}/build-status.json"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(body.contains("compiling"));
+            });
     }
 
-    #[tokio::test]
-    async fn test_directory_traversal_blocked() {
-        let (addr, dir) = setup_server().await;
-        // Create a file outside the serve dir
-        let parent = dir.path().parent().unwrap();
-        fs::write(parent.join("secret.txt"), "top secret").unwrap();
-        let resp = http_get(format!("http://{addr}/../secret.txt"))
-            .await
-            .unwrap();
-        // Should not serve files outside the serve dir
-        assert_ne!(resp.status(), 200);
+    #[test]
+    fn test_directory_traversal_blocked() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                // Create a file outside the serve dir
+                let parent = dir.path().parent().unwrap();
+                fs::write(parent.join("secret.txt"), "top secret").unwrap();
+                let resp = http_get(format!("http://{addr}/../secret.txt"))
+                    .await
+                    .unwrap();
+                // Should not serve files outside the serve dir
+                assert_ne!(resp.status(), 200);
+            });
     }
 
     // ------------------------------------------------------------------
     // SSE build-stream tests
     // ------------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_sse_returns_404_without_broadcast() {
-        // Server started without broadcast channel → /build-stream returns 404.
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/build-stream"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
+    #[test]
+    fn test_sse_returns_404_without_broadcast() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                // Server started without broadcast channel → /build-stream returns 404.
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/build-stream"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
+            });
     }
 
-    #[tokio::test]
-    async fn test_sse_endpoint_streams_events() {
-        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
-        let addr = start_server(
-            dir.path().to_path_buf(),
-            0,
-            Some(tx.clone()),
-            empty_handle(),
-            None,
-        )
-        .await
-        .unwrap();
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
+    #[test]
+    fn test_sse_endpoint_streams_events() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
+                let addr = start_server(
+                    dir.path().to_path_buf(),
+                    0,
+                    Some(tx.clone()),
+                    empty_handle(),
+                    None,
+                )
+                .await
+                .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
-        let url = format!("http://{addr}/build-stream");
+                let url = format!("http://{addr}/build-stream");
 
-        // Connect to SSE endpoint.
-        let mut resp = http_get(url).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = header_text(&resp, "content-type").to_string();
-        assert!(
-            ct.contains("text/event-stream"),
-            "expected event-stream content-type, got: {ct}"
-        );
+                // Connect to SSE endpoint.
+                let mut resp = http_get(url).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type").to_string();
+                assert!(
+                    ct.contains("text/event-stream"),
+                    "expected event-stream content-type, got: {ct}"
+                );
 
-        // Give the server handler a moment to subscribe to the broadcast.
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
+                // Give the server handler a moment to subscribe to the broadcast.
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Send test events.
-        tx.send(r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string())
-            .unwrap();
-        tx.send(r#"{"type":"status","status":"success","message":"Done"}"#.to_string())
-            .unwrap();
+                // Send test events.
+                tx.send(
+                    r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string(),
+                )
+                .unwrap();
+                tx.send(r#"{"type":"status","status":"success","message":"Done"}"#.to_string())
+                    .unwrap();
 
-        // Read SSE chunks until we see both events (or timeout).
-        let mut collected = String::new();
-        let deadline = std::time::Duration::from_secs(3);
-        let mut buffer = [0; 4096];
-        while let Ok(Ok(n)) = async_engine::timeout(deadline, resp.read(&mut buffer)).await {
-            if n == 0 {
-                break;
-            }
-            collected.push_str(&String::from_utf8_lossy(&buffer[..n]));
-            if collected.contains("Building sketch...") && collected.contains("success") {
-                break;
-            }
-        }
+                // Read SSE chunks until we see both events (or timeout).
+                let mut collected = String::new();
+                let deadline = std::time::Duration::from_secs(3);
+                let mut buffer = [0; 4096];
+                while let Ok(Ok(n)) = async_engine::timeout(deadline, resp.read(&mut buffer)).await
+                {
+                    if n == 0 {
+                        break;
+                    }
+                    collected.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                    if collected.contains("Building sketch...") && collected.contains("success") {
+                        break;
+                    }
+                }
 
-        assert!(
-            collected.contains("Building sketch..."),
-            "expected log line in SSE body, got: {collected}"
-        );
-        assert!(
-            collected.contains("success"),
-            "expected status event in SSE body, got: {collected}"
-        );
+                assert!(
+                    collected.contains("Building sketch..."),
+                    "expected log line in SSE body, got: {collected}"
+                );
+                assert!(
+                    collected.contains("success"),
+                    "expected status event in SSE body, got: {collected}"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_loading_page_contains_eventsource() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/")).await.unwrap();
-        let body = response_text(resp).await;
-        assert!(
-            body.contains("EventSource"),
-            "loading page should use EventSource for SSE"
-        );
-        assert!(
-            body.contains("/build-stream"),
-            "loading page should connect to /build-stream"
-        );
+    #[test]
+    fn test_loading_page_contains_eventsource() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("EventSource"),
+                    "loading page should use EventSource for SSE"
+                );
+                assert!(
+                    body.contains("/build-stream"),
+                    "loading page should connect to /build-stream"
+                );
+            });
     }
 
     /// Live compile log UX (#153): the loading page must classify and color
@@ -1388,159 +1487,200 @@ mod tests {
         .unwrap()
     }
 
-    #[tokio::test]
-    async fn dwarfsource_without_resolver_returns_400() {
-        let (addr, _dir) = setup_server().await;
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/foo.ino"}),
-        )
-        .await;
-        assert_eq!(resp.status(), 400);
-    }
-
-    #[tokio::test]
-    async fn debug_source_roots_empty_without_resolver() {
-        let (addr, _dir) = setup_server().await;
-        let resp = http_get(format!("http://{addr}/debug/source-roots"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body: serde_json::Value = serde_json::from_str(&response_text(resp).await).unwrap();
-        assert!(body["roots"].as_array().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn dwarfsource_returns_resolved_file() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
-
-        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        let sketch_file = sketch_dir.join("src").join("demo.ino");
-        fs::write(&sketch_file, "void setup() {}").unwrap();
-
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
-
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
-            .await
-            .unwrap();
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/src/demo.ino"}),
-        )
-        .await;
-        assert_eq!(resp.status(), 200);
-        let body = response_text(resp).await;
-        assert!(body.contains("void setup()"));
-
-        let resp = http_get(format!("http://{addr}/debug/source-roots"))
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_str(&response_text(resp).await).unwrap();
-        let roots = body["roots"].as_array().unwrap();
-        assert!(!roots.is_empty());
-        assert!(roots
-            .iter()
-            .any(|r| r["prefix"].as_str() == Some("sketchsource")));
-    }
-
-    #[tokio::test]
-    async fn source_map_style_get_returns_resolved_file() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
-
-        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let serve_dir = dir.path().join("fastled_js");
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        fs::create_dir_all(&serve_dir).unwrap();
-        fs::write(sketch_dir.join("src").join("demo.ino"), "void loop() {}").unwrap();
-
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
-
-        let addr = start_server(serve_dir, 0, None, handle, None)
-            .await
-            .unwrap();
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = header_text(&resp, "content-type");
-        assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
-        assert!(response_text(resp).await.contains("void loop()"));
-
-        let resp = http_get(format!(
-            "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
-        ))
-        .await
-        .unwrap();
-        assert_eq!(resp.status(), 200);
-        assert!(response_text(resp).await.contains("void loop()"));
-    }
-
-    #[tokio::test]
-    async fn source_map_get_works_from_debug_symbol_manifest() {
-        use crate::debug_symbols::{
-            load_debug_symbol_config, read_debug_symbol_manifest, write_debug_symbol_manifest,
-            DebugSymbolResolver,
-        };
-
-        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let serve_dir = dir.path().join("fastled_js");
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        fs::create_dir_all(&serve_dir).unwrap();
-        fs::write(sketch_dir.join("src").join("demo.ino"), "void setup() {}").unwrap();
-
-        let config = load_debug_symbol_config(sketch_dir, None, None);
-        write_debug_symbol_manifest(&serve_dir, &config).unwrap();
-        let loaded = read_debug_symbol_manifest(&serve_dir)
+    #[test]
+    fn dwarfsource_without_resolver_returns_400() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .expect("manifest should exist");
-        let handle: DebugSymbolHandle =
-            Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
-
-        let addr = start_server(serve_dir, 0, None, handle, None)
-            .await
-            .unwrap();
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        assert!(response_text(resp).await.contains("void setup()"));
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = post_json(
+                    addr,
+                    "/dwarfsource",
+                    serde_json::json!({"path": "sketchsource/foo.ino"}),
+                )
+                .await;
+                assert_eq!(resp.status(), 400);
+            });
     }
 
-    #[tokio::test]
-    async fn dwarfsource_rejects_traversal() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+    #[test]
+    fn debug_source_roots_empty_without_resolver() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/debug/source-roots"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let body: serde_json::Value =
+                    serde_json::from_str(&response_text(resp).await).unwrap();
+                assert!(body["roots"].as_array().unwrap().is_empty());
+            });
+    }
 
-        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(&sketch_dir).unwrap();
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+    #[test]
+    fn dwarfsource_returns_resolved_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
 
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
-            .await
-            .unwrap();
-        async_engine::sleep(std::time::Duration::from_millis(50)).await;
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                let sketch_file = sketch_dir.join("src").join("demo.ino");
+                fs::write(&sketch_file, "void setup() {}").unwrap();
 
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/../escape.txt"}),
-        )
-        .await;
-        assert_eq!(resp.status(), 400);
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = post_json(
+                    addr,
+                    "/dwarfsource",
+                    serde_json::json!({"path": "sketchsource/src/demo.ino"}),
+                )
+                .await;
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(body.contains("void setup()"));
+
+                let resp = http_get(format!("http://{addr}/debug/source-roots"))
+                    .await
+                    .unwrap();
+                let body: serde_json::Value =
+                    serde_json::from_str(&response_text(resp).await).unwrap();
+                let roots = body["roots"].as_array().unwrap();
+                assert!(!roots.is_empty());
+                assert!(roots
+                    .iter()
+                    .any(|r| r["prefix"].as_str() == Some("sketchsource")));
+            });
+    }
+
+    #[test]
+    fn source_map_style_get_returns_resolved_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let serve_dir = dir.path().join("fastled_js");
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                fs::create_dir_all(&serve_dir).unwrap();
+                fs::write(sketch_dir.join("src").join("demo.ino"), "void loop() {}").unwrap();
+
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(serve_dir, 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
+                assert!(response_text(resp).await.contains("void loop()"));
+
+                let resp = http_get(format!(
+                    "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
+                ))
+                .await
+                .unwrap();
+                assert_eq!(resp.status(), 200);
+                assert!(response_text(resp).await.contains("void loop()"));
+            });
+    }
+
+    #[test]
+    fn source_map_get_works_from_debug_symbol_manifest() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{
+                    load_debug_symbol_config, read_debug_symbol_manifest,
+                    write_debug_symbol_manifest, DebugSymbolResolver,
+                };
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let serve_dir = dir.path().join("fastled_js");
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                fs::create_dir_all(&serve_dir).unwrap();
+                fs::write(sketch_dir.join("src").join("demo.ino"), "void setup() {}").unwrap();
+
+                let config = load_debug_symbol_config(sketch_dir, None, None);
+                write_debug_symbol_manifest(&serve_dir, &config).unwrap();
+                let loaded = read_debug_symbol_manifest(&serve_dir)
+                    .unwrap()
+                    .expect("manifest should exist");
+                let handle: DebugSymbolHandle =
+                    Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
+
+                let addr = start_server(serve_dir, 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                assert!(response_text(resp).await.contains("void setup()"));
+            });
+    }
+
+    #[test]
+    fn dwarfsource_rejects_traversal() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(&sketch_dir).unwrap();
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = post_json(
+                    addr,
+                    "/dwarfsource",
+                    serde_json::json!({"path": "sketchsource/../escape.txt"}),
+                )
+                .await;
+                assert_eq!(resp.status(), 400);
+            });
     }
 }

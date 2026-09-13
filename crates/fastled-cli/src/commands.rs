@@ -1,10 +1,13 @@
+use crate::test_events::{TestEventSources, TestWake};
 use kernal_api::async_engine;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
+use std::future::{poll_fn, Future};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
+use std::task::Poll;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::build;
@@ -155,19 +158,24 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             // Poll Ctrl+C first so its handler is registered before lazy key
             // capture changes terminal modes. In-flight builds still finish
             // before the next loop tick handles a pending interruption.
-            tokio::select! {
-                biased;
-                interrupted = &mut ctrl_c => {
-                    watch_exit = match interrupted {
-                        Ok(()) => ExitCode::from(130),
-                        Err(error) => {
-                            eprintln!("fastled: Ctrl+C monitoring failed: {error}");
-                            ExitCode::FAILURE
-                        }
-                    };
-                    break;
-                }
-                _ = input_tick.tick() => {}
+            let interrupted = {
+                let mut tick = std::pin::pin!(input_tick.tick());
+                poll_fn(|context| {
+                    if let Poll::Ready(result) = ctrl_c.as_mut().poll(context) {
+                        return Poll::Ready(Some(result));
+                    }
+                    tick.as_mut().poll(context).map(|()| None)
+                }).await
+            };
+            if let Some(interrupted) = interrupted {
+                watch_exit = match interrupted {
+                    Ok(()) => ExitCode::from(130),
+                    Err(error) => {
+                        eprintln!("fastled: Ctrl+C monitoring failed: {error}");
+                        ExitCode::FAILURE
+                    }
+                };
+                break;
             }
             // The viewer window is the app from the user's perspective: once
             // it is gone (closed or crashed), shut the CLI down cleanly. An
@@ -423,27 +431,32 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         let mut _command_task: Option<async_engine::Task<()>> = None;
 
         loop {
-            tokio::select! {
-                biased;
-                _ = async_engine::sleep_until(total_deadline) => {
+            let event = TestEventSources {
+                interrupt: ctrl_c.as_mut(),
+                liveness: &mut liveness,
+                viewer: &mut test_rx,
+                commands: &mut command_rx,
+            }.next(total_deadline, (!ready).then_some(ready_deadline), !commands_done).await;
+            match event {
+                TestWake::TotalTimeout => {
                     eprintln!("fastled: production test exceeded --test-timeout-secs");
                     return test_exit(TestOutcome::TotalTimeout);
                 }
-                _ = async_engine::sleep_until(ready_deadline), if !ready => {
+                TestWake::ReadyTimeout => {
                     eprintln!("fastled: viewer did not render a canvas before --test-ready-timeout-secs");
                     return test_exit(TestOutcome::ReadyTimeout);
                 }
-                _ = &mut ctrl_c => {
+                TestWake::Interrupted => {
                     eprintln!("fastled: production test interrupted");
                     return test_exit(TestOutcome::Interrupted);
                 }
-                _ = liveness.tick() => {
+                TestWake::Liveness => {
                     if !viewer.is_alive() {
                         eprintln!("fastled: test viewer exited before completing");
                         return test_exit(TestOutcome::Failure);
                     }
                 }
-                event = test_rx.recv() => {
+                TestWake::Viewer(event) => {
                     match event {
                         Some(server::TestEvent::Ready) => {
                             if !ready {
@@ -505,7 +518,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                         }
                     }
                 }
-                command_event = command_rx.recv(), if !commands_done => {
+                TestWake::Command(command_event) => {
                     match command_event {
                         Some(test_mode::TestCommandEvent::Start { index }) => {
                             let marker = format!("[fastled-test-cmd {index}] start");
@@ -858,17 +871,16 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
                 let ctrl_c = rt.wait_for_interrupt();
                 let mut ctrl_c = std::pin::pin!(ctrl_c);
                 loop {
-                    tokio::select! {
-                        _ = &mut ctrl_c => {
-                            println!("\nShutting down...");
-                            break;
-                        }
-                        _ = async_engine::sleep(std::time::Duration::from_secs(1)) => {
-                            if !viewer.is_alive() {
-                                println!("\nViewer window closed; shutting down.");
-                                break;
-                            }
-                        }
+                    if async_engine::timeout(std::time::Duration::from_secs(1), &mut ctrl_c)
+                        .await
+                        .is_ok()
+                    {
+                        println!("\nShutting down...");
+                        break;
+                    }
+                    if !viewer.is_alive() {
+                        println!("\nViewer window closed; shutting down.");
+                        break;
                     }
                 }
             }
@@ -938,12 +950,18 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
 
 #[cfg(test)]
 mod capability_tests {
-    #[tokio::test]
-    async fn test_capability_preserves_32_byte_lowercase_hex_wire_format() {
-        let token = super::create_test_capability().await.unwrap();
-        assert_eq!(token.len(), 64);
-        assert!(token
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    #[test]
+    fn test_capability_preserves_32_byte_lowercase_hex_wire_format() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let token = super::create_test_capability().await.unwrap();
+                assert_eq!(token.len(), 64);
+                assert!(token
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+            });
     }
 }

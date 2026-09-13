@@ -27,6 +27,9 @@ def test_migrated_capabilities_are_owned_by_kernal_api():
     assert "tempfile" not in dependencies
     assert "strsim" not in dependencies
     assert "crossterm" not in dependencies
+    assert "tokio" not in dependencies
+    workspace = tomllib.loads((root / "Cargo.toml").read_text())
+    assert "tokio" not in workspace["workspace"]["dependencies"]
     assert "tempfile" not in manifest.get("dev-dependencies", {})
     for backend in ("zip", "tar", "zstd", "flate2"):
         assert backend not in dependencies
@@ -80,6 +83,7 @@ def test_migrated_async_operations_use_kernel():
     root = Path(__file__).resolve().parents[2]
     for path in (root / "crates/fastled-cli/src").rglob("*.rs"):
         source = path.read_text()
+        assert "tokio::" not in source, path
         for backend in (
             "tokio::runtime::",
             "tokio::time::",

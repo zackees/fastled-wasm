@@ -27,7 +27,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 ctcb-core = { workspace = true }
-tokio = { workspace = true }
 toml = { workspace = true }
 tauri = { workspace = true, optional = true }
 shell-words = { workspace = true }

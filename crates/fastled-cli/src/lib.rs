@@ -32,6 +32,7 @@ mod server;
 mod sketch_preprocessor;
 mod source;
 mod terminal;
+mod test_events;
 mod test_mode;
 pub mod viewer;
 pub mod wasm_build;
