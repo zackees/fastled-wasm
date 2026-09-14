@@ -27,14 +27,23 @@ capability migration, with the same toolchain, features, and cache conditions.
 | Build-only support | indexmap | Direct unused entry removed; transitive Tauri copies remain until viewer migration |
 | Python launcher/tool provisioning | meson, ninja, uv, typeguard, zcmds_win32 | Audit runtime necessity and move shared provisioning into the base without breaking wheel installation |
 
-## Development state
+## Current status
 
-Work is on `feat/kernal-api-migration`. The migration uses an exact `=0.1.0`
-declaration plus a temporary sibling path patch to
+The inventory table above and the checkpoint sections below are historical
+records of each slice; see "Final migration audit" at the end for the current
+state. `fastled-cli` now has exactly one direct Rust dependency, `kernal-api`,
+consumed from the `v0.1.3` release tag with no `[patch]` override. Every
+backend in the inventory is absent from the manifests and sources and remains
+only as a private transitive implementation of the kernel.
+
+## Development state (historical)
+
+Work is on `feat/kernal-api-migration`. The migration originally used an exact
+`=0.1.0` declaration plus a temporary sibling path patch to
 `../fastled-wasm-extern/kernal-api`, initially checked out at
-`76172bf3ee41ec601d3fa834291dfbe6bfc11789`. Remove the path patch and verify
-an exact published release before landing on a release branch. The application
-MSRV now matches its existing 1.95 toolchain and kernal-api's requirement.
+`76172bf3ee41ec601d3fa834291dfbe6bfc11789`; later a pinned git revision replaced
+the path patch. Both are now removed in favor of the `v0.1.3` release tag. The
+application MSRV matches its existing 1.95 toolchain and kernal-api's requirement.
 
 The boundary test failed before each dependency migration and passed afterward.
 All Python unit tests pass (24 passed, one skipped). The default-feature Rust
@@ -1084,17 +1093,75 @@ Final checks pass 286 library, 3 binary, 1 integration and 1 doc tests, Python
 
 ### Final migration audit
 
-The Axum baseline now has a raw-wire parity test for missing-file 404,
+The Axum baseline has a raw-wire parity test for missing-file 404,
 unsupported-method 405, HEAD content length with no body, browser-isolation and
-cache headers, wildcard CORS, and OPTIONS preflight methods/headers. This test
-passes before transport replacement and must remain green after adoption.
+cache headers, wildcard CORS, and OPTIONS preflight methods/headers. It passed
+before transport replacement and remains green with kernel serving.
 
-- Resolve every inventory row with code and dependency-graph evidence.
-- Move generic mechanism tests upstream while retaining application integration
-  and product-policy coverage here.
-- Consume an exact published kernal-api release without a local path patch.
-- Enforce the final dependency boundary in CI.
-- Run lint, Rust workspace tests, Python smoke tests, and native compiler/viewer
-  integration checks; verify supported-platform behavior and Safari invariants.
-- Record comparable clean and incremental build measurements and explain any
-  remaining implementation dependencies.
+**Inventory resolved.** The `fastled-cli` lockfile entry lists only
+`kernal-api`. Every original backend row (locks, globs/watchers, fingerprints,
+paths, process containment, Tokio, HTTP client/server, archive/hash, viewer and
+terminal, compiler target facts, C++ parsing, CLI/configuration/JSON/utility
+crates, and build-only `indexmap`) has been removed from the manifests and
+sources. The Python launcher row was audited: `typeguard` and `zcmds_win32`
+were removed (#245); Meson, Ninja and uv remain because native compilation
+still uses them. Generic mechanism tests live upstream; FastLED retains product
+policy and integration coverage, including the SHA-256 cache and artifact
+encoding lock-down tests ported from #244.
+
+**Exact release.** kernal-api `v0.1.3` was cut on branch `release/0.1.3` from
+`762a1d2`, the revision this branch had already validated and the last
+kernal-api main commit with green CI. Main was failing CI at release time, so
+the release deliberately excludes later main commits. The release contains
+only a version bump over `762a1d2`. crates.io publishing is not enabled for
+kernal-api, and `fastled-cli` is not published to crates.io, so the workspace
+uses a git tag dependency. The pre-release pin, path and `[patch]` overrides
+are gone.
+
+**Boundary enforced in CI.** `tests/unit/test_kernal_boundary.py` runs in the
+unit-test workflows. It requires `kernal-api` to be the only dependency in every
+package, workspace and target table. It also forbids build and dev dependencies,
+`[patch]`, `build.rs` and generated Tauri output, and requires the
+`hash-sha256` feature, alongside the per-backend source bans.
+
+**Validation on Linux x86-64 (NixOS).** Rust workspace tests pass: 303 library,
+3 binary, 1 integration and 1 doc test. `bash lint` passes, covering rustfmt,
+strict Clippy, dylint, Ruff, Black, isort and Pyright. Python unit tests pass
+(45 passed, 1 skipped). Other platforms rely on the PR's native CI matrix.
+
+**Real viewer (#247) is not a migration regression.** The same Blink sketch,
+FastLED source (`9aa7254bba`), Xvfb/software-GL environment and `--test` flags
+fail identically with the pre-migration `origin/main` Tauri binary and with
+this branch. Both report `webgl2: false` from OffscreenCanvas and exit 125
+without a canvas. The branch binary was rechecked after NixOS system
+generation 118 (commit `9f90cf4`, which adds the `tauri-run` wrapper), launched
+through that wrapper on the real Wayland session, real X11 `:0` and Xvfb. All
+three still report `webgl2: false`. The session has no hardware GL: `eglinfo`
+reports only Mesa `llvmpipe`, GBM initialization fails, and NVIDIA reports a
+driver/library version mismatch (kernel 595.71.05, userspace 595.99.02) until
+reboot. Real-render acceptance needs hardware GL (e.g. after that reboot), and
+the Safari invariant still needs a real Safari smoke test on macOS; neither was
+possible here.
+
+**Build measurements.** Recorded on the same Linux host, toolchain and native
+environment. Each figure is one `soldr cargo build --locked -p fastled-cli --bin
+fastled` (debug, default `viewer` feature) into a fresh target directory. Both
+dependency graphs were built once, untimed, before measuring. soldr has no
+switch to disable its compilation cache, so truly uncached clean builds were
+not measured; cache hits and misses are reported instead. "Incremental" means
+rebuilding after touching `main.rs` and `lib.rs`.
+
+| Build | Round | Clean (ms) | Cache hits / misses | Crates compiled | Incremental (ms) |
+| --- | --- | --- | --- | --- | --- |
+| `origin/main` `22ea046` (Tauri) | 1 | 72938 | 1025 / 202 | 455 | 10082 |
+| migration branch `eb5a51d` | 1 | 60531 | 391 / 134 | 386 | 1428 |
+| `origin/main` `22ea046` (Tauri) | 2 | 12093 | 170 / 0 | 455 | 1545 |
+| migration branch `eb5a51d` | 2 | 15519 | 521 / 8 | 386 | 1534 |
+
+Round 1 is not comparable: both sides still missed the cache, so the untimed
+builds did not fully warm it. Round 2 is the closest comparison. The migration
+compiles 69 fewer crates (455 to 386), but the warm-cache clean build is not
+faster (15.5 s vs 12.1 s, with 8 remaining branch misses), and incremental
+rebuilds are the same (about 1.5 s). **No build-speed improvement is
+claimed.** The gain is ownership and a smaller direct dependency surface; the
+backends remain transitive through kernal-api.
