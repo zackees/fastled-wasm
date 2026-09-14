@@ -181,6 +181,26 @@ def test_viewer_backend_is_owned_by_kernel():
             assert backend not in source.read_text(), (source, backend)
 
 
+def test_kernal_api_is_the_only_rust_dependency():
+    root = Path(__file__).resolve().parents[2]
+    package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())
+    workspace = tomllib.loads((root / "Cargo.toml").read_text())
+    sections = [package, workspace["workspace"]]
+    sections.extend(package.get("target", {}).values())
+    for section in sections:
+        assert set(section.get("dependencies", {})) <= {"kernal-api"}, section
+        assert not section.get("build-dependencies"), section
+        assert not section.get("dev-dependencies"), section
+    assert set(package["dependencies"]) == {"kernal-api"}
+    kernal = workspace["workspace"]["dependencies"]["kernal-api"]
+    assert kernal["tag"] == "v0.1.3"
+    assert "rev" not in kernal and "path" not in kernal
+    assert "hash-sha256" in kernal["features"]
+    assert "patch" not in workspace
+    assert not (root / "crates/fastled-cli/build.rs").exists()
+    assert not (root / "crates/fastled-cli/gen").exists()
+
+
 def test_obsolete_manifest_dependencies_are_removed():
     root = Path(__file__).resolve().parents[2]
     package = tomllib.loads((root / "crates/fastled-cli/Cargo.toml").read_text())
@@ -196,7 +216,9 @@ def test_python_shim_has_no_obsolete_runtime_requirements():
     for obsolete in ("typeguard", "zcmds_win32", "zcmds-win32"):
         assert not any(requirement.startswith(obsolete) for requirement in requirements)
     for required in ("meson", "ninja", "uv"):
-        assert any(requirement.startswith(required + ">=") for requirement in requirements)
+        assert any(
+            requirement.startswith(required + ">=") for requirement in requirements
+        )
 
 
 def test_http_callers_use_kernel():
