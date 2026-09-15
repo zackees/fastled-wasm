@@ -2023,8 +2023,8 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.4"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.4#d69567365d5768c338d198f4694db49e7e2ad0be"
+version = "0.1.5"
+source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.5#e5700f02d3c11f43047caca6457efef080bf3cbe"
 dependencies = [
  "blake3",
  "bytes",
