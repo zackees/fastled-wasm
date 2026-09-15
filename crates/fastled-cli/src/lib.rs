@@ -2,8 +2,6 @@
 
 use std::process::ExitCode;
 
-use clap::Parser;
-
 mod archive;
 mod build;
 mod cache_upgrade;
@@ -12,16 +10,16 @@ mod cli;
 mod commands;
 mod compile_stream;
 pub mod debug_symbols;
+mod diagnostics;
 mod dwarf_smoke;
 mod dynamic_cache;
 #[cfg(test)]
 mod dynamic_cache_matrix_tests;
+mod error_compat;
 pub mod frontend;
 pub mod install;
 mod install_unlock;
 mod keyboard;
-#[cfg(target_os = "linux")]
-pub mod linux_graphics;
 pub mod path;
 mod paths_util;
 pub mod project;
@@ -31,6 +29,7 @@ mod server;
 mod sketch_preprocessor;
 mod source;
 mod terminal;
+mod test_events;
 mod test_mode;
 pub mod viewer;
 pub mod wasm_build;
@@ -49,7 +48,48 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let mut cli = cli::Cli::parse();
+    let arguments = std::env::args_os().collect::<Vec<_>>();
+    let presentation_request = arguments
+        .iter()
+        .skip(1)
+        .take_while(|argument| argument.as_os_str() != "--")
+        .any(|argument| {
+            matches!(
+                argument.to_str(),
+                Some("--help" | "-h" | "--version" | "-V")
+            )
+        });
+    if presentation_request {
+        let version_request = arguments
+            .iter()
+            .skip(1)
+            .take_while(|argument| argument.as_os_str() != "--")
+            .any(|argument| matches!(argument.to_str(), Some("--version" | "-V")));
+        let schema = cli::primary_schema();
+        if version_request {
+            print!("{}", schema.render_version());
+        } else {
+            print!("{}", cli::presentation_help(&arguments));
+        }
+        return ExitCode::SUCCESS;
+    }
+    {
+        match cli::management_command_from(&arguments) {
+            Ok(Some(command)) => return run_management_command(command),
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("fastled: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    let mut cli = match cli::primary_cli_from(&arguments) {
+        Ok(cli) => cli,
+        Err(error) => {
+            eprintln!("fastled: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     cli::apply_test_implications(&mut cli);
 
     if let Err(message) = cli::validate_init_ref_flags(&cli) {
@@ -57,24 +97,8 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    if let Some(cli::Command::Toolchain { action }) = cli.command.clone() {
-        return match install::run_toolchain_action(action) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("fastled: toolchain command failed: {error:#}");
-                ExitCode::FAILURE
-            }
-        };
-    }
-
-    if let Some(cli::Command::Source { action }) = cli.command.clone() {
-        return match source::run_source_action(action) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("fastled: source command failed: {error:#}");
-                ExitCode::FAILURE
-            }
-        };
+    if let Some(command) = cli.command.clone() {
+        return run_management_command(command);
     }
 
     // Hidden plumbing for the Python side: download the FastLED repo and
@@ -195,6 +219,25 @@ pub fn run() -> ExitCode {
     ExitCode::FAILURE
 }
 
+fn run_management_command(command: cli::Command) -> ExitCode {
+    match command {
+        cli::Command::Toolchain { action } => match install::run_toolchain_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: toolchain command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
+        cli::Command::Source { action } => match source::run_source_action(action) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("fastled: source command failed: {error:#}");
+                ExitCode::FAILURE
+            }
+        },
+    }
+}
+
 /// Map serve-dir CLI flags to `(directory, launch_viewer)`.
 ///
 /// `--internal-serve-dir-headless` is the no-UI serve path: it never launches
@@ -305,7 +348,7 @@ mod tests {
 
     #[test]
     fn collect_debug_source_paths_finds_wasm_and_source_map_entries() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let output_dir = temp.path().join("fastled_js");
         fs::create_dir_all(&output_dir).unwrap();
         fs::write(
@@ -338,7 +381,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let sketch_dir = temp.path().join("Blink");
         fs::create_dir_all(&sketch_dir).unwrap();
         fs::write(sketch_dir.join("Blink.ino"), b"void setup() {}").unwrap();
@@ -355,7 +398,7 @@ mod tests {
 
     #[test]
     fn resolve_compile_directory_accepts_file_inside_sketch() {
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let sketch_dir = temp.path().join("Blink");
         let source_file = sketch_dir.join("Blink.ino");
         fs::create_dir_all(&sketch_dir).unwrap();
@@ -373,7 +416,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let examples_dir = temp.path().join("examples").join("FxWave2d");
         fs::create_dir_all(&examples_dir).unwrap();
         fs::write(examples_dir.join("FxWave2d.ino"), b"void setup() {}").unwrap();
@@ -399,7 +442,7 @@ mod tests {
         let _lock = cwd_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let repo_root = temp.path().join("FastLED");
         let nested = repo_root.join("examples").join("Blink");
         fs::create_dir_all(&nested).unwrap();
@@ -413,16 +456,24 @@ mod tests {
     #[test]
     fn resolve_prompt_choice_accepts_default_selection() {
         let options = vec!["Blink".to_string(), "Noise".to_string()];
-        match resolve_prompt_choice("", &options, 1) {
+        match resolve_prompt_choice("", &options, 1).unwrap() {
             PromptChoice::Selected(choice) => assert_eq!(choice, "Noise"),
             _ => panic!("expected default selection"),
         }
     }
 
     #[test]
+    fn resolve_prompt_choice_propagates_similarity_limit_errors() {
+        let options = vec!["examples/Blink".to_string(), "examples/Fire".to_string()];
+        let error = resolve_prompt_choice(&"x".repeat(4097), &options, 0).unwrap_err();
+        assert!(error.contains("score sketch-name suggestion"));
+        assert!(error.contains("byte limit"));
+    }
+
+    #[test]
     fn resolve_prompt_choice_accepts_numeric_selection() {
         let options = vec!["Blink".to_string(), "Noise".to_string()];
-        match resolve_prompt_choice("2", &options, 0) {
+        match resolve_prompt_choice("2", &options, 0).unwrap() {
             PromptChoice::Selected(choice) => assert_eq!(choice, "Noise"),
             _ => panic!("expected numeric selection"),
         }
@@ -435,7 +486,7 @@ mod tests {
             "Fire2012WithPalette".to_string(),
             "Blink".to_string(),
         ];
-        match resolve_prompt_choice("Fire", &options, 0) {
+        match resolve_prompt_choice("Fire", &options, 0).unwrap() {
             PromptChoice::Narrowed(matches) => {
                 assert_eq!(
                     matches,
@@ -453,7 +504,7 @@ mod tests {
             "examples/BeatDetection".to_string(),
             "examples/Blink".to_string(),
         ];
-        match resolve_prompt_choice("beats", &options, 0) {
+        match resolve_prompt_choice("beats", &options, 0).unwrap() {
             PromptChoice::Selected(choice) => {
                 assert_eq!(choice, "examples/BeatDetection");
             }

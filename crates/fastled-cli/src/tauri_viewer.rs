@@ -1,5 +1,11 @@
 use std::process::ExitCode;
 
+use kernal_api::async_engine::RuntimeBuilder;
+use kernal_api::webview::{
+    ExternalWebviewClient, ExternalWebviewHost, WebviewError, WebviewPageBootstrap,
+    WebviewPermissions, WebviewWindowOptions,
+};
+
 pub struct ViewerOptions {
     pub url: String,
     pub title: String,
@@ -225,6 +231,18 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
     }
   };
   const capture = async (canvas, name) => {
+    // Without WebGL2 on OffscreenCanvas (WebKitGTK) the page canvas draws the
+    // frames itself, and preserveDrawingBuffer above keeps them readable.
+    if (window.fastLEDWorkerManager && window.fastLEDWorkerManager.renderOnMainThread) {
+      const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
+      const response = await testFetch('/viewer-screenshot?name=' + encodeURIComponent(name), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: blob
+      });
+      if (!response.ok) throw new Error('screenshot upload failed: ' + response.status);
+      return;
+    }
     let blob = await webglFrameBlob();
     if (!blob) {
       const dataUrl = await compositedFrameDataUrl(canvas)
@@ -316,69 +334,96 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
 })();
 "#;
 
-pub fn run(options: ViewerOptions) -> ExitCode {
-    let ViewerOptions {
-        url,
-        title,
-        width,
-        height,
-        inject_test_runtime,
-    } = options;
+// Product policy, not a kernel default. WebKitGTK/WKWebView must not receive
+// this Windows-specific compensation. Native scale is not browser zoom/DPR.
+const WINDOWS_ZOOM_SCRIPT: &str = r#"
+(() => {
+  const scale = kernalWindow.initialScaleFactor;
+  if (scale > 1) {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.style.zoom = String(0.92 / scale);
+    }, { once: true });
+  }
+})();
+"#;
 
-    // Must run before the webview (and its WebKit processes) exist.
-    #[cfg(target_os = "linux")]
-    fastled_cli::linux_graphics::apply();
+fn bootstrap_source(test_runtime: bool, windows: bool) -> String {
+    let mut source = String::new();
+    if test_runtime {
+        source.push_str(TEST_CAPABILITY_SCRIPT);
+    }
+    source.push_str(LOG_FORWARD_SCRIPT);
+    if test_runtime {
+        source.push_str(TEST_RUNTIME_SCRIPT);
+    }
+    if windows {
+        source.push_str(WINDOWS_ZOOM_SCRIPT);
+    }
+    source
+}
 
-    let result = tauri::Builder::default()
-        .setup(move |app| {
-            // GTK is initialised here but the webview does not exist yet.
-            #[cfg(target_os = "linux")]
-            fastled_cli::linux_graphics::ensure_font_dpi();
+struct ViewerExitRequest(ExternalWebviewClient);
 
-            let url = tauri::WebviewUrl::External(url.parse()?);
+impl Drop for ViewerExitRequest {
+    fn drop(&mut self) {
+        if let Err(error) = self.0.request_exit() {
+            eprintln!("fastled: viewer shutdown request failed: {error}");
+        }
+    }
+}
 
-            let mut builder = tauri::WebviewWindowBuilder::new(app, "main", url)
-                .title(&title)
-                .inner_size(width as f64, height as f64);
-            if inject_test_runtime {
-                builder = builder.initialization_script(TEST_CAPABILITY_SCRIPT);
-            }
-            builder = builder.initialization_script(LOG_FORWARD_SCRIPT);
-            if inject_test_runtime {
-                builder = builder.initialization_script(TEST_RUNTIME_SCRIPT);
-            }
-            #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
-            let window = builder.build()?;
-
-            #[cfg(target_os = "linux")]
-            window.with_webview(|webview| {
-                fastled_cli::linux_graphics::allow_user_media(&webview.inner());
-            })?;
-
-            // Counteract WebView2 DPI auto-scaling while keeping the UI readable.
-            // Windows only: WebKitGTK and WKWebView already render at the
-            // window's scale factor, so this zoom would halve the page on a
-            // 2x Linux or macOS display.
-            #[cfg(target_os = "windows")]
-            {
-                let scale = window.scale_factor().unwrap_or(1.0);
-                if scale > 1.0 {
-                    let zoom = 0.92 / scale;
-                    let js = format!(
-                        "document.addEventListener('DOMContentLoaded', function() {{ document.body.style.zoom = '{}'; }});",
-                        zoom
-                    );
-                    window.eval(&js).ok();
+fn run_viewer(options: ViewerOptions) -> Result<(), String> {
+    let window = WebviewWindowOptions::new(&options.title, options.width, options.height)
+        .map_err(|error| error.to_string())?;
+    let bootstrap = WebviewPageBootstrap::new(&bootstrap_source(
+        options.inject_test_runtime,
+        cfg!(target_os = "windows"),
+    ))
+    .map_err(|error| error.to_string())?;
+    // No runtime worker threads exist while the kernel prepares Linux graphics
+    // environment and creates the main-thread host. Drive this one runtime on
+    // the lifecycle thread only after host initialization has completed.
+    let runtime = RuntimeBuilder::current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let host = ExternalWebviewHost::new(runtime.handle()).map_err(|error| error.to_string())?;
+    let client = host.client();
+    let worker = std::thread::Builder::new()
+        .name("fastled-viewer-lifecycle".into())
+        .spawn(move || {
+            let _exit = ViewerExitRequest(client.clone());
+            runtime.run(async move {
+                let permissions = WebviewPermissions::deny_all().allow_user_media();
+                let webview = client
+                    .open_webview_with_bootstrap(&options.url, window, permissions, bootstrap)
+                    .await?;
+                // Interactive windows have no arbitrary lifetime expiry. Do not
+                // wait for exact load-URL equality: the test script strips its
+                // capability fragment before the load callback can arrive.
+                match webview.wait_for_terminal().await {
+                    Err(WebviewError::WindowClosed) | Ok(()) => Ok(()),
+                    Err(error) => Err(error),
                 }
-            }
-            Ok(())
+            })
         })
-        .run(tauri::generate_context!());
+        .map_err(|error| error.to_string())?;
+    let host_code = host.run();
+    let outcome = worker
+        .join()
+        .map_err(|_| "viewer lifecycle thread panicked".to_owned())?;
+    outcome.map_err(|error| error.to_string())?;
+    if host_code != 0 {
+        return Err(format!("viewer event loop exited with {host_code}"));
+    }
+    Ok(())
+}
 
-    match result {
+pub fn run(options: ViewerOptions) -> ExitCode {
+    match run_viewer(options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            eprintln!("fastled: Tauri viewer failed: {err}");
+            eprintln!("fastled: viewer failed: {err}");
             ExitCode::FAILURE
         }
     }
@@ -387,6 +432,23 @@ pub fn run(options: ViewerOptions) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bootstrap_preserves_product_order_and_platform_policy() {
+        let test = bootstrap_source(true, false);
+        assert!(test.starts_with(TEST_CAPABILITY_SCRIPT));
+        assert_eq!(
+            test,
+            format!("{TEST_CAPABILITY_SCRIPT}{LOG_FORWARD_SCRIPT}{TEST_RUNTIME_SCRIPT}")
+        );
+        assert_eq!(bootstrap_source(false, false), LOG_FORWARD_SCRIPT);
+        let windows = bootstrap_source(true, true);
+        assert_eq!(windows, format!("{test}{WINDOWS_ZOOM_SCRIPT}"));
+        assert!(WINDOWS_ZOOM_SCRIPT.contains("kernalWindow.initialScaleFactor"));
+        assert!(WINDOWS_ZOOM_SCRIPT.contains("0.92 / scale"));
+        assert!(!WINDOWS_ZOOM_SCRIPT.contains("devicePixelRatio"));
+        assert!(WebviewPageBootstrap::new(&windows).is_ok());
+    }
 
     #[test]
     fn log_forward_script_targets_server_endpoint() {
@@ -399,6 +461,8 @@ mod tests {
     #[test]
     fn test_runtime_patches_webgl_before_capturing() {
         assert!(TEST_RUNTIME_SCRIPT.contains("preserveDrawingBuffer: true"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("fastLEDWorkerManager.renderOnMainThread"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("canvas.toDataURL('image/png')"));
         assert!(TEST_RUNTIME_SCRIPT.contains("type: 'start_recording'"));
         assert!(TEST_RUNTIME_SCRIPT.contains("canvas.captureStream(0)"));
         assert!(TEST_RUNTIME_SCRIPT.contains("new ImageCapture(track).grabFrame()"));

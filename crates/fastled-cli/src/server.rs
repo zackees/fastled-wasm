@@ -6,25 +6,15 @@
 //! is returned that polls `/build-status.json` for live updates.
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
-use axum::response::sse::{Event, KeepAlive, Sse};
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::StreamExt;
-use tower_http::cors::{Any, CorsLayer};
-use tower_http::set_header::SetResponseHeaderLayer;
+use kernal_api::{
+    async_engine,
+    http_server::{Limits, Request, Response, Server, WebSocketLimits},
+    json::{self, Layout, Value},
+};
 
 use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 
@@ -36,21 +26,51 @@ use crate::debug_symbols::{DebugSymbolResolver, ResolveError};
 /// the server.
 pub type DebugSymbolHandle = Arc<RwLock<Option<DebugSymbolResolver>>>;
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub(crate) struct TestRuntimeConfig {
     pub(crate) wait_ms: f64,
     pub(crate) interval_ms: Option<f64>,
     pub(crate) screenshot_names: Vec<String>,
 }
 
+impl TestRuntimeConfig {
+    fn document(&self) -> Value {
+        // Preserve the wire protocol's null representation for non-finite
+        // values; accepted test schedules are validated separately.
+        let number = |value: f64| {
+            if value.is_finite() {
+                Value::Float(value)
+            } else {
+                Value::Null
+            }
+        };
+        Value::ObjectMembers(vec![
+            ("waitMs".into(), number(self.wait_ms)),
+            (
+                "intervalMs".into(),
+                self.interval_ms.map(number).unwrap_or(Value::Null),
+            ),
+            (
+                "screenshotNames".into(),
+                Value::Array(
+                    self.screenshot_names
+                        .iter()
+                        .cloned()
+                        .map(Value::String)
+                        .collect(),
+                ),
+            ),
+        ])
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct TestServerOptions {
     pub(crate) runtime: TestRuntimeConfig,
     pub(crate) screenshot_paths: HashMap<String, PathBuf>,
-    pub(crate) events: tokio::sync::mpsc::UnboundedSender<TestEvent>,
+    pub(crate) events: async_engine::UnboundedSender<TestEvent>,
     pub(crate) token: String,
-    pub(crate) sleep_permits: Arc<tokio::sync::Semaphore>,
+    pub(crate) sleep_permits: async_engine::Semaphore,
 }
 
 #[derive(Debug)]
@@ -361,361 +381,405 @@ struct AppState {
     serve_dir: Arc<PathBuf>,
     terminal_cwd: Arc<crate::path::NormalizedPath>,
     terminal_origin: Arc<String>,
-    terminal_slots: Arc<tokio::sync::Semaphore>,
+    terminal_slots: async_engine::Semaphore,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
-    build_tx: Option<broadcast::Sender<String>>,
+    build_tx: Option<async_engine::BroadcastSender<String>>,
     /// Shared resolver for DWARF source paths. Empty until a successful
     /// build populates it.
     debug_symbols: DebugSymbolHandle,
     test: Option<Arc<TestServerOptions>>,
+    screenshot_io: kernal_api::platform::fs::AsyncFileIo,
+    file_responses: kernal_api::http_server::FileResponses,
 }
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// The static router permits CORS; shell access explicitly does not.
-async fn terminal_socket(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    upgrade: axum::extract::ws::WebSocketUpgrade,
-) -> Response {
-    if headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        != Some(state.terminal_origin.as_str())
-        || headers
-            .get(header::HOST)
-            .and_then(|value| value.to_str().ok())
-            != state.terminal_origin.strip_prefix("http://")
-    {
-        return StatusCode::FORBIDDEN.into_response();
-    }
-    let Ok(permit) = state.terminal_slots.clone().try_acquire_owned() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    };
-    upgrade
-        .max_message_size(64 * 1024)
-        .max_frame_size(64 * 1024)
-        .on_upgrade(move |socket| crate::terminal::connect(socket, state.terminal_cwd, permit))
+type Reply = std::io::Result<Response>;
+
+fn empty(status: u16) -> Reply {
+    Response::new(status, Vec::new())
 }
 
-/// Serve index.html or the loading page if it doesn't exist yet.
-async fn serve_index(State(state): State<AppState>) -> Response {
+fn text(status: u16, body: impl Into<String>) -> Reply {
+    Response::new(status, body.into().into_bytes())?
+        .with_header("content-type", "text/plain; charset=utf-8")
+}
+
+fn json_reply(status: u16, value: Value) -> Reply {
+    Response::new(
+        status,
+        json::encode(&value, Layout::Compact).map_err(std::io::Error::other)?,
+    )?
+    .with_header("content-type", "application/json")
+}
+
+fn json_error(status: u16, message: impl Into<String>) -> Reply {
+    json_reply(
+        status,
+        Value::ObjectMembers(vec![("error".into(), Value::String(message.into()))]),
+    )
+}
+
+async fn stream_file(state: &AppState, path: &std::path::Path, prefix: &[u8], mime: &str) -> Reply {
+    state
+        .file_responses
+        .open(path.to_path_buf(), prefix.to_vec())
+        .await?
+        .with_header("content-type", mime)
+}
+
+async fn serve_index(state: &AppState) -> Reply {
     let index = state.serve_dir.join("index.html");
     if index.is_file() {
-        match tokio::fs::read(&index).await {
-            Ok(data) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                data,
-            )
-                .into_response(),
-            Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        }
+        stream_file(state, &index, &[], "text/html; charset=utf-8").await
     } else {
-        Html(LOADING_PAGE).into_response()
+        Response::new(200, LOADING_PAGE.as_bytes().to_vec())?
+            .with_header("content-type", "text/html; charset=utf-8")
     }
 }
 
-/// Serve any file from the output directory.
-async fn serve_file(
-    State(state): State<AppState>,
-    axum::extract::Path(path): axum::extract::Path<String>,
-) -> Response {
-    let file_path = state.serve_dir.join(&path);
-
-    // Prevent directory traversal.
+async fn serve_file(state: &AppState, path: &str) -> Reply {
+    let file_path = state.serve_dir.join(path);
     let canonical = match file_path.canonicalize() {
-        Ok(p) => p,
+        Ok(path) => path,
         Err(_) => {
-            return serve_debug_source_url(&state, &path)
+            return serve_debug_source_url(state, path)
                 .await
-                .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response());
+                .unwrap_or_else(|| empty(404))
         }
     };
-    let serve_canonical = match state.serve_dir.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    };
+    let serve_canonical = state.serve_dir.canonicalize()?;
     if !canonical.starts_with(&serve_canonical) {
-        return StatusCode::FORBIDDEN.into_response();
+        return empty(403);
     }
-
-    match tokio::fs::read(&file_path).await {
-        Ok(mut data) => {
-            if state.test.is_some() && path == "fastled_background_worker.js" {
-                let mut patched = TEST_WORKER_WEBGL_PREFIX.as_bytes().to_vec();
-                patched.extend_from_slice(&data);
-                data = patched;
-            }
-            let mime = mime_for_path(&path);
-            (StatusCode::OK, [(header::CONTENT_TYPE, mime)], data).into_response()
-        }
-        Err(_) => serve_debug_source_url(&state, &path)
+    let prefix = if state.test.is_some() && path == "fastled_background_worker.js" {
+        TEST_WORKER_WEBGL_PREFIX.as_bytes()
+    } else {
+        &[]
+    };
+    match stream_file(state, &canonical, prefix, mime_for_path(path)).await {
+        Ok(response) => Ok(response),
+        Err(_) => serve_debug_source_url(state, path)
             .await
-            .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response()),
+            .unwrap_or_else(|| empty(404)),
     }
 }
 
-async fn serve_debug_source_url(state: &AppState, request_path: &str) -> Option<Response> {
+async fn serve_debug_source_url(state: &AppState, path: &str) -> Option<Reply> {
     let resolver = state.debug_symbols.read().ok()?.clone()?;
-    match resolver.resolve(request_path, true) {
-        Ok(file) => match tokio::fs::read(&file).await {
-            Ok(bytes) => Some(
-                (
-                    StatusCode::OK,
-                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                    bytes,
-                )
-                    .into_response(),
-            ),
-            Err(_) => Some(StatusCode::INTERNAL_SERVER_ERROR.into_response()),
-        },
-        Err(ResolveError::NotFound(_)) => Some(StatusCode::NOT_FOUND.into_response()),
+    match resolver.resolve(path, true) {
+        Ok(file) => Some(stream_file(state, &file, &[], "text/plain; charset=utf-8").await),
+        Err(ResolveError::NotFound(_)) => Some(empty(404)),
         Err(ResolveError::Invalid(_)) => None,
     }
 }
 
-/// SSE endpoint that streams build log lines and status events.
-async fn build_stream(State(state): State<AppState>) -> Response {
-    let tx = match &state.build_tx {
-        Some(tx) => tx,
-        None => return StatusCode::NOT_FOUND.into_response(),
+fn build_stream(state: &AppState) -> Reply {
+    let Some(tx) = &state.build_tx else {
+        return empty(404);
     };
-
-    let rx = tx.subscribe();
-    let stream = BroadcastStream::new(rx).filter_map(|result| {
-        result
-            .ok()
-            .map(|data| Ok::<_, Infallible>(Event::default().data(data)))
-    });
-
-    Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response()
+    let stream = tx
+        .subscribe()
+        .into_stream_with(|result| result.ok().map(Ok));
+    Response::event_stream(stream, std::time::Duration::from_secs(15))
 }
 
-/// `POST /viewer-log` — receive console/error lines forwarded from the Tauri
-/// viewer's injected logging script and echo them to stderr so viewer-side
-/// failures are always diagnosable.
-fn test_request_authorized(test: &TestServerOptions, headers: &HeaderMap) -> bool {
-    headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
+fn test_request_authorized(test: &TestServerOptions, request: &Request) -> bool {
+    request
+        .header("authorization")
+        .and_then(|value| std::str::from_utf8(value).ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .is_some_and(|value| value == test.token)
 }
 
-async fn viewer_log(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
-    if let Some(test) = &state.test {
-        if !test_request_authorized(test, &headers) {
-            return StatusCode::UNAUTHORIZED.into_response();
+fn required_query(request: &Request, name: &str) -> std::io::Result<String> {
+    let mut value = None;
+    for pair in request.query_pairs() {
+        let (key, candidate) = pair?;
+        if key == name && value.replace(candidate).is_some() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "duplicate query field",
+            ));
         }
     }
-    for line in body.lines() {
-        eprintln!("[viewer] {line}");
-        if let Some(test) = &state.test {
-            let _ = test.events.send(TestEvent::ViewerLog(line.to_string()));
-        }
-    }
-    StatusCode::NO_CONTENT.into_response()
+    value
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing query field"))
 }
 
-async fn test_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    match &state.test {
-        Some(test) if test_request_authorized(test, &headers) => {
-            Json(test.runtime.clone()).into_response()
-        }
-        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-async fn test_ready(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    match &state.test {
-        Some(test) if test_request_authorized(test, &headers) => {
-            let _ = test.events.send(TestEvent::Ready);
-            StatusCode::NO_CONTENT.into_response()
-        }
-        Some(_) => StatusCode::UNAUTHORIZED.into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-#[derive(Deserialize)]
-struct TestSleepQuery {
-    ms: f64,
-}
-
-async fn test_sleep(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<TestSleepQuery>,
-) -> Response {
-    let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
+async fn test_sleep(state: &AppState, request: &Request) -> Reply {
+    let ms = match required_query(request, "ms")
+        .and_then(|value| value.parse::<f64>().map_err(std::io::Error::other))
+    {
+        Ok(ms) => ms,
+        Err(error) => return text(400, error.to_string()),
     };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    let Some(test) = &state.test else {
+        return empty(404);
+    };
+    if !test_request_authorized(test, request) {
+        return empty(401);
     }
-    let Ok(duration) = std::time::Duration::try_from_secs_f64(query.ms / 1_000.0) else {
-        return (StatusCode::BAD_REQUEST, "invalid sleep duration").into_response();
+    let Ok(duration) = std::time::Duration::try_from_secs_f64(ms / 1000.0) else {
+        return text(400, "invalid sleep duration");
     };
     let max_ms = test
         .runtime
         .interval_ms
         .unwrap_or(0.0)
         .max(test.runtime.wait_ms);
-    if query.ms > max_ms {
-        return (StatusCode::BAD_REQUEST, "sleep exceeds test schedule").into_response();
+    if ms > max_ms {
+        return text(400, "sleep exceeds test schedule");
     }
-    let Ok(_permit) = test.sleep_permits.clone().try_acquire_owned() else {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    let Some(_permit) = test.sleep_permits.try_acquire() else {
+        return empty(429);
     };
-    tokio::time::sleep(duration).await;
-    StatusCode::NO_CONTENT.into_response()
+    async_engine::sleep(duration).await;
+    empty(204)
 }
 
-#[derive(Deserialize)]
-struct ScreenshotQuery {
-    name: String,
-}
-
-async fn viewer_screenshot(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Query(query): Query<ScreenshotQuery>,
-    body: Bytes,
-) -> Response {
+async fn viewer_screenshot(state: &AppState, request: &Request) -> Reply {
+    let name = match required_query(request, "name") {
+        Ok(name) => name,
+        Err(error) => return text(400, error.to_string()),
+    };
     let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
+        return empty(404);
     };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    if !test_request_authorized(test, request) {
+        return empty(401);
     }
-    let Some(path) = test.screenshot_paths.get(&query.name) else {
-        return (StatusCode::BAD_REQUEST, "unknown screenshot name").into_response();
+    let Some(path) = test.screenshot_paths.get(&name) else {
+        return text(400, "unknown screenshot name");
     };
+    let body = request.body();
     if body.len() < 8 || body[..8] != [137, 80, 78, 71, 13, 10, 26, 10] {
         let message = format!("viewer returned invalid PNG data for {}", path.display());
         let _ = test.events.send(TestEvent::Failure(message.clone()));
-        return (StatusCode::BAD_REQUEST, message).into_response();
+        return text(400, message);
     }
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        if let Err(error) = tokio::fs::create_dir_all(parent).await {
-            let message = format!("could not create screenshot directory: {error}");
-            let _ = test.events.send(TestEvent::Failure(message.clone()));
-            return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
-        }
-    }
-    if let Err(error) = tokio::fs::write(path, &body).await {
+    if let Err(error) = state.screenshot_io.write(path.clone(), body.to_vec()).await {
         let message = format!("could not write screenshot {}: {error}", path.display());
         let _ = test.events.send(TestEvent::Failure(message.clone()));
-        return (StatusCode::INTERNAL_SERVER_ERROR, message).into_response();
+        return text(500, message);
     }
     let _ = test.events.send(TestEvent::ScreenshotSaved {
-        name: query.name,
+        name,
         path: path.clone(),
     });
-    StatusCode::NO_CONTENT.into_response()
+    empty(204)
 }
 
-async fn test_done(State(state): State<AppState>, headers: HeaderMap, body: String) -> Response {
-    let Some(test) = &state.test else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-    if !test_request_authorized(test, &headers) {
-        return StatusCode::UNAUTHORIZED.into_response();
+fn dwarf_request_path(document: Value) -> Result<String, (u16, &'static str)> {
+    let mut path = None;
+    match document {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if name == "path" && path.replace(value).is_some() {
+                    return Err((422, "duplicate path field"));
+                }
+            }
+        }
+        Value::Array(values) => {
+            let mut values = values.into_iter();
+            path = values.next();
+            // A valid positional path followed by extra items was classified
+            // as trailing input by the original endpoint.
+            if matches!(path, Some(Value::String(_))) && values.next().is_some() {
+                return Err((400, "unexpected fields after path"));
+            }
+        }
+        _ => return Err((422, "expected path object or positional record")),
     }
-    let code = body.trim().parse::<u8>().unwrap_or(1);
-    let _ = test.events.send(TestEvent::Done(code));
-    StatusCode::NO_CONTENT.into_response()
+    match path {
+        Some(Value::String(path)) => Ok(path),
+        _ => Err((422, "path must be a string")),
+    }
 }
 
-// ---------------------------------------------------------------------------
-// DWARF debug source handlers
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-struct DwarfSourceRequest {
-    path: String,
-}
-
-/// `POST /dwarfsource` — given `{"path": "<dwarf-path>"}`, return the source
-/// text for the file the path maps to. Empty/missing payload, or a path that
-/// escapes the configured roots, returns 400. Unknown files return 404.
-async fn dwarf_source(
-    State(state): State<AppState>,
-    Json(payload): Json<DwarfSourceRequest>,
-) -> Response {
-    let resolver = match state.debug_symbols.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+async fn dwarf_source(state: &AppState, request: &Request) -> Reply {
+    let content_type = request
+        .header("content-type")
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if content_type != "application/json"
+        && !(content_type.starts_with("application/") && content_type.ends_with("+json"))
+    {
+        return text(415, "expected application/json");
+    }
+    let document = match json::parse_members(request.body()) {
+        Ok(document) => document,
+        Err(error) => {
+            return text(
+                match error {
+                    json::Error::InputTooLarge
+                    | json::Error::TooManyNodes
+                    | json::Error::TooDeep => 413,
+                    _ => 400,
+                },
+                error.to_string(),
+            )
+        }
     };
-
+    let path = match dwarf_request_path(document) {
+        Ok(path) => path,
+        Err((status, message)) => return text(status, message),
+    };
+    let resolver = state
+        .debug_symbols
+        .read()
+        .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
+        .clone();
     let Some(resolver) = resolver else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "debug source resolver unavailable"})),
-        )
-            .into_response();
+        return json_error(400, "debug source resolver unavailable");
     };
-
-    let request_path = payload.path.trim();
-    if request_path.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "missing path"})),
-        )
-            .into_response();
+    let path = path.trim();
+    if path.is_empty() {
+        return json_error(400, "missing path");
     }
-
-    match resolver.resolve(request_path, true) {
-        Ok(file) => match tokio::fs::read(&file).await {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-                bytes,
-            )
-                .into_response(),
-            Err(err) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": err.to_string()})),
-            )
-                .into_response(),
+    match resolver.resolve(path, true) {
+        Ok(file) => match stream_file(state, &file, &[], "text/plain; charset=utf-8").await {
+            Ok(response) => Ok(response),
+            Err(error) => json_error(500, error.to_string()),
         },
-        Err(ResolveError::NotFound(msg)) => {
-            (StatusCode::NOT_FOUND, Json(json!({ "error": msg }))).into_response()
-        }
-        Err(ResolveError::Invalid(msg)) => {
-            (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response()
-        }
+        Err(ResolveError::NotFound(message)) => json_error(404, message),
+        Err(ResolveError::Invalid(message)) => json_error(400, message),
     }
 }
 
-/// `GET /debug/source-roots` — return the named source roots the resolver
-/// knows about. Useful for tooling that wants to verify configuration.
-async fn debug_source_roots(State(state): State<AppState>) -> Response {
-    let resolver = match state.debug_symbols.read() {
-        Ok(guard) => guard.clone(),
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-    };
+fn debug_source_roots(state: &AppState) -> Reply {
+    let resolver = state
+        .debug_symbols
+        .read()
+        .map_err(|_| std::io::Error::other("debug source lock poisoned"))?
+        .clone();
+    let roots = resolver
+        .map(|resolver| {
+            resolver
+                .config()
+                .source_roots()
+                .into_iter()
+                .map(|(prefix, path)| {
+                    Value::ObjectMembers(vec![
+                        ("path".into(), Value::String(path.display().to_string())),
+                        ("prefix".into(), Value::String(prefix)),
+                    ])
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    json_reply(
+        200,
+        Value::ObjectMembers(vec![("roots".into(), Value::Array(roots))]),
+    )
+}
 
-    let roots = match resolver {
-        Some(resolver) => resolver
-            .config()
-            .source_roots()
-            .into_iter()
-            .map(|(prefix, path)| json!({"prefix": prefix, "path": path.display().to_string()}))
-            .collect::<Vec<_>>(),
-        None => Vec::new(),
+async fn route(state: &AppState, request: Request) -> Reply {
+    if request.method() == "OPTIONS" {
+        return empty(200)?
+            .with_header(
+                "access-control-allow-methods",
+                "GET,POST,PUT,DELETE,OPTIONS",
+            )?
+            .with_header("access-control-allow-headers", "content-type,authorization");
+    }
+    let path = match request.decoded_path() {
+        Ok(path) => path,
+        Err(error) => return text(400, error.to_string()),
     };
-    Json(json!({ "roots": roots })).into_response()
+    let post = matches!(
+        path.as_str(),
+        "/dwarfsource"
+            | "/viewer-log"
+            | "/test-ready"
+            | "/test-sleep"
+            | "/viewer-screenshot"
+            | "/test-done"
+    );
+    if path == "/terminal/ws" {
+        if request.method() != "GET" {
+            return empty(405)?.with_header("allow", "GET");
+        }
+        let origin = request
+            .header("origin")
+            .and_then(|value| std::str::from_utf8(value).ok());
+        let host = request
+            .header("host")
+            .and_then(|value| std::str::from_utf8(value).ok());
+        if origin != Some(state.terminal_origin.as_str())
+            || host != state.terminal_origin.strip_prefix("http://")
+        {
+            return empty(403);
+        }
+        let Some(permit) = state.terminal_slots.try_acquire() else {
+            return empty(429);
+        };
+        let upgrade = request.into_websocket()?;
+        return upgrade.on_upgrade(WebSocketLimits::default(), {
+            let cwd = state.terminal_cwd.clone();
+            move |socket| crate::terminal::connect(socket, cwd, permit)
+        });
+    }
+    if (post && request.method() != "POST")
+        || (!post && !matches!(request.method(), "GET" | "HEAD"))
+    {
+        return empty(405)?.with_header("allow", if post { "POST" } else { "GET,HEAD" });
+    }
+    match path.as_str() {
+        "/" => serve_index(state).await,
+        "/build-stream" => build_stream(state),
+        "/dwarfsource" => dwarf_source(state, &request).await,
+        "/debug/source-roots" => debug_source_roots(state),
+        "/test-sleep" => test_sleep(state, &request).await,
+        "/viewer-screenshot" => viewer_screenshot(state, &request).await,
+        "/test-config" | "/test-ready" | "/test-done" | "/viewer-log" => {
+            let body = if matches!(path.as_str(), "/test-done" | "/viewer-log") {
+                match std::str::from_utf8(request.body()) {
+                    Ok(body) => body,
+                    Err(_) => return text(400, "invalid UTF-8 body"),
+                }
+            } else {
+                ""
+            };
+            if let Some(test) = &state.test {
+                if !test_request_authorized(test, &request) {
+                    return empty(401);
+                }
+                match path.as_str() {
+                    "/test-config" => return json_reply(200, test.runtime.document()),
+                    "/test-ready" => {
+                        let _ = test.events.send(TestEvent::Ready);
+                    }
+                    "/test-done" => {
+                        let _ = test
+                            .events
+                            .send(TestEvent::Done(body.trim().parse::<u8>().unwrap_or(1)));
+                    }
+                    _ => {}
+                }
+            } else if path != "/viewer-log" {
+                return empty(404);
+            }
+            if path == "/viewer-log" {
+                for line in body.lines() {
+                    eprintln!("[viewer] {line}");
+                    if let Some(test) = &state.test {
+                        let _ = test.events.send(TestEvent::ViewerLog(line.to_string()));
+                    }
+                }
+            }
+            empty(204)
+        }
+        _ => serve_file(state, path.strip_prefix('/').unwrap_or(&path)).await,
+    }
 }
 
 fn mime_for_path(path: &str) -> &'static str {
@@ -741,7 +805,25 @@ fn mime_for_path(path: &str) -> &'static str {
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Start the HTTP server in a background tokio task.
+fn server_limits(runtime: Option<&TestRuntimeConfig>) -> std::io::Result<Limits> {
+    let schedule = runtime
+        .map(|runtime| runtime.wait_ms.max(runtime.interval_ms.unwrap_or(0.0)))
+        .unwrap_or(0.0);
+    let wait =
+        std::time::Duration::try_from_secs_f64(schedule / 1000.0).map_err(std::io::Error::other)?;
+    let deadline = wait
+        .checked_add(std::time::Duration::from_secs(60))
+        .ok_or_else(|| std::io::Error::other("test schedule deadline overflow"))?
+        .max(std::time::Duration::from_secs(3600));
+    Ok(Limits {
+        max_request_body_bytes: 64 * 1024 * 1024,
+        handler_timeout: deadline,
+        connection_timeout: deadline,
+        ..Limits::default()
+    })
+}
+
+/// Start the kernel HTTP server in a caller-runtime-owned background task.
 ///
 /// Returns the actual address the server bound to (useful when port 0 is
 /// requested for automatic assignment). `debug_symbols` is shared with the
@@ -749,68 +831,65 @@ fn mime_for_path(path: &str) -> &'static str {
 pub async fn start_server(
     serve_dir: PathBuf,
     port: u16,
-    build_tx: Option<broadcast::Sender<String>>,
+    build_tx: Option<async_engine::BroadcastSender<String>>,
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
-) -> anyhow::Result<SocketAddr> {
-    // Serving never changes cwd. Capture it separately from output/sketch paths
-    // so the terminal follows the app launch, including --serve and --test.
+) -> crate::error_compat::Result<SocketAddr> {
     let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(std::env::current_dir()?));
-    let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
-    let addr = listener.local_addr()?;
+    let limits = server_limits(test.as_ref().map(|test| &test.runtime))?;
+    let server = Server::bind(SocketAddr::from(([127, 0, 0, 1], port)), limits)
+        .await?
+        .with_response_header("cross-origin-embedder-policy", "require-corp")?
+        .with_response_header("cross-origin-opener-policy", "same-origin")?
+        .with_response_header("cache-control", "no-cache, no-store, must-revalidate")?
+        .with_response_header("access-control-allow-origin", "*")?
+        .with_response_header(
+            "vary",
+            "origin, access-control-request-method, access-control-request-headers",
+        )?;
+    let addr = server.local_addr()?;
     let state = AppState {
+        serve_dir: Arc::new(serve_dir),
         terminal_cwd,
         terminal_origin: Arc::new(format!("http://{addr}")),
-        terminal_slots: Arc::new(tokio::sync::Semaphore::new(4)),
-        serve_dir: Arc::new(serve_dir),
+        terminal_slots: async_engine::Semaphore::new(4),
         build_tx,
         debug_symbols,
         test: test.map(Arc::new),
+        // One shared budget per server, including native writes still completing
+        // after timeout. PNG validation and destination policy stay in this app.
+        file_responses: kernal_api::http_server::FileResponses::new(
+            4,
+            std::time::Duration::from_secs(30),
+        )?,
+        screenshot_io: kernal_api::platform::fs::AsyncFileIo::new(
+            4,
+            64 * 1024 * 1024,
+            std::time::Duration::from_secs(30),
+        )?,
     };
-
-    let app = Router::new()
-        .route("/", get(serve_index))
-        .route("/build-stream", get(build_stream))
-        .route("/terminal/ws", get(terminal_socket))
-        .route("/dwarfsource", post(dwarf_source))
-        .route("/viewer-log", post(viewer_log))
-        .route("/test-config", get(test_config))
-        .route("/test-ready", post(test_ready))
-        .route("/test-sleep", post(test_sleep))
-        .route("/viewer-screenshot", post(viewer_screenshot))
-        .route("/test-done", post(test_done))
-        .route("/debug/source-roots", get(debug_source_roots))
-        .route("/{*path}", get(serve_file))
-        .layer(SetResponseHeaderLayer::overriding(
-            axum::http::HeaderName::from_static("cross-origin-embedder-policy"),
-            HeaderValue::from_static("require-corp"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            axum::http::HeaderName::from_static("cross-origin-opener-policy"),
-            HeaderValue::from_static("same-origin"),
-        ))
-        .layer(SetResponseHeaderLayer::overriding(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-cache, no-store, must-revalidate"),
-        ))
-        .layer(
-            CorsLayer::new()
-                .allow_origin(Any)
-                .allow_methods([
-                    Method::GET,
-                    Method::POST,
-                    Method::PUT,
-                    Method::DELETE,
-                    Method::OPTIONS,
-                ])
-                .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]),
-        )
-        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
-        .with_state(state);
-
-    tokio::spawn(async move {
-        axum::serve(listener, app).await.ok();
-    });
+    let diagnostics = server.diagnostics();
+    async_engine::launch(async move {
+        let result = server
+            .serve(move |request| {
+                let state = state.clone();
+                async move {
+                    match route(&state, request).await {
+                        Ok(response) => response,
+                        Err(error) => {
+                            eprintln!("[server] response preparation failed: {error}");
+                            Response::default()
+                        }
+                    }
+                }
+            })
+            .await;
+        if let Err(error) = result {
+            eprintln!("[server] listener failed: {error}");
+        }
+        eprintln!("[server] stopped: {:?}", diagnostics.snapshot());
+    })
+    .detach();
 
     Ok(addr)
 }
@@ -822,76 +901,210 @@ pub async fn start_server(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::http::{
+        Client as HttpClient, Limits as HttpLimits, Method as HttpMethod, Request as HttpRequest,
+        Response as HttpResponse,
+    };
     use std::fs;
+
+    async fn http_request(
+        method: HttpMethod,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: &[u8],
+    ) -> std::io::Result<HttpResponse> {
+        HttpClient::new(HttpLimits::default())?
+            .execute(HttpRequest {
+                method,
+                url,
+                headers,
+                body,
+            })
+            .await
+    }
+
+    async fn http_get(url: String) -> std::io::Result<HttpResponse> {
+        http_request(HttpMethod::Get, &url, &[], &[]).await
+    }
+
+    async fn response_text(response: HttpResponse) -> String {
+        String::from_utf8(response.into_bytes().await.unwrap()).unwrap()
+    }
+
+    fn header_text<'a>(response: &'a HttpResponse, name: &str) -> &'a str {
+        std::str::from_utf8(response.header(name).unwrap()).unwrap()
+    }
 
     fn empty_handle() -> DebugSymbolHandle {
         Arc::new(RwLock::new(None))
     }
 
+    #[test]
+    fn server_deadlines_cover_every_accepted_test_sleep() {
+        for ms in [25.0, 3_600_001.0, f64::from(i32::MAX)] {
+            let runtime = TestRuntimeConfig {
+                wait_ms: ms,
+                interval_ms: Some(ms),
+                screenshot_names: Vec::new(),
+            };
+            let limits = server_limits(Some(&runtime)).unwrap();
+            let wait = std::time::Duration::from_secs_f64(ms / 1000.0);
+            assert!(limits.handler_timeout > wait);
+            assert!(limits.connection_timeout > wait);
+            assert_eq!(limits.handler_timeout, limits.connection_timeout);
+        }
+    }
+
     /// Helper: create a temp dir, start the server, return (addr, dir).
-    async fn setup_server() -> (SocketAddr, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
+    async fn setup_server() -> (SocketAddr, kernal_api::platform::fs::TemporaryDirectory) {
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let addr = start_server(dir.path().to_path_buf(), 0, None, empty_handle(), None)
             .await
             .unwrap();
         // Give the server a moment to bind.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        async_engine::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
     }
 
-    // Refs #240: arbitrary web origins must never acquire a shell.
-    #[tokio::test]
-    async fn terminal_240_rejects_foreign_origin() {
-        let (addr, _dir) = setup_server().await;
-        for origin in [Some("https://attacker.example"), Some("null"), None] {
-            let mut request = reqwest::Client::new()
-                .get(format!("http://{addr}/terminal/ws"))
-                .header("connection", "upgrade")
-                .header("upgrade", "websocket")
-                .header("sec-websocket-version", "13")
-                .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
-            if let Some(origin) = origin {
-                request = request.header("origin", origin);
+    async fn raw_http(addr: SocketAddr, request: String) -> String {
+        async_engine::launch_blocking(move || {
+            use std::io::{Read, Write};
+            let mut socket =
+                std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(3))
+                    .unwrap();
+            socket
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            socket
+                .set_write_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            socket.write_all(request.as_bytes()).unwrap();
+            let mut bytes = Vec::new();
+            socket.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        })
+        .await
+        .unwrap()
+    }
+
+    #[test]
+    fn http_router_migration_preserves_head_errors_and_preflight_policy() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+        let (addr, dir) = setup_server().await;
+        fs::write(dir.path().join("asset.js"), "hello").unwrap();
+        for (method, path, status) in [
+            ("GET", "/missing", 404),
+            ("HEAD", "/asset.js", 200),
+            ("POST", "/asset.js", 405),
+        ] {
+            let response = raw_http(addr, format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nOrigin: http://example.test\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")).await;
+            assert!(
+                response.starts_with(&format!("HTTP/1.1 {status}")),
+                "{response}"
+            );
+            for header in [
+                "cross-origin-embedder-policy: require-corp\r\n",
+                "cross-origin-opener-policy: same-origin\r\n",
+                "cache-control: no-cache, no-store, must-revalidate\r\n",
+                "access-control-allow-origin: *\r\n",
+            ] {
+                assert!(response.contains(header), "missing {header:?}: {response}");
             }
-            assert_eq!(request.send().await.unwrap().status(), 403);
+            if method == "HEAD" {
+                assert!(response.contains("content-length: 5\r\n"), "{response}");
+                assert!(response.ends_with("\r\n\r\n"), "{response}");
+            }
         }
-        let response = reqwest::Client::new()
-            .get(format!("http://{addr}/terminal/ws"))
-            .header("origin", format!("http://{addr}"))
-            .header("host", "attacker.example")
-            .header("connection", "upgrade")
-            .header("upgrade", "websocket")
-            .header("sec-websocket-version", "13")
-            .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 403);
+        let response = raw_http(addr, "OPTIONS /viewer-screenshot HTTP/1.1\r\nHost: localhost\r\nOrigin: http://example.test\r\nAccess-Control-Request-Method: POST\r\nAccess-Control-Request-Headers: authorization,content-type\r\nConnection: close\r\n\r\n".into()).await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        assert!(
+            response.contains("access-control-allow-origin: *\r\n"),
+            "{response}"
+        );
+        assert!(
+            response.contains("access-control-allow-methods: GET,POST,PUT,DELETE,OPTIONS\r\n"),
+            "{response}"
+        );
+        assert!(
+            response.contains("access-control-allow-headers: content-type,authorization\r\n"),
+            "{response}"
+        );
+        assert!(response.ends_with("\r\n\r\n"), "{response}");
+            });
     }
 
-    #[tokio::test]
-    async fn test_viewer_log_endpoint_accepts_posts() {
+    #[test]
+    fn malformed_requests_respect_the_browser_header_dispatch_boundary() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
         let (addr, _dir) = setup_server().await;
-        let client = reqwest::Client::new();
-        let resp = client
-            .post(format!("http://{addr}/viewer-log"))
-            .body("error: something broke")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 204);
+        let parser_error = raw_http(
+            addr,
+            "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: invalid\r\nConnection: close\r\n\r\n".into(),
+        )
+        .await;
+        assert!(parser_error.starts_with("HTTP/1.1 400"), "{parser_error}");
+        assert!(!parser_error.contains("cross-origin-opener-policy:"));
+        assert!(!parser_error.contains("access-control-allow-origin:"));
+
+        for target in ["/%zz", "/test-sleep?ms=%zz"] {
+            let response = raw_http(
+                addr,
+                format!("POST {target} HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+            )
+            .await;
+            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            assert!(response.contains("cross-origin-opener-policy: same-origin\r\n"));
+            assert!(response.contains("cross-origin-embedder-policy: require-corp\r\n"));
+            assert!(response.contains("access-control-allow-origin: *\r\n"));
+            assert!(response.contains("cache-control: no-cache, no-store, must-revalidate\r\n"));
+        }
+            });
     }
 
-    #[tokio::test]
-    async fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
-        let dir = tempfile::tempdir().unwrap();
+    #[test]
+    fn test_viewer_log_endpoint_accepts_posts() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_request(
+                    HttpMethod::Post,
+                    &format!("http://{addr}/viewer-log"),
+                    &[],
+                    b"error: something broke",
+                )
+                .await
+                .unwrap();
+                assert_eq!(resp.status(), 204);
+            });
+    }
+
+    #[test]
+    fn test_runtime_endpoints_use_preconfigured_screenshot_paths() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(
             dir.path().join("fastled_background_worker.js"),
             "console.log('worker');",
         )
         .unwrap();
         let screenshot = dir.path().join("artifacts").join("frame.png");
-        let (events, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (events, mut rx) = async_engine::unbounded_channel();
+        let sleep_permits = async_engine::Semaphore::new(4);
         let options = TestServerOptions {
             runtime: TestRuntimeConfig {
                 wait_ms: 25.0,
@@ -901,7 +1114,7 @@ mod tests {
             screenshot_paths: HashMap::from([("frame-0".to_string(), screenshot.clone())]),
             events,
             token: "test-token".to_string(),
-            sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+            sleep_permits: sleep_permits.clone(),
         };
         let addr = start_server(
             dir.path().to_path_buf(),
@@ -912,328 +1125,425 @@ mod tests {
         )
         .await
         .unwrap();
-        let client = reqwest::Client::new();
 
-        let unauthorized = client
-            .get(format!("http://{addr}/test-config"))
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
-        let config_response = client
-            .get(format!("http://{addr}/test-config"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        let config: serde_json::Value =
-            serde_json::from_str(&config_response.text().await.unwrap()).unwrap();
-        assert_eq!(config["waitMs"].as_f64(), Some(25.0));
-        assert_eq!(config["screenshotNames"][0], "frame-0");
+        let unauthorized = http_request(
+            HttpMethod::Get,
+            &format!("http://{addr}/test-config"),
+            &[],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(unauthorized.status(), 401);
+        let config_response = http_request(
+            HttpMethod::Get,
+            &format!("http://{addr}/test-config"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        let config = json::parse(response_text(config_response).await.as_bytes()).unwrap();
+        assert_eq!(field(&config, "waitMs"), &Value::Float(25.0));
+        assert_eq!(field(&config, "screenshotNames"), &Value::Array(vec![Value::String("frame-0".into())]));
 
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=1"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=-1"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let response = client
-            .post(format!("http://{addr}/test-sleep?ms=26"))
-            .bearer_auth("test-token")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        // Product policy: four occupied slots reject another authorized sleep
+        // with HTTP 429; releasing a slot admits the next request.
+        let mut occupied: Vec<_> = (0..4)
+            .map(|_| sleep_permits.try_acquire().unwrap())
+            .collect();
+        let saturated = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(saturated.status(), 429);
+        drop(occupied.pop());
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 204);
+        assert_eq!(sleep_permits.available_permits(), 1);
+        drop(occupied);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=-1"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 400);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/test-sleep?ms=26"),
+            &[("Authorization", "Bearer test-token")],
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 400);
 
-        let worker = client
-            .get(format!("http://{addr}/fastled_background_worker.js"))
-            .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap();
+        let worker = response_text(
+            http_get(format!("http://{addr}/fastled_background_worker.js"))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert!(worker.starts_with("\nconst __fastledOriginalOffscreenGetContext"));
         assert!(worker.contains("preserveDrawingBuffer: true"));
         assert!(worker.contains("console.log('worker');"));
         assert!(worker.contains("gl.readPixels"));
         assert!(worker.contains("fastled_test_capture_response"));
 
-        let response = client
-            .post(format!("http://{addr}/viewer-screenshot?name=..%2Fescape"))
-            .bearer_auth("test-token")
-            .body(vec![137, 80, 78, 71, 13, 10, 26, 10])
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=..%2Fescape"),
+            &[("Authorization", "Bearer test-token")],
+            &[137, 80, 78, 71, 13, 10, 26, 10],
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 400);
         assert!(!dir.path().join("escape").exists());
 
         let png = vec![137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
-        let response = client
-            .post(format!("http://{addr}/viewer-screenshot?name=frame-0"))
-            .bearer_auth("test-token")
-            .body(png.clone())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=frame-0"),
+            &[("Authorization", "Bearer test-token")],
+            &png,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 204);
         assert_eq!(fs::read(&screenshot).unwrap(), png);
         assert!(matches!(
             rx.recv().await,
             Some(TestEvent::ScreenshotSaved { name, .. }) if name == "frame-0"
         ));
+
+        // A persistence error must remain a product failure, never a saved
+        // event. Turn this test's temporary output into a directory to force it.
+        fs::remove_file(&screenshot).unwrap();
+        fs::create_dir(&screenshot).unwrap();
+        let response = http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}/viewer-screenshot?name=frame-0"),
+            &[("Authorization", "Bearer test-token")],
+            &png,
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 500);
+        assert!(matches!(
+            rx.recv().await,
+            Some(TestEvent::Failure(message)) if message.contains("could not write screenshot")
+        ));
+            });
     }
 
-    #[tokio::test]
-    async fn test_loading_page_when_no_index_html() {
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("Compiling..."),
-            "expected loading page, got: {body}"
-        );
+    #[test]
+    fn test_loading_page_when_no_index_html() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("Compiling..."),
+                    "expected loading page, got: {body}"
+                );
+            });
     }
 
     /// Instant-launch failure UX (#148 acceptance criterion 5):
     /// when a compile has failed and `index.html` is absent, `/` must still
     /// return the in-browser loading page (which surfaces the error log) —
     /// it must NOT 404 or navigate to a stale page.
-    #[tokio::test]
-    async fn test_loading_page_stays_when_build_failed_and_no_index_html() {
-        let (addr, dir) = setup_server().await;
-        fs::write(
-            dir.path().join("build-status.json"),
-            r#"{"status":"error","message":"Compilation failed"}"#,
-        )
-        .unwrap();
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(
-            resp.status(),
-            200,
-            "viewer should land on the loading page, not 404/redirect, when compile failed"
-        );
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("Compiling..."),
-            "expected loading page, got: {body}"
-        );
-        // Sanity check: the embedded JS knows how to render the error state.
-        assert!(
-            body.contains("setError"),
-            "loading page must include error-handling branch"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_serves_index_html_when_present() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("OK"),
-            "expected index.html content, got: {body}"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_serves_js_with_correct_mime() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/app.js")).await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
+    #[test]
+    fn test_loading_page_stays_when_build_failed_and_no_index_html() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(
+                    dir.path().join("build-status.json"),
+                    r#"{"status":"error","message":"Compilation failed"}"#,
+                )
+                .unwrap();
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(
+                    resp.status(),
+                    200,
+                    "viewer should land on the loading page, not 404/redirect, when compile failed"
+                );
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("Compiling..."),
+                    "expected loading page, got: {body}"
+                );
+                // Sanity check: the embedded JS knows how to render the error state.
+                assert!(
+                    body.contains("setError"),
+                    "loading page must include error-handling branch"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_serves_wasm_with_correct_mime() {
-        let (addr, dir) = setup_server().await;
-        fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
-        let resp = reqwest::get(format!("http://{addr}/fastled.wasm"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
+    #[test]
+    fn test_serves_index_html_when_present() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("index.html"), "<html>OK</html>").unwrap();
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("OK"),
+                    "expected index.html content, got: {body}"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_safari_compatible_coop_coep_headers() {
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        let coep = resp
-            .headers()
-            .get("cross-origin-embedder-policy")
+    #[test]
+    fn test_serves_js_with_correct_mime() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .to_str()
-            .unwrap();
-        let coop = resp
-            .headers()
-            .get("cross-origin-opener-policy")
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("app.js"), "console.log('hi')").unwrap();
+                let resp = http_get(format!("http://{addr}/app.js")).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("javascript"), "expected JS mime, got: {ct}");
+            });
+    }
+
+    #[test]
+    fn test_serves_wasm_with_correct_mime() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .to_str()
-            .unwrap();
-        assert_eq!(coep, "require-corp");
-        assert_eq!(coop, "same-origin");
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                fs::write(dir.path().join("fastled.wasm"), [0x00, 0x61, 0x73, 0x6d]).unwrap();
+                let resp = http_get(format!("http://{addr}/fastled.wasm"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("wasm"), "expected WASM mime, got: {ct}");
+            });
     }
 
-    #[tokio::test]
-    async fn test_404_for_missing_file() {
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/nonexistent.js"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
+    #[test]
+    fn test_safari_compatible_coop_coep_headers() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                let coep = header_text(&resp, "cross-origin-embedder-policy");
+                let coop = header_text(&resp, "cross-origin-opener-policy");
+                assert_eq!(coep, "require-corp");
+                assert_eq!(coop, "same-origin");
+            });
     }
 
-    #[tokio::test]
-    async fn test_build_status_json_served() {
-        let (addr, dir) = setup_server().await;
-        // Initially no build-status.json -> 404
-        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
-
-        // Write status file -> 200
-        fs::write(
-            dir.path().join("build-status.json"),
-            r#"{"status":"compiling","message":"Building..."}"#,
-        )
-        .unwrap();
-        let resp = reqwest::get(format!("http://{addr}/build-status.json"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
-        assert!(body.contains("compiling"));
+    #[test]
+    fn test_404_for_missing_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/nonexistent.js"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
+            });
     }
 
-    #[tokio::test]
-    async fn test_directory_traversal_blocked() {
-        let (addr, dir) = setup_server().await;
-        // Create a file outside the serve dir
-        let parent = dir.path().parent().unwrap();
-        fs::write(parent.join("secret.txt"), "top secret").unwrap();
-        let resp = reqwest::get(format!("http://{addr}/../secret.txt"))
-            .await
-            .unwrap();
-        // Should not serve files outside the serve dir
-        assert_ne!(resp.status(), 200);
+    #[test]
+    fn test_build_status_json_served() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                // Initially no build-status.json -> 404
+                let resp = http_get(format!("http://{addr}/build-status.json"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
+
+                // Write status file -> 200
+                fs::write(
+                    dir.path().join("build-status.json"),
+                    r#"{"status":"compiling","message":"Building..."}"#,
+                )
+                .unwrap();
+                let resp = http_get(format!("http://{addr}/build-status.json"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(body.contains("compiling"));
+            });
+    }
+
+    #[test]
+    fn test_directory_traversal_blocked() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, dir) = setup_server().await;
+                // Create a file outside the serve dir
+                let parent = dir.path().parent().unwrap();
+                fs::write(parent.join("secret.txt"), "top secret").unwrap();
+                let resp = http_get(format!("http://{addr}/../secret.txt"))
+                    .await
+                    .unwrap();
+                // Should not serve files outside the serve dir
+                assert_ne!(resp.status(), 200);
+            });
     }
 
     // ------------------------------------------------------------------
     // SSE build-stream tests
     // ------------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_sse_returns_404_without_broadcast() {
-        // Server started without broadcast channel → /build-stream returns 404.
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/build-stream"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 404);
+    #[test]
+    fn test_sse_returns_404_without_broadcast() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                // Server started without broadcast channel → /build-stream returns 404.
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/build-stream"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 404);
+            });
     }
 
-    #[tokio::test]
-    async fn test_sse_endpoint_streams_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, _rx) = broadcast::channel::<String>(16);
-        let addr = start_server(
-            dir.path().to_path_buf(),
-            0,
-            Some(tx.clone()),
-            empty_handle(),
-            None,
-        )
-        .await
-        .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let url = format!("http://{addr}/build-stream");
-
-        // Connect to SSE endpoint.
-        let client = reqwest::Client::new();
-        let mut resp = client.get(&url).send().await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
+    #[test]
+    fn test_sse_endpoint_streams_events() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
             .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string();
-        assert!(
-            ct.contains("text/event-stream"),
-            "expected event-stream content-type, got: {ct}"
-        );
+            .run(async {
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
+                let addr = start_server(
+                    dir.path().to_path_buf(),
+                    0,
+                    Some(tx.clone()),
+                    empty_handle(),
+                    None,
+                )
+                .await
+                .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
-        // Give the server handler a moment to subscribe to the broadcast.
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let url = format!("http://{addr}/build-stream");
 
-        // Send test events.
-        tx.send(r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string())
-            .unwrap();
-        tx.send(r#"{"type":"status","status":"success","message":"Done"}"#.to_string())
-            .unwrap();
+                // Connect to SSE endpoint.
+                let mut resp = http_get(url).await.unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type").to_string();
+                assert!(
+                    ct.contains("text/event-stream"),
+                    "expected event-stream content-type, got: {ct}"
+                );
 
-        // Read SSE chunks until we see both events (or timeout).
-        let mut collected = String::new();
-        let deadline = std::time::Duration::from_secs(3);
-        while let Ok(Ok(Some(chunk))) = tokio::time::timeout(deadline, resp.chunk()).await {
-            collected.push_str(&String::from_utf8_lossy(&chunk));
-            if collected.contains("Building sketch...") && collected.contains("success") {
-                break;
-            }
-        }
+                // Give the server handler a moment to subscribe to the broadcast.
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
-        assert!(
-            collected.contains("Building sketch..."),
-            "expected log line in SSE body, got: {collected}"
-        );
-        assert!(
-            collected.contains("success"),
-            "expected status event in SSE body, got: {collected}"
-        );
+                // Send test events.
+                tx.send(
+                    r#"{"type":"log","line":"Building sketch...","stream":"stdout"}"#.to_string(),
+                )
+                .unwrap();
+                tx.send(r#"{"type":"status","status":"success","message":"Done"}"#.to_string())
+                    .unwrap();
+
+                // Read SSE chunks until we see both events (or timeout).
+                let mut collected = String::new();
+                let deadline = std::time::Duration::from_secs(3);
+                let mut buffer = [0; 4096];
+                while let Ok(Ok(n)) = async_engine::timeout(deadline, resp.read(&mut buffer)).await
+                {
+                    if n == 0 {
+                        break;
+                    }
+                    collected.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                    if collected.contains("Building sketch...") && collected.contains("success") {
+                        break;
+                    }
+                }
+
+                assert!(
+                    collected.contains("Building sketch..."),
+                    "expected log line in SSE body, got: {collected}"
+                );
+                assert!(
+                    collected.contains("success"),
+                    "expected status event in SSE body, got: {collected}"
+                );
+            });
     }
 
-    #[tokio::test]
-    async fn test_loading_page_contains_eventsource() {
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/")).await.unwrap();
-        let body = resp.text().await.unwrap();
-        assert!(
-            body.contains("EventSource"),
-            "loading page should use EventSource for SSE"
-        );
-        assert!(
-            body.contains("/build-stream"),
-            "loading page should connect to /build-stream"
-        );
+    #[test]
+    fn test_loading_page_contains_eventsource() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/")).await.unwrap();
+                let body = response_text(resp).await;
+                assert!(
+                    body.contains("EventSource"),
+                    "loading page should use EventSource for SSE"
+                );
+                assert!(
+                    body.contains("/build-stream"),
+                    "loading page should connect to /build-stream"
+                );
+            });
     }
 
     /// Live compile log UX (#153): the loading page must classify and color
@@ -1271,178 +1581,350 @@ mod tests {
     // DWARF source endpoint tests
     // ------------------------------------------------------------------
 
-    fn json_body(value: serde_json::Value) -> String {
-        value.to_string()
-    }
-
-    async fn post_json(addr: SocketAddr, path: &str, body: serde_json::Value) -> reqwest::Response {
-        reqwest::Client::new()
-            .post(format!("http://{addr}{path}"))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(json_body(body))
-            .send()
-            .await
-            .unwrap()
-    }
-
-    #[tokio::test]
-    async fn dwarfsource_without_resolver_returns_400() {
-        let (addr, _dir) = setup_server().await;
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/foo.ino"}),
-        )
-        .await;
-        assert_eq!(resp.status(), 400);
-    }
-
-    #[tokio::test]
-    async fn debug_source_roots_empty_without_resolver() {
-        let (addr, _dir) = setup_server().await;
-        let resp = reqwest::get(format!("http://{addr}/debug/source-roots"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
-        assert!(body["roots"].as_array().unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn dwarfsource_returns_resolved_file() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
-
-        let dir = tempfile::tempdir().unwrap();
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        let sketch_file = sketch_dir.join("src").join("demo.ino");
-        fs::write(&sketch_file, "void setup() {}").unwrap();
-
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
-
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
-            .await
-            .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/src/demo.ino"}),
-        )
-        .await;
-        assert_eq!(resp.status(), 200);
-        let body = resp.text().await.unwrap();
-        assert!(body.contains("void setup()"));
-
-        let resp = reqwest::get(format!("http://{addr}/debug/source-roots"))
-            .await
-            .unwrap();
-        let body: serde_json::Value = serde_json::from_str(&resp.text().await.unwrap()).unwrap();
-        let roots = body["roots"].as_array().unwrap();
-        assert!(!roots.is_empty());
-        assert!(roots
-            .iter()
-            .any(|r| r["prefix"].as_str() == Some("sketchsource")));
-    }
-
-    #[tokio::test]
-    async fn source_map_style_get_returns_resolved_file() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
-
-        let dir = tempfile::tempdir().unwrap();
-        let serve_dir = dir.path().join("fastled_js");
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        fs::create_dir_all(&serve_dir).unwrap();
-        fs::write(sketch_dir.join("src").join("demo.ino"), "void loop() {}").unwrap();
-
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
-
-        let addr = start_server(serve_dir, 0, None, handle, None)
-            .await
-            .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        let ct = resp
-            .headers()
-            .get("content-type")
-            .unwrap()
-            .to_str()
-            .unwrap();
-        assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
-        assert!(resp.text().await.unwrap().contains("void loop()"));
-
-        let resp = reqwest::get(format!(
-            "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
-        ))
-        .await
-        .unwrap();
-        assert_eq!(resp.status(), 200);
-        assert!(resp.text().await.unwrap().contains("void loop()"));
-    }
-
-    #[tokio::test]
-    async fn source_map_get_works_from_debug_symbol_manifest() {
-        use crate::debug_symbols::{
-            load_debug_symbol_config, read_debug_symbol_manifest, write_debug_symbol_manifest,
-            DebugSymbolResolver,
+    fn field<'a>(value: &'a Value, name: &str) -> &'a Value {
+        let Value::Object(fields) = value else {
+            panic!("expected object")
         };
-
-        let dir = tempfile::tempdir().unwrap();
-        let serve_dir = dir.path().join("fastled_js");
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(sketch_dir.join("src")).unwrap();
-        fs::create_dir_all(&serve_dir).unwrap();
-        fs::write(sketch_dir.join("src").join("demo.ino"), "void setup() {}").unwrap();
-
-        let config = load_debug_symbol_config(sketch_dir, None, None);
-        write_debug_symbol_manifest(&serve_dir, &config).unwrap();
-        let loaded = read_debug_symbol_manifest(&serve_dir)
-            .unwrap()
-            .expect("manifest should exist");
-        let handle: DebugSymbolHandle =
-            Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
-
-        let addr = start_server(serve_dir, 0, None, handle, None)
-            .await
-            .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = reqwest::get(format!("http://{addr}/sketchsource/src/demo.ino"))
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), 200);
-        assert!(resp.text().await.unwrap().contains("void setup()"));
+        fields.get(name).expect("expected field")
     }
 
-    #[tokio::test]
-    async fn dwarfsource_rejects_traversal() {
-        use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+    fn path_document(path: &str) -> Value {
+        Value::ObjectMembers(vec![("path".into(), Value::String(path.into()))])
+    }
 
-        let dir = tempfile::tempdir().unwrap();
-        let sketch_dir = dir.path().join("sketch");
-        fs::create_dir_all(&sketch_dir).unwrap();
-        let resolver = DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
-        let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
-
-        let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
-            .await
-            .unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-        let resp = post_json(
-            addr,
-            "/dwarfsource",
-            serde_json::json!({"path": "sketchsource/../escape.txt"}),
+    async fn post_json(addr: SocketAddr, path: &str, body: Value) -> HttpResponse {
+        http_request(
+            HttpMethod::Post,
+            &format!("http://{addr}{path}"),
+            &[("Content-Type", "application/json")],
+            &json::encode(&body, Layout::Compact).unwrap(),
         )
-        .await;
-        assert_eq!(resp.status(), 400);
+        .await
+        .unwrap()
+    }
+
+    #[test]
+    fn dwarfsource_without_resolver_returns_400() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp =
+                    post_json(addr, "/dwarfsource", path_document("sketchsource/foo.ino")).await;
+                assert_eq!(resp.status(), 400);
+            });
+    }
+
+    #[test]
+    fn dwarfsource_json_schema_distinguishes_media_syntax_and_field_errors() {
+        async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                for (content_type, body, status) in [
+                    ("text/plain", r#"{"path":"日本"}"#, 415),
+                    ("application/json", "{", 400),
+                    ("application/json", r#"{"path":1}"#, 422),
+                    ("application/json", r#"{}"#, 422),
+                    ("application/json", r#"{"path":"a","path":"b"}"#, 422),
+                    ("application/json", r#"[]"#, 422),
+                    ("application/json", r#"[1,2]"#, 422),
+                    ("application/json", r#"["a","b"]"#, 400),
+                    // Valid requests proceed to the missing-resolver response.
+                    ("application/json", r#"["日本"]"#, 400),
+                    (
+                        "application/json",
+                        r#"{"path":"日本","future":null,"future":true}"#,
+                        400,
+                    ),
+                    (
+                        "application/vnd.fastled+json; charset=utf-8",
+                        r#"{"path":"a"}"#,
+                        400,
+                    ),
+                ] {
+                    let response = http_request(
+                        HttpMethod::Post,
+                        &format!("http://{addr}/dwarfsource"),
+                        &[("Content-Type", content_type)],
+                        body.as_bytes(),
+                    )
+                    .await
+                    .unwrap();
+                    assert_eq!(response.status(), status, "{content_type}: {body}");
+                    if body.contains("日本") && status == 400 {
+                        assert!(response_text(response)
+                            .await
+                            .contains("resolver unavailable"));
+                    }
+                }
+            });
+    }
+
+    #[test]
+    fn runtime_json_preserves_camel_case_order_nulls_and_finite_numbers() {
+        for (wait_ms, interval_ms, expected) in [
+            (
+                25.0,
+                Some(1.5),
+                r#"{"waitMs":25.0,"intervalMs":1.5,"screenshotNames":["日本"]}"#,
+            ),
+            (
+                f64::NAN,
+                None,
+                r#"{"waitMs":null,"intervalMs":null,"screenshotNames":["日本"]}"#,
+            ),
+            (
+                f64::INFINITY,
+                Some(f64::NEG_INFINITY),
+                r#"{"waitMs":null,"intervalMs":null,"screenshotNames":["日本"]}"#,
+            ),
+        ] {
+            let runtime = TestRuntimeConfig {
+                wait_ms,
+                interval_ms,
+                screenshot_names: vec!["日本".into()],
+            };
+            assert_eq!(
+                json::encode(&runtime.document(), Layout::Compact).unwrap(),
+                expected.as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn dwarfsource_json_resource_limits_and_syntax_errors_are_explicit() {
+        async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let mut oversized = r#"{"path":"a"}"#.to_owned();
+                oversized.extend(std::iter::repeat_n(
+                    ' ',
+                    json::MAX_INPUT_BYTES + 1 - oversized.len(),
+                ));
+                let too_deep = format!(
+                    "{{\"path\":\"a\",\"extra\":{}0{}}}",
+                    "[".repeat(json::MAX_DEPTH + 1),
+                    "]".repeat(json::MAX_DEPTH + 1)
+                );
+                let too_many = format!(
+                    "{{\"path\":\"a\",\"extra\":[{}0]}}",
+                    "0,".repeat(json::MAX_NODES)
+                );
+                for body in [oversized, too_deep, too_many] {
+                    let response = HttpClient::new(HttpLimits {
+                        max_request_bytes: json::MAX_INPUT_BYTES + 4096,
+                        ..HttpLimits::default()
+                    })
+                    .unwrap()
+                    .execute(HttpRequest {
+                        method: HttpMethod::Post,
+                        url: &format!("http://{addr}/dwarfsource"),
+                        headers: &[("Content-Type", "application/json")],
+                        body: body.as_bytes(),
+                    })
+                    .await
+                    .unwrap();
+                    assert_eq!(response.status(), 413);
+                }
+                // Syntax is validated before schema inspection, including when a
+                // wrong field type precedes malformed trailing input.
+                let response = http_request(
+                    HttpMethod::Post,
+                    &format!("http://{addr}/dwarfsource"),
+                    &[("Content-Type", "application/json")],
+                    br#"{"path":false,"private-marker":}"#,
+                )
+                .await
+                .unwrap();
+                assert_eq!(response.status(), 400);
+                assert!(!response_text(response).await.contains("private-marker"));
+            });
+    }
+
+    #[test]
+    fn debug_source_roots_empty_without_resolver() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let (addr, _dir) = setup_server().await;
+                let resp = http_get(format!("http://{addr}/debug/source-roots"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let body = json::parse(response_text(resp).await.as_bytes()).unwrap();
+                assert_eq!(field(&body, "roots"), &Value::Array(vec![]));
+            });
+    }
+
+    #[test]
+    fn dwarfsource_returns_resolved_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                let sketch_file = sketch_dir.join("src").join("demo.ino");
+                fs::write(&sketch_file, "void setup() {}").unwrap();
+
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = post_json(
+                    addr,
+                    "/dwarfsource",
+                    path_document("sketchsource/src/demo.ino"),
+                )
+                .await;
+                assert_eq!(resp.status(), 200);
+                let body = response_text(resp).await;
+                assert!(body.contains("void setup()"));
+
+                let resp = http_get(format!("http://{addr}/debug/source-roots"))
+                    .await
+                    .unwrap();
+                let body = json::parse(response_text(resp).await.as_bytes()).unwrap();
+                let Value::Array(roots) = field(&body, "roots") else {
+                    panic!("expected roots array")
+                };
+                assert!(!roots.is_empty());
+                assert!(roots
+                    .iter()
+                    .any(|r| field(r, "prefix") == &Value::String("sketchsource".into())));
+            });
+    }
+
+    #[test]
+    fn source_map_style_get_returns_resolved_file() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let serve_dir = dir.path().join("fastled_js");
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                fs::create_dir_all(&serve_dir).unwrap();
+                fs::write(sketch_dir.join("src").join("demo.ino"), "void loop() {}").unwrap();
+
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(serve_dir, 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                let ct = header_text(&resp, "content-type");
+                assert!(ct.contains("text/plain"), "expected text/plain, got {ct}");
+                assert!(response_text(resp).await.contains("void loop()"));
+
+                let resp = http_get(format!(
+                    "http://{addr}/.fastled/cache/fl/repo/sketchsource/src/demo.ino"
+                ))
+                .await
+                .unwrap();
+                assert_eq!(resp.status(), 200);
+                assert!(response_text(resp).await.contains("void loop()"));
+            });
+    }
+
+    #[test]
+    fn source_map_get_works_from_debug_symbol_manifest() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{
+                    load_debug_symbol_config, read_debug_symbol_manifest,
+                    write_debug_symbol_manifest, DebugSymbolResolver,
+                };
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let serve_dir = dir.path().join("fastled_js");
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(sketch_dir.join("src")).unwrap();
+                fs::create_dir_all(&serve_dir).unwrap();
+                fs::write(sketch_dir.join("src").join("demo.ino"), "void setup() {}").unwrap();
+
+                let config = load_debug_symbol_config(sketch_dir, None, None);
+                write_debug_symbol_manifest(&serve_dir, &config).unwrap();
+                let loaded = read_debug_symbol_manifest(&serve_dir)
+                    .unwrap()
+                    .expect("manifest should exist");
+                let handle: DebugSymbolHandle =
+                    Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
+
+                let addr = start_server(serve_dir, 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = http_get(format!("http://{addr}/sketchsource/src/demo.ino"))
+                    .await
+                    .unwrap();
+                assert_eq!(resp.status(), 200);
+                assert!(response_text(resp).await.contains("void setup()"));
+            });
+    }
+
+    #[test]
+    fn dwarfsource_rejects_traversal() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                use crate::debug_symbols::{load_debug_symbol_config, DebugSymbolResolver};
+
+                let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+                let sketch_dir = dir.path().join("sketch");
+                fs::create_dir_all(&sketch_dir).unwrap();
+                let resolver =
+                    DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
+                let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
+
+                let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
+                    .await
+                    .unwrap();
+                async_engine::sleep(std::time::Duration::from_millis(50)).await;
+
+                let resp = post_json(
+                    addr,
+                    "/dwarfsource",
+                    path_document("sketchsource/../escape.txt"),
+                )
+                .await;
+                assert_eq!(resp.status(), 400);
+            });
     }
 }

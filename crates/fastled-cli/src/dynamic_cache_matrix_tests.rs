@@ -3,8 +3,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::Result;
-use sha2::{Digest, Sha256};
+use crate::error_compat::Result;
+use kernal_api::hash::Sha256Hasher as Sha256;
 
 use crate::dynamic_cache;
 use crate::path::NormalizedPath;
@@ -27,7 +27,7 @@ struct OutputHashes {
 }
 
 struct FakeRepository {
-    _temp: tempfile::TempDir,
+    _temp: kernal_api::platform::fs::TemporaryDirectory,
     root: NormalizedPath,
     fastled: NormalizedPath,
     app: NormalizedPath,
@@ -39,7 +39,7 @@ struct FakeRepository {
 
 impl FakeRepository {
     fn new() -> Self {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = NormalizedPath::new(temp.path());
         let fastled = root.join("FastLED");
         write(&fastled.join("src/core.cpp"), "core-v1");

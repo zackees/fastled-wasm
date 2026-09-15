@@ -12,8 +12,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
-use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
+use crate::error_compat::{Context, Result};
+use kernal_api::hash::Sha256Hasher as Sha256;
 
 use crate::install;
 
@@ -31,7 +31,7 @@ fn workspace_root() -> PathBuf {
 
 fn validate_source_dir(candidate: PathBuf, origin: &str) -> Result<PathBuf> {
     if !candidate.is_dir() {
-        anyhow::bail!("{origin} is not a directory: {}", candidate.display());
+        crate::error_compat::bail!("{origin} is not a directory: {}", candidate.display());
     }
 
     // These are the source inputs that build_dist requires. Validate all of
@@ -46,7 +46,7 @@ fn validate_source_dir(candidate: PathBuf, origin: &str) -> Result<PathBuf> {
     ] {
         let required = candidate.join(relative);
         if !required.is_file() {
-            anyhow::bail!(
+            crate::error_compat::bail!(
                 "{origin} does not contain required frontend file {}",
                 required.display()
             );
@@ -64,7 +64,7 @@ fn packaged_source_dir() -> Result<Option<PathBuf>> {
         return Ok(None);
     };
     if value.trim().is_empty() {
-        anyhow::bail!("FASTLED_FRONTEND_DIR is set but empty");
+        crate::error_compat::bail!("FASTLED_FRONTEND_DIR is set but empty");
     }
     validate_source_dir(PathBuf::from(value), "FASTLED_FRONTEND_DIR").map(Some)
 }
@@ -91,7 +91,7 @@ fn default_source_dir() -> Result<PathBuf> {
         }
         current = dir.parent().map(Path::to_path_buf);
     }
-    anyhow::bail!(
+    crate::error_compat::bail!(
         "could not locate src/fastled/frontend relative to CARGO_MANIFEST_DIR={}",
         env!("CARGO_MANIFEST_DIR")
     )
@@ -263,7 +263,7 @@ fn run_esbuild(esbuild: &Path, source_dir: &Path, args: &[String]) -> Result<()>
         .status()
         .with_context(|| format!("spawn esbuild at {}", esbuild.display()))?;
     if !status.success() {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "esbuild failed with exit code {}",
             status.code().unwrap_or(-1)
         );
@@ -461,10 +461,10 @@ pub fn remove_app_from_output(output_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::sync::{Mutex, OnceLock};
     use std::thread;
     use std::time::Duration;
-    use tempfile::TempDir;
 
     fn write(path: &Path, content: &[u8]) {
         if let Some(parent) = path.parent() {
@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn compute_dir_hash_is_deterministic() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         // Create files in mixed order; the function must sort internally.
         write(&root.join("b.txt"), b"bravo");
@@ -520,7 +520,7 @@ mod tests {
 
     #[test]
     fn compute_dir_hash_changes_on_content_change() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         write(&root.join("a.txt"), b"alpha");
 
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn walk_files_skips_dist_subtree() {
-        let dir = TempDir::new().unwrap();
+        let dir = TemporaryDirectory::new().unwrap();
         let root = dir.path();
         write(&root.join("app.ts"), b"// app");
         write(&root.join("dist").join("index.js"), b"// built");
@@ -567,7 +567,7 @@ mod tests {
         // that *already* has a populated dist + matching marker, so build_dist
         // returns immediately. Then run copy twice and confirm the second
         // invocation short-circuits on the hash marker.
-        let workspace = TempDir::new().unwrap();
+        let workspace = TemporaryDirectory::new().unwrap();
         let source = workspace.path().join("frontend");
         let dist = source.join("dist");
         fs::create_dir_all(&dist).unwrap();
@@ -578,7 +578,7 @@ mod tests {
         // is <= it.
         write(&dist.join(".esbuild_marker"), b"9999999999.0");
 
-        let output = TempDir::new().unwrap();
+        let output = TemporaryDirectory::new().unwrap();
         copy_frontend_to_output(output.path(), Some(&source)).expect("first copy");
         assert!(output.path().join("index.js").exists());
         let hash_after_first = fs::read_to_string(output.path().join(".frontend_hash")).unwrap();
@@ -612,7 +612,7 @@ mod tests {
         // usable path on the host. The installed Python launcher must provide
         // the packaged frontend through FASTLED_FRONTEND_DIR instead.
         let _guard = frontend_env_lock().lock().unwrap();
-        let package = TempDir::new().unwrap();
+        let package = TemporaryDirectory::new().unwrap();
         let frontend = package.path().join("site-packages/fastled/frontend");
         write_frontend_source(&frontend);
 
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn installed_wheel_frontend_must_be_complete() {
         let _guard = frontend_env_lock().lock().unwrap();
-        let package = TempDir::new().unwrap();
+        let package = TemporaryDirectory::new().unwrap();
         let frontend = package.path().join("site-packages/fastled/frontend");
         fs::create_dir_all(&frontend).unwrap();
 
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn remove_app_from_output_preserves_runtime_and_assets_manifest() {
-        let output = TempDir::new().unwrap();
+        let output = TemporaryDirectory::new().unwrap();
         write(&output.path().join("index.js"), b"app");
         write(&output.path().join("index.html"), b"html");
         write(&output.path().join("index.css"), b"css");

@@ -7,46 +7,21 @@ members = [
 [workspace.package]
 version = "2.0.20"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.95"
 license = "MIT"
 repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
-clap = { version = "4", features = ["derive"] }
-thiserror = "2"
-notify = { version = "7", features = ["macos_fsevent"] }
-sha2 = "0.10"
-fs2 = "0.4"
-reqwest = { version = "0.12", features = ["blocking"] }
-running-process = { version = "4.0.0", default-features = false }
-zip = "2"
-tar = "0.4"
-zstd = "0.13"
-flate2 = "1"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-anyhow = "1"
-ctcb-core = "0.4.1"
-dirs = "5"
-strsim = "0.11"
-crossterm = "0.28"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "fs", "signal"] }
-axum = "0.8"
-tower-http = { version = "0.6", features = ["fs", "cors", "set-header"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-toml = "0.8"
-tauri = { version = "2", features = ["devtools"] }
-tauri-build = { version = "2", features = [] }
-windows-sys = "0.61"
-# Parallel content-authoritative walker/hasher; remains compatible with Rust 1.85.
-zccache-fingerprint = { git = "https://github.com/zackees/zccache", rev = "a7c84de53105ce41b2060bd9dd7730ef226e78a1" }
-shell-words = "1"
-globset = "0.4"
-tree-sitter = "0.26.9"
-tree-sitter-cpp = "0.23.4"
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.6", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "websocket", "event-stream", "secure-random", "text-similarity", "pty", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json", "error-context"] }
 
 [profile.release]
 debug = "line-tables-only"
 split-debuginfo = "packed"
 strip = "none"
+
+[profile.dev.package.kernal-api]
+codegen-units = 1
+
+[profile.test.package.kernal-api]
+codegen-units = 1

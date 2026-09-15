@@ -1,8 +1,16 @@
 use std::fs;
 use std::process::{Command, Output};
 
+/// The CLI under test. `CARGO_BIN_EXE_fastled` is fixed at compile time, so a
+/// test binary built on one machine and run from a nextest archive elsewhere
+/// (the macOS lane cross-builds on Linux) must use nextest's runtime path.
+fn fastled_exe() -> std::ffi::OsString {
+    std::env::var_os("NEXTEST_BIN_EXE_fastled")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_fastled").into())
+}
+
 fn run_fastled(root: &std::path::Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fastled"))
+    Command::new(fastled_exe())
         .arg("--version")
         .env("FASTLED_HOME", root)
         .env("FASTLED_MANAGED_RUNTIME", "1")
@@ -12,7 +20,7 @@ fn run_fastled(root: &std::path::Path) -> Output {
 
 #[test]
 fn cli_upgrade_clears_the_shared_cache_exactly_once_per_version() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
     let root = temp.path();
     fs::create_dir_all(root.join("cache")).unwrap();
     fs::write(root.join("cache/stale.txt"), "stale").unwrap();

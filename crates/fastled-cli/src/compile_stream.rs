@@ -1,3 +1,4 @@
+use kernal_api::async_engine::BroadcastSender;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -95,17 +96,13 @@ fn migration_warning(cli: &Cli) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn announce_link_mode(
-    cli: &Cli,
-    tx: Option<&tokio::sync::broadcast::Sender<String>>,
-    terminal: bool,
-) {
+pub(crate) fn announce_link_mode(cli: &Cli, tx: Option<&BroadcastSender<String>>, terminal: bool) {
     let mode = effective_link_mode(cli);
     if terminal {
         println!("{}", link_mode_announcement(mode));
         if let Some(warning) = migration_warning(cli) {
             if std::io::stderr().is_terminal() {
-                eprintln!("{}", crossterm::style::Stylize::yellow(warning));
+                eprintln!("{}", crate::diagnostics::yellow_warning(warning));
             } else {
                 eprintln!("{warning}");
             }
@@ -132,7 +129,7 @@ pub(crate) fn announce_link_mode(
 }
 
 pub(crate) fn purge_fastled_cache(fastled_path: Option<&str>) {
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = kernal_api::platform::fs::user_home_dir() {
         let cache_dir = home.join(".fastled").join("cache");
         if cache_dir.exists() {
             match std::fs::remove_dir_all(&cache_dir) {
@@ -220,17 +217,13 @@ pub(crate) fn json_escape(s: &str) -> String {
 }
 
 /// Send an SSE event through the broadcast channel.
-pub(crate) fn send_sse(tx: &tokio::sync::broadcast::Sender<String>, json: &str) {
+pub(crate) fn send_sse(tx: &BroadcastSender<String>, json: &str) {
     let _ = tx.send(json.to_string());
 }
 
-pub(crate) fn emit_build_log(
-    tx: &tokio::sync::broadcast::Sender<String>,
-    line: &str,
-    stream: &str,
-) {
+pub(crate) fn emit_build_log(tx: &BroadcastSender<String>, line: &str, stream: &str) {
     if stream == "warning" && std::io::stderr().is_terminal() {
-        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+        eprintln!("{}", crate::diagnostics::yellow_warning(line));
     } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {
@@ -246,10 +239,7 @@ pub(crate) fn emit_build_log(
     );
 }
 
-pub(crate) fn emit_build_result_logs(
-    result: &build::BuildResult,
-    tx: &tokio::sync::broadcast::Sender<String>,
-) {
+pub(crate) fn emit_build_result_logs(result: &build::BuildResult, tx: &BroadcastSender<String>) {
     let stream = if result.success { "stdout" } else { "stderr" };
     for line in result.output.lines() {
         emit_build_log(tx, line, stream);
@@ -276,7 +266,7 @@ pub(crate) fn emit_build_result_logs(
 /// Returns the effective success that was reported.
 pub(crate) fn report_build_outcome(
     output_dir: &Path,
-    tx: &tokio::sync::broadcast::Sender<String>,
+    tx: &BroadcastSender<String>,
     build_ok: bool,
     app_required: bool,
 ) -> bool {
@@ -310,7 +300,7 @@ pub(crate) fn run_native_compile_streaming(
     cli: &Cli,
     sketch_dir: &Path,
     force_clean: bool,
-    tx: &tokio::sync::broadcast::Sender<String>,
+    tx: &BroadcastSender<String>,
     debug_symbols: &server::DebugSymbolHandle,
 ) -> bool {
     if force_clean {
@@ -375,7 +365,6 @@ pub(crate) fn update_debug_symbol_resolver(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     fn read_status(dir: &Path) -> String {
         std::fs::read_to_string(dir.join("build-status.json")).unwrap()
@@ -383,8 +372,8 @@ mod tests {
 
     #[test]
     fn report_build_outcome_success_requires_index_html() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
         assert!(!report_build_outcome(dir.path(), &tx, true, true));
         assert!(read_status(dir.path()).contains("\"error\""));
@@ -400,9 +389,9 @@ mod tests {
 
     #[test]
     fn report_build_outcome_failure_is_error_even_with_stale_index() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         std::fs::write(dir.path().join("index.html"), "<html></html>").unwrap();
-        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+        let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
         assert!(!report_build_outcome(dir.path(), &tx, false, true));
         assert!(read_status(dir.path()).contains("\"error\""));
@@ -412,8 +401,8 @@ mod tests {
 
     #[test]
     fn report_build_outcome_allows_success_without_app() {
-        let dir = tempfile::tempdir().unwrap();
-        let (tx, mut rx) = tokio::sync::broadcast::channel::<String>(8);
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let (tx, mut rx) = kernal_api::async_engine::broadcast_channel::<String>(8).unwrap();
 
         assert!(report_build_outcome(dir.path(), &tx, true, false));
         assert!(read_status(dir.path()).contains("\"success\""));

@@ -34,28 +34,22 @@ export function checkBrowserCompatibility() {
   const workerCapabilities = fastLEDWorkerManager.capabilities;
   const skipWebGL2Compatibility = urlParams.get('runtime_stack_smoke') === '1';
 
-  // Check OffscreenCanvas support
-  if (workerCapabilities?.offscreenCanvas === true) {
-    // Reuse the worker manager probe when it has already run during module import.
-  } else if (typeof OffscreenCanvas === 'undefined') {
-    errors.push('OffscreenCanvas not supported');
-  } else {
-    // Check WebGL2 support with OffscreenCanvas
+  // WebGL2 on a regular canvas is the hard requirement. WebGL2 on an
+  // OffscreenCanvas is optional: without it (WebKitGTK behind the Tauri viewer
+  // on Linux) the worker still runs the sketch and posts frames to the main
+  // thread, which draws them. FastLEDWorkerManager detects that itself.
+  if (!skipWebGL2Compatibility) {
     try {
-      const testCanvas = new OffscreenCanvas(1, 1);
-      const ctx = testCanvas.getContext('webgl2');
-      if (!ctx && !skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
-        errors.push('WebGL2 not supported with OffscreenCanvas');
+      if (!document.createElement('canvas').getContext('webgl2')) {
+        errors.push('WebGL2 not supported');
       }
     } catch (error) {
-      if (!skipWebGL2Compatibility && workerCapabilities?.webgl2 !== true) {
-        errors.push(`OffscreenCanvas WebGL2 test failed: ${error.message}`);
-      }
+      errors.push(`WebGL2 test failed: ${error.message}`);
     }
   }
 
-  if (!skipWebGL2Compatibility && workerCapabilities && workerCapabilities.webgl2 !== true) {
-    errors.push('WebGL2 not supported with OffscreenCanvas');
+  if (workerCapabilities?.webgl2 !== true) {
+    console.warn('WebGL2 on OffscreenCanvas is unavailable; frames will be rendered on the main thread');
   }
 
   if (errors.length > 0) {

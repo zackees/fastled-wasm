@@ -7,11 +7,11 @@
 //! * Writing the `.emscripten` config file after installation
 
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
-use sha2::{Digest, Sha256};
+use crate::error_compat::{Context, Result};
+use kernal_api::archive::{ArchiveFormat, DanglingLinks, ExtractionLimits};
 
 // ---------------------------------------------------------------------------
 // Download
@@ -19,27 +19,34 @@ use sha2::{Digest, Sha256};
 
 /// Download a file from `url` and write it to `dest`.
 ///
-/// Uses a blocking reqwest client with a 120-second timeout, streaming the
+/// Uses the kernel HTTP client with a 120-second timeout, streaming the
 /// response body so large archives do not need to be buffered in memory.
 ///
 /// # Errors
 /// Returns an error if the HTTP request fails, the server returns a non-2xx
 /// status, or writing the destination file fails.
 pub fn download(url: &str, dest: &Path) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
-        .context("failed to build HTTP client")?;
+        .context("failed to build download runtime")?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            max_body_bytes: 16 * 1024 * 1024 * 1024,
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .context("failed to build HTTP client")?;
 
     let mut response = client
         .get(url)
-        .send()
         .with_context(|| format!("GET {url} failed"))?;
 
-    response
-        .error_for_status_ref()
-        .with_context(|| format!("server returned error for {url}"))?;
+    if !(200..300).contains(&response.status()) {
+        crate::error_compat::bail!("server returned HTTP {} for {url}", response.status());
+    }
 
     let file = File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
     let mut writer = BufWriter::new(file);
@@ -69,28 +76,15 @@ pub fn download(url: &str, dest: &Path) -> Result<()> {
 
 /// Compute the SHA-256 hex digest of `path`.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let file =
-        File::open(path).with_context(|| format!("cannot open {} for hashing", path.display()))?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
-
-    let mut buf = vec![0u8; 1024 * 1024];
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .with_context(|| format!("read error hashing {}", path.display()))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-
-    Ok(format!("{:x}", hasher.finalize()))
+    // FastLED toolchain artifacts must fit within this product-level bound.
+    kernal_api::hash::sha256_file(path, 16 * 1024 * 1024 * 1024)
+        .map(|digest| digest.to_hex())
+        .with_context(|| format!("cannot hash {}", path.display()))
 }
 
 /// Return `true` when the SHA-256 digest of `path` matches `expected`.
 ///
-/// `expected` must be a lower-case hex string (64 characters).
+/// `expected` is a 64-character hex string, compared case-insensitively.
 ///
 /// # Errors
 /// Returns an error if the file cannot be read.
@@ -107,25 +101,25 @@ pub fn verify_sha256(path: &Path, expected: &str) -> Result<bool> {
 ///
 /// If the archive contains a single top-level directory, its contents are
 /// promoted one level up (mirrors the Python behaviour in `_extract_archive`).
+/// The caller owns an absent or empty staging directory; failures may leave
+/// partial output for the caller to clean up.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or if any entry cannot be
 /// written to `dest`.
 pub fn extract_tar_zst(archive: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)
-        .with_context(|| format!("cannot create destination {}", dest.display()))?;
-
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open archive {}", archive.display()))?;
-    let buf_reader = BufReader::new(file);
-
-    let zstd_decoder = zstd::stream::read::Decoder::new(buf_reader)
-        .context("failed to initialise zstd decoder")?;
-
-    let mut tar_archive = tar::Archive::new(zstd_decoder);
-    tar_archive
-        .unpack(dest)
-        .with_context(|| format!("failed to unpack tar archive to {}", dest.display()))?;
+    // The pinned Linux toolchain contains dangling npm links with literal
+    // backslashes. Preserve their payloads, while requiring confined targets.
+    kernal_api::archive::extract(
+        archive,
+        dest,
+        ArchiveFormat::TarZstd,
+        ExtractionLimits {
+            dangling_links: DanglingLinks::PreserveMissingLeaf,
+            ..ExtractionLimits::default()
+        },
+    )
+    .with_context(|| format!("failed to unpack tar archive to {}", dest.display()))?;
 
     // Promote single top-level directory (mirrors Python's behaviour).
     _promote_single_child(dest)?;
@@ -139,50 +133,20 @@ pub fn extract_tar_zst(archive: &Path, dest: &Path) -> Result<()> {
 
 /// Extract a `.zip` archive to `dest`.
 ///
-/// Creates `dest` if it does not exist. All entries (files and directories)
-/// are extracted, preserving relative paths.
+/// Requires an absent or empty, caller-exclusive staging directory. Entries
+/// are extracted preserving relative paths; failure may leave partial output.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or any entry cannot be
 /// written.
 pub fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
-    fs::create_dir_all(dest)
-        .with_context(|| format!("cannot create destination {}", dest.display()))?;
-
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open zip archive {}", archive.display()))?;
-    let buf_reader = BufReader::new(file);
-    let mut zip = zip::ZipArchive::new(buf_reader)
-        .with_context(|| format!("cannot parse zip archive {}", archive.display()))?;
-
-    for i in 0..zip.len() {
-        let mut entry = zip
-            .by_index(i)
-            .with_context(|| format!("cannot read zip entry {i}"))?;
-
-        let entry_path: PathBuf = entry
-            .enclosed_name()
-            .with_context(|| format!("zip entry {i} has an unsafe path"))?
-            .to_path_buf();
-
-        let out_path = dest.join(&entry_path);
-
-        if entry.is_dir() {
-            fs::create_dir_all(&out_path)
-                .with_context(|| format!("cannot create dir {}", out_path.display()))?;
-        } else {
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("cannot create parent {}", parent.display()))?;
-            }
-            let mut out_file = File::create(&out_path)
-                .with_context(|| format!("cannot create {}", out_path.display()))?;
-            std::io::copy(&mut entry, &mut out_file)
-                .with_context(|| format!("cannot write {}", out_path.display()))?;
-        }
-    }
-
-    Ok(())
+    kernal_api::archive::extract(
+        archive,
+        dest,
+        ArchiveFormat::Zip,
+        ExtractionLimits::default(),
+    )
+    .with_context(|| format!("failed to unpack zip archive to {}", dest.display()))
 }
 
 // ---------------------------------------------------------------------------
@@ -193,37 +157,20 @@ pub fn extract_zip(archive: &Path, dest: &Path) -> Result<()> {
 ///
 /// Used to pluck the esbuild binary out of an npm-style tarball (`package/...`
 /// layout) without unpacking the whole archive.
+/// The destination file must not exist; the caller owns cleanup on failure.
 ///
 /// # Errors
 /// Returns an error if the archive cannot be read or if `member` is not
 /// present in the archive.
 pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Result<()> {
-    let file = File::open(archive)
-        .with_context(|| format!("cannot open archive {}", archive.display()))?;
-    let gz = flate2::read::GzDecoder::new(BufReader::new(file));
-    let mut tar_archive = tar::Archive::new(gz);
-
-    for entry in tar_archive
-        .entries()
-        .with_context(|| format!("cannot iterate entries of {}", archive.display()))?
-    {
-        let mut entry = entry.with_context(|| format!("bad entry in {}", archive.display()))?;
-        let path = entry
-            .path()
-            .with_context(|| format!("bad entry path in {}", archive.display()))?;
-        if path.to_string_lossy() == member {
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .with_context(|| format!("cannot create parent {}", parent.display()))?;
-            }
-            let mut out =
-                File::create(dest).with_context(|| format!("cannot create {}", dest.display()))?;
-            std::io::copy(&mut entry, &mut out)
-                .with_context(|| format!("cannot write {}", dest.display()))?;
-            return Ok(());
-        }
-    }
-    anyhow::bail!("member {member} not found in {}", archive.display());
+    kernal_api::archive::extract_member(
+        archive,
+        member,
+        dest,
+        ArchiveFormat::TarGzip,
+        ExtractionLimits::default(),
+    )
+    .with_context(|| format!("cannot extract {member} from {}", archive.display()))
 }
 
 // ---------------------------------------------------------------------------
@@ -243,8 +190,17 @@ pub fn extract_member_from_tgz(archive: &Path, member: &str, dest: &Path) -> Res
 /// # Errors
 /// Returns an error if the file cannot be written.
 pub fn write_emscripten_config(install_dir: &Path, node_path: &Path) -> Result<()> {
+    write_emscripten_config_at(install_dir, install_dir, node_path)
+}
+
+/// Write configuration for its final location while it is still staged.
+pub(crate) fn write_emscripten_config_at(
+    config_dir: &Path,
+    install_dir: &Path,
+    node_path: &Path,
+) -> Result<()> {
     if !node_path.is_absolute() {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "NODE_JS must be an absolute path, got {}",
             node_path.display()
         );
@@ -265,7 +221,7 @@ pub fn write_emscripten_config(install_dir: &Path, node_path: &Path) -> Result<(
         path_to_forward_slash(node_path),
     );
 
-    let config_path = install_dir.join(".emscripten");
+    let config_path = config_dir.join(".emscripten");
     if fs::read_to_string(&config_path).ok().as_deref() == Some(config.as_str()) {
         return Ok(());
     }
@@ -322,11 +278,44 @@ fn _promote_single_child(dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-    use tempfile::TempDir;
+    use kernal_api::platform::fs::TemporaryDirectory;
 
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+    fn temp_dir() -> TemporaryDirectory {
+        kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir")
+    }
+
+    #[test]
+    fn download_writes_artifact_and_preserves_destination_on_http_error() {
+        for status in [200, 404] {
+            let dir = temp_dir();
+            let destination = dir.path().join("artifact.zip");
+            fs::write(&destination, b"previous artifact").unwrap();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/artifact.zip", listener.local_addr().unwrap());
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    socket.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() < 4096);
+                }
+                write!(socket, "HTTP/1.1 {status} Fixture\r\nContent-Length: 8\r\nConnection: close\r\n\r\nartifact").unwrap();
+            });
+            let result = download(&url, &destination);
+            worker.join().unwrap();
+            if status == 200 {
+                result.unwrap();
+                assert_eq!(fs::read(destination).unwrap(), b"artifact");
+            } else {
+                assert!(result.is_err());
+                assert_eq!(fs::read(destination).unwrap(), b"previous artifact");
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -335,18 +324,8 @@ mod tests {
 
     /// A known SHA-256 digest of the bytes `b"hello fastled"`.
     ///
-    /// Computed via: `sha2::Sha256::digest(b"hello fastled")` rendered as hex.
+    /// Fixed fixture; generic SHA-256 known-vector tests live in kernal-api.
     const HELLO_SHA256: &str = "9371e29d4390b284420993a4161cbda766dc36ce4d8396398a849d1de4d652d6";
-
-    #[test]
-    fn test_sha256_known_value() {
-        // Use sha2 directly to verify the constant matches the real digest.
-        let content = b"hello fastled";
-        let mut h = Sha256::new();
-        h.update(content);
-        let actual = format!("{:x}", h.finalize());
-        assert_eq!(actual, HELLO_SHA256, "HELLO_SHA256 constant is incorrect");
-    }
 
     #[test]
     fn test_verify_sha256_correct() {
@@ -355,12 +334,7 @@ mod tests {
         let content = b"hello fastled";
         fs::write(&file, content).unwrap();
 
-        // Compute expected digest independently.
-        let mut h = Sha256::new();
-        h.update(content);
-        let expected = format!("{:x}", h.finalize());
-
-        let ok = verify_sha256(&file, &expected).expect("verify_sha256");
+        let ok = verify_sha256(&file, HELLO_SHA256).expect("verify_sha256");
         assert!(ok, "digest should match");
     }
 
@@ -375,68 +349,17 @@ mod tests {
     }
 
     #[test]
-    fn test_sha256_file_changes_on_content_change() {
+    fn test_verify_sha256_accepts_uppercase_seal() {
         let dir = temp_dir();
-        let file = dir.path().join("test.bin");
-
-        fs::write(&file, b"version one").unwrap();
-        let h1 = sha256_file(&file).expect("hash1");
-
-        fs::write(&file, b"version two").unwrap();
-        let h2 = sha256_file(&file).expect("hash2");
-
-        assert_ne!(h1, h2, "hash must differ after content change");
-    }
-
-    // ------------------------------------------------------------------
-    // ZIP extraction
-    // ------------------------------------------------------------------
-
-    /// Build a minimal in-memory zip containing two files and return the bytes.
-    fn make_zip(files: &[(&str, &[u8])]) -> Vec<u8> {
-        let buf = std::io::Cursor::new(Vec::new());
-        let mut zip = zip::ZipWriter::new(buf);
-        let options = zip::write::SimpleFileOptions::default();
-        for (name, content) in files {
-            zip.start_file(*name, options).unwrap();
-            zip.write_all(content).unwrap();
-        }
-        zip.finish().unwrap().into_inner()
+        let file = dir.path().join("data.bin");
+        fs::write(&file, b"hello fastled").unwrap();
+        assert!(verify_sha256(&file, &HELLO_SHA256.to_uppercase()).unwrap());
     }
 
     #[test]
-    fn test_extract_zip_basic() {
+    fn test_verify_sha256_missing_artifact_is_an_error() {
         let dir = temp_dir();
-        let zip_path = dir.path().join("test.zip");
-
-        let zip_bytes = make_zip(&[
-            ("hello.txt", b"hello world"),
-            ("sub/world.txt", b"sub content"),
-        ]);
-        fs::write(&zip_path, &zip_bytes).unwrap();
-
-        let out = dir.path().join("out");
-        extract_zip(&zip_path, &out).expect("extract_zip");
-
-        assert_eq!(fs::read(out.join("hello.txt")).unwrap(), b"hello world");
-        assert_eq!(
-            fs::read(out.join("sub").join("world.txt")).unwrap(),
-            b"sub content"
-        );
-    }
-
-    #[test]
-    fn test_extract_zip_creates_dest() {
-        let dir = temp_dir();
-        let zip_path = dir.path().join("test.zip");
-        let zip_bytes = make_zip(&[("file.txt", b"data")]);
-        fs::write(&zip_path, &zip_bytes).unwrap();
-
-        // Destination does not exist yet.
-        let out = dir.path().join("nested").join("dest");
-        extract_zip(&zip_path, &out).expect("extract_zip");
-
-        assert_eq!(fs::read(out.join("file.txt")).unwrap(), b"data");
+        assert!(verify_sha256(&dir.path().join("missing.bin"), HELLO_SHA256).is_err());
     }
 
     // ------------------------------------------------------------------
@@ -522,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_write_emscripten_config_does_not_touch_unchanged_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let install_dir = dir.path().join("emscripten").join("4.0.19");
         fs::create_dir_all(&install_dir).unwrap();
         let node = install_dir.join("managed-node");

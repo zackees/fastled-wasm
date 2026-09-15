@@ -11,14 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-#[cfg(test)]
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Context, Result};
-use ctcb_core::Target;
-use fs2::FileExt;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use crate::error_compat::{bail, Context, Result};
+use kernal_api::json::{self, Layout, Value as JsonValue};
 
 use crate::archive;
 
@@ -30,23 +26,22 @@ use crate::archive;
 /// `ctcb-manifest` releases expected version keys at the top level. Keeping
 /// the schema local insulates the CLI from upstream crate drift.
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct PlatformManifest {
     latest: String,
     versions: BTreeMap<String, VersionInfo>,
 }
 
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct VersionInfo {
     href: String,
     sha256: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     parts: Option<Vec<PartRef>>,
 }
 
 #[cfg(test)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 struct PartRef {
     href: String,
     sha256: String,
@@ -62,13 +57,32 @@ const FASTLED_LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/FastLED/FastLED/releases/latest";
 
 fn fastled_root() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("cannot resolve home directory")?;
+    let home =
+        kernal_api::platform::fs::user_home_dir().context("cannot resolve home directory")?;
     Ok(home.join(".fastled"))
 }
 
 fn detect_platform_arch() -> Result<(String, String)> {
-    let target = Target::current().context("detect host clang-tool-chain target")?;
-    Ok((target.platform.to_string(), target.arch.to_string()))
+    let target = kernal_api::platform::host::process_target();
+    toolchain_platform_arch(target.os, target.architecture)
+        .context("detect host clang-tool-chain target")
+        .map(|(platform, arch)| (platform.to_owned(), arch.to_owned()))
+}
+
+/// Clang-tool-chain catalog names and supported targets are product policy.
+fn toolchain_platform_arch(os: &str, architecture: &str) -> Result<(&'static str, &'static str)> {
+    let platform = match os {
+        "windows" => "win",
+        "linux" => "linux",
+        "macos" => "darwin",
+        _ => bail!("unsupported operating system"),
+    };
+    let arch = match architecture {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        other => bail!("unsupported architecture: {other}"),
+    };
+    Ok((platform, arch))
 }
 
 /// Parse a platform manifest, accepting both the current schema (`versions`
@@ -77,28 +91,63 @@ fn detect_platform_arch() -> Result<(String, String)> {
 /// today, so the CLI has to handle both.
 #[cfg(test)]
 fn parse_platform_manifest(text: &str) -> Result<PlatformManifest> {
-    if let Ok(parsed) = serde_json::from_str::<PlatformManifest>(text) {
+    fn version(value: JsonValue) -> Result<VersionInfo> {
+        let value = match value {
+            JsonValue::Array(mut fields) if fields.len() == 2 => {
+                fields.push(JsonValue::Null);
+                JsonValue::Array(fields)
+            }
+            other => other,
+        };
+        let [href, sha256, parts] = toolchain_record_value(value, ["href", "sha256", "parts"])?;
+        let parts = match parts {
+            None | Some(JsonValue::Null) => None,
+            Some(JsonValue::Array(values)) => Some(
+                values
+                    .into_iter()
+                    .map(|value| {
+                        let [href, sha256] = toolchain_record_value(value, ["href", "sha256"])?;
+                        Ok(PartRef {
+                            href: toolchain_string(href)?,
+                            sha256: toolchain_string(sha256)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            _ => bail!("invalid archive parts"),
+        };
+        Ok(VersionInfo {
+            href: toolchain_string(href)?,
+            sha256: toolchain_string(sha256)?,
+            parts,
+        })
+    }
+    fn nested(text: &str) -> Result<PlatformManifest> {
+        let [latest, versions] = toolchain_record(text.as_bytes(), ["latest", "versions"])?;
+        let Some(JsonValue::ObjectMembers(members)) = versions else {
+            bail!("missing versions");
+        };
+        let mut versions = BTreeMap::new();
+        for (key, value) in members {
+            versions.insert(key, version(value)?);
+        }
+        Ok(PlatformManifest {
+            latest: toolchain_string(latest)?,
+            versions,
+        })
+    }
+    if let Ok(parsed) = nested(text) {
         return Ok(parsed);
     }
 
-    let value: serde_json::Value = serde_json::from_str(text)?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("manifest is not a JSON object"))?;
-
-    let latest = object
-        .get("latest")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("manifest is missing required field `latest`"))?
-        .to_string();
+    let JsonValue::Object(mut object) = json::parse(text.as_bytes())? else {
+        bail!("manifest is not a JSON object");
+    };
+    let latest = toolchain_string(object.remove("latest"))?;
 
     let mut versions = BTreeMap::new();
     for (key, value) in object {
-        if key == "latest" {
-            continue;
-        }
-        let info: VersionInfo = serde_json::from_value(value.clone())
-            .with_context(|| format!("parse version entry `{key}`"))?;
+        let info = version(value).with_context(|| format!("parse version entry `{key}`"))?;
         versions.insert(key.clone(), info);
     }
 
@@ -265,10 +314,9 @@ pub struct ToolchainPart {
     pub sha256: &'static str,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ToolchainReceipt {
     schema_version: u32,
-    #[serde(default)]
     catalog_commit: String,
     platform: String,
     arch: String,
@@ -278,11 +326,173 @@ struct ToolchainReceipt {
     health_checked: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ActiveToolchainState {
     schema_version: u32,
     active: Option<String>,
     previous_known_good: Option<String>,
+}
+
+// Record schemas are installer policy. The kernel owns JSON syntax, duplicate
+// preservation and resource limits; unknown fields remain forward-compatible.
+fn toolchain_record<const N: usize>(
+    bytes: &[u8],
+    names: [&str; N],
+) -> Result<[Option<JsonValue>; N]> {
+    toolchain_record_value(json::parse_members(bytes)?, names)
+}
+
+fn toolchain_record_value<const N: usize>(
+    value: JsonValue,
+    names: [&str; N],
+) -> Result<[Option<JsonValue>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    let value = match value {
+        JsonValue::Object(value) => JsonValue::ObjectMembers(value.into_iter().collect()),
+        other => other,
+    };
+    match value {
+        JsonValue::ObjectMembers(members) => {
+            for (name, value) in members {
+                let Some(index) = names.iter().position(|known| *known == name) else {
+                    continue;
+                };
+                if fields[index].replace(value).is_some() {
+                    bail!("duplicate toolchain record field: {}", names[index]);
+                }
+            }
+        }
+        JsonValue::Array(values) if values.len() == N => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => bail!("invalid toolchain record"),
+    }
+    Ok(fields)
+}
+
+fn toolchain_schema(value: Option<JsonValue>) -> Result<u32> {
+    match value {
+        Some(JsonValue::Signed(value)) => Ok(u32::try_from(value)?),
+        Some(JsonValue::Unsigned(value)) => Ok(u32::try_from(value)?),
+        _ => bail!("missing or invalid toolchain schema version"),
+    }
+}
+
+fn toolchain_string(value: Option<JsonValue>) -> Result<String> {
+    match value {
+        Some(JsonValue::String(value)) => Ok(value),
+        _ => bail!("missing or invalid toolchain string field"),
+    }
+}
+
+impl ActiveToolchainState {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let [schema, active, previous] =
+            toolchain_record(bytes, ["schema_version", "active", "previous_known_good"])?;
+        let optional_string = |value| match value {
+            None | Some(JsonValue::Null) => Ok(None),
+            other => toolchain_string(other).map(Some),
+        };
+        Ok(Self {
+            schema_version: toolchain_schema(schema)?,
+            active: optional_string(active)?,
+            previous_known_good: optional_string(previous)?,
+        })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(json::encode(
+            &JsonValue::ObjectMembers(vec![
+                (
+                    "schema_version".into(),
+                    JsonValue::Unsigned(self.schema_version.into()),
+                ),
+                (
+                    "active".into(),
+                    self.active
+                        .clone()
+                        .map_or(JsonValue::Null, JsonValue::String),
+                ),
+                (
+                    "previous_known_good".into(),
+                    self.previous_known_good
+                        .clone()
+                        .map_or(JsonValue::Null, JsonValue::String),
+                ),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
+}
+
+impl ToolchainReceipt {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let [schema, catalog, platform, arch, package, url, hash, health] = toolchain_record(
+            bytes,
+            [
+                "schema_version",
+                "catalog_commit",
+                "platform",
+                "arch",
+                "package_id",
+                "archive_url",
+                "archive_sha256",
+                "health_checked",
+            ],
+        )?;
+        let Some(JsonValue::Bool(health_checked)) = health else {
+            bail!("missing or invalid toolchain health flag");
+        };
+        Ok(Self {
+            schema_version: toolchain_schema(schema)?,
+            catalog_commit: match catalog {
+                None => String::new(),
+                other => toolchain_string(other)?,
+            },
+            platform: toolchain_string(platform)?,
+            arch: toolchain_string(arch)?,
+            package_id: toolchain_string(package)?,
+            archive_url: toolchain_string(url)?,
+            archive_sha256: toolchain_string(hash)?,
+            health_checked,
+        })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        Ok(json::encode(
+            &JsonValue::ObjectMembers(vec![
+                (
+                    "schema_version".into(),
+                    JsonValue::Unsigned(self.schema_version.into()),
+                ),
+                (
+                    "catalog_commit".into(),
+                    JsonValue::String(self.catalog_commit.clone()),
+                ),
+                ("platform".into(), JsonValue::String(self.platform.clone())),
+                ("arch".into(), JsonValue::String(self.arch.clone())),
+                (
+                    "package_id".into(),
+                    JsonValue::String(self.package_id.clone()),
+                ),
+                (
+                    "archive_url".into(),
+                    JsonValue::String(self.archive_url.clone()),
+                ),
+                (
+                    "archive_sha256".into(),
+                    JsonValue::String(self.archive_sha256.clone()),
+                ),
+                (
+                    "health_checked".into(),
+                    JsonValue::Bool(self.health_checked),
+                ),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
 }
 
 const TOOLCHAIN_STATE_SCHEMA: u32 = 1;
@@ -377,8 +587,8 @@ fn read_state(base: &Path) -> Result<ActiveToolchainState> {
             ..ActiveToolchainState::default()
         });
     }
-    let state: ActiveToolchainState = serde_json::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
+    let state = ActiveToolchainState::parse(
+        &fs::read(&path).with_context(|| format!("read {}", path.display()))?,
     )
     .with_context(|| format!("parse {}", path.display()))?;
     if state.schema_version != TOOLCHAIN_STATE_SCHEMA {
@@ -393,7 +603,7 @@ fn read_state(base: &Path) -> Result<ActiveToolchainState> {
 fn write_state(base: &Path, state: &ActiveToolchainState) -> Result<()> {
     let path = state_path(base);
     let temp = base.join(format!(".toolchain-state-{}.tmp", std::process::id()));
-    fs::write(&temp, serde_json::to_vec_pretty(state)?)?;
+    fs::write(&temp, state.encode()?)?;
     if path.exists() {
         let backup = base.join(format!(".toolchain-state-{}.bak", std::process::id()));
         fs::rename(&path, &backup).with_context(|| format!("backup {}", path.display()))?;
@@ -419,16 +629,14 @@ fn write_receipt(install: &Path, spec: ToolchainSpec, health_checked: bool) -> R
         archive_sha256: spec.archive_sha256.to_string(),
         health_checked,
     };
-    fs::write(receipt_path(install), serde_json::to_vec_pretty(&receipt)?)?;
+    fs::write(receipt_path(install), receipt.encode()?)?;
     Ok(())
 }
 
 fn read_receipt(install: &Path) -> Result<ToolchainReceipt> {
     let path = receipt_path(install);
-    serde_json::from_str(
-        &fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?,
-    )
-    .with_context(|| format!("parse {}", path.display()))
+    ToolchainReceipt::parse(&fs::read(&path).with_context(|| format!("read {}", path.display()))?)
+        .with_context(|| format!("parse {}", path.display()))
 }
 
 fn validate_managed_install(install: &Path, spec: ToolchainSpec) -> Result<()> {
@@ -794,6 +1002,9 @@ fn run_health_checks(install: &Path) -> Result<()> {
         let empp = install.join("emscripten").join("em++.py");
         let python = resolve_managed_python()?;
         let node = resolve_managed_node(None)?;
+        // Older managed installs may retain their pre-publication staging path.
+        // Restore our generated configuration before probing the actual install.
+        archive::write_emscripten_config(install, &node)?;
         let run = |args: &[&str]| -> Result<()> {
             let mut command = Command::new(&python);
             command
@@ -908,6 +1119,7 @@ fn install_spec(
         bail!("checksum mismatch for catalog package {}", spec.package_id);
     }
 
+    let node = resolve_managed_node(None)?;
     let staging = base.join(format!(
         ".{}.staging-{}",
         package_key(spec),
@@ -921,7 +1133,6 @@ fn install_spec(
         archive::extract_tar_zst(&archive_path, &staging)?;
         ensure_toolchain_executables(&staging)?;
         validate_emscripten_payload(&staging)?;
-        let node = resolve_managed_node(None)?;
         archive::write_emscripten_config(&staging, &node)?;
         fs::write(staging.join("done.txt"), "ok\n")?;
         write_receipt(&staging, spec, false)?;
@@ -952,9 +1163,17 @@ fn install_spec(
         fs::rename(&destination, &quarantine)
             .with_context(|| format!("quarantine invalid toolchain {}", destination.display()))?;
     }
-    fs::rename(&staging, &destination)
-        .with_context(|| format!("publish toolchain {}", destination.display()))?;
+    publish_toolchain(&staging, &destination, &node)?;
     Ok(destination)
+}
+
+fn publish_toolchain(staging: &Path, destination: &Path, node: &Path) -> Result<()> {
+    // Health checks ran against staging. Rewrite only our generated config for
+    // the destination before the directory rename makes the package visible.
+    archive::write_emscripten_config_at(staging, destination, node)?;
+    fs::rename(staging, destination)
+        .with_context(|| format!("publish toolchain {}", destination.display()))?;
+    Ok(())
 }
 
 fn activate_install(base: &Path, install: &Path, spec: ToolchainSpec) -> Result<()> {
@@ -990,9 +1209,10 @@ fn with_toolchain_lock<T>(base: &Path, action: impl FnOnce() -> Result<T>) -> Re
     let lock_path = base.join(".fastled-toolchain.lock");
     let lock = fs::File::create(&lock_path)
         .with_context(|| format!("create toolchain lock {}", lock_path.display()))?;
-    lock.lock_exclusive()
+    let guard = kernal_api::platform::fs::lock_exclusive(&lock)
         .with_context(|| format!("lock toolchain state {}", lock_path.display()))?;
     let result = action();
+    drop(guard);
     drop(lock);
     result
 }
@@ -1120,7 +1340,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     let cache = EMSCRIPTEN_INSTALL_CACHE.get_or_init(|| Mutex::new(None));
     let mut cached = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("emscripten install cache lock poisoned"))?;
     if let Some(path) = cached.clone() {
         if validate_complete_emscripten_install(&path).is_ok() {
             return Ok(path);
@@ -1145,7 +1365,7 @@ pub fn ensure_emscripten_installed() -> Result<PathBuf> {
     })?;
     let mut cached = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("emscripten install cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("emscripten install cache lock poisoned"))?;
     *cached = Some(installed.clone());
     Ok(installed)
 }
@@ -1168,7 +1388,7 @@ fn esbuild_platform_arch() -> Result<(&'static str, &'static str)> {
     } else if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "unsupported architecture for esbuild: {}",
             std::env::consts::ARCH
         );
@@ -1248,39 +1468,64 @@ fn is_commit_sha(ref_str: &str) -> bool {
 /// Hit the GitHub API for the latest FastLED release tag.
 /// Returns `None` on any failure so callers can fall back to `master`.
 fn fetch_latest_release_tag() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::limited(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
         .ok()?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .ok()?;
     let resp = client
-        .get(FASTLED_LATEST_RELEASE_API)
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "fastled-cli")
-        .send()
+        .execute(kernal_api::http::Request {
+            headers: &[
+                ("Accept", "application/vnd.github.v3+json"),
+                ("User-Agent", "fastled-cli"),
+            ],
+            ..kernal_api::http::Request::get(FASTLED_LATEST_RELEASE_API)
+        })
         .ok()?;
-    if !resp.status().is_success() {
+    if !(200..300).contains(&resp.status()) {
         return None;
     }
-    let text = resp.text().ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value
-        .get("tag_name")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_string)
+    let bytes = resp.into_bytes().ok()?;
+    let JsonValue::Object(mut value) = json::parse(&bytes).ok()? else {
+        return None;
+    };
+    match value.remove("tag_name") {
+        Some(JsonValue::String(value)) => Some(value),
+        _ => None,
+    }
 }
 
 fn head_check(url: &str) -> bool {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build();
+    let Ok(runtime) = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
+        .build()
+    else {
+        return false;
+    };
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    );
     match client {
         Ok(c) => c
-            .head(url)
-            .header("User-Agent", "fastled-cli")
-            .send()
-            .map(|r| r.status().is_success())
+            .execute(kernal_api::http::Request {
+                method: kernal_api::http::Method::Head,
+                headers: &[("User-Agent", "fastled-cli")],
+                ..kernal_api::http::Request::get(url)
+            })
+            .map(|r| (200..300).contains(&r.status()))
             .unwrap_or(false),
         Err(_) => false,
     }
@@ -1332,7 +1577,7 @@ fn find_fastled_extract_root(dir: &Path) -> Result<PathBuf> {
             return Ok(entry.path());
         }
     }
-    anyhow::bail!("no FastLED* directory found inside {}", dir.display())
+    crate::error_compat::bail!("no FastLED* directory found inside {}", dir.display())
 }
 
 /// Remove the derived short-path checkout when it represents `reference`.
@@ -1365,10 +1610,11 @@ pub(crate) fn refresh_fastled_repo(reference: &str) -> Result<PathBuf> {
     let cache_base = fastled_root()?.join("cache");
     let archive_cache = cache_base.join("archives");
     fs::create_dir_all(&archive_cache)?;
-    let download_dir = tempfile::Builder::new()
-        .prefix("fastled-source-download-")
-        .tempdir_in(&archive_cache)
-        .context("create temporary FastLED download directory")?;
+    let download_dir = kernal_api::platform::fs::TemporaryDirectory::in_directory(
+        &archive_cache,
+        "fastled-source-download-",
+    )
+    .context("create temporary FastLED download directory")?;
     let archive_path = download_dir.path().join("FastLED.zip");
     archive::download(&url, &archive_path)
         .with_context(|| format!("download FastLED archive from {url}"))?;
@@ -1579,11 +1825,10 @@ fn detect_fastled_project() -> bool {
     let Ok(text) = fs::read_to_string(library_json) else {
         return false;
     };
-    serde_json::from_str::<Value>(&text)
-        .ok()
-        .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
-        .map(|name| name == "FastLED")
-        .unwrap_or(false)
+    let Ok(JsonValue::Object(value)) = json::parse(text.as_bytes()) else {
+        return false;
+    };
+    matches!(value.get("name"), Some(JsonValue::String(name)) if name == "FastLED")
 }
 
 fn is_fastled_repository() -> bool {
@@ -1604,18 +1849,16 @@ fn is_fastled_repository() -> bool {
     let Ok(text) = fs::read_to_string(cwd.join("library.json")) else {
         return false;
     };
-    let Ok(value) = serde_json::from_str::<Value>(&text) else {
+    let Ok(JsonValue::Object(value)) = json::parse(text.as_bytes()) else {
         return false;
     };
-    if value.get("name").and_then(Value::as_str) != Some("FastLED") {
+    if !matches!(value.get("name"), Some(JsonValue::String(name)) if name == "FastLED") {
         return false;
     }
-    if !value
-        .get("repository")
-        .and_then(|repo| repo.get("url"))
-        .and_then(Value::as_str)
-        .map(|url| url.contains("FastLED/FastLED"))
-        .unwrap_or(false)
+    let Some(JsonValue::Object(repository)) = value.get("repository") else {
+        return false;
+    };
+    if !matches!(repository.get("url"), Some(JsonValue::String(url)) if url.contains("FastLED/FastLED"))
     {
         return false;
     }
@@ -1661,304 +1904,121 @@ fn check_existing_arduino_content() -> bool {
     cwd.join("examples").exists() || has_ino_file(&cwd)
 }
 
-pub(crate) fn read_json_file(path: &Path, default: Value) -> Value {
-    fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .unwrap_or(default)
+fn read_editor_object(
+    path: &Path,
+    default: BTreeMap<String, JsonValue>,
+) -> Result<BTreeMap<String, JsonValue>> {
+    let Ok(bytes) = fs::read(path) else {
+        return Ok(default);
+    };
+    match json::parse(&bytes) {
+        Ok(JsonValue::Object(value)) => Ok(value),
+        Ok(_) | Err(json::Error::InvalidSyntax) => Ok(default),
+        Err(error) => Err(error).with_context(|| format!("parse {}", path.display())),
+    }
 }
 
-pub(crate) fn write_json_file(path: &Path, value: &Value) -> Result<()> {
+fn write_json_file(path: &Path, value: &JsonValue) -> Result<()> {
+    let mut bytes = json::encode(value, Layout::Pretty).context("serialize JSON")?;
+    bytes.push(b'\n');
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    let mut text = serde_json::to_string_pretty(value).context("serialize JSON")?;
-    text.push('\n');
-    fs::write(path, text).with_context(|| format!("write {}", path.display()))?;
+    fs::write(path, bytes).with_context(|| format!("write {}", path.display()))?;
     Ok(())
+}
+
+fn editor_templates() -> Result<BTreeMap<String, JsonValue>> {
+    match json::parse(include_bytes!("install_editor_templates.json"))? {
+        JsonValue::Object(value) => Ok(value),
+        _ => bail!("invalid bundled editor templates"),
+    }
 }
 
 fn update_launch_json_for_arduino() -> Result<()> {
     let cwd = std::env::current_dir().context("current dir")?;
-    let launch_json_path = cwd.join(".vscode").join("launch.json");
-    let mut data = read_json_file(
-        &launch_json_path,
-        json!({"version": "0.2.0", "configurations": []}),
-    );
+    update_launch_json_at(&cwd.join(".vscode").join("launch.json"))
+}
 
-    if !data.is_object() {
-        data = json!({"version": "0.2.0", "configurations": []});
-    }
-
-    let arduino_config = json!({
-        "name": "Auto Debug (Smart File Detection)",
-        "type": "auto-debug",
-        "request": "launch",
-        "map": {
-            "*.ino": "Arduino: Run .ino with FastLED",
-            "*.py": "Python: Current File (UV)"
-        }
-    });
-
-    let configs = data
-        .as_object_mut()
-        .expect("launch.json root object")
-        .entry("configurations")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if !configs.is_array() {
-        *configs = Value::Array(Vec::new());
-    }
-    let configs_array = configs.as_array_mut().expect("configurations array");
-    let exists = configs_array.iter().any(|cfg| {
-        cfg.get("name").and_then(Value::as_str)
-            == arduino_config.get("name").and_then(Value::as_str)
+fn update_launch_json_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(
+        path,
+        BTreeMap::from([
+            ("version".into(), JsonValue::String("0.2.0".into())),
+            ("configurations".into(), JsonValue::Array(Vec::new())),
+        ]),
+    )?;
+    let arduino_config = editor_templates()?
+        .remove("launch")
+        .context("missing bundled launch configuration")?;
+    let mut configurations = match data.remove("configurations") {
+        Some(JsonValue::Array(value)) => value,
+        _ => Vec::new(),
+    };
+    let exists = configurations.iter().any(|value| match value {
+        JsonValue::Object(value) => matches!(value.get("name"),
+            Some(JsonValue::String(name)) if name == "Auto Debug (Smart File Detection)"),
+        _ => false,
     });
     if !exists {
-        configs_array.insert(0, arduino_config);
+        configurations.insert(0, arduino_config);
     }
-
-    write_json_file(&launch_json_path, &data)?;
-    println!("Updated {}", launch_json_path.display());
+    data.insert("configurations".into(), JsonValue::Array(configurations));
+    write_json_file(path, &JsonValue::Object(data))?;
+    println!("Updated {}", path.display());
     Ok(())
 }
 
 fn generate_fastled_tasks() -> Result<()> {
     let cwd = std::env::current_dir().context("current dir")?;
-    let tasks_json_path = cwd.join(".vscode").join("tasks.json");
-    let mut data = read_json_file(&tasks_json_path, json!({"version": "2.0.0", "tasks": []}));
+    generate_fastled_tasks_at(&cwd.join(".vscode").join("tasks.json"))
+}
 
-    if !data.is_object() {
-        data = json!({"version": "2.0.0", "tasks": []});
-    }
-
-    let fastled_tasks = vec![
-        json!({
-            "type": "shell",
-            "label": "Run FastLED (Debug)",
-            "command": "fastled",
-            "args": ["${file}", "--debug"],
-            "options": {"cwd": "${workspaceFolder}"},
-            "group": {"kind": "build", "isDefault": true},
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "detail": "Run FastLED with debug mode and Tauri visualization",
-            "problemMatcher": []
-        }),
-        json!({
-            "type": "shell",
-            "label": "Run FastLED (Quick)",
-            "command": "fastled",
-            "args": ["${file}", "--quick"],
-            "options": {"cwd": "${workspaceFolder}"},
-            "group": "build",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": true,
-                "panel": "new",
-                "showReuseMessage": false,
-                "clear": true
-            },
-            "detail": "Run FastLED with quick build mode",
-            "problemMatcher": []
-        }),
-    ];
-
-    let tasks = data
-        .as_object_mut()
-        .expect("tasks.json root object")
-        .entry("tasks")
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if !tasks.is_array() {
-        *tasks = Value::Array(Vec::new());
-    }
-    let tasks_array = tasks.as_array_mut().expect("tasks array");
-    let existing_labels: Vec<String> = tasks_array
+fn generate_fastled_tasks_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(
+        path,
+        BTreeMap::from([
+            ("version".into(), JsonValue::String("2.0.0".into())),
+            ("tasks".into(), JsonValue::Array(Vec::new())),
+        ]),
+    )?;
+    let Some(JsonValue::Array(fastled_tasks)) = editor_templates()?.remove("tasks") else {
+        bail!("missing bundled FastLED tasks");
+    };
+    let mut tasks = match data.remove("tasks") {
+        Some(JsonValue::Array(value)) => value,
+        _ => Vec::new(),
+    };
+    let labels: Vec<_> = tasks
         .iter()
-        .filter_map(|task| task.get("label").and_then(Value::as_str).map(str::to_owned))
+        .filter_map(|value| match value {
+            JsonValue::Object(value) => match value.get("label") {
+                Some(JsonValue::String(value)) => Some(value.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
         .collect();
-
     for task in fastled_tasks {
-        let Some(label) = task.get("label").and_then(Value::as_str) else {
-            continue;
+        let JsonValue::Object(ref fields) = task else {
+            bail!("invalid bundled task");
         };
-        if !existing_labels.iter().any(|existing| existing == label) {
-            tasks_array.push(task);
+        let Some(JsonValue::String(label)) = fields.get("label") else {
+            bail!("missing bundled task label");
+        };
+        if !labels.contains(label) {
+            tasks.push(task);
         }
     }
-
-    write_json_file(&tasks_json_path, &data)?;
-    println!("Updated {}", tasks_json_path.display());
+    data.insert("tasks".into(), JsonValue::Array(tasks));
+    write_json_file(path, &JsonValue::Object(data))?;
+    println!("Updated {}", path.display());
     Ok(())
 }
 
-fn fastled_repository_settings() -> Value {
-    json!({
-        "terminal.integrated.defaultProfile.windows": "Git Bash",
-        "terminal.integrated.shellIntegration.enabled": false,
-        "terminal.integrated.profiles.windows": {
-            "Command Prompt": {"path": "C:\\Windows\\System32\\cmd.exe"},
-            "Git Bash": {
-                "path": "C:\\Program Files\\Git\\bin\\bash.exe",
-                "args": ["--cd=."]
-            }
-        },
-        "files.eol": "\n",
-        "files.autoDetectEol": false,
-        "files.insertFinalNewline": true,
-        "files.trimFinalNewlines": true,
-        "editor.tabSize": 4,
-        "editor.insertSpaces": true,
-        "editor.detectIndentation": true,
-        "editor.formatOnSave": false,
-        "debug.defaultDebuggerType": "cppdbg",
-        "debug.toolBarLocation": "docked",
-        "debug.console.fontSize": 14,
-        "debug.console.lineHeight": 19,
-        "python.defaultInterpreterPath": "uv",
-        "python.debugger": "debugpy",
-        "[cpp]": {
-            "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "[c]": {
-            "editor.defaultFormatter": "ms-vscode.cpptools",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "[ino]": {
-            "editor.defaultFormatter": "ms-vscode.cpptools",
-            "debug.defaultDebuggerType": "cppdbg"
-        },
-        "clangd.arguments": [
-            "--compile-commands-dir=${workspaceFolder}",
-            "--clang-tidy",
-            "--header-insertion=never",
-            "--completion-style=detailed",
-            "--function-arg-placeholders=false",
-            "--background-index",
-            "--pch-storage=memory"
-        ],
-        "clangd.fallbackFlags": [
-            "-std=c++17",
-            "-I${workspaceFolder}/src",
-            "-I${workspaceFolder}/tests",
-            "-Wno-global-constructors"
-        ],
-        "C_Cpp.intelliSenseEngine": "disabled",
-        "C_Cpp.autocomplete": "disabled",
-        "C_Cpp.errorSquiggles": "disabled",
-        "C_Cpp.suggestSnippets": false,
-        "C_Cpp.intelliSenseEngineFallback": "disabled",
-        "C_Cpp.autocompleteAddParentheses": false,
-        "C_Cpp.formatting": "disabled",
-        "C_Cpp.vcpkg.enabled": false,
-        "C_Cpp.configurationWarnings": "disabled",
-        "C_Cpp.intelliSenseCachePath": "",
-        "C_Cpp.intelliSenseCacheSize": 0,
-        "C_Cpp.intelliSenseUpdateDelay": 0,
-        "C_Cpp.workspaceParsingPriority": "lowest",
-        "C_Cpp.disabled": true,
-        "files.associations": {
-            "*.ino": "cpp",
-            "*.h": "cpp",
-            "*.hpp": "cpp",
-            "*.cpp": "cpp",
-            "*.c": "c",
-            "*.inc": "cpp",
-            "*.tcc": "cpp",
-            "*.embeddedhtml": "html",
-            "compare": "cpp",
-            "type_traits": "cpp",
-            "cmath": "cpp",
-            "limits": "cpp",
-            "iostream": "cpp",
-            "random": "cpp",
-            "functional": "cpp",
-            "bit": "cpp",
-            "vector": "cpp",
-            "array": "cpp",
-            "string": "cpp",
-            "memory": "cpp",
-            "algorithm": "cpp",
-            "iterator": "cpp",
-            "utility": "cpp",
-            "optional": "cpp",
-            "variant": "cpp",
-            "numeric": "cpp",
-            "chrono": "cpp",
-            "thread": "cpp",
-            "mutex": "cpp",
-            "atomic": "cpp",
-            "future": "cpp",
-            "condition_variable": "cpp"
-        },
-        "java.enabled": false,
-        "java.jdt.ls.enabled": false,
-        "java.compile.nullAnalysis.mode": "disabled",
-        "java.configuration.checkProjectSettingsExclusions": false,
-        "java.import.gradle.enabled": false,
-        "java.import.maven.enabled": false,
-        "java.autobuild.enabled": false,
-        "java.maxConcurrentBuilds": 0,
-        "java.recommendations.enabled": false,
-        "java.help.showReleaseNotes": false,
-        "redhat.telemetry.enabled": false,
-        "java.project.sourcePaths": [],
-        "java.project.referencedLibraries": [],
-        "files.exclude": {
-            "**/.classpath": true,
-            "**/.project": true,
-            "**/.factorypath": true
-        },
-        "platformio.disableToolchainAutoInstaller": true,
-        "platformio-ide.autoRebuildAutocompleteIndex": false,
-        "platformio-ide.activateProjectOnTextEditorChange": false,
-        "platformio-ide.autoOpenPlatformIOIniFile": false,
-        "platformio-ide.autoPreloadEnvTasks": false,
-        "platformio-ide.autoCloseSerialMonitor": false,
-        "platformio-ide.disablePIOHomeStartup": true,
-        "extensions.ignoreRecommendations": true,
-        "editor.semanticTokenColorCustomizations": {
-            "rules": {
-                "class": "#4EC9B0",
-                "struct": "#4EC9B0",
-                "type": "#4EC9B0",
-                "enum": "#4EC9B0",
-                "enumMember": "#B5CEA8",
-                "typedef": "#4EC9B0",
-                "variable": "#FAFAFA",
-                "variable.local": "#FAFAFA",
-                "parameter": "#FF8C42",
-                "variable.parameter": "#FF8C42",
-                "property": "#D197D9",
-                "function": "#DCDCAA",
-                "method": "#DCDCAA",
-                "function.declaration": "#DCDCAA",
-                "method.declaration": "#DCDCAA",
-                "namespace": "#86C5F7",
-                "variable.readonly": {"foreground": "#B5CEA8", "fontStyle": "italic"},
-                "variable.defaultLibrary": "#B5CEA8",
-                "macro": "#E06C75",
-                "string": "#CE9178",
-                "number": "#B5CEA8",
-                "keyword": "#C586C0",
-                "keyword.storage": "#FF79C6",
-                "storageClass": "#FF79C6",
-                "type.builtin": "#569CD6",
-                "keyword.type": "#569CD6",
-                "comment": "#6A9955",
-                "comment.documentation": "#6A9955"
-            }
-        },
-        "editor.inlayHints.fontColor": "#808080",
-        "editor.inlayHints.background": "#3C3C3C20"
-    })
+fn fastled_repository_settings() -> Result<JsonValue> {
+    json::parse(include_bytes!("install_repository_settings.json"))
+        .context("parse bundled FastLED repository settings")
 }
 
 fn update_vscode_settings_for_fastled() -> Result<()> {
@@ -1968,19 +2028,7 @@ fn update_vscode_settings_for_fastled() -> Result<()> {
 
     let cwd = std::env::current_dir().context("current dir")?;
     let settings_json_path = cwd.join(".vscode").join("settings.json");
-    let mut data = read_json_file(&settings_json_path, json!({}));
-    if !data.is_object() {
-        data = json!({});
-    }
-
-    let settings = fastled_repository_settings();
-    let target = data.as_object_mut().expect("settings root object");
-    let source = settings.as_object().expect("settings object");
-    for (key, value) in source {
-        target.insert(key.clone(), value.clone());
-    }
-
-    write_json_file(&settings_json_path, &data)?;
+    update_repository_settings_at(&settings_json_path)?;
     println!(
         "Updated {} with comprehensive FastLED development settings",
         settings_json_path.display()
@@ -1988,22 +2036,17 @@ fn update_vscode_settings_for_fastled() -> Result<()> {
     Ok(())
 }
 
+fn update_repository_settings_at(path: &Path) -> Result<()> {
+    let mut data = read_editor_object(path, BTreeMap::new())?;
+    let JsonValue::Object(settings) = fastled_repository_settings()? else {
+        bail!("invalid bundled repository settings");
+    };
+    data.extend(settings);
+    write_json_file(path, &JsonValue::Object(data))
+}
+
 fn download_to_path(url: &str, dest: &Path) -> Result<()> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .context("build HTTP client")?;
-    let bytes = client
-        .get(url)
-        .send()
-        .with_context(|| format!("GET {url} failed"))?
-        .error_for_status()
-        .with_context(|| format!("download returned error for {url}"))?
-        .bytes()
-        .context("read response bytes")?;
-    fs::write(dest, &bytes).with_context(|| format!("write {}", dest.display()))?;
-    Ok(())
+    archive::download(url, dest)
 }
 
 fn install_auto_debug_extension(dry_run: bool) -> Result<bool> {
@@ -2017,7 +2060,8 @@ fn install_auto_debug_extension(dry_run: bool) -> Result<bool> {
         return Ok(false);
     };
 
-    let temp_dir = tempfile::tempdir().context("create temp dir for extension")?;
+    let temp_dir = kernal_api::platform::fs::TemporaryDirectory::new()
+        .context("create temp dir for extension")?;
     let vsix_path = temp_dir.path().join("auto-debug.vsix");
     println!("Downloading Auto Debug extension...");
     download_to_path(AUTO_DEBUG_VSIX_URL, &vsix_path)?;
@@ -2135,6 +2179,58 @@ pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn published_toolchain_config_does_not_retain_staging_paths() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let staging = temp.path().join(".toolchain.staging");
+        let destination = temp.path().join("toolchain");
+        let node = temp.path().join("node");
+        std::fs::create_dir_all(&staging).unwrap();
+        crate::archive::write_emscripten_config(&staging, &node).unwrap();
+        super::publish_toolchain(&staging, &destination, &node).unwrap();
+        let config = std::fs::read_to_string(destination.join(".emscripten")).unwrap();
+        assert!(!config.contains(".toolchain.staging"), "{config}");
+        assert!(config.contains(&destination.to_string_lossy().replace('\\', "/")));
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn invalid_config_does_not_publish_toolchain() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let staging = temp.path().join("staging");
+        let destination = temp.path().join("final");
+        std::fs::create_dir_all(&staging).unwrap();
+        assert!(
+            super::publish_toolchain(&staging, &destination, std::path::Path::new("node")).is_err()
+        );
+        assert!(staging.exists());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn toolchain_target_aliases_preserve_supported_binary_targets() {
+        for (os, platform) in [("windows", "win"), ("linux", "linux"), ("macos", "darwin")] {
+            for (architecture, arch) in [("x86_64", "x86_64"), ("aarch64", "arm64")] {
+                assert_eq!(
+                    super::toolchain_platform_arch(os, architecture).unwrap(),
+                    (platform, arch)
+                );
+            }
+        }
+        assert_eq!(
+            super::toolchain_platform_arch("freebsd", "x86_64")
+                .unwrap_err()
+                .to_string(),
+            "unsupported operating system"
+        );
+        assert_eq!(
+            super::toolchain_platform_arch("linux", "x86")
+                .unwrap_err()
+                .to_string(),
+            "unsupported architecture: x86"
+        );
+    }
+
     use super::*;
 
     const DARWIN_ARM64_MANIFEST: &str = r#"{
@@ -2202,7 +2298,7 @@ mod tests {
     fn fastled_python_keeps_virtual_environment_symlink_path() {
         use std::os::unix::fs::symlink;
 
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let base_python = temp.path().join("base-python");
         fs::write(&base_python, "python").unwrap();
         let venv_bin = temp.path().join("FastLED/.venv/bin");
@@ -2221,7 +2317,7 @@ mod tests {
     fn selected_virtualenv_python_keeps_sibling_uv_path() {
         use std::os::unix::fs::symlink;
 
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let base_python = temp.path().join("base/bin/python");
         fs::create_dir_all(base_python.parent().unwrap()).unwrap();
         fs::write(&base_python, "python").unwrap();
@@ -2240,8 +2336,8 @@ mod tests {
 
     #[test]
     fn parses_nested_versions_manifest_without_parts() {
-        let manifest: PlatformManifest =
-            serde_json::from_str(DARWIN_ARM64_MANIFEST).expect("parse darwin/arm64 manifest");
+        let manifest =
+            parse_platform_manifest(DARWIN_ARM64_MANIFEST).expect("parse darwin/arm64 manifest");
         assert_eq!(
             manifest.latest,
             "releases-d70a5da89b3e673bf6a482724478fc17e81e575e"
@@ -2263,7 +2359,7 @@ mod tests {
     // Regression coverage for issue #194: a valid active install must not
     // fall through to manifest discovery or an implicit replacement.
     fn active_install_is_selected_without_network_or_manifest_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         write_state(
@@ -2283,8 +2379,127 @@ mod tests {
     }
 
     #[test]
+    fn toolchain_json_schema_preserves_defaults_duplicates_and_sequences() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for source in [
+            r#"{"schema_version":1}"#,
+            r#"{"schema_version":1,"active":null,"previous_known_good":null,"unknown":false}"#,
+            r#"[1,null,null]"#,
+        ] {
+            fs::write(state_path(temp.path()), source).unwrap();
+            assert_eq!(
+                read_state(temp.path()).unwrap(),
+                ActiveToolchainState {
+                    schema_version: 1,
+                    active: None,
+                    previous_known_good: None,
+                }
+            );
+        }
+        for source in [
+            r#"{"schema_version":1,"active":null,"active":"a"}"#,
+            r#"{"schema_version":1,"previous_known_good":null,"previous_known_good":null}"#,
+            r#"{"schema_version":1,"schema_version":1}"#,
+            r#"{"schema_version":1,"active":false}"#,
+            r#"{"schema_version":1.0}"#,
+            r#"{"schema_version":-1}"#,
+            r#"{"schema_version":4294967296}"#,
+            r#"{}"#,
+            r#"[1]"#,
+            r#"[1,null,null,null]"#,
+        ] {
+            fs::write(state_path(temp.path()), source).unwrap();
+            assert!(read_state(temp.path()).is_err(), "{source}");
+        }
+        let receipt = r#"{"schema_version":4294967295,"platform":"linux","arch":"x86_64","package_id":"λ","archive_url":"u","archive_sha256":"h","health_checked":false}"#;
+        fs::write(receipt_path(temp.path()), receipt).unwrap();
+        let expected = read_receipt(temp.path()).unwrap();
+        assert_eq!(expected.schema_version, u32::MAX);
+        assert_eq!(expected.catalog_commit, "");
+        fs::write(
+            receipt_path(temp.path()),
+            r#"[4294967295,"","linux","x86_64","λ","u","h",false]"#,
+        )
+        .unwrap();
+        assert_eq!(read_receipt(temp.path()).unwrap(), expected);
+        for source in [
+            receipt.replace("\"health_checked\":false", "\"health_checked\":null"),
+            receipt.replace("\"health_checked\":false", "\"health_checked\":0"),
+            receipt.replace(
+                "\"health_checked\":false",
+                "\"health_checked\":false,\"health_checked\":true",
+            ),
+            receipt.replace("\"platform\":\"linux\"", "\"platform\":null"),
+            receipt.replace("\"platform\":\"linux\",", ""),
+            receipt.replace(
+                "\"platform\":\"linux\"",
+                "\"platform\":\"linux\",\"catalog_commit\":null",
+            ),
+            r#"[1,"linux","x86_64","p","u","h",true]"#.to_string(),
+        ] {
+            fs::write(receipt_path(temp.path()), &source).unwrap();
+            assert!(read_receipt(temp.path()).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn toolchain_json_encoding_preserves_wire_format_and_failed_writes() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let mut state = ActiveToolchainState {
+            schema_version: 1,
+            active: Some("λ".into()),
+            previous_known_good: None,
+        };
+        write_state(temp.path(), &state).unwrap();
+        let before = fs::read(state_path(temp.path())).unwrap();
+        assert_eq!(
+            String::from_utf8(before.clone()).unwrap(),
+            "{\n  \"schema_version\": 1,\n  \"active\": \"λ\",\n  \"previous_known_good\": null\n}"
+        );
+        state.active = Some("x".repeat(json::MAX_OUTPUT_BYTES));
+        assert!(matches!(
+            write_state(temp.path(), &state)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        assert_eq!(fs::read(state_path(temp.path())).unwrap(), before);
+        assert!(!temp
+            .path()
+            .join(format!(".toolchain-state-{}.tmp", std::process::id()))
+            .exists());
+        let receipt = ToolchainReceipt {
+            schema_version: 1,
+            catalog_commit: "c".into(),
+            platform: "p".into(),
+            arch: "a".into(),
+            package_id: "i".into(),
+            archive_url: "u".into(),
+            archive_sha256: "h".into(),
+            health_checked: true,
+        };
+        let bytes = receipt.encode().unwrap();
+        assert_eq!(String::from_utf8(bytes.clone()).unwrap(),
+            "{\n  \"schema_version\": 1,\n  \"catalog_commit\": \"c\",\n  \"platform\": \"p\",\n  \"arch\": \"a\",\n  \"package_id\": \"i\",\n  \"archive_url\": \"u\",\n  \"archive_sha256\": \"h\",\n  \"health_checked\": true\n}");
+        assert_eq!(ToolchainReceipt::parse(&bytes).unwrap(), receipt);
+        let oversized = vec![b' '; json::MAX_INPUT_BYTES + 1];
+        assert!(matches!(
+            ToolchainReceipt::parse(&oversized)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
+        assert!(matches!(
+            ActiveToolchainState::parse(&oversized)
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
+    }
+
+    #[test]
     fn legacy_marker_migrates_to_receipt_and_active_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = temp.path().join(spec.package_id);
         for path in required_emscripten_payload_files(&install) {
@@ -2307,14 +2522,14 @@ mod tests {
 
     #[test]
     fn existing_history_never_bootstraps_implicitly() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::create_dir(temp.path().join("4.0.18")).unwrap();
         assert!(has_install_history(temp.path()));
     }
 
     #[test]
     fn invalid_active_uses_previous_known_good_without_rewriting_state() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         let broken = temp.path().join("broken");
@@ -2335,7 +2550,7 @@ mod tests {
 
     #[test]
     fn missing_required_tool_rejects_managed_install() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let spec = test_spec();
         let install = create_valid_emscripten_install(temp.path());
         fs::remove_file(install.join(if cfg!(windows) {
@@ -2351,12 +2566,13 @@ mod tests {
 
     #[test]
     fn parses_manifest_with_multipart_archive_and_extra_size_field() {
-        let manifest: PlatformManifest = serde_json::from_str(LINUX_X86_64_MANIFEST_WITH_PARTS)
+        let manifest = parse_platform_manifest(LINUX_X86_64_MANIFEST_WITH_PARTS)
             .expect("parse linux/x86_64 manifest");
         let entry = manifest.versions.get("4.0.21").expect("entry for 4.0.21");
         let parts = multipart_parts(entry).expect("parts present");
         assert_eq!(parts.len(), 1);
         assert!(parts[0].href.ends_with(".part-aa"));
+        assert!(!parts[0].sha256.is_empty());
     }
 
     #[cfg(unix)]
@@ -2364,7 +2580,7 @@ mod tests {
     fn ensure_toolchain_executables_restores_unix_execute_bits() {
         use std::os::unix::fs::PermissionsExt;
 
-        let temp = tempfile::tempdir().expect("tempdir");
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir");
         let bin_dir = temp.path().join("bin");
         fs::create_dir_all(&bin_dir).expect("create bin");
         let tool = bin_dir.join("llvm-ar");
@@ -2409,6 +2625,123 @@ mod tests {
             .expect("entry for latest version");
         assert_eq!(entry.sha256.len(), 64);
         assert!(entry.href.ends_with(".tar.zst"));
+    }
+
+    #[test]
+    fn installer_editor_json_preserves_custom_entries_and_is_idempotent() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let launch = temp.path().join("launch.json");
+        let tasks = temp.path().join("tasks.json");
+        let settings = temp.path().join("settings.json");
+        fs::write(
+            &launch,
+            r#"{"custom":"λ","configurations":[null,{"name":"user"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            &tasks,
+            r#"{"custom":true,"tasks":[{"label":"Run FastLED (Debug)","command":"user"},7]}"#,
+        )
+        .unwrap();
+        fs::write(&settings, r#"{"custom":[1,2],"editor.tabSize":2}"#).unwrap();
+        update_launch_json_at(&launch).unwrap();
+        generate_fastled_tasks_at(&tasks).unwrap();
+        update_repository_settings_at(&settings).unwrap();
+        let parse = |path: &Path| match json::parse(&fs::read(path).unwrap()).unwrap() {
+            JsonValue::Object(value) => value,
+            _ => panic!("expected editor object"),
+        };
+        let launch_value = parse(&launch);
+        assert_eq!(launch_value["custom"], JsonValue::String("λ".into()));
+        let JsonValue::Array(configs) = &launch_value["configurations"] else {
+            panic!("configs");
+        };
+        assert_eq!(configs.len(), 3);
+        assert_eq!(
+            configs[0],
+            editor_templates().unwrap().remove("launch").unwrap()
+        );
+        assert_eq!(configs[1], JsonValue::Null);
+        let task_value = parse(&tasks);
+        let JsonValue::Array(task_entries) = &task_value["tasks"] else {
+            panic!("tasks");
+        };
+        assert_eq!(task_entries.len(), 3);
+        assert_eq!(
+            task_entries[0],
+            json::parse(br#"{"label":"Run FastLED (Debug)","command":"user"}"#).unwrap()
+        );
+        assert_eq!(task_entries[1], JsonValue::Signed(7));
+        let JsonValue::Array(expected_tasks) = editor_templates().unwrap().remove("tasks").unwrap()
+        else {
+            panic!("template tasks");
+        };
+        assert_eq!(task_entries[2], expected_tasks[1]);
+        let settings_value = parse(&settings);
+        let JsonValue::Object(mut expected_settings) = fastled_repository_settings().unwrap()
+        else {
+            panic!("settings");
+        };
+        expected_settings.insert("custom".into(), json::parse(b"[1,2]").unwrap());
+        assert_eq!(settings_value, expected_settings);
+        let before = [&launch, &tasks, &settings].map(|path| fs::read(path).unwrap());
+        update_launch_json_at(&launch).unwrap();
+        generate_fastled_tasks_at(&tasks).unwrap();
+        update_repository_settings_at(&settings).unwrap();
+        assert_eq!(
+            before,
+            [&launch, &tasks, &settings].map(|path| fs::read(path).unwrap())
+        );
+        assert!(before.iter().all(|bytes| bytes.last() == Some(&b'\n')));
+    }
+
+    #[test]
+    fn installer_editor_json_repairs_invalid_shapes_but_preserves_oversized_files() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let path = temp.path().join("editor.json");
+        for invalid in ["{", "[]", "null"] {
+            fs::write(&path, invalid).unwrap();
+            update_launch_json_at(&path).unwrap();
+            let JsonValue::Object(value) = json::parse(&fs::read(&path).unwrap()).unwrap() else {
+                panic!("object");
+            };
+            assert_eq!(value["version"], JsonValue::String("0.2.0".into()));
+        }
+        fs::write(&path, r#"{"custom":1,"tasks":false}"#).unwrap();
+        generate_fastled_tasks_at(&path).unwrap();
+        let JsonValue::Object(value) = json::parse(&fs::read(&path).unwrap()).unwrap() else {
+            panic!("object");
+        };
+        assert_eq!(value["custom"], JsonValue::Signed(1));
+        assert!(matches!(&value["tasks"], JsonValue::Array(values) if values.len() == 2));
+        let oversized = format!(r#"{{"custom":"{}"}}"#, "x".repeat(json::MAX_INPUT_BYTES));
+        fs::write(&path, &oversized).unwrap();
+        assert!(update_launch_json_at(&path).is_err());
+        assert!(generate_fastled_tasks_at(&path).is_err());
+        assert!(update_repository_settings_at(&path).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), oversized);
+        let unpublished = temp.path().join("absent/settings.json");
+        assert!(write_json_file(
+            &unpublished,
+            &JsonValue::String("x".repeat(json::MAX_OUTPUT_BYTES))
+        )
+        .is_err());
+        assert!(!unpublished.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn manifest_positional_version_preserves_optional_trailing_parts() {
+        for source in [
+            r#"{"latest":"v","versions":{"v":["url","hash"]}}"#,
+            r#"{"latest":"v","v":["url","hash"]}"#,
+            r#"["v",{"v":["url","hash",null]}]"#,
+        ] {
+            let parsed = parse_platform_manifest(source).unwrap();
+            let version = &parsed.versions["v"];
+            assert_eq!(version.href, "url");
+            assert_eq!(version.sha256, "hash");
+            assert!(version.parts.is_none());
+        }
     }
 
     #[test]

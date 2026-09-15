@@ -1,9 +1,13 @@
+use crate::test_events::{TestEventSources, TestWake};
+use kernal_api::async_engine;
 use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
+use std::future::{poll_fn, Future};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, RwLock};
+use std::task::Poll;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::build;
@@ -60,7 +64,13 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     }
 
     // Broadcast channel for SSE streaming to browser.
-    let (tx, _rx) = tokio::sync::broadcast::channel::<String>(256);
+    let (tx, _rx) = match async_engine::broadcast_channel::<String>(256) {
+        Ok(channel) => channel,
+        Err(error) => {
+            eprintln!("fastled: could not create build event channel: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Shared DWARF source resolver populated after the first successful build.
     let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
@@ -68,8 +78,11 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
     // Write initial compiling status for polling fallback.
     write_build_status(&output_dir, "compiling", "Compiling...");
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    rt.block_on(async {
+    let rt = async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create kernel runtime");
+    rt.run(async {
         // Start the Rust HTTP server (background tokio task).
         let addr = match server::start_server(
             output_dir.clone(),
@@ -122,13 +135,48 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("fastled: file watcher failed: {e}");
-                tokio::signal::ctrl_c().await.ok();
+                rt.wait_for_interrupt().await.ok();
                 return ExitCode::SUCCESS;
             }
         };
         let rx = file_watcher.start();
 
+        let ctrl_c = rt.wait_for_interrupt();
+        let mut ctrl_c = std::pin::pin!(ctrl_c);
+        let mut rebuild_keys = keyboard::RebuildKeys::default();
+        let mut watch_exit = ExitCode::SUCCESS;
+        let mut input_tick = match async_engine::PeriodicTimer::new(std::time::Duration::from_millis(100)) {
+            Ok(timer) => timer,
+            Err(error) => {
+                eprintln!("fastled: could not start watch polling: {error}");
+                file_watcher.stop();
+                return ExitCode::FAILURE;
+            }
+        };
+
         loop {
+            // Poll Ctrl+C first so its handler is registered before lazy key
+            // capture changes terminal modes. In-flight builds still finish
+            // before the next loop tick handles a pending interruption.
+            let interrupted = {
+                let mut tick = std::pin::pin!(input_tick.tick());
+                poll_fn(|context| {
+                    if let Poll::Ready(result) = ctrl_c.as_mut().poll(context) {
+                        return Poll::Ready(Some(result));
+                    }
+                    tick.as_mut().poll(context).map(|()| None)
+                }).await
+            };
+            if let Some(interrupted) = interrupted {
+                watch_exit = match interrupted {
+                    Ok(()) => ExitCode::from(130),
+                    Err(error) => {
+                        eprintln!("fastled: Ctrl+C monitoring failed: {error}");
+                        ExitCode::FAILURE
+                    }
+                };
+                break;
+            }
             // The viewer window is the app from the user's perspective: once
             // it is gone (closed or crashed), shut the CLI down cleanly. An
             // in-flight compile always finishes first because this check only
@@ -138,7 +186,7 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
                 break;
             }
 
-            let should_rebuild = match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+            let should_rebuild = match rx.try_recv() {
                 Ok(batch) => {
                     println!(
                         "\nChanges detected in {:?}{}",
@@ -165,8 +213,14 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
                     }
                     true
                 }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                    let manual = keyboard::check_for_space();
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    let manual = match rebuild_keys.poll() {
+                        Ok(manual) => manual,
+                        Err(error) => {
+                            eprintln!("fastled: manual rebuild input disabled: {error}");
+                            false
+                        }
+                    };
                     if manual {
                         if let Err(error) = dynamic_cache::invalidate_all_persistent_fingerprints() {
                             eprintln!("fastled: persistent fingerprint invalidation failed; falling back to full scans: {error:#}");
@@ -196,8 +250,9 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
             }
         }
 
+        drop(rebuild_keys);
         file_watcher.stop();
-        ExitCode::SUCCESS
+        watch_exit
     })
 }
 
@@ -236,17 +291,14 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             return test_exit(TestOutcome::Failure);
         }
     };
-    let (build_tx, _build_rx) = tokio::sync::broadcast::channel::<String>(256);
-    let (test_tx, mut test_rx) = tokio::sync::mpsc::unbounded_channel();
-    let mut token_bytes = [0_u8; 32];
-    if let Err(error) = getrandom::fill(&mut token_bytes) {
-        eprintln!("fastled: could not create test capability: {error}");
-        return test_exit(TestOutcome::Failure);
-    }
-    let test_token = token_bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let (build_tx, _build_rx) = match async_engine::broadcast_channel::<String>(256) {
+        Ok(channel) => channel,
+        Err(error) => {
+            eprintln!("fastled: could not create build event channel: {error}");
+            return test_exit(TestOutcome::Failure);
+        }
+    };
+    let (test_tx, mut test_rx) = async_engine::unbounded_channel();
     let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(None));
     let screenshot_paths = plan
         .screenshots
@@ -264,14 +316,24 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
     };
 
     write_build_status(&output_dir, "compiling", "Compiling...");
-    let rt = match tokio::runtime::Runtime::new() {
+    let rt = match async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+    {
         Ok(runtime) => runtime,
         Err(error) => {
             eprintln!("fastled: could not create test runtime: {error}");
             return test_exit(TestOutcome::Failure);
         }
     };
-    rt.block_on(async {
+    rt.run(async {
+        let test_token = match create_test_capability().await {
+            Ok(token) => token,
+            Err(error) => {
+                eprintln!("fastled: could not create test capability: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
         let addr = match server::start_server(
             output_dir.clone(),
             0,
@@ -282,7 +344,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                 screenshot_paths,
                 events: test_tx,
                 token: test_token.clone(),
-                sleep_permits: Arc::new(tokio::sync::Semaphore::new(4)),
+                sleep_permits: async_engine::Semaphore::new(4),
             }),
         )
         .await
@@ -310,7 +372,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                 return test_exit(TestOutcome::Failure);
             }
         };
-        let compile_result = match test_mode::run_contained_command(&mut compile, compile_budget).await
+        let compile_result = match test_mode::run_contained_command(&rt, &mut compile, compile_budget).await
         {
             Ok(result) => result,
             Err(error) => {
@@ -346,43 +408,55 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
             eprintln!("fastled: production test timed out while launching the viewer");
             return test_exit(TestOutcome::TotalTimeout);
         };
-        let deadline_origin = tokio::time::Instant::now();
-        let total_deadline = deadline_origin + remaining;
-        let ready_deadline = deadline_origin + plan.ready_timeout;
-        let ctrl_c = tokio::signal::ctrl_c();
-        tokio::pin!(ctrl_c);
-        let mut liveness = tokio::time::interval(std::time::Duration::from_millis(100));
+        let total_deadline = async_engine::Deadline::after(remaining);
+        let ready_deadline = async_engine::Deadline::after(plan.ready_timeout);
+        let ctrl_c = rt.wait_for_interrupt();
+        let mut ctrl_c = std::pin::pin!(ctrl_c);
+        let mut liveness = match async_engine::PeriodicTimer::new(
+            std::time::Duration::from_millis(100),
+        ) {
+            Ok(timer) => timer,
+            Err(error) => {
+                eprintln!("fastled: could not start viewer monitoring: {error}");
+                return test_exit(TestOutcome::Failure);
+            }
+        };
         let mut ready = false;
         let mut page_error = false;
         let mut saved = HashSet::new();
         let mut viewer_done: Option<u8> = None;
         let mut commands_done = plan.commands.is_empty();
-        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(256);
+        let (command_tx, mut command_rx) = async_engine::channel(256);
         let mut command_tx = Some(command_tx);
-        let mut _command_task: Option<CommandTaskGuard> = None;
+        let mut _command_task: Option<async_engine::Task<()>> = None;
 
         loop {
-            tokio::select! {
-                biased;
-                _ = tokio::time::sleep_until(total_deadline) => {
+            let event = TestEventSources {
+                interrupt: ctrl_c.as_mut(),
+                liveness: &mut liveness,
+                viewer: &mut test_rx,
+                commands: &mut command_rx,
+            }.next(total_deadline, (!ready).then_some(ready_deadline), !commands_done).await;
+            match event {
+                TestWake::TotalTimeout => {
                     eprintln!("fastled: production test exceeded --test-timeout-secs");
                     return test_exit(TestOutcome::TotalTimeout);
                 }
-                _ = tokio::time::sleep_until(ready_deadline), if !ready => {
+                TestWake::ReadyTimeout => {
                     eprintln!("fastled: viewer did not render a canvas before --test-ready-timeout-secs");
                     return test_exit(TestOutcome::ReadyTimeout);
                 }
-                _ = &mut ctrl_c => {
+                TestWake::Interrupted => {
                     eprintln!("fastled: production test interrupted");
                     return test_exit(TestOutcome::Interrupted);
                 }
-                _ = liveness.tick() => {
+                TestWake::Liveness => {
                     if !viewer.is_alive() {
                         eprintln!("fastled: test viewer exited before completing");
                         return test_exit(TestOutcome::Failure);
                     }
                 }
-                event = test_rx.recv() => {
+                TestWake::Viewer(event) => {
                     match event {
                         Some(server::TestEvent::Ready) => {
                             if !ready {
@@ -395,13 +469,13 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                                         eprintln!("fastled: command runner was already started");
                                         return test_exit(TestOutcome::Failure);
                                     };
-                                    _command_task = Some(CommandTaskGuard(tokio::spawn(
+                                    _command_task = Some(async_engine::launch(
                                         test_mode::run_test_commands(
                                             plan.commands.clone(),
                                             NormalizedPath::new(&sketch_dir),
                                             command_sender,
                                         ),
-                                    )));
+                                    ));
                                 }
                             }
                         }
@@ -444,7 +518,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
                         }
                     }
                 }
-                command_event = command_rx.recv(), if !commands_done => {
+                TestWake::Command(command_event) => {
                     match command_event {
                         Some(test_mode::TestCommandEvent::Start { index }) => {
                             let marker = format!("[fastled-test-cmd {index}] start");
@@ -483,12 +557,12 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
     })
 }
 
-struct CommandTaskGuard(tokio::task::JoinHandle<()>);
-
-impl Drop for CommandTaskGuard {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
+async fn create_test_capability() -> Result<String, kernal_api::random::RandomError> {
+    // One startup request; the shared kernel budget outlives cancellation of
+    // any native OS entropy call. Length, encoding and wait policy stay here.
+    let entropy = kernal_api::random::SecureRandom::new(1, std::time::Duration::from_secs(5))?;
+    let bytes = entropy.bytes(32).await?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn test_exit(outcome: TestOutcome) -> ExitCode {
@@ -761,8 +835,11 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         }
     };
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-    rt.block_on(async {
+    let rt = async_engine::RuntimeBuilder::multi_thread()
+        .enable_all()
+        .build()
+        .expect("failed to create kernel runtime");
+    rt.run(async {
         let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
         let addr = match server::start_server(path.clone(), 0, None, debug_symbols, None).await {
             Ok(a) => a,
@@ -791,26 +868,25 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         match viewer {
             Some(mut viewer) => {
                 // Exit on Ctrl+C or when the viewer window is closed.
-                let ctrl_c = tokio::signal::ctrl_c();
-                tokio::pin!(ctrl_c);
+                let ctrl_c = rt.wait_for_interrupt();
+                let mut ctrl_c = std::pin::pin!(ctrl_c);
                 loop {
-                    tokio::select! {
-                        _ = &mut ctrl_c => {
-                            println!("\nShutting down...");
-                            break;
-                        }
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
-                            if !viewer.is_alive() {
-                                println!("\nViewer window closed; shutting down.");
-                                break;
-                            }
-                        }
+                    if async_engine::timeout(std::time::Duration::from_secs(1), &mut ctrl_c)
+                        .await
+                        .is_ok()
+                    {
+                        println!("\nShutting down...");
+                        break;
+                    }
+                    if !viewer.is_alive() {
+                        println!("\nViewer window closed; shutting down.");
+                        break;
                     }
                 }
             }
             None => {
                 // Headless serve has no viewer to watch; run until Ctrl+C.
-                tokio::signal::ctrl_c().await.ok();
+                rt.wait_for_interrupt().await.ok();
                 println!("\nShutting down...");
             }
         }
@@ -869,5 +945,23 @@ pub(crate) fn run_internal_dwarf_smoke(cli: &Cli) -> ExitCode {
             eprintln!("fastled: DWARF source smoke failed: {err:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    #[test]
+    fn test_capability_preserves_32_byte_lowercase_hex_wire_format() {
+        kernal_api::async_engine::RuntimeBuilder::current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .run(async {
+                let token = super::create_test_capability().await.unwrap();
+                assert_eq!(token.len(), 64);
+                assert!(token
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+            });
     }
 }

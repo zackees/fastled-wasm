@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::{Context, Result};
-use globset::{Glob, GlobSet, GlobSetBuilder};
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use crate::error_compat::{Context, Result};
+use kernal_api::hash::Sha256Hasher as Sha256;
+use kernal_api::json::{self, Layout, Value};
+use kernal_api::platform::fs::{PatternSet, PatternSetBuilder};
+use kernal_api::platform::fs_watch::{ChangeKind, RecursiveMode, WatchNotification, Watcher};
 
 use crate::path::NormalizedPath;
 
@@ -29,20 +29,21 @@ struct WatchedFingerprint {
     value: String,
     observed_generation: u64,
     generation: Arc<AtomicU64>,
-    _watcher: RecommendedWatcher,
+    watch_lost: Arc<AtomicBool>,
+    _watcher: Watcher,
 }
 
 static FINGERPRINT_CACHE: OnceLock<
     Mutex<std::collections::HashMap<FingerprintSpec, WatchedFingerprint>>,
 > = OnceLock::new();
 
-fn build_glob_set(patterns: &[String], default_all: bool) -> Result<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
+fn build_glob_set(patterns: &[String], default_all: bool) -> Result<PatternSet> {
+    let mut builder = PatternSetBuilder::new();
     if patterns.is_empty() && default_all {
-        builder.add(Glob::new("**/*")?);
+        builder = builder.add_pattern("**/*");
     } else {
         for pattern in patterns {
-            builder.add(Glob::new(pattern)?);
+            builder = builder.add_pattern(pattern);
         }
     }
     Ok(builder.build()?)
@@ -55,25 +56,27 @@ fn mark_fingerprint_dirty(generation: &AtomicU64) {
 fn create_fingerprint_watcher(
     spec: &FingerprintSpec,
     generation: Arc<AtomicU64>,
-) -> Result<RecommendedWatcher> {
+    watch_lost: Arc<AtomicBool>,
+) -> Result<Watcher> {
     let root = spec.root.clone();
     let include = build_glob_set(&spec.include, true)?;
     let exclude = build_glob_set(&spec.exclude, false)?;
     let callback_generation = Arc::clone(&generation);
-    let mut watcher = notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+    let mut watcher = Watcher::new(move |result| {
         let relevant = match result {
             Err(_) => true, // overflow/backend uncertainty: force a full rescan
-            Ok(event) => {
-                matches!(
-                    event.kind,
-                    EventKind::Create(_)
-                        | EventKind::Modify(_)
-                        | EventKind::Remove(_)
-                        | EventKind::Any
-                ) && event.paths.iter().any(|path| {
-                    let relative = path.strip_prefix(root.as_path()).unwrap_or(path);
-                    include.is_match(relative) && !exclude.is_match(relative)
-                })
+            Ok(WatchNotification::RescanRequired(rescan)) => {
+                if rescan.watch_lost() {
+                    watch_lost.store(true, Ordering::Release);
+                }
+                true
+            }
+            Ok(WatchNotification::Change(event)) => {
+                event.kind() != ChangeKind::Accessed
+                    && event.paths().iter().any(|path| {
+                        let relative = path.strip_prefix(root.as_path()).unwrap_or(path);
+                        include.is_match(relative) && !exclude.is_match(relative)
+                    })
             }
         };
         if relevant {
@@ -85,13 +88,12 @@ fn create_fingerprint_watcher(
 }
 
 fn compute_tree_fingerprint(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
-    let files = zccache_fingerprint::walk_files_glob(root, include, exclude)
-        .with_context(|| format!("scan fingerprint inputs under {}", root.display()))?;
-    zccache_fingerprint::compute_aggregate_hash(&files)
+    kernal_api::hash::blake3_tree(root, include, exclude, Default::default())
+        .map(|digest| digest.to_hex())
         .with_context(|| format!("hash fingerprint inputs under {}", root.display()))
 }
 
-/// Hash a selected source tree with zccache's content-authoritative scanner.
+/// Hash a selected source tree with the kernel's content-authoritative scanner.
 /// Paths, file count, and bytes all participate, so additions, deletions, and
 /// same-size edits with restored mtimes cannot produce a false cache hit.
 pub(crate) fn fingerprint_tree(root: &Path, include: &[&str], exclude: &[&str]) -> Result<String> {
@@ -110,7 +112,16 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
     let cache = FINGERPRINT_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
     let mut cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
+
+    // Recreate dead watchers before trusting a cached value. If registration
+    // fails, the normal construction path below performs an authoritative scan.
+    if cache
+        .get(&spec)
+        .is_some_and(|entry| entry.watch_lost.load(Ordering::Acquire))
+    {
+        cache.remove(&spec);
+    }
 
     if let Some(entry) = cache.get_mut(&spec) {
         let current = entry.generation.load(Ordering::Acquire);
@@ -128,10 +139,12 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
     }
 
     let generation = Arc::new(AtomicU64::new(0));
-    let watcher = match create_fingerprint_watcher(&spec, Arc::clone(&generation)) {
-        Ok(watcher) => watcher,
-        Err(_) => return compute_tree_fingerprint(root, include, exclude),
-    };
+    let watch_lost = Arc::new(AtomicBool::new(false));
+    let watcher =
+        match create_fingerprint_watcher(&spec, Arc::clone(&generation), Arc::clone(&watch_lost)) {
+            Ok(watcher) => watcher,
+            Err(_) => return compute_tree_fingerprint(root, include, exclude),
+        };
     let before = generation.load(Ordering::Acquire);
     let value = compute_tree_fingerprint(root, include, exclude)?;
     let after = generation.load(Ordering::Acquire);
@@ -141,6 +154,7 @@ fn fingerprint_tree_persistent(root: &Path, include: &[&str], exclude: &[&str]) 
             value: value.clone(),
             observed_generation: if before == after { after } else { before },
             generation,
+            watch_lost,
             _watcher: watcher,
         },
     );
@@ -172,7 +186,7 @@ pub(crate) fn invalidate_persistent_fingerprints(paths: &[NormalizedPath]) -> Re
     };
     let cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
     let mut invalidated = 0;
     for (spec, entry) in cache.iter() {
         if paths
@@ -193,7 +207,7 @@ pub(crate) fn invalidate_all_persistent_fingerprints() -> Result<usize> {
     };
     let cache = cache
         .lock()
-        .map_err(|_| anyhow::anyhow!("persistent fingerprint cache lock poisoned"))?;
+        .map_err(|_| crate::error_compat::error!("persistent fingerprint cache lock poisoned"))?;
     for entry in cache.values() {
         mark_fingerprint_dirty(&entry.generation);
     }
@@ -210,17 +224,114 @@ pub(crate) fn fingerprint_values<'a>(values: impl IntoIterator<Item = &'a [u8]>)
     format!("{:x}", hasher.finalize())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct ArtifactRecord {
     bytes: u64,
     sha256: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct CacheMetadata {
     schema: u32,
     fingerprint: String,
     artifacts: BTreeMap<String, ArtifactRecord>,
+}
+
+// Cache schema adapters: unknown fields are ignored, known fields may not be
+// repeated, and positional records require every declared slot.
+fn cache_fields<const N: usize>(value: Value, names: [&str; N]) -> Result<[Option<Value>; N]> {
+    let mut fields = std::array::from_fn(|_| None);
+    match value {
+        Value::ObjectMembers(members) => {
+            for (name, value) in members {
+                if let Some(index) = names.iter().position(|field| *field == name) {
+                    if fields[index].replace(value).is_some() {
+                        crate::error_compat::bail!(
+                            "duplicate cache metadata field {}",
+                            names[index]
+                        );
+                    }
+                }
+            }
+        }
+        Value::Array(values) if values.len() == N => {
+            for (field, value) in fields.iter_mut().zip(values) {
+                *field = Some(value);
+            }
+        }
+        _ => crate::error_compat::bail!("invalid cache metadata record"),
+    }
+    Ok(fields)
+}
+
+fn cache_string(value: Option<Value>, name: &str) -> Result<String> {
+    let Some(Value::String(value)) = value else {
+        crate::error_compat::bail!("cache metadata {name} must be a string");
+    };
+    Ok(value)
+}
+
+fn cache_unsigned(value: Option<Value>, name: &str) -> Result<u64> {
+    match value {
+        Some(Value::Unsigned(value)) => Ok(value),
+        Some(Value::Signed(value)) if value >= 0 => Ok(value as u64),
+        _ => crate::error_compat::bail!("cache metadata {name} must be an unsigned integer"),
+    }
+}
+
+impl CacheMetadata {
+    fn parse(source: &str) -> Result<Self> {
+        let [schema, fingerprint, artifacts] = cache_fields(
+            json::parse_members(source.as_bytes())?,
+            ["schema", "fingerprint", "artifacts"],
+        )?;
+        let schema = u32::try_from(cache_unsigned(schema, "schema")?)?;
+        let fingerprint = cache_string(fingerprint, "fingerprint")?;
+        let Some(Value::ObjectMembers(members)) = artifacts else {
+            crate::error_compat::bail!("cache metadata artifacts must be an object");
+        };
+        let mut artifacts = BTreeMap::new();
+        for (name, value) in members {
+            // Validate every record before replacing a repeated map entry.
+            let [bytes, sha256] = cache_fields(value, ["bytes", "sha256"])?;
+            artifacts.insert(
+                name,
+                ArtifactRecord {
+                    bytes: cache_unsigned(bytes, "bytes")?,
+                    sha256: cache_string(sha256, "sha256")?,
+                },
+            );
+        }
+        Ok(Self {
+            schema,
+            fingerprint,
+            artifacts,
+        })
+    }
+
+    fn document(&self) -> Value {
+        let artifacts = self
+            .artifacts
+            .iter()
+            .map(|(name, record)| {
+                (
+                    name.clone(),
+                    Value::ObjectMembers(vec![
+                        ("bytes".into(), Value::Unsigned(record.bytes)),
+                        ("sha256".into(), Value::String(record.sha256.clone())),
+                    ]),
+                )
+            })
+            .collect();
+        Value::ObjectMembers(vec![
+            ("schema".into(), Value::Unsigned(self.schema.into())),
+            (
+                "fingerprint".into(),
+                Value::String(self.fingerprint.clone()),
+            ),
+            ("artifacts".into(), Value::Object(artifacts)),
+        ])
+    }
 }
 
 fn hash_file(path: &Path) -> Result<ArtifactRecord> {
@@ -270,7 +381,7 @@ pub(crate) fn validate_entry(
     let metadata_path = entry.join(METADATA_FILE);
     let source = fs::read_to_string(&metadata_path)
         .map_err(|err| format!("cannot read {}: {err}", metadata_path.display()))?;
-    let metadata: CacheMetadata = serde_json::from_str(&source)
+    let metadata = CacheMetadata::parse(&source)
         .map_err(|err| format!("invalid {}: {err}", metadata_path.display()))?;
     if metadata.schema != CACHE_SCHEMA {
         return Err(format!(
@@ -302,7 +413,7 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
     for name in artifacts {
         let path = staging.join(name);
         let record = hash_file(&path)?;
-        validate_artifact_shape(name, &path, record.bytes).map_err(anyhow::Error::msg)?;
+        validate_artifact_shape(name, &path, record.bytes).map_err(crate::error_compat::message)?;
         records.insert((*name).to_string(), record);
     }
     let metadata = CacheMetadata {
@@ -312,7 +423,7 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
     };
     fs::write(
         staging.join(METADATA_FILE),
-        serde_json::to_vec_pretty(&metadata)?,
+        json::encode(&metadata.document(), Layout::Pretty)?,
     )
     .with_context(|| format!("write cache metadata under {}", staging.display()))?;
     Ok(())
@@ -321,8 +432,11 @@ pub(crate) fn write_metadata(staging: &Path, fingerprint: &str, artifacts: &[&st
 /// Publish a fully validated staging directory by one same-filesystem rename.
 /// A key is never observable as successful until every artifact and its
 /// metadata are complete.
-pub(crate) fn publish_staging(staging: tempfile::TempDir, target: &Path) -> Result<()> {
-    let staging_path = staging.keep();
+pub(crate) fn publish_staging(
+    staging: kernal_api::platform::fs::TemporaryDirectory,
+    target: &Path,
+) -> Result<()> {
+    let staging_path = staging.persist();
     if target.exists() {
         fs::remove_dir_all(target)
             .with_context(|| format!("remove invalid cache entry {}", target.display()))?;
@@ -340,17 +454,18 @@ pub(crate) fn publish_staging(staging: tempfile::TempDir, target: &Path) -> Resu
     Ok(())
 }
 
-pub(crate) fn staging_dir(cache_root: &Path, prefix: &str) -> Result<tempfile::TempDir> {
+pub(crate) fn staging_dir(
+    cache_root: &Path,
+    prefix: &str,
+) -> Result<kernal_api::platform::fs::TemporaryDirectory> {
     fs::create_dir_all(cache_root)
         .with_context(|| format!("create cache root {}", cache_root.display()))?;
-    tempfile::Builder::new()
-        .prefix(prefix)
-        .tempdir_in(cache_root)
+    kernal_api::platform::fs::TemporaryDirectory::in_directory(cache_root, prefix)
         .with_context(|| format!("create staging directory in {}", cache_root.display()))
 }
 
 pub(crate) struct CacheLock {
-    _file: File,
+    _lock: kernal_api::platform::fs::OwnedFileLock,
 }
 
 impl CacheLock {
@@ -365,9 +480,9 @@ impl CacheLock {
             .truncate(false)
             .open(&path)
             .with_context(|| format!("open cache lock {}", path.display()))?;
-        fs2::FileExt::lock_exclusive(&file)
+        let lock = kernal_api::platform::fs::lock_exclusive_owned(file)
             .with_context(|| format!("lock cache key {fingerprint}"))?;
-        Ok(Self { _file: file })
+        Ok(Self { _lock: lock })
     }
 }
 
@@ -375,11 +490,43 @@ pub(crate) fn entry_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath
     NormalizedPath::new(cache_root.join(fingerprint))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 struct AttemptMetadata {
     status: String,
     phase: String,
     message: Option<String>,
+}
+
+impl AttemptMetadata {
+    fn parse(source: &str) -> Result<Self> {
+        let [status, phase, message] = cache_fields(
+            json::parse_members(source.as_bytes())?,
+            ["status", "phase", "message"],
+        )?;
+        let message = match message {
+            None | Some(Value::Null) => None,
+            value => Some(cache_string(value, "message")?),
+        };
+        Ok(Self {
+            status: cache_string(status, "status")?,
+            phase: cache_string(phase, "phase")?,
+            message,
+        })
+    }
+
+    fn document(&self) -> Value {
+        Value::ObjectMembers(vec![
+            ("status".into(), Value::String(self.status.clone())),
+            ("phase".into(), Value::String(self.phase.clone())),
+            (
+                "message".into(),
+                self.message
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            ),
+        ])
+    }
 }
 
 fn attempt_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
@@ -389,7 +536,7 @@ fn attempt_path(cache_root: &Path, fingerprint: &str) -> NormalizedPath {
 pub(crate) fn previous_attempt(cache_root: &Path, fingerprint: &str) -> Option<String> {
     let path = attempt_path(cache_root, fingerprint);
     let source = fs::read_to_string(path).ok()?;
-    let attempt: AttemptMetadata = serde_json::from_str(&source).ok()?;
+    let attempt = AttemptMetadata::parse(&source).ok()?;
     Some(match attempt.message {
         Some(message) => format!("{} {}: {message}", attempt.status, attempt.phase),
         None => format!("{} {}", attempt.status, attempt.phase),
@@ -404,7 +551,7 @@ pub(crate) fn mark_failure(
     cache_root: &Path,
     fingerprint: &str,
     phase: &str,
-    error: &anyhow::Error,
+    error: &crate::error_compat::Error,
 ) -> Result<()> {
     write_attempt(
         cache_root,
@@ -430,7 +577,7 @@ fn write_attempt(
     };
     fs::write(
         attempt_path(cache_root, fingerprint),
-        serde_json::to_vec_pretty(&attempt)?,
+        json::encode(&attempt.document(), Layout::Pretty)?,
     )?;
     Ok(())
 }
@@ -456,37 +603,52 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_detects_same_size_edit_even_with_unchanged_mtime() {
-        let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("sketch.ino");
-        fs::write(&source, "aaaa").unwrap();
-        let original_mtime = source.metadata().unwrap().modified().unwrap();
-        let first = fingerprint_tree(temp.path(), &["**/*.ino"], &[]).unwrap();
-
-        fs::write(&source, "bbbb").unwrap();
-        let file = OpenOptions::new().write(true).open(&source).unwrap();
-        file.set_modified(original_mtime).unwrap();
-        let second = fingerprint_tree(temp.path(), &["**/*.ino"], &[]).unwrap();
-
-        assert_ne!(first, second);
+    fn sha256_cache_encoding_preserves_domain_lengths_and_leading_zeroes() {
+        // Fixed legacy encodings, independently checked with Python hashlib.
+        // These protect FastLED's cache protocol; generic SHA vectors live upstream.
+        for (values, expected) in [
+            (
+                vec![],
+                "a176241cca24eb86c1fc3b441c63aa8d37d409f5821163583f3ce7320e625e81",
+            ),
+            (
+                vec![&b"ab"[..], &b"c"[..]],
+                "0d9a687b8e558f37b5d34c32b8a27fdd0c34b90e2313c922b977a1fbfd8c2979",
+            ),
+            (
+                vec![&b"a"[..], &b"bc"[..]],
+                "8cf4aafa0e399335648f6c2dc69f36b88f4608dfecc89dbe37fdd8e2d1c3d7ca",
+            ),
+            (
+                vec![&b""[..], &b"ab"[..], &b"c"[..]],
+                "fe43050a4dd2a7da0ae131b5c170ed024abc0544f71ea44e1778ff9f8de8c36a",
+            ),
+        ] {
+            assert_eq!(fingerprint_values(values), expected);
+        }
     }
 
     #[test]
-    fn fingerprint_detects_source_deletion() {
-        let temp = tempfile::tempdir().unwrap();
-        fs::write(temp.path().join("a.cpp"), "a").unwrap();
-        fs::write(temp.path().join("b.cpp"), "b").unwrap();
-        let first = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
-        fs::remove_file(temp.path().join("b.cpp")).unwrap();
-        let second = fingerprint_tree(temp.path(), &["**/*.cpp"], &[]).unwrap();
-        assert_ne!(first, second);
+    fn sha256_artifact_record_preserves_serialized_encoding() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let path = temp.path().join("firmware.wasm");
+        fs::write(&path, wasm_bytes(b"")).unwrap();
+        let metadata = CacheMetadata {
+            schema: 1,
+            fingerprint: "key".into(),
+            artifacts: BTreeMap::from([("firmware.wasm".into(), hash_file(&path).unwrap())]),
+        };
+        assert_eq!(
+            json::encode(&metadata.document(), Layout::Compact).unwrap(),
+            br#"{"schema":1,"fingerprint":"key","artifacts":{"firmware.wasm":{"bytes":8,"sha256":"93a44bbb96c751218e4c00d479e4c14358122a389acca16205b1e4d0dc5f9476"}}}"#
+        );
     }
 
     // Regression coverage for #193: the rebuild-triggering event must dirty
     // the persistent fingerprint before the next lookup.
     #[test]
     fn explicit_invalidation_detects_immediate_same_size_edit_with_restored_mtime() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let source = temp.path().join("sketch.ino");
         fs::write(&source, "aaaa").unwrap();
         let mut fingerprint = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
@@ -512,8 +674,8 @@ mod tests {
 
     #[test]
     fn path_invalidation_dirties_only_matching_spec() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
+        let first = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let second = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(first.path().join("one.cpp"), "one").unwrap();
         fs::write(second.path().join("two.cpp"), "two").unwrap();
         fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
@@ -528,9 +690,35 @@ mod tests {
     }
 
     #[test]
+    fn lost_fingerprint_watch_discards_cached_value_and_registers_again() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(temp.path().join("sketch.ino"), "aaaa").unwrap();
+        let expected = fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap();
+        let spec = FingerprintSpec {
+            root: NormalizedPath::new(temp.path()),
+            include: vec!["**/*.ino".to_owned()],
+            exclude: vec![],
+        };
+        {
+            let mut cache = FINGERPRINT_CACHE.get().unwrap().lock().unwrap();
+            let entry = cache.get_mut(&spec).unwrap();
+            entry._watcher.unwatch(temp.path()).unwrap();
+            entry.value = "stale value from before the lost watch".to_owned();
+            entry.observed_generation = entry.generation.load(Ordering::Acquire);
+            entry.watch_lost.store(true, Ordering::Release);
+        }
+        assert_eq!(
+            fingerprint_tree_persistent(temp.path(), &["**/*.ino"], &[]).unwrap(),
+            expected
+        );
+        let cache = FINGERPRINT_CACHE.get().unwrap().lock().unwrap();
+        assert!(!cache.get(&spec).unwrap().watch_lost.load(Ordering::Acquire));
+    }
+
+    #[test]
     fn invalidate_all_dirties_every_spec() {
-        let first = tempfile::tempdir().unwrap();
-        let second = tempfile::tempdir().unwrap();
+        let first = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let second = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::write(first.path().join("one.cpp"), "one").unwrap();
         fs::write(second.path().join("two.cpp"), "two").unwrap();
         fingerprint_tree_persistent(first.path(), &["**/*.cpp"], &[]).unwrap();
@@ -541,7 +729,7 @@ mod tests {
 
     #[test]
     fn excluded_output_path_does_not_dirty_spec() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         fs::create_dir_all(temp.path().join("fastled_js")).unwrap();
         fs::write(temp.path().join("source.cpp"), "source").unwrap();
         fingerprint_tree_persistent(temp.path(), &["**/*.cpp"], &["fastled_js/**"]).unwrap();
@@ -575,7 +763,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_missing_empty_truncated_and_corrupt_entries() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let entry = temp.path().join("entry");
         fs::create_dir(&entry).unwrap();
         fs::write(entry.join("fastled.js"), "js").unwrap();
@@ -598,8 +786,100 @@ mod tests {
     }
 
     #[test]
+    fn cache_json_schema_preserves_record_and_artifact_map_rules() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(temp.path().join("a.js"), "js").unwrap();
+        let digest = hash_file(&temp.path().join("a.js")).unwrap().sha256;
+        let record = format!(r#"{{"bytes":2,"sha256":"{digest}"}}"#);
+        for source in [
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{record}}},"future":1,"future":2}}"#
+            ),
+            format!(r#"[1,"key",{{"a.js":[2,"{digest}"]}}]"#),
+            // Map keys keep their last valid record, unlike known struct fields.
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":1,"sha256":"old"}},"a.js":{record}}}}}"#
+            ),
+        ] {
+            fs::write(temp.path().join(METADATA_FILE), source).unwrap();
+            assert!(validate_entry(temp.path(), "key", &["a.js"]).is_ok());
+        }
+        for source in [
+            format!(
+                r#"{{"schema":1,"schema":1,"fingerprint":"key","artifacts":{{"a.js":{record}}}}}"#
+            ),
+            format!(r#"{{"schema":1.0,"fingerprint":"key","artifacts":{{"a.js":{record}}}}}"#),
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":2,"bytes":2,"sha256":"{digest}"}}}}}}"#
+            ),
+            format!(
+                r#"{{"schema":1,"fingerprint":"key","artifacts":{{"a.js":{{"bytes":null}},"a.js":{record}}}}}"#
+            ),
+        ] {
+            fs::write(temp.path().join(METADATA_FILE), source).unwrap();
+            assert!(validate_entry(temp.path(), "key", &["a.js"]).is_err());
+        }
+    }
+
+    #[test]
+    fn attempt_json_schema_preserves_nulls_duplicates_and_positional_records() {
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for (source, expected) in [
+            (
+                r#"{"status":"pending","phase":"日本"}"#,
+                Some("pending 日本"),
+            ),
+            (
+                r#"{"status":"pending","phase":"日本","message":null}"#,
+                Some("pending 日本"),
+            ),
+            (
+                r#"["failure","link","failed"]"#,
+                Some("failure link: failed"),
+            ),
+            (r#"["pending","link"]"#, None),
+            (
+                r#"{"status":"pending","phase":"link","message":null,"message":null}"#,
+                None,
+            ),
+            (
+                r#"{"status":"pending","phase":"link","message":false}"#,
+                None,
+            ),
+        ] {
+            fs::write(attempt_path(temp.path(), "key"), source).unwrap();
+            assert_eq!(previous_attempt(temp.path(), "key").as_deref(), expected);
+        }
+    }
+
+    #[test]
+    fn cache_json_preserves_unsigned_ranges_and_ordered_output() {
+        let metadata =
+            CacheMetadata::parse(r#"[4294967295,"key",{"a.js":[18446744073709551615,"digest"]}]"#)
+                .unwrap();
+        assert_eq!(metadata.schema, u32::MAX);
+        assert_eq!(metadata.artifacts["a.js"].bytes, u64::MAX);
+        for source in [
+            r#"[4294967296,"key",{}]"#,
+            r#"[1,"key",{"a.js":[-1,"digest"]}]"#,
+            r#"[1,"key",{"a.js":[1.0,"digest"]}]"#,
+            r#"[1,"key",{"a.js":[18446744073709551616,"digest"]}]"#,
+        ] {
+            assert!(CacheMetadata::parse(source).is_err(), "accepted {source}");
+        }
+        let metadata = CacheMetadata::parse(r#"[1,"key",{"b":[2,"b"],"a":[1,"a"]}]"#).unwrap();
+        assert_eq!(json::encode(&metadata.document(), Layout::Compact).unwrap(), br#"{"schema":1,"fingerprint":"key","artifacts":{"a":{"bytes":1,"sha256":"a"},"b":{"bytes":2,"sha256":"b"}}}"#);
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        mark_pending(temp.path(), "key", "link").unwrap();
+        assert_eq!(
+            fs::read_to_string(attempt_path(temp.path(), "key")).unwrap(),
+            "{\n  \"status\": \"pending\",\n  \"phase\": \"link\",\n  \"message\": null\n}"
+        );
+    }
+
+    #[test]
     fn cache_lock_serializes_same_key() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path().to_path_buf();
         let barrier = Arc::new(Barrier::new(2));
         let other_barrier = Arc::clone(&barrier);
@@ -617,7 +897,7 @@ mod tests {
 
     #[test]
     fn atomic_publish_replaces_invalid_entry() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path().join("cache");
         fs::create_dir(&root).unwrap();
         let target = root.join("key");
@@ -635,7 +915,7 @@ mod tests {
 
     #[test]
     fn attempt_state_records_pending_failure_and_clears_after_success() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         mark_pending(temp.path(), "key", "main-link").unwrap();
         assert_eq!(
             previous_attempt(temp.path(), "key").as_deref(),
@@ -646,7 +926,7 @@ mod tests {
             temp.path(),
             "key",
             "main-link",
-            &anyhow::anyhow!("link failed"),
+            &crate::error_compat::error!("link failed"),
         )
         .unwrap();
         assert!(previous_attempt(temp.path(), "key")

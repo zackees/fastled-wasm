@@ -10,7 +10,7 @@ description = "FastLED WASM compilation CLI"
 
 [features]
 default = ["viewer"]
-viewer = ["dep:tauri", "dep:tauri-build", "dep:gtk", "dep:webkit2gtk"]
+viewer = ["kernal-api/tauri-webview"]
 
 [lib]
 name = "fastled_cli"
@@ -21,61 +21,16 @@ name = "fastled"
 path = "src/main.rs"
 
 [dependencies]
-clap = { workspace = true }
-notify = { workspace = true }
-sha2 = { workspace = true }
-fs2 = { workspace = true }
-reqwest = { workspace = true }
-running-process = { workspace = true }
-zip = { workspace = true }
-tar = { workspace = true }
-zstd = { workspace = true }
-flate2 = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-anyhow = { workspace = true }
-ctcb-core = { workspace = true }
-strsim = { workspace = true }
-crossterm = { workspace = true }
-tokio = { workspace = true }
-axum = { workspace = true, features = ["ws"] }
-portable-pty = "=0.9.0"
-tower-http = { workspace = true }
-tokio-stream = { workspace = true }
-dirs = { workspace = true }
-toml = { workspace = true }
-tauri = { workspace = true, optional = true }
-tempfile = "3"
-zccache-fingerprint = { workspace = true }
-shell-words = { workspace = true }
-globset = { workspace = true }
-getrandom = "0.3"
-tree-sitter = { workspace = true }
-tree-sitter-cpp = { workspace = true }
+kernal-api = { workspace = true }
 
+# build.rs embeds the Windows icon, version information and manifest through
+# kernal-api's build-script capability. Same source and tag as the workspace
+# dependency, but only that feature, so the build script does not compile the
+# runtime capabilities a second time.
 [build-dependencies]
-indexmap = { version = "1.9.3", features = ["std"] }
-tauri-build = { workspace = true, optional = true }
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# Same gtk 0.18 that tauri/tao link; used to correct GTK's font DPI before the webview exists.
-gtk = { version = "0.18", optional = true }
-# Same webkit2gtk that wry links; used to grant microphone access to the page.
-webkit2gtk = { version = "2.0", features = ["v2_40"], optional = true }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_System_JobObjects",
-    "Win32_System_Threading",
-] }
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.6", default-features = false, features = ["windows-app-resources"] }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
 bin-dir = "fastled{ binary-ext }"
 pkg-fmt = "zip"
-
-[dev-dependencies]

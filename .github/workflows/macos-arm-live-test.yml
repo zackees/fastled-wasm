@@ -1,0 +1,161 @@
+name: macOS ARM Live Test
+
+# Apple Silicon coverage for pull requests without compiling on a Mac.
+#
+# `cross-build` produces everything on Linux through Soldr's cross toolchain
+# (bundled LLVM plus the managed macOS SDK):
+# - the release `fastled` binary,
+# - the macOS wheel that bundles it,
+# - a nextest archive of the workspace's Rust tests.
+#
+# `run-on-macos` holds the macos-15 runner only to execute them:
+# - the Rust test archive,
+# - the installed wheel's live render in the shipped WKWebView viewer,
+# - a real Safari smoke test of the same compiled sketch.
+#
+# The native macOS build/lint/test workflows no longer run on pull requests;
+# they still run on main pushes and manual dispatch.
+# #251 tracks moving the execution into a docker-mac-x64 guest on Linux.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One live run per workflow per ref: a new push to a branch or PR cancels the
+# superseded run instead of queuing behind it in the shared account-wide runner
+# pool. Runs on main get a unique group, so they are never cancelled or coalesced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  RUST_TARGET: aarch64-apple-darwin
+  TEST_ARCHIVE: fastled-macos-arm64-tests.tar.zst
+
+jobs:
+  cross-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      # Same pin as kernal-api's Apple cross lanes. It installs a current
+      # Soldr with `soldr build --target` and the managed macOS SDK; the
+      # v0.9.62 action used elsewhere here pins Soldr 0.7.51 (see #158),
+      # which has neither.
+      - uses: zackees/setup-soldr@bb28e96d2dc32c058242f56722297caf1efcbd90
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          cache-key-suffix: macos-arm-live-cross
+          cross-targets: aarch64-apple-darwin
+          toolchain-file: rust-toolchain.toml
+          prebuild-deps-flags: ""
+
+      # setup.py always rebuilds the bundled binary with
+      # `soldr cargo build --release --bin fastled [--target $FASTLED_RUST_TARGET]`.
+      # Build with exactly that command first so its rebuild is a no-op. The
+      # explicit target also keeps host build scripts on the host linker.
+      - name: Cross-build the release fastled binary
+        run: soldr cargo build --release --bin fastled --target "$RUST_TARGET"
+
+      - name: Package the macOS wheel
+        env:
+          FASTLED_RUST_TARGET: ${{ env.RUST_TARGET }}
+        run: |
+          uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel --plat-name macosx_11_0_arm64
+          # The bundled binary must be an arm64 Mach-O, not a host binary.
+          test "$(od -A n -t x1 -N 8 src/fastled/bin/fastled | tr -d ' \n')" = "cffaedfe0c000001"
+          ls -l dist/
+
+      - name: Archive the Rust tests for macOS
+        run: soldr cargo nextest archive --workspace --target "$RUST_TARGET" --archive-file "$TEST_ARCHIVE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-live-inputs
+          path: |
+            dist/*.whl
+            ${{ env.TEST_ARCHIVE }}
+          if-no-files-found: error
+          retention-days: 1
+
+  run-on-macos:
+    needs: cross-build
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      # The checkout provides the test fixtures and smoke scripts, and the
+      # workspace the test archive is remapped onto. Nothing is compiled.
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-arm-live-inputs
+          path: macos-arm-live-inputs
+
+      - name: Install cargo-nextest
+        run: |
+          mkdir -p "$HOME/.cargo/bin"
+          curl -LsSf https://get.nexte.st/latest/mac | tar zxf - -C "$HOME/.cargo/bin"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Run the cross-built Rust tests
+        # The frontend path is compiled in from the Linux builder
+        # (CARGO_MANIFEST_DIR); FASTLED_FRONTEND_DIR points tests at this
+        # checkout instead, the same override the installed wheel uses.
+        env:
+          FASTLED_FRONTEND_DIR: ${{ github.workspace }}/src/fastled/frontend
+        run: >-
+          cargo-nextest nextest run
+          --archive-file "macos-arm-live-inputs/$TEST_ARCHIVE"
+          --workspace-remap .
+
+      # The render and Safari checks still run when a Rust test fails, so one
+      # cycle reports every macOS result.
+      - name: Enable Safari automation
+        if: ${{ !cancelled() }}
+        run: sudo safaridriver --enable
+
+      - name: Live viewer render and Safari smoke of the installed wheel
+        if: ${{ !cancelled() }}
+        env:
+          FASTLED_SAFARI_SMOKE: "1"
+        run: |
+          mkdir -p dist
+          cp macos-arm-live-inputs/dist/*.whl dist/
+          bash ci/smoke_installed_wheel.sh
+
+      - name: Upload screenshots, logs and Safari state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-live-results
+          path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/
+          if-no-files-found: warn

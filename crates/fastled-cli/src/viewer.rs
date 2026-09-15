@@ -6,12 +6,12 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-#[cfg(any(not(windows), test))]
 use std::process::Stdio;
 
-use anyhow::{Context, Result};
-#[cfg(not(windows))]
-use running_process::{ContainedProcessGroup, SpawnStdio, SpawnedChild, StdioSource};
+use crate::error_compat::{Context, Result};
+use kernal_api::platform::process::{
+    spawn_sync, SpawnStdio, SpawnedChild, StdioSource, SyncEnvironment,
+};
 
 // ---------------------------------------------------------------------------
 // Binary names (platform-aware)
@@ -121,74 +121,23 @@ pub fn viewer_available() -> bool {
 // Launch
 // ---------------------------------------------------------------------------
 
-#[cfg(windows)]
-const VIEWER_CREATION_FLAGS: u32 = 0x0800_0000 | 0x0000_0200; // CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
-
-#[cfg(windows)]
+/// The kernel owns native containment and process-handle lifetimes.
 pub struct ViewerProcess {
-    job: windows_sys::Win32::Foundation::HANDLE,
-    process: windows_sys::Win32::Foundation::HANDLE,
-    thread: windows_sys::Win32::Foundation::HANDLE,
-    pid: u32,
-}
-
-#[cfg(not(windows))]
-pub struct ViewerProcess {
-    _group: ContainedProcessGroup,
     child: SpawnedChild,
 }
 
 impl ViewerProcess {
-    #[cfg(windows)]
-    pub fn pid(&self) -> u32 {
-        self.pid
-    }
-
-    #[cfg(not(windows))]
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
 
-    /// Non-blocking liveness probe: `true` while the viewer process is still
-    /// running, `false` once it has exited (window closed or crashed).
-    #[cfg(windows)]
+    /// Probe liveness without blocking. Observation errors stop the CLI rather
+    /// than allowing it to serve indefinitely after the viewer disappears.
     pub fn is_alive(&mut self) -> bool {
-        process_handle_is_alive(self.process)
-    }
-
-    /// Non-blocking liveness probe: `true` while the viewer process is still
-    /// running, `false` once it has exited (window closed or crashed).
-    ///
-    /// Reaping the child here is safe: the surviving
-    /// [`ContainedProcessGroup`] kill-on-drop is a best-effort `killpg`, so a
-    /// reaped leader does not break group cleanup.
-    #[cfg(not(windows))]
-    pub fn is_alive(&mut self) -> bool {
-        // An error from try_wait means we can no longer observe the child;
-        // treat it as dead so the CLI shuts down instead of running forever.
         !matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
     }
 }
 
-#[cfg(windows)]
-fn process_handle_is_alive(process: windows_sys::Win32::Foundation::HANDLE) -> bool {
-    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
-    use windows_sys::Win32::System::Threading::WaitForSingleObject;
-    unsafe { WaitForSingleObject(process, 0) == WAIT_TIMEOUT }
-}
-
-#[cfg(windows)]
-impl Drop for ViewerProcess {
-    fn drop(&mut self) {
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.thread);
-            windows_sys::Win32::Foundation::CloseHandle(self.process);
-            windows_sys::Win32::Foundation::CloseHandle(self.job);
-        }
-    }
-}
-
-#[cfg(any(not(windows), test))]
 fn viewer_command(binary: &Path, url: &str, inject_test_runtime: bool) -> Command {
     let mut command = Command::new(binary);
     command.arg("--internal-viewer").arg(url);
@@ -200,178 +149,11 @@ fn viewer_command(binary: &Path, url: &str, inject_test_runtime: bool) -> Comman
         .stdout(Stdio::null())
         .stderr(Stdio::null());
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(VIEWER_CREATION_FLAGS);
-    }
+    // Preserve the former unlabelled process group's discovery policy.
+    #[cfg(not(windows))]
+    command.env_remove("RUNNING_PROCESS_ORIGINATOR");
 
     command
-}
-
-#[cfg(windows)]
-fn quote_windows_arg(arg: &std::ffi::OsStr) -> String {
-    let text = arg.to_string_lossy();
-    if !text.is_empty()
-        && !text
-            .chars()
-            .any(|ch| matches!(ch, ' ' | '\t' | '"' | '\n' | '\r'))
-    {
-        return text.into_owned();
-    }
-
-    let mut quoted = String::from("\"");
-    let mut backslashes = 0usize;
-    for ch in text.chars() {
-        match ch {
-            '\\' => backslashes += 1,
-            '"' => {
-                quoted.push_str(&"\\".repeat(backslashes * 2 + 1));
-                quoted.push('"');
-                backslashes = 0;
-            }
-            _ => {
-                quoted.push_str(&"\\".repeat(backslashes));
-                backslashes = 0;
-                quoted.push(ch);
-            }
-        }
-    }
-    quoted.push_str(&"\\".repeat(backslashes * 2));
-    quoted.push('"');
-    quoted
-}
-
-#[cfg(windows)]
-fn viewer_command_line(binary: &Path, url: &str, inject_test_runtime: bool) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-
-    let mut args = vec![
-        binary.as_os_str(),
-        std::ffi::OsStr::new("--internal-viewer"),
-        std::ffi::OsStr::new(url),
-    ];
-    if inject_test_runtime {
-        args.push(std::ffi::OsStr::new("--viewer-inject-test-runtime"));
-    }
-    let command_line = args
-        .iter()
-        .map(|arg| quote_windows_arg(arg))
-        .collect::<Vec<_>>()
-        .join(" ");
-    std::ffi::OsStr::new(&command_line)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
-}
-
-#[cfg(windows)]
-fn spawn_hidden_viewer(
-    binary: &Path,
-    url: &str,
-    inject_test_runtime: bool,
-) -> Result<ViewerProcess> {
-    use std::mem::{size_of, zeroed};
-    use std::ptr::{null, null_mut};
-
-    use windows_sys::Win32::Foundation::{CloseHandle, FALSE};
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    };
-    use windows_sys::Win32::System::Threading::{
-        CreateProcessW, ResumeThread, TerminateProcess, CREATE_SUSPENDED, PROCESS_INFORMATION,
-        STARTF_USESHOWWINDOW, STARTUPINFOW,
-    };
-
-    let job = unsafe { CreateJobObjectW(null_mut(), null()) };
-    if job.is_null() {
-        return Err(std::io::Error::last_os_error()).context("failed to create viewer job object");
-    }
-
-    let mut job_info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-    job_info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    let set_job_ok = unsafe {
-        SetInformationJobObject(
-            job,
-            JobObjectExtendedLimitInformation,
-            (&mut job_info as *mut JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-        )
-    };
-    if set_job_ok == FALSE {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            CloseHandle(job);
-        }
-        return Err(err).context("failed to configure viewer job object");
-    }
-
-    let mut startup_info: STARTUPINFOW = unsafe { zeroed() };
-    startup_info.cb = size_of::<STARTUPINFOW>() as u32;
-    startup_info.dwFlags = STARTF_USESHOWWINDOW;
-    startup_info.wShowWindow = 0; // SW_HIDE
-
-    let mut process_info: PROCESS_INFORMATION = unsafe { zeroed() };
-    let mut command_line = viewer_command_line(binary, url, inject_test_runtime);
-    let flags = VIEWER_CREATION_FLAGS | CREATE_SUSPENDED;
-    let create_ok = unsafe {
-        CreateProcessW(
-            null(),
-            command_line.as_mut_ptr(),
-            null(),
-            null(),
-            FALSE,
-            flags,
-            null(),
-            null(),
-            &startup_info,
-            &mut process_info,
-        )
-    };
-    if create_ok == FALSE {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            CloseHandle(job);
-        }
-        return Err(err).with_context(|| {
-            format!(
-                "failed to create FastLED viewer from '{}'",
-                binary.display()
-            )
-        });
-    }
-
-    let assign_ok = unsafe { AssignProcessToJobObject(job, process_info.hProcess) };
-    if assign_ok == FALSE {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            TerminateProcess(process_info.hProcess, 1);
-            CloseHandle(process_info.hThread);
-            CloseHandle(process_info.hProcess);
-            CloseHandle(job);
-        }
-        return Err(err).context("failed to assign viewer to job object");
-    }
-
-    let resume_result = unsafe { ResumeThread(process_info.hThread) };
-    if resume_result == u32::MAX {
-        let err = std::io::Error::last_os_error();
-        unsafe {
-            CloseHandle(process_info.hThread);
-            CloseHandle(process_info.hProcess);
-            CloseHandle(job);
-        }
-        return Err(err).context("failed to resume viewer process");
-    }
-
-    Ok(ViewerProcess {
-        job,
-        process: process_info.hProcess,
-        thread: process_info.hThread,
-        pid: process_info.dwProcessId,
-    })
 }
 
 /// Spawn the Tauri viewer, pointing it at the FastLED HTTP server `url`.
@@ -397,7 +179,7 @@ pub(crate) fn launch_tauri_test_viewer(url: &str) -> Result<ViewerProcess> {
 
 fn launch_tauri_viewer_with_options(url: &str, inject_test_runtime: bool) -> Result<ViewerProcess> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        anyhow::bail!(
+        crate::error_compat::bail!(
             "viewer must be launched with an http(s) URL pointing at the FastLED server, got: {url}"
         );
     }
@@ -405,31 +187,17 @@ fn launch_tauri_viewer_with_options(url: &str, inject_test_runtime: bool) -> Res
     let binary =
         find_tauri_viewer().context("fastled binary not found; cannot launch Tauri viewer")?;
 
-    #[cfg(windows)]
-    {
-        spawn_hidden_viewer(&binary, url, inject_test_runtime)
-    }
-
-    #[cfg(not(windows))]
-    {
-        let group =
-            ContainedProcessGroup::new().context("failed to create viewer process group")?;
-        let mut command = viewer_command(&binary, url, inject_test_runtime);
-        let stdio = SpawnStdio {
-            stdin: StdioSource::Null,
-            stdout: StdioSource::Null,
-            stderr: StdioSource::Null,
-            ..SpawnStdio::default()
-        };
-        let child = group.spawn(&mut command, stdio).with_context(|| {
-            format!("failed to spawn FastLED viewer from '{}'", binary.display())
-        })?;
-
-        Ok(ViewerProcess {
-            _group: group,
-            child,
-        })
-    }
+    let mut command = viewer_command(&binary, url, inject_test_runtime);
+    let stdio = SpawnStdio {
+        stdin: StdioSource::Null,
+        stdout: StdioSource::Null,
+        stderr: StdioSource::Null,
+        show_console: false,
+        ..SpawnStdio::default()
+    };
+    let child = spawn_sync(&mut command, stdio, SyncEnvironment::Inherit)
+        .with_context(|| format!("failed to spawn FastLED viewer from '{}'", binary.display()))?;
+    Ok(ViewerProcess { child })
 }
 
 // ---------------------------------------------------------------------------
@@ -499,8 +267,8 @@ fn is_fastled_binary(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
-    use tempfile::TempDir;
 
     #[test]
     fn test_viewer_available_does_not_panic() {
@@ -527,7 +295,7 @@ mod tests {
     fn test_find_viewer_in_arch_dirs_finds_binary() {
         // Set up a fake target tree:
         //   <tmp>/target/x86_64-pc-windows-msvc/release/fastled[.exe]
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         let arch_dir = target.join("x86_64-pc-windows-msvc").join("release");
         fs::create_dir_all(&arch_dir).expect("mkdir arch_dir");
@@ -541,7 +309,7 @@ mod tests {
     #[test]
     fn test_find_viewer_in_arch_dirs_skips_dotfiles() {
         // A hidden `.cache` dir should not be scanned.
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         let hidden = target.join(".cache").join("debug");
         fs::create_dir_all(&hidden).expect("mkdir hidden");
@@ -552,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_find_viewer_in_arch_dirs_returns_none_for_empty_tree() {
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let target = tmp.path().join("target");
         fs::create_dir_all(&target).expect("mkdir target");
         assert!(find_viewer_in_arch_dirs(&target).is_none());
@@ -560,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_find_viewer_in_arch_dirs_missing_target() {
-        let tmp = TempDir::new().expect("tempdir");
+        let tmp = TemporaryDirectory::new().expect("tempdir");
         let missing = tmp.path().join("does-not-exist");
         assert!(find_viewer_in_arch_dirs(&missing).is_none());
     }
@@ -619,58 +387,24 @@ mod tests {
     }
 
     #[test]
-    #[cfg(windows)]
-    fn test_viewer_uses_hidden_process_creation_flags() {
-        assert_eq!(VIEWER_CREATION_FLAGS & 0x0800_0000, 0x0800_0000);
-        assert_eq!(VIEWER_CREATION_FLAGS & 0x0000_0200, 0x0000_0200);
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_process_handle_liveness_alive_to_dead() {
-        use std::os::windows::io::AsRawHandle;
-
-        // ping -n 5 keeps the child alive for several seconds.
-        let mut child = Command::new("ping")
-            .args(["-n", "5", "127.0.0.1"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn ping");
-        let handle = child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
-
-        assert!(
-            process_handle_is_alive(handle),
-            "expected freshly spawned process to be alive"
-        );
-
-        child.kill().expect("kill ping");
-        child.wait().expect("wait ping");
-
-        assert!(
-            !process_handle_is_alive(handle),
-            "expected exited process to be dead"
-        );
-    }
-
-    #[test]
-    #[cfg(not(windows))]
     fn test_viewer_process_is_alive_alive_to_dead() {
-        let group = ContainedProcessGroup::new().expect("process group");
+        #[cfg(not(windows))]
         let mut command = Command::new("sleep");
+        #[cfg(not(windows))]
         command.arg("30");
+        #[cfg(windows)]
+        let mut command = Command::new("ping");
+        #[cfg(windows)]
+        command.args(["-n", "30", "127.0.0.1"]);
         let stdio = SpawnStdio {
             stdin: StdioSource::Null,
             stdout: StdioSource::Null,
             stderr: StdioSource::Null,
             ..SpawnStdio::default()
         };
-        let child = group.spawn(&mut command, stdio).expect("spawn sleep");
-        let mut viewer = ViewerProcess {
-            _group: group,
-            child,
-        };
+        let child =
+            spawn_sync(&mut command, stdio, SyncEnvironment::Inherit).expect("spawn viewer child");
+        let mut viewer = ViewerProcess { child };
 
         assert!(
             viewer.is_alive(),

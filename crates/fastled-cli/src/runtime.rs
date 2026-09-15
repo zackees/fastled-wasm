@@ -6,11 +6,10 @@
 //! dropped into `~/.fastled/update/`, and periodically removes stale copies.
 
 use crate::archive;
-use anyhow::{Context, Result};
-use fs2::FileExt;
+use crate::error_compat::{Context, Result};
 use std::cmp::Ordering;
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -155,7 +154,7 @@ impl RuntimePaths {
         let root = if let Some(root) = std::env::var_os(ROOT_ENV_VAR) {
             PathBuf::from(root)
         } else {
-            dirs::home_dir()
+            kernal_api::platform::fs::user_home_dir()
                 .context("could not determine home directory")?
                 .join(".fastled")
         };
@@ -543,7 +542,7 @@ fn purge_stale_update_files_in_dir(dir: &Path, cutoff: u64, summary: &mut GcSumm
     Ok(())
 }
 
-fn lock_runtime_root(run_root: &Path) -> Result<File> {
+fn lock_runtime_root(run_root: &Path) -> Result<kernal_api::platform::fs::OwnedFileLock> {
     fs::create_dir_all(run_root)
         .with_context(|| format!("cannot create {}", run_root.display()))?;
     let lock_path = run_root.join(LOCK_FILENAME);
@@ -554,9 +553,8 @@ fn lock_runtime_root(run_root: &Path) -> Result<File> {
         .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("cannot open {}", lock_path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("cannot lock {}", lock_path.display()))?;
-    Ok(file)
+    kernal_api::platform::fs::lock_exclusive_owned(file)
+        .with_context(|| format!("cannot lock {}", lock_path.display()))
 }
 
 fn exe_hash_matches(path: &Path, expected_hash: &str) -> bool {
@@ -672,8 +670,9 @@ fn version_from_name(name: &str) -> Option<(String, ParsedVersion)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
+    use std::fs::File;
     use std::io::Write;
-    use tempfile::TempDir;
 
     fn write_file(path: &Path, bytes: &[u8]) {
         if let Some(parent) = path.parent() {
@@ -717,7 +716,7 @@ mod tests {
 
     #[test]
     fn pending_update_prefers_newest_version() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let update_root = temp.path().join(UPDATE_DIR);
         write_file(&update_root.join(candidate_name("2.0.8")), b"old");
         write_file(&update_root.join(candidate_name("2.1.0")), b"new");
@@ -733,7 +732,7 @@ mod tests {
 
     #[test]
     fn pending_update_can_live_inside_versioned_directory() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let update_root = temp.path().join(UPDATE_DIR);
         let nested = update_root.join("fastled-v9.0.0");
         write_file(&nested.join(FASTLED_EXE_NAMES[0]), b"new");
@@ -749,7 +748,7 @@ mod tests {
 
     #[test]
     fn runtime_candidate_prefers_newer_run_copy() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let run_root = temp.path().join(RUN_DIR);
         write_file(
             &run_root
@@ -774,7 +773,7 @@ mod tests {
 
     #[test]
     fn ensure_runtime_copy_copies_to_hash_keyed_run_dir() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let paths = RuntimePaths::with_root(temp.path().join("home"));
         let source = temp.path().join(FASTLED_EXE_NAMES[0]);
         write_file(&source, b"binary");
@@ -800,7 +799,7 @@ mod tests {
 
     #[test]
     fn install_update_moves_candidate_into_run_dir() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let paths = RuntimePaths::with_root(temp.path().join("home"));
         let current = temp.path().join(FASTLED_EXE_NAMES[0]);
         let update = paths.update_root.join(candidate_name("3.0.0"));
@@ -826,7 +825,7 @@ mod tests {
 
     #[test]
     fn periodic_gc_removes_stale_run_dirs_and_skips_current() {
-        let temp = TempDir::new().expect("tempdir");
+        let temp = TemporaryDirectory::new().expect("tempdir");
         let paths = RuntimePaths::with_root(temp.path().join("home"));
         fs::create_dir_all(&paths.run_root).expect("create run root");
         fs::create_dir_all(&paths.update_root).expect("create update root");

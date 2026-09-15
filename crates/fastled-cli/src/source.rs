@@ -10,8 +10,8 @@ use std::io;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use crate::error_compat::{bail, Context, Result};
+use kernal_api::json::{self, Layout, Value};
 
 use crate::cli::SourceAction;
 use crate::path::NormalizedPath;
@@ -27,16 +27,65 @@ const RECEIPT_FILE: &str = ".fastled-source.json";
 ///
 /// `fetched_at_unix_secs` intentionally uses a simple UTC epoch timestamp so
 /// receipts remain portable and can be inspected without a date-time crate.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourceReceipt {
     pub(crate) requested_ref: String,
     pub(crate) fetched_at_unix_secs: u64,
     pub(crate) source_url: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) resolved_commit: Option<String>,
 }
 
 impl SourceReceipt {
+    fn from_document(document: Value) -> Result<Self> {
+        const FIELDS: [&str; 4] = [
+            "requested_ref",
+            "fetched_at_unix_secs",
+            "source_url",
+            "resolved_commit",
+        ];
+        let mut fields = [None, None, None, None];
+        match document {
+            Value::ObjectMembers(members) => {
+                for (name, value) in members {
+                    if let Some(index) = FIELDS.iter().position(|field| *field == name) {
+                        if fields[index].replace(value).is_some() {
+                            bail!("duplicate source receipt field {}", FIELDS[index]);
+                        }
+                    }
+                }
+            }
+            Value::Array(values) if (3..=4).contains(&values.len()) => {
+                for (field, value) in fields.iter_mut().zip(values) {
+                    *field = Some(value);
+                }
+            }
+            _ => bail!("source receipt must be an object or a three/four-field array"),
+        }
+        let [requested_ref, fetched_at, source_url, resolved_commit] = fields;
+        let Some(Value::String(requested_ref)) = requested_ref else {
+            bail!("source receipt requested_ref must be a string");
+        };
+        let fetched_at_unix_secs = match fetched_at {
+            Some(Value::Unsigned(value)) => value,
+            Some(Value::Signed(value)) if value >= 0 => value as u64,
+            _ => bail!("source receipt fetched_at_unix_secs must be an unsigned integer"),
+        };
+        let Some(Value::String(source_url)) = source_url else {
+            bail!("source receipt source_url must be a string");
+        };
+        let resolved_commit = match resolved_commit {
+            None | Some(Value::Null) => None,
+            Some(Value::String(value)) => Some(value),
+            _ => bail!("source receipt resolved_commit must be a string or null"),
+        };
+        Ok(Self {
+            requested_ref,
+            fetched_at_unix_secs,
+            source_url,
+            resolved_commit,
+        })
+    }
+
     pub(crate) fn new(
         requested_ref: impl Into<String>,
         source_url: impl Into<String>,
@@ -81,7 +130,8 @@ impl SourceStatus {
 
 /// Resolve the `~/.fastled/cache` directory.
 pub(crate) fn default_cache_base() -> Result<NormalizedPath> {
-    let home = dirs::home_dir().context("cannot resolve home directory")?;
+    let home =
+        kernal_api::platform::fs::user_home_dir().context("cannot resolve home directory")?;
     Ok(NormalizedPath::new(home.join(".fastled").join("cache")))
 }
 
@@ -104,7 +154,9 @@ pub(crate) fn receipt_path(repo_dir: &Path) -> NormalizedPath {
 pub(crate) fn read_receipt(repo_dir: &Path) -> Result<Option<SourceReceipt>> {
     let path = receipt_path(repo_dir);
     match fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text)
+        Ok(text) => json::parse_members(text.as_bytes())
+            .map_err(crate::error_compat::Error::from)
+            .and_then(SourceReceipt::from_document)
             .with_context(|| format!("parse source receipt {}", path.display()))
             .map(Some),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -257,7 +309,7 @@ pub(crate) fn run_source_action(action: SourceAction) -> Result<()> {
             if let Some(warning) = master_stale_warning(&status) {
                 use std::io::IsTerminal;
                 if std::io::stderr().is_terminal() {
-                    eprintln!("{}", crossterm::style::Stylize::yellow(warning));
+                    eprintln!("{}", crate::diagnostics::yellow_warning(&warning));
                 } else {
                     eprintln!("{warning}");
                 }
@@ -281,7 +333,25 @@ pub(crate) fn run_source_action(action: SourceAction) -> Result<()> {
 }
 
 pub(crate) fn write_receipt(repo_dir: &Path, receipt: &SourceReceipt) -> Result<()> {
-    let bytes = serde_json::to_vec_pretty(receipt).context("serialize source receipt")?;
+    let mut members = vec![
+        (
+            "requested_ref".into(),
+            Value::String(receipt.requested_ref.clone()),
+        ),
+        (
+            "fetched_at_unix_secs".into(),
+            Value::Unsigned(receipt.fetched_at_unix_secs),
+        ),
+        (
+            "source_url".into(),
+            Value::String(receipt.source_url.clone()),
+        ),
+    ];
+    if let Some(commit) = &receipt.resolved_commit {
+        members.push(("resolved_commit".into(), Value::String(commit.clone())));
+    }
+    let bytes = json::encode(&Value::ObjectMembers(members), Layout::Pretty)
+        .context("serialize source receipt")?;
     fs::write(receipt_path(repo_dir), bytes)
         .with_context(|| format!("write source receipt in {}", repo_dir.display()))
 }
@@ -317,7 +387,7 @@ fn unique_sibling(cache_base: &Path, requested_ref: &str, purpose: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
+    use kernal_api::platform::fs::TemporaryDirectory;
 
     fn receipt(ref_name: &str, fetched_at: SystemTime) -> SourceReceipt {
         SourceReceipt::new(
@@ -331,7 +401,7 @@ mod tests {
 
     #[test]
     fn master_warning_uses_exact_command_and_dynamic_days() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = UNIX_EPOCH + Duration::from_secs(5 * 24 * 60 * 60);
         let old = receipt("master", now - Duration::from_secs(2 * 24 * 60 * 60));
         update_checkout(cache.path(), &old, |staging| {
@@ -349,8 +419,90 @@ mod tests {
     }
 
     #[test]
+    fn receipt_schema_preserves_optional_and_unsigned_fields() {
+        let directory = TemporaryDirectory::new().unwrap();
+        let path = receipt_path(directory.path());
+        for suffix in [
+            "",
+            ",\"resolved_commit\":null",
+            ",\"future\":{\"nested\":[true,null]}",
+        ] {
+            let source = format!("{{\"requested_ref\":\"日本\",\"source_url\":\"https://example.test/source\",\"fetched_at_unix_secs\":18446744073709551615{suffix}}}");
+            fs::write(&path, source).unwrap();
+            let receipt = read_receipt(directory.path()).unwrap().unwrap();
+            assert_eq!(receipt.requested_ref, "日本");
+            assert_eq!(receipt.fetched_at_unix_secs, u64::MAX);
+            assert_eq!(receipt.resolved_commit, None);
+            write_receipt(directory.path(), &receipt).unwrap();
+            let encoded = fs::read_to_string(&path).unwrap();
+            assert!(!encoded.contains("resolved_commit"));
+            assert!(!encoded.ends_with('\n'));
+            assert_eq!(read_receipt(directory.path()).unwrap(), Some(receipt));
+        }
+    }
+
+    #[test]
+    fn receipt_schema_accepts_positional_records_in_declared_field_order() {
+        let directory = TemporaryDirectory::new().unwrap();
+        for source in [
+            r#"["master",1,"url"]"#,
+            r#"["master",1,"url",null]"#,
+            r#"["master",1,"url","abc"]"#,
+        ] {
+            fs::write(receipt_path(directory.path()), source).unwrap();
+            let value = read_receipt(directory.path()).unwrap().unwrap();
+            assert_eq!(value.requested_ref, "master");
+            assert_eq!(value.fetched_at_unix_secs, 1);
+            assert_eq!(value.source_url, "url");
+            assert_eq!(
+                value.resolved_commit.as_deref(),
+                if source.contains("abc") {
+                    Some("abc")
+                } else {
+                    None
+                }
+            );
+            write_receipt(directory.path(), &value).unwrap();
+            let expected = if value.resolved_commit.is_some() {
+                "{\n  \"requested_ref\": \"master\",\n  \"fetched_at_unix_secs\": 1,\n  \"source_url\": \"url\",\n  \"resolved_commit\": \"abc\"\n}"
+            } else {
+                "{\n  \"requested_ref\": \"master\",\n  \"fetched_at_unix_secs\": 1,\n  \"source_url\": \"url\"\n}"
+            };
+            assert_eq!(
+                fs::read_to_string(receipt_path(directory.path())).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn receipt_schema_rejects_wrong_types_missing_fields_and_duplicate_known_fields() {
+        let directory = TemporaryDirectory::new().unwrap();
+        let path = receipt_path(directory.path());
+        for source in [
+            r#"{}"#,
+            r#"["master",1]"#,
+            r#"["master",1,"url",null,false]"#,
+            r#"["master",1,"url",false]"#,
+            r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":-1}"#,
+            r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":1.0}"#,
+            r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":"1"}"#,
+            r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":1,"resolved_commit":false}"#,
+            r#"{"requested_ref":"master","requested_ref":"other","source_url":"url","fetched_at_unix_secs":1}"#,
+            r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":1,"resolved_commit":null,"resolved_commit":"abc"}"#,
+        ] {
+            fs::write(&path, source).unwrap();
+            assert!(read_receipt(directory.path()).is_err(), "accepted {source}");
+        }
+        // Unknown fields are ignored even when repeated; this differs from
+        // rejecting every duplicate key in the JSON parser.
+        fs::write(&path, r#"{"requested_ref":"master","source_url":"url","fetched_at_unix_secs":1,"future":false,"future":true}"#).unwrap();
+        assert!(read_receipt(directory.path()).is_ok());
+    }
+
+    #[test]
     fn master_freshness_uses_a_strict_24_hour_boundary() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = UNIX_EPOCH + Duration::from_secs(10 * 24 * 60 * 60);
         for (ref_name, age, warns) in [
             ("master", Duration::from_secs(23 * 60 * 60), false),
@@ -369,7 +521,7 @@ mod tests {
 
     #[test]
     fn master_without_receipt_is_stale() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let repo = repo_dir(cache.path(), "master").unwrap();
         fs::create_dir_all(&repo).unwrap();
         fs::write(repo.join("library.json"), "{}").unwrap();
@@ -384,7 +536,7 @@ mod tests {
 
     #[test]
     fn tags_shas_and_non_master_branches_never_warn() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let now = SystemTime::now();
         for ref_name in ["3.10.0", "abcdef0", "main"] {
             let old = receipt(ref_name, now - Duration::from_secs(7 * 24 * 60 * 60));
@@ -399,7 +551,7 @@ mod tests {
 
     #[test]
     fn failed_staged_update_preserves_existing_checkout() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let old = receipt("master", SystemTime::now());
         let live = update_checkout(cache.path(), &old, |staging| {
             fs::write(staging.join("library.json"), "{}").context("write library")?;
@@ -416,7 +568,7 @@ mod tests {
 
     #[test]
     fn update_replaces_checkout_and_receipt_together() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let old = receipt("master", UNIX_EPOCH + Duration::from_secs(1));
         update_checkout(cache.path(), &old, |staging| {
             fs::write(staging.join("library.json"), "{}").context("write library")?;
@@ -436,7 +588,7 @@ mod tests {
 
     #[test]
     fn purge_is_scoped_to_one_safe_checkout() {
-        let cache = TempDir::new().unwrap();
+        let cache = TemporaryDirectory::new().unwrap();
         let master = repo_dir(cache.path(), "master").unwrap();
         let tag = repo_dir(cache.path(), "3.10.0").unwrap();
         fs::create_dir_all(&master).unwrap();

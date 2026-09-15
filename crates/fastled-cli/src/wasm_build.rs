@@ -11,9 +11,9 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use crate::error_compat::{bail, Context, Result};
+use kernal_api::hash::Sha256Hasher as Sha256;
+use kernal_api::json::{self, Layout, Value};
 
 use crate::cli::LinkMode;
 use crate::{archive, debug_symbols, dynamic_cache, frontend, install, source};
@@ -26,7 +26,7 @@ fn stdio_log(line: &str, stream: &str) {
     use std::io::IsTerminal;
 
     if stream == "warning" && std::io::stderr().is_terminal() {
-        eprintln!("{}", crossterm::style::Stylize::yellow(line));
+        eprintln!("{}", crate::diagnostics::yellow_warning(line));
     } else if stream == "stderr" || stream == "warning" {
         eprintln!("{line}");
     } else {
@@ -132,13 +132,13 @@ impl BuildFingerprints {
                     toolchain_fingerprint(tools)
                         .map(|value| (value, started.elapsed().as_secs_f64()))
                 });
-                let source = source
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("FastLED fingerprint worker panicked"))??;
-                let toolchain = toolchain
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("toolchain fingerprint worker panicked"))??;
-                Ok::<_, anyhow::Error>((source, toolchain))
+                let source = source.join().map_err(|_| {
+                    crate::error_compat::error!("FastLED fingerprint worker panicked")
+                })??;
+                let toolchain = toolchain.join().map_err(|_| {
+                    crate::error_compat::error!("toolchain fingerprint worker panicked")
+                })??;
+                Ok::<_, crate::error_compat::Error>((source, toolchain))
             })?;
         let mode_value = format!("mode={};link-mode={link_mode:?}", mode.as_str());
         let library = dynamic_cache::fingerprint_values([
@@ -156,7 +156,7 @@ impl BuildFingerprints {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct BuildFlagsToml {
     all: Option<FlagSection>,
     sketch: Option<FlagSection>,
@@ -165,28 +165,118 @@ struct BuildFlagsToml {
     dwarf: Option<debug_symbols::DwarfPrefixConfig>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct FlagSection {
     defines: Option<Vec<String>>,
     compiler_flags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct LinkingSection {
     base: Option<FlagList>,
     sketch: Option<FlagList>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct ModeSection {
     flags: Option<Vec<String>>,
     sketch_flags: Option<Vec<String>>,
     link_flags: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default)]
 struct FlagList {
     flags: Option<Vec<String>>,
+}
+
+// The kernel owns TOML syntax and resource bounds; these fields and defaults
+// are FastLED's compiler policy. Unknown fields deliberately remain ignored.
+impl BuildFlagsToml {
+    fn parse(source: &str) -> Result<Self> {
+        use kernal_api::config::{Document, Value};
+        fn table(value: &Value) -> Result<&BTreeMap<String, Value>> {
+            match value {
+                Value::Table(fields) => Ok(fields),
+                _ => crate::error_compat::bail!("build flag section must be a table"),
+            }
+        }
+        fn strings(fields: &BTreeMap<String, Value>, name: &str) -> Result<Option<Vec<String>>> {
+            fields
+                .get(name)
+                .map(|value| {
+                    let Value::Array(values) = value else {
+                        crate::error_compat::bail!("{name} must be an array of strings");
+                    };
+                    values
+                        .iter()
+                        .map(|value| match value {
+                            Value::String(value) => Ok(value.clone()),
+                            _ => crate::error_compat::bail!("{name} must contain only strings"),
+                        })
+                        .collect()
+                })
+                .transpose()
+        }
+        fn flags(value: &Value) -> Result<FlagSection> {
+            let fields = table(value)?;
+            Ok(FlagSection {
+                defines: strings(fields, "defines")?,
+                compiler_flags: strings(fields, "compiler_flags")?,
+            })
+        }
+        fn flag_list(value: &Value) -> Result<FlagList> {
+            Ok(FlagList {
+                flags: strings(table(value)?, "flags")?,
+            })
+        }
+        fn linking(value: &Value) -> Result<LinkingSection> {
+            let fields = table(value)?;
+            Ok(LinkingSection {
+                base: fields.get("base").map(flag_list).transpose()?,
+                sketch: fields.get("sketch").map(flag_list).transpose()?,
+            })
+        }
+        fn modes(value: &Value) -> Result<BTreeMap<String, ModeSection>> {
+            table(value)?
+                .iter()
+                .map(|(name, value)| {
+                    let fields = table(value).with_context(|| format!("build_modes.{name}"))?;
+                    Ok((
+                        name.clone(),
+                        ModeSection {
+                            flags: strings(fields, "flags")?,
+                            sketch_flags: strings(fields, "sketch_flags")?,
+                            link_flags: strings(fields, "link_flags")?,
+                        },
+                    ))
+                })
+                .collect()
+        }
+        let document = Document::parse_toml(source)?;
+        let fields = table(document.root())?;
+        Ok(Self {
+            all: fields.get("all").map(flags).transpose().context("all")?,
+            sketch: fields
+                .get("sketch")
+                .map(flags)
+                .transpose()
+                .context("sketch")?,
+            linking: fields
+                .get("linking")
+                .map(linking)
+                .transpose()
+                .context("linking")?,
+            build_modes: fields
+                .get("build_modes")
+                .map(modes)
+                .transpose()
+                .context("build_modes")?,
+            dwarf: fields
+                .get("dwarf")
+                .map(debug_symbols::DwarfPrefixConfig::from_config)
+                .transpose()?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -282,7 +372,10 @@ fn resolve_tool_paths(install_dir: &Path, fastled_dir: &Path) -> Result<ToolPath
     let wasm_finalize = tool_name("wasm-emscripten-finalize");
     let emscripten_version = fs::read_to_string(emscripten_dir.join("emscripten-version.txt"))
         .ok()
-        .and_then(|value| serde_json::from_str::<String>(value.trim()).ok())
+        .and_then(|value| match json::parse(value.trim().as_bytes()).ok()? {
+            Value::String(value) => Some(value),
+            _ => None,
+        })
         .unwrap_or_default();
     if !emcc.is_file() {
         bail!("missing emcc.py at {}", emcc.display());
@@ -382,10 +475,84 @@ fn command_with_env(program: impl AsRef<Path>, tools: &ToolPaths) -> Command {
 const DIRECT_CFLAGS_SCHEMA: u32 = 1;
 const DIRECT_CFLAGS_FILE: &str = ".fastled-direct-cflags.json";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default)]
 struct DirectCflagsCache {
     schema: u32,
     entries: BTreeMap<String, Vec<String>>,
+}
+
+impl DirectCflagsCache {
+    fn parse(bytes: &[u8]) -> Result<Self> {
+        let (schema, entries) = match json::parse_members(bytes)? {
+            Value::ObjectMembers(members) => {
+                let mut schema = None;
+                let mut entries = None;
+                for (key, value) in members {
+                    let field = match key.as_str() {
+                        "schema" => &mut schema,
+                        "entries" => &mut entries,
+                        _ => continue,
+                    };
+                    if field.replace(value).is_some() {
+                        bail!("duplicate direct cflags cache field");
+                    }
+                }
+                (
+                    schema.context("missing direct cflags cache schema")?,
+                    entries.context("missing direct cflags cache entries")?,
+                )
+            }
+            Value::Array(mut fields) if fields.len() == 2 => {
+                let entries = fields.remove(1);
+                (fields.remove(0), entries)
+            }
+            _ => bail!("invalid direct cflags cache record"),
+        };
+        let schema = match schema {
+            Value::Signed(value) => u32::try_from(value)?,
+            Value::Unsigned(value) => u32::try_from(value)?,
+            _ => bail!("invalid direct cflags cache schema"),
+        };
+        let Value::ObjectMembers(members) = entries else {
+            bail!("invalid direct cflags cache entries");
+        };
+        let mut entries = BTreeMap::new();
+        for (key, value) in members {
+            let Value::Array(values) = value else {
+                bail!("invalid direct cflags cache flags");
+            };
+            let flags = values
+                .into_iter()
+                .map(|value| match value {
+                    Value::String(value) => Ok(value),
+                    _ => bail!("invalid direct cflags cache flag"),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            // Validate every occurrence before applying the map's last-key policy.
+            entries.insert(key, flags);
+        }
+        Ok(Self { schema, entries })
+    }
+
+    fn encode(&self) -> Result<Vec<u8>> {
+        let entries = self
+            .entries
+            .iter()
+            .map(|(key, flags)| {
+                (
+                    key.clone(),
+                    Value::Array(flags.iter().cloned().map(Value::String).collect()),
+                )
+            })
+            .collect();
+        Ok(json::encode(
+            &Value::ObjectMembers(vec![
+                ("schema".into(), Value::Unsigned(u64::from(self.schema))),
+                ("entries".into(), Value::Object(entries)),
+            ]),
+            Layout::Pretty,
+        )?)
+    }
 }
 
 fn direct_cflags_key(toolchain_fingerprint: &str, driver_args: &[String]) -> String {
@@ -450,7 +617,7 @@ fn direct_clang_cflags(
     let install_dir = tools
         .emscripten_dir
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("Emscripten directory has no install parent"))?;
+        .ok_or_else(|| crate::error_compat::error!("Emscripten directory has no install parent"))?;
     let cache_path = install_dir.join(DIRECT_CFLAGS_FILE);
     let lock_path = install_dir.join(format!("{DIRECT_CFLAGS_FILE}.lock"));
     let lock = fs::OpenOptions::new()
@@ -460,13 +627,13 @@ fn direct_clang_cflags(
         .truncate(false)
         .open(&lock_path)
         .with_context(|| format!("open direct cflags lock {}", lock_path.display()))?;
-    fs2::FileExt::lock_exclusive(&lock)
+    let _guard = kernal_api::platform::fs::lock_exclusive(&lock)
         .with_context(|| format!("lock direct cflags cache {}", cache_path.display()))?;
 
     let key = direct_cflags_key(toolchain_fingerprint, driver_args);
     let mut cache = fs::read(&cache_path)
         .ok()
-        .and_then(|bytes| serde_json::from_slice::<DirectCflagsCache>(&bytes).ok())
+        .and_then(|bytes| DirectCflagsCache::parse(&bytes).ok())
         .filter(|cache| cache.schema == DIRECT_CFLAGS_SCHEMA)
         .unwrap_or_else(|| DirectCflagsCache {
             schema: DIRECT_CFLAGS_SCHEMA,
@@ -491,12 +658,13 @@ fn direct_clang_cflags(
         );
     }
     let stdout = String::from_utf8(output.stdout).context("em++ --cflags returned non-UTF-8")?;
-    let flags = shell_words::split(stdout.trim()).context("parse em++ --cflags output")?;
+    let flags =
+        kernal_api::arguments::parse_posix(stdout.trim()).context("parse em++ --cflags output")?;
     if flags.is_empty() {
         bail!("em++ --cflags returned no backend flags");
     }
     cache.entries.insert(key, flags.clone());
-    fs::write(&cache_path, serde_json::to_vec_pretty(&cache)?)
+    fs::write(&cache_path, cache.encode()?)
         .with_context(|| format!("write direct cflags cache {}", cache_path.display()))?;
     Ok(flags)
 }
@@ -715,7 +883,7 @@ fn link_wasm_dynamic(
                     &runtime_fingerprint,
                     &["fastled.js", "fastled.wasm"],
                 )
-                .map_err(anyhow::Error::msg)
+                .map_err(crate::error_compat::message)
             })();
             if let Err(error) = rebuild {
                 if let Err(mark_error) = dynamic_cache::mark_failure(
@@ -855,7 +1023,7 @@ fn link_wasm_dynamic(
                 )?;
                 dynamic_cache::publish_staging(staging, &sketch_entry)?;
                 dynamic_cache::validate_entry(&sketch_entry, &sketch_fingerprint, &["sketch.wasm"])
-                    .map_err(anyhow::Error::msg)
+                    .map_err(crate::error_compat::message)
             })();
             if let Err(error) = rebuild {
                 if let Err(mark_error) = dynamic_cache::mark_failure(
@@ -1012,7 +1180,7 @@ fn load_build_flags(fastled_dir: &Path) -> Result<BuildFlagsToml> {
         .join("build_flags.toml");
     let source = fs::read_to_string(&path)
         .with_context(|| format!("read build flags {}", path.display()))?;
-    toml::from_str(&source).with_context(|| format!("parse {}", path.display()))
+    BuildFlagsToml::parse(&source).with_context(|| format!("parse {}", path.display()))
 }
 
 pub(crate) fn get_sketch_compile_flags(
@@ -1354,12 +1522,22 @@ pub(crate) fn create_wrapper(
     Ok(wrapper)
 }
 
+fn sketch_source_fingerprint(example_dir: &Path) -> Result<String> {
+    dynamic_cache::fingerprint_tree(
+        example_dir,
+        &[
+            "**/*.ino", "**/*.cpp", "**/*.c", "**/*.h", "**/*.hpp", "**/*.ipp",
+        ],
+        &[".git/**", ".build/**", ".fastled/**", "fastled_js/**"],
+    )
+}
+
 fn collect_cpp_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            if entry.file_name().to_string_lossy() == ".build" {
+            if matches!(entry.file_name().to_str(), Some(".build" | ".fastled")) {
                 continue;
             }
             collect_cpp_files(&path, out)?;
@@ -1501,13 +1679,7 @@ fn compile_sketch(
                 "empp-fallback-v1".to_string(),
             ),
         };
-    let source_fingerprint = dynamic_cache::fingerprint_tree(
-        example_dir,
-        &[
-            "**/*.ino", "**/*.cpp", "**/*.c", "**/*.h", "**/*.hpp", "**/*.ipp",
-        ],
-        &[".git/**", ".build/**", "fastled_js/**"],
-    )?;
+    let source_fingerprint = sketch_source_fingerprint(example_dir)?;
     let wrapper_contents = fs::read(wrapper)
         .with_context(|| format!("read generated wrapper {}", wrapper.display()))?;
     let compile_flag_blob = compile_flags.join("\n");
@@ -1581,7 +1753,7 @@ fn compile_sketch(
             .args(direct_clang_compile_args(&args));
         run_status(command, "clang++ sketch compile", log)
     } else {
-        Err(anyhow::anyhow!(
+        Err(crate::error_compat::error!(
             "{}",
             direct_cflags_error.unwrap_or_else(|| "em++ --cflags unavailable".to_string())
         ))
@@ -1604,7 +1776,7 @@ fn compile_sketch(
     dynamic_cache::write_metadata(staging.path(), &object_fingerprint, &["sketch.o"])?;
     dynamic_cache::publish_staging(staging, &object_entry)?;
     dynamic_cache::validate_entry(&object_entry, &object_fingerprint, &["sketch.o"])
-        .map_err(anyhow::Error::msg)?;
+        .map_err(crate::error_compat::message)?;
     log(
         &format!(
             "[WASM] Sketch compile published: {} ({:.2}s)",
@@ -1726,7 +1898,7 @@ fn run_em_link_with_retries(
     log: LogSink,
 ) -> Result<()> {
     let max_attempts = if cfg!(windows) { 6 } else { 1 };
-    let mut last_err: Option<anyhow::Error> = None;
+    let mut last_err: Option<crate::error_compat::Error> = None;
     for attempt in 1..=max_attempts {
         let mut command = command_with_env(&tools.python, tools);
         command.current_dir(fastled_dir).arg(&tools.empp).args(args);
@@ -1746,7 +1918,7 @@ fn run_em_link_with_retries(
             }
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("em++ wasm link failed")))
+    Err(last_err.unwrap_or_else(|| crate::error_compat::error!("em++ wasm link failed")))
 }
 
 fn direct_side_link_supported(tools: &ToolPaths, mode: BuildMode, wasm_bigint: &str) -> bool {
@@ -1841,9 +2013,9 @@ fn run_direct_side_link_4019(
 }
 
 fn copy_linked_output(sketch_cache_dir: &Path, output_js: &Path) -> Result<()> {
-    let output_dir = output_js
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
+    let output_dir = output_js.parent().ok_or_else(|| {
+        crate::error_compat::error!("output path has no parent: {}", output_js.display())
+    })?;
     fs::create_dir_all(output_dir)?;
     for name in [
         "fastled.js",
@@ -1906,9 +2078,9 @@ fn copy_dynamic_output(
     sketch_entry: &Path,
     output_js: &Path,
 ) -> Result<usize> {
-    let output_dir = output_js
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("output path has no parent: {}", output_js.display()))?;
+    let output_dir = output_js.parent().ok_or_else(|| {
+        crate::error_compat::error!("output path has no parent: {}", output_js.display())
+    })?;
     fs::create_dir_all(output_dir)?;
     let mut copied = 0;
     for (source_dir, name) in [
@@ -1933,13 +2105,25 @@ fn copy_dynamic_output(
 }
 
 fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
-    let mut files = Vec::<serde_json::Value>::new();
+    let mut files = Vec::new();
     collect_data_files(example_dir, example_dir, &mut files)?;
-    for file in &files {
-        let relative = file
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("generated asset manifest entry has no path"))?;
+    let local_document = Value::Array(
+        files
+            .iter()
+            .map(|(path, size)| {
+                Value::Object(BTreeMap::from([
+                    ("path".into(), Value::String(path.clone())),
+                    ("size".into(), Value::Unsigned(*size)),
+                ]))
+            })
+            .collect(),
+    );
+    // Resolve and encode both documents before changing published assets.
+    let local_bytes = json::encode(&local_document, Layout::Pretty)?;
+    let remote_assets = scan_remote_assets(example_dir)?;
+    let mut remote_bytes = json::encode(&Value::Object(remote_assets), Layout::Pretty)?;
+    remote_bytes.push(b'\n');
+    for (relative, _) in &files {
         let source = example_dir.join(relative);
         let target = output_dir.join(relative);
         if let Some(parent) = target.parent() {
@@ -1958,15 +2142,8 @@ fn generate_manifest(example_dir: &Path, output_dir: &Path) -> Result<()> {
         fs::remove_file(&legacy)
             .with_context(|| format!("remove legacy asset manifest {}", legacy.display()))?;
     }
-    fs::write(
-        output_dir.join("sketch_assets.json"),
-        serde_json::to_string_pretty(&files)?,
-    )?;
-    let remote_assets = scan_remote_assets(example_dir)?;
-    fs::write(
-        output_dir.join("asset_manifest.json"),
-        format!("{}\n", serde_json::to_string_pretty(&remote_assets)?),
-    )?;
+    fs::write(output_dir.join("sketch_assets.json"), local_bytes)?;
+    fs::write(output_dir.join("asset_manifest.json"), remote_bytes)?;
     Ok(())
 }
 
@@ -1976,57 +2153,57 @@ fn remote_asset_record(
     sha256: Option<String>,
     size: Option<u64>,
     storage: Option<String>,
-) -> serde_json::Value {
-    let mut record = serde_json::Map::new();
-    record.insert("url".into(), url.into());
-    record.insert(
-        "sha256".into(),
-        sha256.map_or(serde_json::Value::Null, serde_json::Value::String),
-    );
+) -> Value {
+    let mut record = BTreeMap::new();
+    record.insert("url".into(), Value::String(url));
+    record.insert("sha256".into(), sha256.map_or(Value::Null, Value::String));
     record.insert(
         "fallback".into(),
-        fallback.map_or(serde_json::Value::Null, serde_json::Value::String),
+        fallback.map_or(Value::Null, Value::String),
     );
     if let Some(size) = size {
-        record.insert("size".into(), size.into());
+        record.insert("size".into(), Value::Unsigned(size));
     }
     if let Some(storage) = storage {
-        record.insert("storage".into(), storage.into());
+        record.insert("storage".into(), Value::String(storage));
     }
-    record.into()
+    Value::Object(record)
 }
 
-fn normalized_storage(value: Option<&serde_json::Value>) -> Option<String> {
-    let direct = value.and_then(serde_json::Value::as_str);
-    direct
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_ascii_lowercase)
+fn normalized_storage(value: Option<&Value>) -> Option<String> {
+    let Value::String(value) = value? else {
+        return None;
+    };
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_ascii_lowercase())
 }
 
-fn storage_from_spec(
-    spec: &serde_json::Map<String, serde_json::Value>,
-    default: Option<&str>,
-) -> Option<String> {
+fn storage_from_spec(spec: &BTreeMap<String, Value>, default: Option<&str>) -> Option<String> {
     normalized_storage(spec.get("storage")).or_else(|| {
         spec.get("dest")
-            .and_then(serde_json::Value::as_object)
+            .and_then(|value| match value {
+                Value::Object(value) => Some(value),
+                _ => None,
+            })
             .and_then(|dest| normalized_storage(dest.get("target")))
             .or_else(|| default.map(ToOwned::to_owned))
     })
 }
 
-fn urls_from_spec(spec: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
+fn urls_from_spec(spec: &BTreeMap<String, Value>) -> Vec<String> {
     let value = spec.get("urls").or_else(|| spec.get("url"));
     match value {
-        Some(serde_json::Value::Array(values)) => values
+        Some(Value::Array(values)) => values
             .iter()
-            .filter_map(serde_json::Value::as_str)
+            .filter_map(|value| match value {
+                Value::String(value) => Some(value.as_str()),
+                _ => None,
+            })
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
             .collect(),
-        Some(serde_json::Value::String(value)) if !value.trim().is_empty() => {
+        Some(Value::String(value)) if !value.trim().is_empty() => {
             vec![value.trim().to_owned()]
         }
         _ => Vec::new(),
@@ -2034,23 +2211,30 @@ fn urls_from_spec(spec: &serde_json::Map<String, serde_json::Value>) -> Vec<Stri
 }
 
 fn parse_json_asset(
-    spec: &serde_json::Map<String, serde_json::Value>,
+    spec: &BTreeMap<String, Value>,
     default_storage: Option<&str>,
-) -> Option<serde_json::Value> {
+) -> Option<Value> {
     let urls = urls_from_spec(spec);
     let url = urls.first()?.clone();
     let fallback = urls
         .get(1)
         .cloned()
-        .or_else(|| spec.get("fallback")?.as_str().map(ToOwned::to_owned));
-    let sha256 = spec
-        .get("sha256")
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned);
+        .or_else(|| match spec.get("fallback")? {
+            Value::String(value) => Some(value.clone()),
+            _ => None,
+        });
+    let sha256 = spec.get("sha256").and_then(|value| match value {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    });
     let size = spec
         .get("size_bytes")
         .or_else(|| spec.get("size"))
-        .and_then(serde_json::Value::as_u64);
+        .and_then(|value| match value {
+            Value::Unsigned(value) => Some(*value),
+            Value::Signed(value) => u64::try_from(*value).ok(),
+            _ => None,
+        });
     Some(remote_asset_record(
         url,
         fallback,
@@ -2060,14 +2244,16 @@ fn parse_json_asset(
     ))
 }
 
-fn parse_lnk(content: &str) -> Option<serde_json::Value> {
+fn parse_lnk(content: &str) -> Option<Value> {
     let first = content
         .lines()
         .map(str::trim)
         .find(|line| !line.is_empty() && !line.starts_with('#'))?;
     if first.starts_with('{') {
-        let value: serde_json::Value = serde_json::from_str(content).ok()?;
-        return parse_json_asset(value.as_object()?, None);
+        let Value::Object(value) = json::parse(content.as_bytes()).ok()? else {
+            return None;
+        };
+        return parse_json_asset(&value, None);
     }
 
     let mut urls = Vec::new();
@@ -2113,7 +2299,7 @@ fn safe_manifest_name(name: &str) -> Option<String> {
     Some(normalized)
 }
 
-fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json::Value>> {
+fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, Value>> {
     let data_dir = example_dir.join("data");
     let mut manifest = BTreeMap::new();
     if !data_dir.is_dir() {
@@ -2122,19 +2308,21 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
 
     let assets_json = data_dir.join("assets.json");
     if assets_json.is_file() {
-        let value: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(&assets_json)
-                .with_context(|| format!("read {}", assets_json.display()))?,
+        let value = json::parse(
+            &fs::read(&assets_json).with_context(|| format!("read {}", assets_json.display()))?,
         )
         .with_context(|| format!("parse {}", assets_json.display()))?;
-        let root = value.as_object().ok_or_else(|| {
-            anyhow::anyhow!("{} must contain a JSON object", assets_json.display())
-        })?;
+        let Value::Object(root) = value else {
+            bail!("{} must contain a JSON object", assets_json.display());
+        };
         let default_storage = root
             .get("defaults")
-            .and_then(serde_json::Value::as_object)
+            .and_then(|value| match value {
+                Value::Object(value) => Some(value),
+                _ => None,
+            })
             .and_then(|defaults| storage_from_spec(defaults, None));
-        if let Some(assets) = root.get("assets").and_then(serde_json::Value::as_object) {
+        if let Some(Value::Object(assets)) = root.get("assets") {
             for (name, spec) in assets {
                 let Some(name) = safe_manifest_name(name) else {
                     eprintln!(
@@ -2143,10 +2331,10 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
                     );
                     continue;
                 };
-                let Some(record) = spec
-                    .as_object()
-                    .and_then(|spec| parse_json_asset(spec, default_storage.as_deref()))
-                else {
+                let Some(record) = (match spec {
+                    Value::Object(spec) => parse_json_asset(spec, default_storage.as_deref()),
+                    _ => None,
+                }) else {
                     eprintln!(
                         "fastled: ignoring asset without a URL in {}: {name}",
                         assets_json.display()
@@ -2184,7 +2372,7 @@ fn scan_remote_assets(example_dir: &Path) -> Result<BTreeMap<String, serde_json:
     Ok(manifest)
 }
 
-fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>) -> Result<()> {
+fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) -> Result<()> {
     if !dir.is_dir() {
         return Ok(());
     }
@@ -2209,10 +2397,7 @@ fn collect_data_files(root: &Path, dir: &Path, out: &mut Vec<serde_json::Value>)
             )
         {
             let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy();
-            out.push(serde_json::json!({
-                "path": rel.replace('\\', "/"),
-                "size": path.metadata()?.len(),
-            }));
+            out.push((rel.replace('\\', "/"), path.metadata()?.len()));
         }
     }
     Ok(())
@@ -2595,6 +2780,39 @@ mod tests {
     }
 
     #[test]
+    fn build_flags_schema_preserves_defaults_and_ignores_unknown_fields() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        write_build_flags(tmp.path(), "unknown = 42\n[all]\ndefines = ['A', 'B']\nunknown = false\n[dwarf]\nsketch_prefix = 'custom'\n");
+        let parsed = load_build_flags(tmp.path()).unwrap();
+        let all = parsed.all.unwrap();
+        assert_eq!(all.defines.unwrap(), ["A", "B"]);
+        assert!(all.compiler_flags.is_none());
+        assert!(parsed.build_modes.is_none());
+        let dwarf = parsed.dwarf.unwrap();
+        assert_eq!(dwarf.sketch_prefix, "custom");
+        assert_eq!(dwarf.fastled_prefix, debug_symbols::DEFAULT_FASTLED_PREFIX);
+        assert!(dwarf.file_prefix_map_from.is_none());
+    }
+
+    #[test]
+    fn build_flags_schema_rejects_wrong_known_field_types() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        for source in [
+            "all = 1",
+            "[all]\ndefines = 'A'",
+            "[sketch]\ncompiler_flags = [1]",
+            "[linking]\nbase = false",
+            "[linking.base]\nflags = [false]",
+            "[build_modes]\nquick = 1",
+            "[build_modes.debug]\nsketch_flags = 1",
+            "[dwarf]\nfastled_prefix = 1",
+        ] {
+            write_build_flags(tmp.path(), source);
+            assert!(load_build_flags(tmp.path()).is_err(), "accepted {source}");
+        }
+    }
+
+    #[test]
     fn resolve_example_preserves_nested_names() {
         let root = PathBuf::from("/tmp/FastLED");
         let sketch = root.join("examples").join("Fx").join("FxCylon");
@@ -2620,7 +2838,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_bin_exposes_python_spellings_and_node() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let install = temp.path().join("toolchain");
         let tools = temp.path().join("tools");
         fs::create_dir_all(&tools).unwrap();
@@ -2651,7 +2869,7 @@ mod tests {
 
     #[test]
     fn managed_runtime_path_prepends_without_dropping_caller_path() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let runtime_bin = temp.path().join("runtime-bin");
         let managed_bin = temp.path().join("managed-bin");
         let caller_bin = temp.path().join("caller-bin");
@@ -2720,6 +2938,72 @@ mod tests {
             baseline,
             static_link_fingerprint(&["-O0".to_string()], "sketch-a", "library-b")
         );
+    }
+
+    #[test]
+    fn direct_cflags_cache_preserves_typed_schema_policy() {
+        for source in [
+            r#"{"schema":1,"entries":{"a":["-O1","λ"]},"unknown":null}"#,
+            r#"[1,{"a":["-O1","λ"]}]"#,
+            r#"{"schema":1,"entries":{"a":["old"],"a":["-O1","λ"]}}"#,
+        ] {
+            let cache = DirectCflagsCache::parse(source.as_bytes()).unwrap();
+            assert_eq!(cache.schema, 1);
+            assert_eq!(cache.entries["a"], ["-O1", "λ"]);
+        }
+        for source in [
+            r#"{"entries":{}}"#,
+            r#"{"schema":1,"schema":1,"entries":{}}"#,
+            r#"{"schema":1,"entries":{},"entries":{}}"#,
+            r#"{"schema":1,"entries":{"a":null,"a":[]}}"#,
+            r#"{"schema":1,"entries":{"a":[1]}}"#,
+            r#"{"schema":1.0,"entries":{}}"#,
+            r#"{"schema":-1,"entries":{}}"#,
+            r#"{"schema":4294967296,"entries":{}}"#,
+            r#"[1,{},null]"#,
+            r#"[1]"#,
+        ] {
+            assert!(
+                DirectCflagsCache::parse(source.as_bytes()).is_err(),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            DirectCflagsCache::parse(br#"{"schema":4294967295,"entries":{}}"#)
+                .unwrap()
+                .schema,
+            u32::MAX
+        );
+    }
+
+    #[test]
+    fn direct_cflags_cache_encoding_is_stable_and_bounded() {
+        let mut cache = DirectCflagsCache {
+            schema: 1,
+            entries: BTreeMap::from([("key".into(), vec!["-O1".into(), "λ".into()])]),
+        };
+        let encoded = cache.encode().unwrap();
+        assert_eq!(
+            String::from_utf8(encoded.clone()).unwrap(),
+            "{\n  \"schema\": 1,\n  \"entries\": {\n    \"key\": [\n      \"-O1\",\n      \"λ\"\n    ]\n  }\n}"
+        );
+        assert_eq!(
+            DirectCflagsCache::parse(&encoded).unwrap().entries,
+            cache.entries
+        );
+        cache
+            .entries
+            .insert("large".into(), vec!["x".repeat(json::MAX_OUTPUT_BYTES)]);
+        assert!(matches!(
+            cache.encode().unwrap_err().downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        assert!(matches!(
+            DirectCflagsCache::parse(&vec![b' '; json::MAX_INPUT_BYTES + 1])
+                .unwrap_err()
+                .downcast_ref::<json::Error>(),
+            Some(json::Error::InputTooLarge)
+        ));
     }
 
     #[test]
@@ -2793,7 +3077,7 @@ mod tests {
 
     #[test]
     fn direct_side_link_is_strictly_version_mode_and_abi_gated() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
         assert!(direct_side_link_supported(
             &tools,
@@ -2820,7 +3104,7 @@ mod tests {
 
     #[test]
     fn direct_side_link_plan_preserves_side_module_one_contract() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let tools = fake_tools_for_direct_link(temp.path(), "4.0.19");
         let args = direct_side_link_args(&tools, Path::new("sketch.o"), Path::new("sketch.wasm"));
         assert!(args.contains(&"--whole-archive".to_string()));
@@ -2831,7 +3115,7 @@ mod tests {
 
     #[test]
     fn dynamic_output_does_not_recopy_unchanged_runtime() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let runtime = temp.path().join("runtime");
         let sketch = temp.path().join("sketch");
         let output = temp.path().join("output");
@@ -2909,7 +3193,7 @@ mod tests {
 
     #[test]
     fn runtime_source_fingerprint_includes_js_library_and_meson_helpers() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let root = temp.path();
         for (relative, contents) in [
             ("src/core.cpp", "core"),
@@ -2941,7 +3225,7 @@ mod tests {
 
     #[test]
     fn library_archive_validation_rejects_missing_empty_and_truncated_files() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let archive = temp.path().join("libfastled.a");
         assert!(!library_archive_is_valid(&archive));
         fs::write(&archive, []).unwrap();
@@ -2956,7 +3240,7 @@ mod tests {
 
     #[test]
     fn debug_compile_flags_include_dynamic_dwarf_prefix_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         let sketch_dir = tmp.path().join("Blink");
         let emsdk_root = tmp.path().join("emsdk");
@@ -3007,7 +3291,7 @@ dwarf_prefix = "dwarfsource"
 
     #[test]
     fn quick_compile_flags_do_not_include_dwarf_prefix_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         write_build_flags(
             &fastled_dir,
@@ -3039,7 +3323,7 @@ flags = ["-g0"]
 
     #[test]
     fn debug_link_flags_emit_wasm_source_map() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let fastled_dir = tmp.path().join("FastLED");
         write_build_flags(
             &fastled_dir,
@@ -3062,7 +3346,7 @@ link_flags = []
 
     #[test]
     fn copy_linked_output_copies_and_removes_source_maps() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let cache = tmp.path().join("cache");
         let output = tmp.path().join("out").join("fastled.js");
         fs::create_dir_all(&cache).unwrap();
@@ -3084,7 +3368,7 @@ link_flags = []
 
     #[test]
     fn copy_linked_output_copies_dynamic_side_module_and_removes_it_when_stale() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let cache = tmp.path().join("cache");
         let output = tmp.path().join("out").join("fastled.js");
         fs::create_dir_all(&cache).unwrap();
@@ -3106,7 +3390,7 @@ link_flags = []
 
     #[test]
     fn generate_manifest_uses_new_name_and_removes_legacy_name() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let example = tmp.path().join("Sketch");
         let output = example.join("fastled_js");
         fs::create_dir_all(example.join("data")).unwrap();
@@ -3130,7 +3414,7 @@ link_flags = []
 
     #[test]
     fn generate_manifest_resolves_lnk_and_assets_json_for_the_wasm_vfs() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let example = tmp.path().join("Sketch");
         let data = example.join("data");
         let output = example.join("fastled_js");
@@ -3158,34 +3442,23 @@ link_flags = []
 
         generate_manifest(&example, &output).unwrap();
 
-        let manifest: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(output.join("asset_manifest.json")).unwrap())
-                .unwrap();
-        assert_eq!(
-            manifest["data/track.mp3"]["url"],
-            "https://cdn.example/track.mp3"
-        );
-        assert_eq!(manifest["data/track.mp3"]["sha256"], "abc123");
-        assert_eq!(
-            manifest["data/track.mp3"]["fallback"],
-            "https://mirror.example/track.mp3"
-        );
-        assert_eq!(manifest["data/track.mp3"]["storage"], "littlefs");
-        assert_eq!(
-            manifest["data/video.rgb"]["url"],
-            "https://cdn.example/video.rgb"
-        );
-        assert_eq!(
-            manifest["data/video.rgb"]["fallback"],
-            "https://mirror.example/video.rgb"
-        );
-        assert_eq!(manifest["data/video.rgb"]["size"], 42);
-        assert_eq!(manifest["data/video.rgb"]["storage"], "vfs");
-
-        let local: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(output.join("sketch_assets.json")).unwrap())
-                .unwrap();
-        assert_eq!(local, serde_json::json!([]));
+        let manifest = json::parse(&fs::read(output.join("asset_manifest.json")).unwrap()).unwrap();
+        let expected = json::parse(
+            br#"{
+            "data/track.mp3": {
+                "url": "https://cdn.example/track.mp3", "sha256": "abc123",
+                "fallback": "https://mirror.example/track.mp3", "storage": "littlefs"
+            },
+            "data/video.rgb": {
+                "url": "https://cdn.example/video.rgb", "sha256": "def456",
+                "fallback": "https://mirror.example/video.rgb", "size": 42, "storage": "vfs"
+            }
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(manifest, expected);
+        let local = json::parse(&fs::read(output.join("sketch_assets.json")).unwrap()).unwrap();
+        assert_eq!(local, Value::Array(Vec::new()));
     }
 
     #[test]
@@ -3194,24 +3467,105 @@ link_flags = []
             "url=https://cdn.example/a.bin\nurl=https://mirror.example/a.bin\nsize_bytes=7\n",
         )
         .unwrap();
-        assert_eq!(keyed["url"], "https://cdn.example/a.bin");
-        assert_eq!(keyed["fallback"], "https://mirror.example/a.bin");
-        assert_eq!(keyed["size"], 7);
+        assert_eq!(json::encode(&keyed, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://mirror.example/a.bin","sha256":null,"size":7,"url":"https://cdn.example/a.bin"}"#);
 
         let json = parse_lnk(
             r#"{"v":1,"url":["https://cdn.example/b.bin","https://mirror.example/b.bin"],"sha256":"abc","size":9,"storage":"VFS"}"#,
         )
         .unwrap();
-        assert_eq!(json["url"], "https://cdn.example/b.bin");
-        assert_eq!(json["fallback"], "https://mirror.example/b.bin");
-        assert_eq!(json["sha256"], "abc");
-        assert_eq!(json["size"], 9);
-        assert_eq!(json["storage"], "vfs");
+        assert_eq!(json::encode(&json, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://mirror.example/b.bin","sha256":"abc","size":9,"storage":"vfs","url":"https://cdn.example/b.bin"}"#);
+    }
+
+    #[test]
+    fn asset_json_preserves_field_precedence_and_unsigned_sizes() {
+        let Value::Object(spec) = json::parse(
+            br#"{
+            "urls":[null," "," https://first "," https://second "],
+            "url":"ignored", "fallback":"ignored", "sha256":false,
+            "size_bytes":18446744073709551615,
+            "storage":" ","dest":{"target":" LITTLEFS "}
+        }"#,
+        )
+        .unwrap() else {
+            panic!("object");
+        };
+        let record = parse_json_asset(&spec, Some("vfs")).unwrap();
+        assert_eq!(json::encode(&record, Layout::Compact).unwrap(),
+            br#"{"fallback":"https://second","sha256":null,"size":18446744073709551615,"storage":"littlefs","url":"https://first"}"#);
+        for source in [
+            r#"{"url":"valid","urls":null}"#,
+            r#"{"url":"valid","urls":[]}"#,
+            r#"{"url":false}"#,
+        ] {
+            assert!(parse_lnk(source).is_none(), "{source}");
+        }
+        for size in ["-1", "1.5", "18446744073709551616", "null"] {
+            let source = format!(r#"{{"url":"a","size":7,"size_bytes":{size}}}"#);
+            assert_eq!(
+                json::encode(&parse_lnk(&source).unwrap(), Layout::Compact).unwrap(),
+                br#"{"fallback":null,"sha256":null,"url":"a"}"#
+            );
+        }
+        let duplicate = parse_lnk(r#"{"url":null,"url":"a","fallback":" b "}"#).unwrap();
+        assert_eq!(
+            json::encode(&duplicate, Layout::Compact).unwrap(),
+            br#"{"fallback":" b ","sha256":null,"url":"a"}"#
+        );
+        // JSON descriptors parse the entire file, unlike line-oriented links.
+        assert!(parse_lnk("# comment\n{\"url\":\"a\"}").is_none());
+    }
+
+    #[test]
+    fn asset_json_failure_preserves_published_files() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        let example = tmp.path();
+        let data = example.join("data");
+        let output = example.join("fastled_js");
+        fs::create_dir_all(&data).unwrap();
+        fs::create_dir_all(output.join("data")).unwrap();
+        fs::write(data.join("local.txt"), "new").unwrap();
+        let previous = [
+            "sketch_assets.json",
+            "asset_manifest.json",
+            "files.json",
+            "data/local.txt",
+        ];
+        for name in previous {
+            fs::write(output.join(name), "previous").unwrap();
+        }
+        for invalid in [
+            "[]".to_string(),
+            "{".to_string(),
+            " ".repeat(json::MAX_INPUT_BYTES + 1),
+        ] {
+            fs::write(data.join("assets.json"), invalid).unwrap();
+            assert!(generate_manifest(example, &output).is_err());
+            for name in previous {
+                assert_eq!(fs::read_to_string(output.join(name)).unwrap(), "previous");
+            }
+        }
+        // A shared default is replicated into each output record, so valid
+        // bounded input can still exceed the encoded document's byte limit.
+        let expanding = format!(
+            r#"{{"defaults":{{"storage":"{}"}},"assets":{{"a":{{"url":"a"}},"b":{{"url":"b"}}}}}}"#,
+            "x".repeat(json::MAX_OUTPUT_BYTES / 2)
+        );
+        fs::write(data.join("assets.json"), expanding).unwrap();
+        let error = generate_manifest(example, &output).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<json::Error>(),
+            Some(json::Error::OutputTooLarge)
+        ));
+        for name in previous {
+            assert_eq!(fs::read_to_string(output.join(name)).unwrap(), "previous");
+        }
     }
 
     #[test]
     fn wrapper_compiles_canonical_multi_tab_ino_translation_unit() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
         let sketch = tmp.path().join("Blink");
         fs::create_dir_all(&sketch).unwrap();
         fs::write(
@@ -3226,5 +3580,38 @@ link_flags = []
         assert!(source.contains("void helper();"));
         assert!(source.contains("#line 1 \""));
         assert!(!source.contains("#include \""));
+    }
+
+    #[test]
+    fn issue_248_wrapper_excludes_intellisense_but_keeps_user_cpp() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(
+            tmp.path().join("Blink.ino"),
+            "void setup() {}\nvoid loop() {}\n",
+        )
+        .unwrap();
+        fs::create_dir(tmp.path().join("src")).unwrap();
+        fs::write(tmp.path().join("src/helper.cpp"), "int helper = 1;\n").unwrap();
+        crate::sketch_preprocessor::write_disk_snapshot(tmp.path()).unwrap();
+        let wrapper = create_wrapper(tmp.path(), "Blink", &sketch_cache_dir(tmp.path())).unwrap();
+        let source = fs::read_to_string(wrapper).unwrap();
+        assert!(!source.contains(".fastled/intellisense/sketch.cpp"));
+        assert!(source.contains("src/helper.cpp"));
+    }
+
+    #[test]
+    fn issue_248_fingerprint_ignores_editor_output_but_tracks_user_cpp() {
+        let tmp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
+        fs::write(
+            tmp.path().join("Blink.ino"),
+            "void setup() {}\nvoid loop() {}\n",
+        )
+        .unwrap();
+        fs::write(tmp.path().join("helper.cpp"), "int helper = 1;\n").unwrap();
+        let before = sketch_source_fingerprint(tmp.path()).unwrap();
+        crate::sketch_preprocessor::write_disk_snapshot(tmp.path()).unwrap();
+        assert_eq!(sketch_source_fingerprint(tmp.path()).unwrap(), before);
+        fs::write(tmp.path().join("helper.cpp"), "int helper = 2;\n").unwrap();
+        assert_ne!(sketch_source_fingerprint(tmp.path()).unwrap(), before);
     }
 }

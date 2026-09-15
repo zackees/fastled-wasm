@@ -13,7 +13,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use crate::error_compat::{bail, Context, Result};
+use kernal_api::json::{self, Layout, Value};
 
 // ---------------------------------------------------------------------------
 // Sketch detection
@@ -242,8 +243,8 @@ pub fn is_fastled_repo(path: &Path) -> bool {
     let lib_json = path.join("library.json");
     if lib_json.is_file() {
         if let Ok(txt) = fs::read_to_string(&lib_json) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&txt) {
-                if val.get("name").and_then(|v| v.as_str()) == Some("FastLED") {
+            if let Ok(Value::Object(val)) = json::parse(txt.as_bytes()) {
+                if matches!(val.get("name"), Some(Value::String(name)) if name == "FastLED") {
                     return true;
                 }
             }
@@ -321,8 +322,13 @@ pub fn collect_examples(examples_dir: &Path) -> Vec<String> {
 pub fn read_fastled_json_ref(directory: &Path) -> Option<String> {
     let fpath = directory.join("fastled.json");
     let txt = fs::read_to_string(fpath).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&txt).ok()?;
-    value.get("ref")?.as_str().map(str::to_owned)
+    let Value::Object(value) = json::parse(txt.as_bytes()).ok()? else {
+        return None;
+    };
+    match value.get("ref")? {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 /// Derive the resolved FastLED ref name from a cached repo directory.
@@ -344,25 +350,22 @@ pub fn cached_repo_ref_name(repo_root: &Path) -> String {
 /// keys when the file already contains valid JSON.
 pub fn write_fastled_json_ref(directory: &Path, ref_name: &str) -> Result<()> {
     let fpath = directory.join("fastled.json");
-    let mut data = if fpath.is_file() {
-        fs::read_to_string(&fpath)
-            .ok()
-            .and_then(|txt| {
-                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&txt).ok()
-            })
-            .unwrap_or_default()
-    } else {
-        serde_json::Map::new()
+    let mut data = match fs::read_to_string(&fpath).ok() {
+        Some(txt) => match json::parse(txt.as_bytes()) {
+            Ok(Value::Object(value)) => value,
+            Ok(_) | Err(json::Error::InvalidSyntax) => std::collections::BTreeMap::new(),
+            // Do not erase valid user settings merely because the bounded
+            // parser cannot retain their complete contents.
+            Err(error) => return Err(error).context("read existing fastled.json"),
+        },
+        None => std::collections::BTreeMap::new(),
     };
 
-    data.insert(
-        "ref".to_owned(),
-        serde_json::Value::String(ref_name.to_owned()),
-    );
+    data.insert("ref".to_owned(), Value::String(ref_name.to_owned()));
 
-    let mut json = serde_json::to_string_pretty(&serde_json::Value::Object(data))
-        .context("serialize fastled.json")?;
-    json.push('\n');
+    let mut json =
+        json::encode(&Value::Object(data), Layout::Pretty).context("serialize fastled.json")?;
+    json.push(b'\n');
     fs::write(&fpath, json).with_context(|| format!("write {}", fpath.display()))?;
     Ok(())
 }
@@ -395,26 +398,42 @@ const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/FastLED/FastLED/
 ///
 /// Returns `None` when the request fails or the response cannot be parsed.
 fn fetch_latest_release_tag() -> Option<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+    let runtime = kernal_api::async_engine::RuntimeBuilder::current_thread()
+        .enable_all()
         .build()
         .ok()?;
+    let client = kernal_api::http::BlockingClient::new(
+        &runtime,
+        kernal_api::http::Limits {
+            max_redirects: 10,
+            total_timeout: std::time::Duration::from_secs(10),
+            ..kernal_api::http::Limits::default()
+        },
+    )
+    .ok()?;
 
     let resp = client
-        .get(GITHUB_RELEASES_API)
-        .header("Accept", "application/vnd.github.v3+json")
-        .send()
+        .execute(kernal_api::http::Request {
+            headers: &[
+                ("Accept", "application/vnd.github.v3+json"),
+                ("User-Agent", "fastled-cli"),
+            ],
+            ..kernal_api::http::Request::get(GITHUB_RELEASES_API)
+        })
         .ok()?;
 
-    if !resp.status().is_success() {
+    if !(200..300).contains(&resp.status()) {
         return None;
     }
 
-    let body = resp.text().ok()?;
-    let json: serde_json::Value = serde_json::from_str(&body).ok()?;
-    json.get("tag_name")
-        .and_then(|v: &serde_json::Value| v.as_str())
-        .map(|s: &str| s.to_owned())
+    let body = resp.into_bytes().ok()?;
+    let Value::Object(json) = json::parse(&body).ok()? else {
+        return None;
+    };
+    match json.get("tag_name")? {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 /// Return `true` when `ref_str` looks like a git commit SHA (7–40 hex chars).
@@ -481,7 +500,8 @@ pub fn init_example(example_name: &str, dest: &Path, branch: Option<&str>) -> Re
     let (_ref_name, url) = resolve_ref(branch);
 
     // Download the zip to a temp file.
-    let tmp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let tmp_dir = kernal_api::platform::fs::TemporaryDirectory::new()
+        .context("failed to create temp directory")?;
     let zip_path = tmp_dir.path().join("fastled.zip");
 
     crate::archive::download(&url, &zip_path)
@@ -625,7 +645,7 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
 
 /// Find the best-matching sketch name from `candidates` for a given `query`.
 ///
-/// Uses the Jaro-Winkler distance (via `strsim`) to score each candidate.
+/// Uses kernel-owned Jaro-Winkler similarity to score each candidate.
 /// Returns the candidate(s) with the highest score.
 ///
 /// When `query` is an exact substring of a candidate that candidate is
@@ -633,9 +653,10 @@ fn copy_dir_all(src: &Path, dest: &Path) -> Result<()> {
 /// fast-path in `sketch.py::find_sketch_by_partial_name`).
 ///
 /// Returns an empty `Vec` when `candidates` is empty.
-pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Vec<String> {
+/// Returns an error if fuzzy scoring exceeds the kernel's resource limits.
+pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Result<Vec<String>> {
     if candidates.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let q_lower = query.to_lowercase();
@@ -647,25 +668,29 @@ pub fn best_sketch_match(query: &str, candidates: &[&str]) -> Vec<String> {
         .filter(|c| c.to_lowercase().contains(&q_lower))
         .collect();
     if !substring_hits.is_empty() {
-        return substring_hits.iter().map(|s| s.to_string()).collect();
+        return Ok(substring_hits.iter().map(|s| s.to_string()).collect());
     }
 
     // Fuzzy: Jaro-Winkler distance.
     let mut scored: Vec<(f64, &str)> = candidates
         .iter()
-        .map(|c| (strsim::jaro_winkler(&q_lower, &c.to_lowercase()), *c))
-        .collect();
+        .map(|c| {
+            let score = kernal_api::text::name_similarity(&q_lower, &c.to_lowercase())
+                .context("score sketch-name suggestion")?;
+            Ok((score, *c))
+        })
+        .collect::<Result<_>>()?;
 
     // Sort descending by score.
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let best_score = scored[0].0;
     // Return all candidates tied at the best score (within floating-point epsilon).
-    scored
+    Ok(scored
         .iter()
         .take_while(|(s, _)| (s - best_score).abs() < 1e-9)
         .map(|(_, name)| name.to_string())
-        .collect()
+        .collect())
 }
 
 /// Find a sketch directory by partial name match using the Python-side rules.
@@ -769,11 +794,11 @@ pub fn find_sketch_by_partial_name(partial_name: &str, search_dir: &Path) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernal_api::platform::fs::TemporaryDirectory;
     use std::fs;
-    use tempfile::TempDir;
 
-    fn temp_dir() -> TempDir {
-        tempfile::tempdir().expect("tempdir")
+    fn temp_dir() -> TemporaryDirectory {
+        kernal_api::platform::fs::TemporaryDirectory::new().expect("tempdir")
     }
 
     // ------------------------------------------------------------------
@@ -1002,6 +1027,41 @@ mod tests {
     }
 
     #[test]
+    fn project_json_preserves_nested_unknown_fields_and_layout() {
+        let dir = temp_dir();
+        let path = dir.path().join("fastled.json");
+        fs::write(&path, r#"{"extra":[null,true,18446744073709551615,{"日本":"line\ntext"}],"ref":"old","ref":"last"}"#).unwrap();
+        assert_eq!(read_fastled_json_ref(dir.path()).as_deref(), Some("last"));
+        write_fastled_json_ref(dir.path(), "new").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\n  \"extra\": [\n    null,\n    true,\n    18446744073709551615,\n    {\n      \"日本\": \"line\\ntext\"\n    }\n  ],\n  \"ref\": \"new\"\n}\n");
+    }
+
+    #[test]
+    fn project_json_keeps_invalid_and_nonobject_fallback_policy() {
+        let dir = temp_dir();
+        let path = dir.path().join("fastled.json");
+        for input in ["broken", "[]", "null", "42", r#"{"ref":false}"#] {
+            fs::write(&path, input).unwrap();
+            assert_eq!(read_fastled_json_ref(dir.path()), None);
+            write_fastled_json_ref(dir.path(), "master").unwrap();
+            assert_eq!(
+                fs::read_to_string(&path).unwrap(),
+                "{\n  \"ref\": \"master\"\n}\n"
+            );
+        }
+    }
+
+    #[test]
+    fn project_json_resource_limit_does_not_replace_existing_settings() {
+        let dir = temp_dir();
+        let path = dir.path().join("fastled.json");
+        let original = format!("{{\"extra\":\"{}\"}}", "x".repeat(json::MAX_INPUT_BYTES));
+        fs::write(&path, &original).unwrap();
+        assert!(write_fastled_json_ref(dir.path(), "new").is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), original);
+    }
+
+    #[test]
     fn test_cached_repo_ref_name_strips_fastled_prefix() {
         let path = Path::new("/tmp/fastled-3.9.12");
         assert_eq!(cached_repo_ref_name(path), "3.9.12");
@@ -1025,9 +1085,11 @@ mod tests {
         write_fastled_json_ref(dir.path(), "3.9.12").unwrap();
 
         let txt = fs::read_to_string(dir.path().join("fastled.json")).unwrap();
-        let value: serde_json::Value = serde_json::from_str(&txt).unwrap();
-        assert_eq!(value.get("name").and_then(|v| v.as_str()), Some("demo"));
-        assert_eq!(value.get("ref").and_then(|v| v.as_str()), Some("3.9.12"));
+        let Value::Object(value) = json::parse(txt.as_bytes()).unwrap() else {
+            panic!("project settings must be an object");
+        };
+        assert_eq!(value.get("name"), Some(&Value::String("demo".into())));
+        assert_eq!(value.get("ref"), Some(&Value::String("3.9.12".into())));
     }
 
     #[test]
@@ -1050,9 +1112,30 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
+    fn sketch_matching_preserves_substring_precedence_and_stable_ties() {
+        assert_eq!(
+            best_sketch_match("Blink", &["Blin", "BlinkFast", "Blink"]).unwrap(),
+            ["BlinkFast", "Blink"]
+        );
+        assert_eq!(
+            best_sketch_match("BLNK", &["Blink", "BLINK", "Fire"]).unwrap(),
+            ["Blink", "BLINK"]
+        );
+    }
+
+    #[test]
+    fn sketch_matching_reports_resource_errors_without_partial_ranking() {
+        let error = best_sketch_match(&"x".repeat(4097), &["Blink"]).unwrap_err();
+        assert!(format!("{error:#}").contains("byte limit"));
+        let candidate = "y".repeat(1024);
+        let error = best_sketch_match(&"x".repeat(1025), &["Blink", &candidate]).unwrap_err();
+        assert!(format!("{error:#}").contains("work limit"));
+    }
+
+    #[test]
     fn test_best_sketch_match_exact_substring() {
         let candidates = ["Blink", "BlinkFast", "Fire2012"];
-        let matches = best_sketch_match("Blink", &candidates);
+        let matches = best_sketch_match("Blink", &candidates).unwrap();
         assert!(
             matches.contains(&"Blink".to_owned()),
             "Blink should match: {matches:?}"
@@ -1070,7 +1153,7 @@ mod tests {
     #[test]
     fn test_best_sketch_match_fuzzy_fallback() {
         let candidates = ["Blink", "Fire2012", "Noise"];
-        let matches = best_sketch_match("blnk", &candidates);
+        let matches = best_sketch_match("blnk", &candidates).unwrap();
         // Jaro-Winkler should rank "Blink" highest.
         assert!(!matches.is_empty(), "fuzzy match should return results");
         assert_eq!(matches[0], "Blink", "best fuzzy match should be Blink");
@@ -1078,14 +1161,14 @@ mod tests {
 
     #[test]
     fn test_best_sketch_match_empty_candidates() {
-        let matches = best_sketch_match("anything", &[]);
+        let matches = best_sketch_match("anything", &[]).unwrap();
         assert!(matches.is_empty());
     }
 
     #[test]
     fn test_best_sketch_match_case_insensitive() {
         let candidates = ["Blink", "Fire2012"];
-        let matches = best_sketch_match("BLINK", &candidates);
+        let matches = best_sketch_match("BLINK", &candidates).unwrap();
         assert!(
             matches.contains(&"Blink".to_owned()),
             "case-insensitive match: {matches:?}"
