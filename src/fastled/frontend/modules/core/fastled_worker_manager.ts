@@ -110,8 +110,13 @@ export class FastLEDWorkerManager {
         const testCanvas = new OffscreenCanvas(1, 1);
         const ctx = testCanvas.getContext('webgl2');
         capabilities.webgl2 = !!ctx;
-        console.log('🔧 WebGL2 OffscreenCanvas test: SUCCESS');
-        FASTLED_DEBUG_LOG('WORKER_MANAGER', 'WebGL2 OffscreenCanvas test successful');
+        if (ctx) {
+          console.log('🔧 WebGL2 OffscreenCanvas test: SUCCESS');
+          FASTLED_DEBUG_LOG('WORKER_MANAGER', 'WebGL2 OffscreenCanvas test successful');
+        } else {
+          console.warn('🔧 WebGL2 OffscreenCanvas test: UNAVAILABLE (getContext returned null)');
+          FASTLED_DEBUG_LOG('WORKER_MANAGER', 'WebGL2 OffscreenCanvas context unavailable');
+        }
       } catch (error) {
         console.error('🔧 WebGL2 OffscreenCanvas test: FAILED', error);
         FASTLED_DEBUG_ERROR('WORKER_MANAGER', 'WebGL2 OffscreenCanvas test failed', error);

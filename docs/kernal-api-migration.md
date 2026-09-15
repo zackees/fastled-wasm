@@ -32,7 +32,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 The inventory table above and the checkpoint sections below are historical
 records of each slice; see "Final migration audit" at the end for the current
 state. `fastled-cli` now has exactly one direct Rust dependency, `kernal-api`,
-consumed from the `v0.1.3` release tag with no `[patch]` override. Every
+consumed from the `v0.1.4` release tag with no `[patch]` override. Every
 backend in the inventory is absent from the manifests and sources and remains
 only as a private transitive implementation of the kernel.
 
@@ -42,7 +42,7 @@ Work is on `feat/kernal-api-migration`. The migration originally used an exact
 `=0.1.0` declaration plus a temporary sibling path patch to
 `../fastled-wasm-extern/kernal-api`, initially checked out at
 `76172bf3ee41ec601d3fa834291dfbe6bfc11789`; later a pinned git revision replaced
-the path patch. Both are now removed in favor of the `v0.1.3` release tag. The
+the path patch. Both are now removed in favor of the `v0.1.4` release tag. The
 application MSRV matches its existing 1.95 toolchain and kernal-api's requirement.
 
 The boundary test failed before each dependency migration and passed afterward.
@@ -1113,7 +1113,9 @@ encoding lock-down tests ported from #244.
 `762a1d2`, the revision this branch had already validated and the last
 kernal-api main commit with green CI. Main was failing CI at release time, so
 the release deliberately excludes later main commits. The release contains
-only a version bump over `762a1d2`. crates.io publishing is not enabled for
+only a version bump over `762a1d2`. kernal-api `v0.1.4` is cut from the same
+`release/0.1.3` branch and adds only the WebKitGTK OffscreenCanvas WebGL fix
+(zackees/kernal-api#268) and its version bump; the workspace consumes that tag. crates.io publishing is not enabled for
 kernal-api, and `fastled-cli` is not published to crates.io, so the workspace
 uses a git tag dependency. The pre-release pin, path and `[patch]` overrides
 are gone.
@@ -1133,15 +1135,22 @@ strict Clippy, dylint, Ruff, Black, isort and Pyright. Python unit tests pass
 FastLED source (`9aa7254bba`), Xvfb/software-GL environment and `--test` flags
 fail identically with the pre-migration `origin/main` Tauri binary and with
 this branch. Both report `webgl2: false` from OffscreenCanvas and exit 125
-without a canvas. The branch binary was rechecked after NixOS system
-generation 118 (commit `9f90cf4`, which adds the `tauri-run` wrapper), launched
-through that wrapper on the real Wayland session, real X11 `:0` and Xvfb. All
-three still report `webgl2: false`. The session has no hardware GL: `eglinfo`
-reports only Mesa `llvmpipe`, GBM initialization fails, and NVIDIA reports a
-driver/library version mismatch (kernel 595.71.05, userspace 595.99.02) until
-reboot. Real-render acceptance needs hardware GL (e.g. after that reboot), and
-the Safari invariant still needs a real Safari smoke test on macOS; neither was
-possible here.
+without a canvas. That shared failure is WebKitGTK's `AllowWebGLInWorkers`
+runtime feature, which is disabled by default and gates WebGL on every
+OffscreenCanvas, including canvases a document creates. It reproduces with
+hardware GL on NVIDIA and with software GL, in the stock `MiniBrowser` as well
+as the viewer; an NVIDIA driver/library mismatch seen on this host before a
+reboot was real but was not the cause. kernal-api v0.1.4 enables the feature in
+its Linux adapter (zackees/kernal-api#268, zackees/kernal-api#269), after which
+FastLED's WebGL2 gate passes and its worker creates a WebGL2 context.
+
+The viewer still does not reach readiness on NVIDIA 595.99.02 under Wayland.
+With WebKitGTK 2.52.5, a document WebGL2 context followed by worker rendering
+on a transferred canvas breaks the UI process with a Wayland protocol error and
+crashes the web process in NVIDIA EGL during GL context teardown. This also
+reproduces in `MiniBrowser`, so it is tracked in #247 as an upstream
+WebKitGTK/driver issue rather than worked around here. Real-render acceptance
+and the required real Safari smoke test on macOS remain open.
 
 **Build measurements.** Recorded on the same Linux host, toolchain and native
 environment. Each figure is one `soldr cargo build --locked -p fastled-cli --bin
