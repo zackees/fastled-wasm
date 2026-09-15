@@ -42,10 +42,12 @@ jobs:
         with:
           subject-path: artifacts/*.vsix
       - name: Create GitHub release from the verified package bytes
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" artifacts/* --title "FastLED VS Code ${{ needs.validate-tag.outputs.version }}" --generate-notes
       - name: Publish those same prebuilt VSIX files to Marketplace
-        env: { VSCE_PAT: ${{ secrets.VSCE_PAT }} }
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           test -n "$VSCE_PAT"
           for vsix in artifacts/*.vsix; do npx --yes @vscode/vsce@3.6.2 publish --packagePath "$vsix" --pat "$VSCE_PAT"; done
