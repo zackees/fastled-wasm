@@ -65,16 +65,21 @@ jobs:
           toolchain-file: rust-toolchain.toml
           prebuild-deps-flags: ""
 
+      # setup.py always rebuilds the bundled binary with
+      # `soldr cargo build --release --bin fastled [--target $FASTLED_RUST_TARGET]`.
+      # Build with exactly that command first so its rebuild is a no-op. The
+      # explicit target also keeps host build scripts on the host linker.
       - name: Cross-build the release fastled binary
-        run: |
-          soldr build --release --bin fastled --target "$RUST_TARGET"
-          mkdir -p src/fastled/bin
-          cp -f "target/$RUST_TARGET/release/fastled" src/fastled/bin/fastled
-          # A Mach-O arm64 header, not a host binary.
-          test "$(od -A n -t x1 -N 8 src/fastled/bin/fastled | tr -d ' \n')" = "cffaedfe0c000001"
+        run: soldr cargo build --release --bin fastled --target "$RUST_TARGET"
 
       - name: Package the macOS wheel
-        run: uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel --plat-name macosx_11_0_arm64
+        env:
+          FASTLED_RUST_TARGET: ${{ env.RUST_TARGET }}
+        run: |
+          uv run --with "setuptools>=69" --with "wheel>=0.43" python setup.py bdist_wheel --plat-name macosx_11_0_arm64
+          # The bundled binary must be an arm64 Mach-O, not a host binary.
+          test "$(od -A n -t x1 -N 8 src/fastled/bin/fastled | tr -d ' \n')" = "cffaedfe0c000001"
+          ls -l dist/
 
       - name: Archive the Rust tests for macOS
         run: soldr cargo nextest archive --workspace --target "$RUST_TARGET" --archive-file "$TEST_ARCHIVE"
