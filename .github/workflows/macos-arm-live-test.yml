@@ -137,10 +137,14 @@ jobs:
           --archive-file "macos-arm-live-inputs/$TEST_ARCHIVE"
           --workspace-remap .
 
+      # The render and Safari checks still run when a Rust test fails, so one
+      # cycle reports every macOS result.
       - name: Enable Safari automation
+        if: ${{ !cancelled() }}
         run: sudo safaridriver --enable
 
       - name: Live viewer render and Safari smoke of the installed wheel
+        if: ${{ !cancelled() }}
         env:
           FASTLED_SAFARI_SMOKE: "1"
         run: |

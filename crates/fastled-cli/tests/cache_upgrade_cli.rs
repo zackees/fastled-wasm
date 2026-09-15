@@ -1,8 +1,16 @@
 use std::fs;
 use std::process::{Command, Output};
 
+/// The CLI under test. `CARGO_BIN_EXE_fastled` is fixed at compile time, so a
+/// test binary built on one machine and run from a nextest archive elsewhere
+/// (the macOS lane cross-builds on Linux) must use nextest's runtime path.
+fn fastled_exe() -> std::ffi::OsString {
+    std::env::var_os("NEXTEST_BIN_EXE_fastled")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_fastled").into())
+}
+
 fn run_fastled(root: &std::path::Path) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_fastled"))
+    Command::new(fastled_exe())
         .arg("--version")
         .env("FASTLED_HOME", root)
         .env("FASTLED_MANAGED_RUNTIME", "1")
