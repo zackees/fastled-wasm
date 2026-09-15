@@ -231,6 +231,18 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
     }
   };
   const capture = async (canvas, name) => {
+    // Without WebGL2 on OffscreenCanvas (WebKitGTK) the page canvas draws the
+    // frames itself, and preserveDrawingBuffer above keeps them readable.
+    if (window.fastLEDWorkerManager && window.fastLEDWorkerManager.renderOnMainThread) {
+      const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
+      const response = await testFetch('/viewer-screenshot?name=' + encodeURIComponent(name), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: blob
+      });
+      if (!response.ok) throw new Error('screenshot upload failed: ' + response.status);
+      return;
+    }
     let blob = await webglFrameBlob();
     if (!blob) {
       const dataUrl = await compositedFrameDataUrl(canvas)
@@ -449,6 +461,8 @@ mod tests {
     #[test]
     fn test_runtime_patches_webgl_before_capturing() {
         assert!(TEST_RUNTIME_SCRIPT.contains("preserveDrawingBuffer: true"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("fastLEDWorkerManager.renderOnMainThread"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("canvas.toDataURL('image/png')"));
         assert!(TEST_RUNTIME_SCRIPT.contains("type: 'start_recording'"));
         assert!(TEST_RUNTIME_SCRIPT.contains("canvas.captureStream(0)"));
         assert!(TEST_RUNTIME_SCRIPT.contains("new ImageCapture(track).grabFrame()"));
