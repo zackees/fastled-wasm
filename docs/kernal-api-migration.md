@@ -32,7 +32,7 @@ capability migration, with the same toolchain, features, and cache conditions.
 The inventory table above and the checkpoint sections below are historical
 records of each slice; see "Final migration audit" at the end for the current
 state. `fastled-cli` now has exactly one direct Rust dependency, `kernal-api`,
-consumed from the `v0.1.5` release tag with no `[patch]` override. Every
+consumed from the `v0.1.6` release tag with no `[patch]` override. Every
 backend in the inventory is absent from the manifests and sources and remains
 only as a private transitive implementation of the kernel.
 
@@ -42,7 +42,7 @@ Work is on `feat/kernal-api-migration`. The migration originally used an exact
 `=0.1.0` declaration plus a temporary sibling path patch to
 `../fastled-wasm-extern/kernal-api`, initially checked out at
 `76172bf3ee41ec601d3fa834291dfbe6bfc11789`; later a pinned git revision replaced
-the path patch. Both are now removed in favor of the `v0.1.5` release tag. The
+the path patch. Both are now removed in favor of the `v0.1.6` release tag. The
 application MSRV matches its existing 1.95 toolchain and kernal-api's requirement.
 
 The boundary test failed before each dependency migration and passed afterward.
@@ -1116,17 +1116,30 @@ the release deliberately excludes later main commits. The release contains
 only a version bump over `762a1d2`. kernal-api `v0.1.4`, cut from the same
 `release/0.1.3` branch, forced WebKitGTK's worker WebGL feature
 (zackees/kernal-api#268). That froze the viewer on NVIDIA Wayland, so `v0.1.5`
-reverts it (zackees/kernal-api#272); code-wise it is `v0.1.3` again. The
-workspace consumes the `v0.1.5` tag. crates.io publishing is not enabled for
+reverts it (zackees/kernal-api#272); code-wise it is `v0.1.3` again. `v0.1.6`
+adds only the opt-in `windows-app-resources` build-script capability
+(zackees/kernal-api#276). The workspace consumes the `v0.1.6` tag. crates.io publishing is not enabled for
 kernal-api, and `fastled-cli` is not published to crates.io, so the workspace
 uses a git tag dependency. The pre-release pin, path and `[patch]` overrides
 are gone.
 
 **Boundary enforced in CI.** `tests/unit/test_kernal_boundary.py` runs in the
 unit-test workflows. It requires `kernal-api` to be the only dependency in every
-package, workspace and target table. It also forbids build and dev dependencies,
-`[patch]`, `build.rs` and generated Tauri output, and requires the
-`hash-sha256` feature, alongside the per-backend source bans.
+package, workspace and target table. It also forbids dev dependencies,
+`[patch]` and generated Tauri output, and requires the `hash-sha256` feature,
+alongside the per-backend source bans. `fastled-cli` has exactly one
+`build.rs`: its only build dependency is `kernal-api` from the same release
+with only `windows-app-resources`, and it names no other crate.
+
+**Windows executable resources.** The Tauri-era `fastled.exe` carried an icon,
+version information and a Common-Controls v6 manifest from `tauri-build`; the
+kernal-api build carried no resources at all. Cargo only links a build script's
+resources into its own package's binaries, so kernal-api `v0.1.6` provides a
+build-script capability and `crates/fastled-cli/build.rs` declares the product
+("FastLED Viewer", "fastled", the package version, `icons/icon.ico`). A
+`fastled.exe` cross-built from Linux for `x86_64-pc-windows-msvc` embeds the
+same `RT_ICON`, `RT_GROUP_ICON` (32512), `RT_VERSION` strings and manifest as
+the Tauri-era release. The build is a no-op on other targets.
 
 **Validation on Linux x86-64 (NixOS).** Rust workspace tests pass: 303 library,
 3 binary, 1 integration and 1 doc test. `bash lint` passes, covering rustfmt,

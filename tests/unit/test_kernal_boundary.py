@@ -1,5 +1,6 @@
 """Keep migrated infrastructure behind the shared kernal-api boundary."""
 
+import re
 from pathlib import Path
 
 try:
@@ -189,16 +190,34 @@ def test_kernal_api_is_the_only_rust_dependency():
     sections.extend(package.get("target", {}).values())
     for section in sections:
         assert set(section.get("dependencies", {})) <= {"kernal-api"}, section
-        assert not section.get("build-dependencies"), section
         assert not section.get("dev-dependencies"), section
+    for section in [workspace["workspace"], *package.get("target", {}).values()]:
+        assert not section.get("build-dependencies"), section
     assert set(package["dependencies"]) == {"kernal-api"}
     kernal = workspace["workspace"]["dependencies"]["kernal-api"]
-    assert kernal["tag"] == "v0.1.5"
+    assert kernal["tag"] == "v0.1.6"
     assert "rev" not in kernal and "path" not in kernal
     assert "hash-sha256" in kernal["features"]
     assert "patch" not in workspace
-    assert not (root / "crates/fastled-cli/build.rs").exists()
     assert not (root / "crates/fastled-cli/gen").exists()
+
+    # The one build script embeds Windows executable resources through
+    # kernal-api's build capability: kernal-api is its only build dependency,
+    # from the same release, with only that feature, and it names no other crate.
+    build = package["build-dependencies"]
+    assert set(build) == {"kernal-api"}, build
+    assert build["kernal-api"] == {
+        "git": kernal["git"],
+        "tag": kernal["tag"],
+        "default-features": False,
+        "features": ["windows-app-resources"],
+    }
+    build_rs = (root / "crates/fastled-cli/build.rs").read_text()
+    # Leading path segments only: `kernal_api::windows_resources::...` names
+    # the crate `kernal_api`, not a crate called `windows_resources`.
+    crates_used = set(re.findall(r"(?<![:\w])([a-z_][a-z0-9_]*)::", build_rs)) - {"std"}
+    assert crates_used == {"kernal_api"}, crates_used
+    assert "extern crate" not in build_rs
 
 
 def test_obsolete_manifest_dependencies_are_removed():

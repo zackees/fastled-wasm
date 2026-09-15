@@ -23,6 +23,13 @@ path = "src/main.rs"
 [dependencies]
 kernal-api = { workspace = true }
 
+# build.rs embeds the Windows icon, version information and manifest through
+# kernal-api's build-script capability. Same source and tag as the workspace
+# dependency, but only that feature, so the build script does not compile the
+# runtime capabilities a second time.
+[build-dependencies]
+kernal-api = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.6", default-features = false, features = ["windows-app-resources"] }
+
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
 bin-dir = "fastled{ binary-ext }"
