@@ -3,7 +3,8 @@ name: macOS x86 Lint
 on:
   push:
     branches: [main]
-  pull_request:
+  # Pull requests run macos-arm-live-test.yml instead: it cross-compiles on
+  # Linux and holds a macOS runner only to execute the result.
   workflow_dispatch:
 
 # One live run per workflow per ref: a new push to a branch or PR cancels the
