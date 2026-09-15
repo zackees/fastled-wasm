@@ -4,6 +4,11 @@ on:
   push:
     tags: ["vscode-v*"]
 
+# Never cancelled and never coalesced: every publish runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   validate-tag:
     runs-on: ubuntu-24.04
