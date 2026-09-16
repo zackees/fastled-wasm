@@ -24,11 +24,13 @@ path = "src/main.rs"
 kernal-api = { workspace = true }
 
 # build.rs embeds the Windows icon, version information and manifest through
-# kernal-api's build-script capability. Same source and tag as the workspace
-# dependency, but only that feature, so the build script does not compile the
-# runtime capabilities a second time.
+# kernal-api's build-script companion package, released from the same
+# repository under the same tag. It is a separate package, not a kernal-api
+# feature: `viewer`'s `kernal-api/tauri-webview` would apply to a
+# same-named build-dependency too and compile Tauri, GTK and glib for the
+# host build script.
 [build-dependencies]
-kernal-api = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.6", default-features = false, features = ["windows-app-resources"] }
+kernal-api-build = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.7" }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
