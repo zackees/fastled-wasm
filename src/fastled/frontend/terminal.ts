@@ -92,7 +92,7 @@ export function installTerminal() {
             if (socket !== connection) return;
             restart.disabled = false;
             if (status.textContent?.startsWith('Connected') || status.textContent === 'Connecting…') {
-                status.textContent = 'Disconnected. Restart opens a new shell in the launch directory.';
+                status.textContent = 'Disconnected. Restart opens a new shell in the sketch directory.';
             }
         };
         activeTerminal.onData((data: string) => {

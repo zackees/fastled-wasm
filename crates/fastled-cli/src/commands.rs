@@ -86,6 +86,9 @@ pub(crate) fn compile_and_serve(dir: &str, cli: &Cli) -> ExitCode {
         // Start the Rust HTTP server (background tokio task).
         let addr = match server::start_server(
             output_dir.clone(),
+            // The PTY starts in the sketch the user named, not the directory
+            // this process happened to be launched from.
+            sketch_dir.clone(),
             0,
             Some(tx.clone()),
             debug_symbols.clone(),
@@ -336,6 +339,7 @@ pub(crate) fn compile_and_test(dir: &str, cli: &Cli) -> ExitCode {
         };
         let addr = match server::start_server(
             output_dir.clone(),
+            sketch_dir.clone(),
             0,
             Some(build_tx.clone()),
             debug_symbols.clone(),
@@ -841,13 +845,17 @@ pub(crate) fn serve_directory(dir: &str, launch_viewer: bool) -> ExitCode {
         .expect("failed to create kernel runtime");
     rt.run(async {
         let debug_symbols: server::DebugSymbolHandle = Arc::new(RwLock::new(resolver));
-        let addr = match server::start_server(path.clone(), 0, None, debug_symbols, None).await {
-            Ok(a) => a,
-            Err(e) => {
-                eprintln!("fastled: failed to start server: {e}");
-                return ExitCode::FAILURE;
-            }
-        };
+        // `--serve-dir X` names X, so a PTY opened from it starts in X.
+        let addr =
+            match server::start_server(path.clone(), path.clone(), 0, None, debug_symbols, None)
+                .await
+            {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("fastled: failed to start server: {e}");
+                    return ExitCode::FAILURE;
+                }
+            };
 
         let url = format!("http://{addr}");
         println!("Serving {dir} at {url}");
