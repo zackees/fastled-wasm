@@ -1,8 +1,13 @@
 # Interactive terminal
 
 Open **Terminal** to use your shell, including `clud ...`. Its initial directory
-is where you launched `fastled`, independent of the sketch argument or served
-`fastled_js` directory. The CLI loopback server owns the PTY. The shipped Tauri
+is the directory you named on the command line: the sketch directory for
+`fastled <sketch>`, and the served directory for `fastled --serve-dir <dir>`.
+Running `fastled` from inside the sketch therefore changes nothing, and running
+it from elsewhere no longer starts the shell somewhere unrelated. A relative
+directory argument is resolved against the launch directory, which is what a
+relative path means on the command line. The CLI loopback server owns the PTY.
+The shipped Tauri
 viewer and browsers use the same server and transport. Static output hosted
 elsewhere cannot open a shell. Use the exact `http://127.0.0.1:PORT` URL printed
 by FastLED; terminal access rejects hostname aliases.
@@ -10,7 +15,7 @@ by FastLED; terminal access rejects hostname aliases.
 **Close** hides the terminal while its session continues. Reopening preserves
 the session and bounded 5,000-line scrollback. **Copy** copies selected text or
 the buffer. Escape and Ctrl+C belong to shell applications. After shell exit or
-disconnection, **Restart** starts a new shell in the original launch directory.
+disconnection, **Restart** starts a new shell in that same sketch directory.
 Reloading or closing the page disconnects its shell; there is no reattachment
 across reloads. The dialog fits desktop/mobile viewports and forwards resizing.
 

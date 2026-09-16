@@ -83,6 +83,16 @@ fn shell_command(cwd: &Path) -> io::Result<PtyCommand> {
     command.cwd = Some(cwd.to_path_buf());
     Ok(command)
 }
+/// The shell-exit control frame.
+///
+/// The client reads text frames with `JSON.parse`, so this must be valid JSON.
+/// A raw string spells `\"` as a literal backslash and quote, so `{{\"exit\":..}}`
+/// yields `{\"exit\":..}` — which parses as a syntax error at the first member
+/// and surfaces as an uncaught exception in the page.
+fn exit_frame(status: impl std::fmt::Display) -> String {
+    format!(r#"{{"exit":{status}}}"#)
+}
+
 fn parse_text(text: &str) -> io::Result<ClientMessage> {
     let Value::ObjectMembers(fields) =
         json::parse_members(text.as_bytes()).map_err(io::Error::other)?
@@ -231,9 +241,8 @@ pub(crate) async fn connect(
                         Err(async_engine::TryRecvError::Disconnected) => break,
                         Err(async_engine::TryRecvError::Empty) => {
                             if let Some(status) = session.try_wait()? {
-                                let _ = worker_tx.blocking_send(WebSocketMessage::Text(format!(
-                                    r#"{{\"exit\":{status}}}"#
-                                )));
+                                let _ = worker_tx
+                                    .blocking_send(WebSocketMessage::Text(exit_frame(status)));
                                 break;
                             }
                             std::thread::sleep(Duration::from_millis(10));
@@ -304,5 +313,27 @@ mod tests {
         acknowledge(&pending_writes);
         acknowledge(&pending_writes);
         assert_eq!(pending_writes.load(Ordering::Relaxed), 0);
+    }
+
+    /// The client reads text frames with `JSON.parse`. A frame it cannot parse
+    /// raises an uncaught exception in the page instead of reporting the exit,
+    /// which the browser fixture observes as a failed `pageerror` check.
+    #[test]
+    fn exit_frame_is_valid_json_with_the_documented_shape() {
+        for status in [0, 1, 130] {
+            let frame = exit_frame(status);
+            let Value::Object(fields) = json::parse(frame.as_bytes())
+                .unwrap_or_else(|error| panic!("exit frame {frame} is not JSON: {error}"))
+            else {
+                panic!("exit frame must be a JSON object: {frame}");
+            };
+            assert!(
+                matches!(
+                    fields.get("exit"),
+                    Some(Value::Unsigned(_) | Value::Signed(_))
+                ),
+                "exit frame must carry a numeric exit status: {frame}"
+            );
+        }
     }
 }

@@ -33,7 +33,9 @@ pub(crate) fn run_dwarf_source_smoke(output_dir: &Path) -> crate::error_compat::
         .build()
         .context("failed to create debug smoke runtime")?;
     rt.run(async move {
-        let addr = server::start_server(output_dir, 0, None, debug_symbols, None).await?;
+        let addr =
+            server::start_server(output_dir.clone(), output_dir, 0, None, debug_symbols, None)
+                .await?;
         kernal_api::async_engine::sleep(std::time::Duration::from_millis(50)).await;
         let client = kernal_api::http::Client::new(kernal_api::http::Limits::default())?;
         for path in &paths {

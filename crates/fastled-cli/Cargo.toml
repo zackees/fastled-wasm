@@ -30,7 +30,7 @@ kernal-api = { workspace = true }
 # same-named build-dependency too and compile Tauri, GTK and glib for the
 # host build script.
 [build-dependencies]
-kernal-api-build = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.7" }
+kernal-api-build = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.10" }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"

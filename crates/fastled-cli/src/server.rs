@@ -828,14 +828,25 @@ fn server_limits(runtime: Option<&TestRuntimeConfig>) -> std::io::Result<Limits>
 /// Returns the actual address the server bound to (useful when port 0 is
 /// requested for automatic assignment). `debug_symbols` is shared with the
 /// caller so a build can populate the resolver after the server starts.
+///
+/// `terminal_cwd` is the directory every PTY starts in: the directory the
+/// caller was asked to operate on, not the directory the process happened to
+/// launch from. A relative path is anchored to the launch directory, which is
+/// what a relative command-line argument means.
 pub async fn start_server(
     serve_dir: PathBuf,
+    terminal_cwd: PathBuf,
     port: u16,
     build_tx: Option<async_engine::BroadcastSender<String>>,
     debug_symbols: DebugSymbolHandle,
     test: Option<TestServerOptions>,
 ) -> crate::error_compat::Result<SocketAddr> {
-    let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(std::env::current_dir()?));
+    let terminal_cwd = if terminal_cwd.is_absolute() {
+        terminal_cwd
+    } else {
+        std::env::current_dir()?.join(terminal_cwd)
+    };
+    let terminal_cwd = Arc::new(crate::path::NormalizedPath::new(terminal_cwd));
     let limits = server_limits(test.as_ref().map(|test| &test.runtime))?;
     let server = Server::bind(SocketAddr::from(([127, 0, 0, 1], port)), limits)
         .await?
@@ -958,9 +969,16 @@ mod tests {
     /// Helper: create a temp dir, start the server, return (addr, dir).
     async fn setup_server() -> (SocketAddr, kernal_api::platform::fs::TemporaryDirectory) {
         let dir = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
-        let addr = start_server(dir.path().to_path_buf(), 0, None, empty_handle(), None)
-            .await
-            .unwrap();
+        let addr = start_server(
+            dir.path().to_path_buf(),
+            dir.path().to_path_buf(),
+            0,
+            None,
+            empty_handle(),
+            None,
+        )
+        .await
+        .unwrap();
         // Give the server a moment to bind.
         async_engine::sleep(std::time::Duration::from_millis(50)).await;
         (addr, dir)
@@ -1117,6 +1135,7 @@ mod tests {
             sleep_permits: sleep_permits.clone(),
         };
         let addr = start_server(
+            dir.path().to_path_buf(),
             dir.path().to_path_buf(),
             0,
             None,
@@ -1468,6 +1487,7 @@ mod tests {
                 let (tx, _rx) = async_engine::broadcast_channel::<String>(16).unwrap();
                 let addr = start_server(
                     dir.path().to_path_buf(),
+                    dir.path().to_path_buf(),
                     0,
                     Some(tx.clone()),
                     empty_handle(),
@@ -1785,9 +1805,16 @@ mod tests {
                     DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
                 let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-                let addr = start_server(dir.path().to_path_buf(), 0, None, handle.clone(), None)
-                    .await
-                    .unwrap();
+                let addr = start_server(
+                    dir.path().to_path_buf(),
+                    dir.path().to_path_buf(),
+                    0,
+                    None,
+                    handle.clone(),
+                    None,
+                )
+                .await
+                .unwrap();
                 async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
                 let resp = post_json(
@@ -1834,7 +1861,7 @@ mod tests {
                     DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
                 let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-                let addr = start_server(serve_dir, 0, None, handle, None)
+                let addr = start_server(serve_dir.clone(), serve_dir, 0, None, handle, None)
                     .await
                     .unwrap();
                 async_engine::sleep(std::time::Duration::from_millis(50)).await;
@@ -1884,7 +1911,7 @@ mod tests {
                 let handle: DebugSymbolHandle =
                     Arc::new(RwLock::new(Some(DebugSymbolResolver::new(loaded))));
 
-                let addr = start_server(serve_dir, 0, None, handle, None)
+                let addr = start_server(serve_dir.clone(), serve_dir, 0, None, handle, None)
                     .await
                     .unwrap();
                 async_engine::sleep(std::time::Duration::from_millis(50)).await;
@@ -1913,9 +1940,16 @@ mod tests {
                     DebugSymbolResolver::new(load_debug_symbol_config(sketch_dir, None, None));
                 let handle: DebugSymbolHandle = Arc::new(RwLock::new(Some(resolver)));
 
-                let addr = start_server(dir.path().to_path_buf(), 0, None, handle, None)
-                    .await
-                    .unwrap();
+                let addr = start_server(
+                    dir.path().to_path_buf(),
+                    dir.path().to_path_buf(),
+                    0,
+                    None,
+                    handle,
+                    None,
+                )
+                .await
+                .unwrap();
                 async_engine::sleep(std::time::Duration::from_millis(50)).await;
 
                 let resp = post_json(

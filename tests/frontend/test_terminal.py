@@ -26,7 +26,10 @@ def terminal_server(tmp_path_factory: Any) -> Any:
     if not binary or not esbuild:
         pytest.skip("set FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
     root = tmp_path_factory.mktemp("terminal-240")
-    served = root / "served"
+    # The served directory carries a space so the PTY cwd is exercised with one.
+    # It must stay distinct from `launch`: the terminal must start in the
+    # directory named on the command line, not the process's launch directory.
+    served = root / "served project"
     served.mkdir()
     launch = root / "launch project"
     launch.mkdir()
@@ -101,7 +104,7 @@ def terminal_server(tmp_path_factory: Any) -> Any:
             assert process.poll() is None, "".join(lines)
             time.sleep(0.05)
         assert url, "server did not announce its URL: " + "".join(lines)
-        yield url, launch
+        yield url, served
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -112,7 +115,7 @@ def test_terminal_240_interactive_browser(
     terminal_server: Any, browser_name: str
 ) -> None:
     playwright = pytest.importorskip("playwright.sync_api")
-    url, launch = terminal_server
+    url, expected_cwd = terminal_server
     with playwright.sync_playwright() as manager:
         browser = getattr(manager, browser_name).launch()
         page = browser.new_page(viewport={"width": 1200, "height": 900})
@@ -159,13 +162,13 @@ def test_terminal_240_interactive_browser(
         command(
             "printf '\\nCWD=%s\\n' \"$PWD\"; printf '\\033[31mCOLOR_é_OK\\033[0m\\n'"
         )
-        wait_output(f"CWD={launch}\r\n")
+        wait_output(f"CWD={expected_cwd}\r\n")
         wait_output("\x1b[31mCOLOR_é_OK\x1b[0m")
         playwright.expect(page.locator(".xterm-rows")).to_contain_text("COLOR_é_OK")
         assert "SEPARATE_SKETCH_LOG" in page.locator("#output").inner_text()
         page.locator("#terminal-copy").click()
         copied = page.evaluate("window.copied")
-        assert f"CWD={launch}" in copied
+        assert f"CWD={expected_cwd}" in copied
         assert "SEPARATE_SKETCH_LOG" not in copied
         command("export TERMINAL_240_KEEP=retained")
         page.locator("#terminal-close").click()
@@ -207,7 +210,7 @@ def test_terminal_240_interactive_browser(
             payload,
         )
         deadline = time.monotonic() + 10
-        paste_file = launch / "paste-240.txt"
+        paste_file = expected_cwd / "paste-240.txt"
         while time.monotonic() < deadline:
             if paste_file.exists() and paste_file.stat().st_size == len(
                 payload.encode()
