@@ -1008,6 +1008,7 @@ name = "fastled-cli"
 version = "2.0.20"
 dependencies = [
  "kernal-api",
+ "kernal-api-build",
 ]
 
 [[package]]
@@ -2023,14 +2024,13 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.6"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.6#560a5137d6371464dd13f0541d8ad1efa9745c8e"
+version = "0.1.7"
+source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.7#6ca1c16d75da56422bc6d143ea48c1c016647d6f"
 dependencies = [
  "blake3",
  "bytes",
  "clap",
  "dirs 6.0.0",
- "embed-resource",
  "flate2",
  "futures-core",
  "futures-util",
@@ -2076,6 +2076,14 @@ dependencies = [
  "wry 0.57.0",
  "zip",
  "zstd",
+]
+
+[[package]]
+name = "kernal-api-build"
+version = "0.1.7"
+source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.7#6ca1c16d75da56422bc6d143ea48c1c016647d6f"
+dependencies = [
+ "embed-resource",
 ]
 
 [[package]]
@@ -4140,7 +4148,7 @@ dependencies = [
  "serde_with",
  "swift-rs",
  "thiserror 2.0.20",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.2+spec-1.1.0",
  "url",
  "urlpattern",
  "uuid",

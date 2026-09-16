@@ -1117,8 +1117,12 @@ only a version bump over `762a1d2`. kernal-api `v0.1.4`, cut from the same
 `release/0.1.3` branch, forced WebKitGTK's worker WebGL feature
 (zackees/kernal-api#268). That froze the viewer on NVIDIA Wayland, so `v0.1.5`
 reverts it (zackees/kernal-api#272); code-wise it is `v0.1.3` again. `v0.1.6`
-adds only the opt-in `windows-app-resources` build-script capability
-(zackees/kernal-api#276). The workspace consumes the `v0.1.6` tag. crates.io publishing is not enabled for
+added a `windows-app-resources` feature for build scripts; a feature cannot
+serve that purpose, because an application's `kernal-api/tauri-webview` entry
+also applies to a same-named build dependency and compiled Tauri, GTK and glib
+for the host build script. `v0.1.7` replaces it with the separate
+`kernal-api-build` package, released from the same repository under the same
+tag. The workspace consumes the `v0.1.7` tag. crates.io publishing is not enabled for
 kernal-api, and `fastled-cli` is not published to crates.io, so the workspace
 uses a git tag dependency. The pre-release pin, path and `[patch]` overrides
 are gone.
@@ -1128,8 +1132,8 @@ unit-test workflows. It requires `kernal-api` to be the only dependency in every
 package, workspace and target table. It also forbids dev dependencies,
 `[patch]` and generated Tauri output, and requires the `hash-sha256` feature,
 alongside the per-backend source bans. `fastled-cli` has exactly one
-`build.rs`: its only build dependency is `kernal-api` from the same release
-with only `windows-app-resources`, and it names no other crate.
+`build.rs`: its only build dependency is `kernal-api-build` from the same
+repository and release tag, and it names no other crate.
 
 **Windows executable resources.** The Tauri-era `fastled.exe` carried an icon,
 version information and a Common-Controls v6 manifest from `tauri-build`; the
