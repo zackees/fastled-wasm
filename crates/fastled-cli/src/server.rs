@@ -382,6 +382,7 @@ struct AppState {
     terminal_cwd: Arc<crate::path::NormalizedPath>,
     terminal_origin: Arc<String>,
     terminal_slots: async_engine::Semaphore,
+    terminal_sessions: Arc<crate::terminal::Sessions>,
     /// Broadcast channel for SSE build streaming.  `None` when serving a
     /// static directory (no compilation happening).
     build_tx: Option<async_engine::BroadcastSender<String>>,
@@ -508,6 +509,21 @@ fn required_query(request: &Request, name: &str) -> std::io::Result<String> {
     }
     value
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "missing query field"))
+}
+
+/// Read an optional single-valued query field, rejecting duplicates.
+fn optional_query(request: &Request, name: &str) -> std::io::Result<Option<String>> {
+    match required_query(request, name) {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+            if error.to_string() == "missing query field" {
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        }
+        Err(error) => Err(error),
+    }
 }
 
 async fn test_sleep(state: &AppState, request: &Request) -> Reply {
@@ -719,13 +735,25 @@ async fn route(state: &AppState, request: Request) -> Reply {
         {
             return empty(403);
         }
-        let Some(permit) = state.terminal_slots.try_acquire() else {
-            return empty(429);
+        // A reattach token is the only thing a client may present here, and the
+        // server minted it (#254). No command, cwd or environment is accepted.
+        // Claiming consumes the token, so it cannot be replayed, and the
+        // reattached session already owns its terminal slot.
+        let reattach = optional_query(&request, "reattach")?;
+        let attachment = match reattach.and_then(|token| state.terminal_sessions.claim(&token)) {
+            Some(session) => crate::terminal::Attachment::Existing(session),
+            None => {
+                let Some(permit) = state.terminal_slots.try_acquire() else {
+                    return empty(429);
+                };
+                crate::terminal::Attachment::Fresh(permit)
+            }
         };
         let upgrade = request.into_websocket()?;
         return upgrade.on_upgrade(WebSocketLimits::default(), {
             let cwd = state.terminal_cwd.clone();
-            move |socket| crate::terminal::connect(socket, cwd, permit)
+            let sessions = Arc::clone(&state.terminal_sessions);
+            move |socket| crate::terminal::connect(socket, cwd, attachment, sessions)
         });
     }
     if (post && request.method() != "POST")
@@ -864,6 +892,7 @@ pub async fn start_server(
         terminal_cwd,
         terminal_origin: Arc::new(format!("http://{addr}")),
         terminal_slots: async_engine::Semaphore::new(4),
+        terminal_sessions: crate::terminal::Sessions::new(),
         build_tx,
         debug_symbols,
         test: test.map(Arc::new),
@@ -879,6 +908,18 @@ pub async fn start_server(
             std::time::Duration::from_secs(30),
         )?,
     };
+    // Detached sessions must not outlive their keep-alive window just because
+    // nobody reconnects (#254); a timer is the only thing that can notice.
+    if state.terminal_sessions.reaps() {
+        let sessions = Arc::clone(&state.terminal_sessions);
+        async_engine::launch(async move {
+            loop {
+                async_engine::sleep(std::time::Duration::from_millis(500)).await;
+                sessions.reap();
+            }
+        })
+        .detach();
+    }
     let diagnostics = server.diagnostics();
     async_engine::launch(async move {
         let result = server

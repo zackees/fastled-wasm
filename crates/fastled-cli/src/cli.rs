@@ -167,6 +167,8 @@ pub(crate) fn primary_schema() -> kernal_api::command::Command {
         .version(env!("CARGO_PKG_VERSION"))
         .optional_positional("directory", ValueKind::string())
         .option(OptionSpec::value("serve-dir", ValueKind::string()).help("Serve an existing directory without compiling."))
+        .option(OptionSpec::value("terminal-cmd", ValueKind::string()).help("Run this command in the browser terminal instead of a shell (e.g. an agent)."))
+        .option(OptionSpec::value("terminal-keep-alive-secs", ValueKind::string()).help("Seconds a disconnected terminal session stays reattachable (default 120 with --terminal-cmd, 0 without)."))
         .option(OptionSpec::value("init", ValueKind::string()).optional_value("__init__").help("Initialize a sketch; without a value uses the default example."))
         .option(OptionSpec::flag("just-compile").help("Compile without opening the viewer."))
         .option(OptionSpec::flag("no-app").help("Emit the JavaScript API and WASM artifacts only."))
@@ -368,6 +370,8 @@ where
         command: None,
         directory: string("directory"),
         serve_dir: string("serve-dir"),
+        terminal_cmd: string("terminal-cmd"),
+        terminal_keep_alive_secs: string("terminal-keep-alive-secs"),
         init: string("init"),
         just_compile: flag("just-compile"),
         no_app: flag("no-app"),
@@ -431,6 +435,10 @@ pub(crate) struct Cli {
 
     /// Serve an existing directory without compiling a sketch.
     pub(crate) serve_dir: Option<String>,
+    /// Command the browser terminal runs instead of a shell (#254).
+    pub(crate) terminal_cmd: Option<String>,
+    /// Seconds a disconnected terminal session stays reattachable (#254).
+    pub(crate) terminal_keep_alive_secs: Option<String>,
 
     /// Initialize a FastLED sketch in the current directory.
     /// An optional example name may be provided (e.g. --init Blink).

@@ -14,6 +14,27 @@ export function installTerminal() {
     let inputQueue: object[] = [];
     let inputTimer: ReturnType<typeof setTimeout> | undefined;
 
+    // A server-minted, single-use reattach token (#254). The server issues one
+    // only for a configured agent session; a plain shell sends none and the
+    // terminal behaves exactly as before. sessionStorage keeps it to this tab,
+    // and a failed read must never stop the terminal from opening.
+    const TOKEN_KEY = 'fastled.terminal.reattach';
+    const readToken = (): string | null => {
+        try {
+            return sessionStorage.getItem(TOKEN_KEY);
+        } catch {
+            return null;
+        }
+    };
+    const storeToken = (token: string | null) => {
+        try {
+            if (token === null) sessionStorage.removeItem(TOKEN_KEY);
+            else sessionStorage.setItem(TOKEN_KEY, token);
+        } catch {
+            // A tab without storage simply loses reattach, not the terminal.
+        }
+    };
+
     const send = (message: object) => {
         if (socket?.readyState === WebSocket.OPEN) {
             if (socket.bufferedAmount > 256 * 1024) {
@@ -49,7 +70,7 @@ export function installTerminal() {
         fit.fit();
         send({ type: 'resize', cols: terminal.cols, rows: terminal.rows });
     };
-    const connect = () => {
+    const connect = (reattach: string | null = readToken()) => {
         socket?.close();
         clearTimeout(inputTimer);
         inputTimer = undefined;
@@ -64,6 +85,7 @@ export function installTerminal() {
         const activeTerminal = terminal;
         const url = new URL('/terminal/ws', location.href);
         url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        if (reattach) url.searchParams.set('reattach', reattach);
         const connection = new WebSocket(url);
         socket = connection;
         connection.binaryType = 'arraybuffer';
@@ -82,6 +104,12 @@ export function installTerminal() {
                 });
             } else {
                 const message = JSON.parse(event.data);
+                if (typeof message.reattach === 'string') {
+                    // Each attach mints a fresh token; the previous one is spent.
+                    storeToken(message.reattach);
+                    return;
+                }
+                if (typeof message.exit !== 'undefined') storeToken(null);
                 status.textContent = message.error || `Shell exited (${message.exit}).`;
             }
         };
@@ -117,6 +145,7 @@ export function installTerminal() {
     opener.addEventListener('click', () => {
         dialog.showModal();
         if (!terminal) connect();
+
         resize();
         terminal?.focus();
     });
@@ -124,7 +153,12 @@ export function installTerminal() {
     dialog.addEventListener('close', () => opener.focus());
     // Escape belongs to shell applications (vim/clud), not dialog dismissal.
     dialog.addEventListener('cancel', (event) => event.preventDefault());
-    restart.addEventListener('click', connect);
+    // Restart is the deliberate "give me a new session" control, so it drops
+    // the reattach token rather than rejoining the old session.
+    restart.addEventListener('click', () => {
+        storeToken(null);
+        connect(null);
+    });
     document.getElementById('terminal-copy')!.addEventListener('click', async () => {
         if (!terminal) return;
         const buffer = terminal.buffer.active;
