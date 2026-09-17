@@ -41,6 +41,15 @@ jobs:
           fi
           cat rust-toolchain.ci.toml
 
+      # Must run before setup-soldr: its soldr-cook step builds glib-sys /
+      # gobject-sys, which resolve GTK/WebKit through pkg-config. Cooking first
+      # fails with exit 101 and every run then compiles those deps cold (#262).
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
       - uses: zackees/setup-soldr@v0.9.62
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -60,12 +69,6 @@ jobs:
           cache-key-suffix: ${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           linker: platform-default
           toolchain-file: rust-toolchain.ci.toml
-
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Build fastled CLI binary (for wheel bundling)
         run: |

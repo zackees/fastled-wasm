@@ -43,6 +43,14 @@ jobs:
       - name: Install Python
         run: uv python install "$UV_PYTHON"
 
+      # Must run before setup-soldr: its soldr-cook step builds glib-sys /
+      # gobject-sys, which resolve GTK/WebKit through pkg-config. Cooking first
+      # fails with exit 101 and every run then compiles those deps cold (#262).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
       - uses: zackees/setup-soldr@v0.9.62
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -54,11 +62,6 @@ jobs:
           cache-key-suffix: ubuntu-24.04-dwarf-smoke
           linker: platform-default
           toolchain-file: rust-toolchain.toml
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Sync Python deps
         run: uv sync --group dev
