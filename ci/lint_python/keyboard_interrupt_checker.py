@@ -87,7 +87,7 @@ class TryExceptVisitor(ast.NodeVisitor):
         self.violations: list[Violation] = []
         self._source_lines: list[str] = source_lines or []
 
-    def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+    def visit_Try(self, node: ast.Try) -> None:
         catches_broad_exception = False
         has_keyboard_interrupt_handler = False
         keyboard_interrupt_handlers: list[ast.ExceptHandler] = []
@@ -110,35 +110,39 @@ class TryExceptVisitor(ast.NodeVisitor):
                             has_keyboard_interrupt_handler = True
                             keyboard_interrupt_handlers.append(handler)
 
-        if catches_broad_exception and not has_keyboard_interrupt_handler:
-            if not _is_suppressed(self._source_lines, node.lineno, "KBI001"):
+        if (
+            catches_broad_exception
+            and not has_keyboard_interrupt_handler
+            and not _is_suppressed(self._source_lines, node.lineno, "KBI001")
+        ):
+            self.violations.append(
+                Violation(
+                    line=node.lineno,
+                    col=node.col_offset,
+                    code="KBI001",
+                    message=(
+                        "Try-except catches Exception/BaseException without KeyboardInterrupt handler. "
+                        "Add: except KeyboardInterrupt as ki: handle_keyboard_interrupt(ki)"
+                    ),
+                )
+            )
+
+        for handler in keyboard_interrupt_handlers:
+            if not _handler_calls_interrupt_main(handler) and not _is_suppressed(
+                self._source_lines, handler.lineno, "KBI002"
+            ):
                 self.violations.append(
                     Violation(
-                        line=node.lineno,
-                        col=node.col_offset,
-                        code="KBI001",
+                        line=handler.lineno,
+                        col=handler.col_offset,
+                        code="KBI002",
                         message=(
-                            "Try-except catches Exception/BaseException without KeyboardInterrupt handler. "
-                            "Add: except KeyboardInterrupt as ki: handle_keyboard_interrupt(ki)"
+                            "KeyboardInterrupt handler must call _thread.interrupt_main() "
+                            "or use handle_keyboard_interrupt(ki). "
+                            "Add: import _thread; _thread.interrupt_main()"
                         ),
                     )
                 )
-
-        for handler in keyboard_interrupt_handlers:
-            if not _handler_calls_interrupt_main(handler):
-                if not _is_suppressed(self._source_lines, handler.lineno, "KBI002"):
-                    self.violations.append(
-                        Violation(
-                            line=handler.lineno,
-                            col=handler.col_offset,
-                            code="KBI002",
-                            message=(
-                                "KeyboardInterrupt handler must call _thread.interrupt_main() "
-                                "or use handle_keyboard_interrupt(ki). "
-                                "Add: import _thread; _thread.interrupt_main()"
-                            ),
-                        )
-                    )
 
         for call_node in _find_interrupt_handler_calls(node.body):
             if not _is_suppressed(self._source_lines, call_node.lineno, "KBI003"):
@@ -191,9 +195,12 @@ def _collect_calls(nodes: Sequence[ast.AST], out: list[ast.Call]) -> None:
     for node in nodes:
         if isinstance(node, ast.Try):
             continue
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in _INTERRUPT_HANDLER_NAMES:
-                out.append(node)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in _INTERRUPT_HANDLER_NAMES
+        ):
+            out.append(node)
         _collect_calls(list(ast.iter_child_nodes(node)), out)
 
 
@@ -201,16 +208,18 @@ def _handler_calls_interrupt_main(handler: ast.ExceptHandler) -> bool:
     """Check if a KBI handler properly calls _thread.interrupt_main() or helper."""
     for node in ast.walk(handler):
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute):
-                if (
-                    isinstance(node.func.value, ast.Name)
-                    and node.func.value.id == "_thread"
-                    and node.func.attr == "interrupt_main"
-                ):
-                    return True
-            if isinstance(node.func, ast.Name):
-                if node.func.id in _INTERRUPT_HANDLER_NAMES:
-                    return True
+            if (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "_thread"
+                and node.func.attr == "interrupt_main"
+            ):
+                return True
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id in _INTERRUPT_HANDLER_NAMES
+            ):
+                return True
     return False
 
 

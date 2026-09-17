@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """PreToolUse Bash hook: enforce soldr for Rust tooling.
 
 Blocks invocations that bypass soldr/zccache:
@@ -109,9 +108,10 @@ def _nested_shell_command(words: list[str]) -> str | None:
                 return " ".join(words[index + 1 :])
             continue
 
-        if lower in {"-c", "-command"} or (lower.startswith("-") and "c" in lower[1:]):
-            if index + 1 < len(words):
-                return words[index + 1]
+        if (
+            lower in {"-c", "-command"} or (lower.startswith("-") and "c" in lower[1:])
+        ) and index + 1 < len(words):
+            return words[index + 1]
     return None
 
 
@@ -156,14 +156,13 @@ def check_command(command: str, _depth: int = 0) -> tuple[str, str] | None:
             replacement = bare[1:]
             return (
                 bare,
-                f"`./{bare}` was retired (see issue #76). "
-                f"Use `soldr {replacement} ...` instead.",
+                f"`./{bare}` was retired (see issue #76). Use `soldr {replacement} ...` instead.",
             )
 
         if normalized.startswith("soldr "):
             continue
 
-        if normalized.startswith("uv run ") or normalized.startswith("uv  run "):
+        if normalized.startswith(("uv run ", "uv  run ")):
             tool = _resolve_uv_run_tool(normalized)
             if tool is None:
                 continue
@@ -172,8 +171,7 @@ def check_command(command: str, _depth: int = 0) -> tuple[str, str] | None:
                 replacement = tool_bare[1:]
                 return (
                     tool_bare,
-                    f"`{tool}` was retired (see issue #76). "
-                    f"Use `soldr {replacement} ...` instead.",
+                    f"`{tool}` was retired (see issue #76). Use `soldr {replacement} ...` instead.",
                 )
             if tool_bare in RUST_TOOLS:
                 replacement = (
@@ -181,9 +179,7 @@ def check_command(command: str, _depth: int = 0) -> tuple[str, str] | None:
                 )
                 return (
                     tool,
-                    f"Use `{replacement} ...` instead of `uv run {tool_bare} ...`. "
-                    "`uv run <rust-tool>` bypasses soldr's toolchain "
-                    "selection and the zccache compile cache.",
+                    f"Use `{replacement} ...` instead of `uv run {tool_bare} ...`. `uv run <rust-tool>` bypasses soldr's toolchain selection and the zccache compile cache.",
                 )
             continue
 
@@ -194,9 +190,7 @@ def check_command(command: str, _depth: int = 0) -> tuple[str, str] | None:
             replacement = "soldr cargo" if bare == "rustup" else f"soldr {bare}"
             return (
                 bare,
-                f"Use `{replacement} ...` instead of bare `{bare}`. "
-                "Plain Rust tool invocations bypass soldr's toolchain "
-                "selection and zccache integration (see issue #75).",
+                f"Use `{replacement} ...` instead of bare `{bare}`. Plain Rust tool invocations bypass soldr's toolchain selection and zccache integration (see issue #75).",
             )
 
     return None
