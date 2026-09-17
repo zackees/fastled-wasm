@@ -17,10 +17,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: zackees/setup-soldr@bb28e96d2dc32c058242f56722297caf1efcbd90
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          cache-key-suffix: macos-x64-guest-cross
+          cross-targets: x86_64-apple-darwin
+          toolchain-file: rust-toolchain.toml
+          prebuild-deps-flags: ""
+
+      - name: Cross-build the Intel fastled binary
+        run: |
+          soldr cargo build --release --bin fastled --target x86_64-apple-darwin
+          test "$(od -A n -t x1 -N 8 target/x86_64-apple-darwin/release/fastled | tr -d ' \n')" = "cffaedfe07000001"
+
       - name: Stage share
         run: |
           mkdir -p share
           cp ci/macos-x64/webgl.html share/
+          cp target/x86_64-apple-darwin/release/fastled share/
 
       - name: Generate guest script
         id: guest_script

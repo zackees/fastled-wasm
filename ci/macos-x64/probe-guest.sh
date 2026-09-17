@@ -1,35 +1,37 @@
-# Feasibility probe for #251: what a docker-mac-x64 Recovery guest can do for
-# the viewer and Safari. Runs as root in the Recovery Terminal (bash 3.2).
-mkdir -p /tmp/results
+# Feasibility probe for #251, round 2: can WebKit in a Recovery guest give the
+# shipped viewer and Safari a WebGL2 context and animation frames?
+mkdir -p /tmp/results /tmp/page
 R=/tmp/results
-section() { echo; echo "=== $* ==="; }
-{
-section system; date; sw_vers; uname -a; id
-section disk; df -h 2>&1; diskutil list 2>&1 | head -40
-section tools
-for t in python3 curl tar open osascript screencapture safaridriver sqlite3 hdiutil; do
-  printf '%s: ' "$t"; command -v "$t" || echo missing
-done
-section network; curl -sS -o /dev/null -w 'github %{http_code} %{time_total}s\n' --max-time 30 https://github.com/ 2>&1
-section webkit
-ls -d /System/Library/Frameworks/WebKit.framework 2>&1
-find / -maxdepth 5 -name 'Safari.app' -not -path '/Volumes/*' 2>/dev/null | head
-find / -maxdepth 5 -name 'safaridriver' -not -path '/Volumes/*' 2>/dev/null | head
-section graphics; system_profiler SPDisplaysDataType 2>&1
-section processes; ps axo pid,comm | grep -iE 'WindowServer|loginwindow|Dock|Finder|Terminal|Recovery' | head
-} > $R/probe.txt 2>&1
-cat $R/probe.txt
+cd /tmp
+curl -sS -o /tmp/fastled http://10.0.2.2:8000/fastled && chmod +x /tmp/fastled
+curl -sS -o /tmp/page/index.html http://10.0.2.2:8000/webgl.html
+/tmp/fastled --version 2>&1; echo "fastled --version rc=$?"
 
-section "webgl page"
-curl -sS -o /tmp/webgl.html http://10.0.2.2:8000/webgl.html
-SAFARI=$(find / -maxdepth 5 -name 'Safari.app' -not -path '/Volumes/*' 2>/dev/null | head -1)
-echo "safari=$SAFARI"
-if [ -n "$SAFARI" ]; then
-  open -a "$SAFARI" /tmp/webgl.html 2>&1; echo "open rc=$?"
-else
-  open /tmp/webgl.html 2>&1; echo "open (default) rc=$?"
-fi
+/tmp/fastled --internal-serve-dir-headless /tmp/page > $R/server.log 2>&1 &
+URL=
+for i in $(seq 60); do
+  URL=$(grep -Eo 'http://127\.0\.0\.1:[0-9]+' $R/server.log | head -1)
+  [ -n "$URL" ] && break
+  sleep 1
+done
+echo "url=$URL"
+cat $R/server.log
+
+echo "--- shipped viewer"
+/tmp/fastled --internal-viewer "$URL/?who=viewer" > $R/viewer.log 2>&1 &
+VIEWER=$!
 sleep 45
-screencapture -x $R/screen.png 2>&1; echo "screencapture rc=$?"
-ls -l $R
+echo "viewer alive: $(kill -0 $VIEWER 2>/dev/null && echo yes || echo no)"
+cat $R/viewer.log | tail -40
+
+echo "--- safari"
+/Applications/Safari.app/Contents/MacOS/Safari "$URL/?who=safari" > $R/safari.log 2>&1 &
+SAFARI=$!
+sleep 45
+echo "safari alive: $(kill -0 $SAFARI 2>/dev/null && echo yes || echo no)"
+tail -40 $R/safari.log
+
+echo "--- reports"
+grep '\[viewer\]' $R/server.log
+ps axo pid,comm | grep -iE 'safari|webkit|fastled|WebContent|GPU' | head -20
 echo PROBE_DONE

@@ -1,22 +1,35 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>WebGL2 probe</title>
-<body style="font: 28px monospace; margin: 24px">
+<body style="font: 22px monospace; margin: 24px">
 <canvas id="c" width="320" height="160" style="border: 2px solid #000"></canvas>
 <pre id="out">script did not run</pre>
 <script>
+const who = new URLSearchParams(location.search).get('who') || 'unknown';
 const out = document.getElementById('out');
+const report = (text) => fetch('/viewer-log', {method: 'POST', body: who + ' ' + text}).catch(() => {});
 const lines = ['UA ' + navigator.userAgent];
-const gl = document.getElementById('c').getContext('webgl2');
+let gl = null;
+try { gl = document.getElementById('c').getContext('webgl2'); } catch (e) { lines.push('WEBGL2_ERROR ' + e); }
 lines.push('WEBGL2 ' + (gl ? 'YES' : 'NO'));
 if (gl) {
   const dbg = gl.getExtension('WEBGL_debug_renderer_info');
   lines.push('RENDERER ' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)));
-  gl.clearColor(0, 0.6, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
 }
-lines.push('WEBGL1 ' + (document.createElement('canvas').getContext('webgl') ? 'YES' : 'NO'));
-lines.push('OFFSCREEN ' + (typeof OffscreenCanvas));
-lines.push('SAB ' + (typeof SharedArrayBuffer));
+let gl1 = null;
+try { gl1 = document.createElement('canvas').getContext('webgl'); } catch (e) {}
+lines.push('WEBGL1 ' + (gl1 ? 'YES' : 'NO'));
+let offscreen = 'absent';
+try { offscreen = new OffscreenCanvas(4, 4).getContext('webgl2') ? 'webgl2' : 'no-webgl2'; } catch (e) { offscreen = 'error ' + e; }
+lines.push('OFFSCREEN_WEBGL2 ' + offscreen);
 out.textContent = lines.join('\n');
-document.title = lines.join(' | ');
+lines.forEach(report);
+let frames = 0;
+const tick = () => {
+  frames++;
+  if (gl) { gl.clearColor((frames % 60) / 60, 0.6, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+  requestAnimationFrame(tick);
+};
+requestAnimationFrame(tick);
+[5, 15, 30].forEach(s => setTimeout(() => report('FRAMES_AT_' + s + 's ' + frames), s * 1000));
 </script>
