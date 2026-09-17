@@ -306,9 +306,9 @@ BLOCKED_WRITERS_SCRIPT = """async command => {
             const timer = setTimeout(() => {
                 ws.close();
                 reject(new Error('PTY ready timeout: ' + JSON.stringify(output.slice(-2000))));
-            }, 15000);
+            }, 30000);
             ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
-            ws.onopen = () => ws.send(JSON.stringify({type: 'input', data: command}));
+            let sent = false;
             ws.onmessage = event => {
                 if (!(event.data instanceof ArrayBuffer)) return;
                 ws.send(JSON.stringify({type: 'ack'}));
@@ -318,6 +318,13 @@ BLOCKED_WRITERS_SCRIPT = """async command => {
                 const queries = output.split('\\x1b[6n').length - 1;
                 for (; answered < queries; answered++) {
                     ws.send(JSON.stringify({type: 'input', data: '\\x1b[1;1R'}));
+                }
+                // Type only once the shell has written something, as a user
+                // would; a command sent on open can land before a slow login
+                // shell starts reading its terminal.
+                if (!sent) {
+                    sent = true;
+                    ws.send(JSON.stringify({type: 'input', data: command}));
                 }
                 if (!blocked && output.includes('BLOCKREADY240')) {
                     blocked = true;
