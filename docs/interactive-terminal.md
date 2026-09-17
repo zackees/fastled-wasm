@@ -84,12 +84,20 @@ or disowned programs are outside the terminal lifecycle, as in a normal shell.
   message can wait on a program that is not reading but can never pin a slot
   past its client. A smaller cap would only split pastes that the client
   already paces.
-- **Only the bounded write is non-blocking.** `kernal-api` switches the PTY
-  input to non-blocking mode for the duration of `write_available` and restores
-  it before returning (`O_NONBLOCK` on Unix, `PIPE_NOWAIT` on the Windows ConPTY
-  input pipe). The reader keeps blocking reads on its own thread, which already
-  ends when the session is dropped; a non-blocking reader would need its own
-  wait loop and gain nothing.
+- **Only the bounded write is non-blocking.** On Unix, `kernal-api` sets
+  `O_NONBLOCK` on the PTY master for the duration of `write_available` and
+  restores it before returning. The reader keeps blocking reads on its own
+  thread, which already ends when the session is dropped; a non-blocking reader
+  would need its own wait loop and gain nothing.
+- **No bounded write on Windows.** `kernal-api` has no ConPTY implementation of
+  `write_available`, so it falls back to a blocking write there. That write does
+  not park: conhost keeps reading the input pipe into its console input buffer
+  whether or not the foreground program reads. Measured on `windows-latest`
+  (#259): for 15 s of continuous 64 KiB writes to a ConPTY whose child never
+  read, every call returned within 1.2 s, and the slot-release regression passes
+  without a Windows-specific change. `windows-x86-terminal-test.yml` keeps that
+  true on every pull request; a Windows bounded write should be added only
+  alongside a test that fails without it.
 
 ## Verification
 
