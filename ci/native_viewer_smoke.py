@@ -41,6 +41,7 @@ def main() -> None:
 
         def do_GET(self) -> None:
             if self.path == "/":
+                assert isinstance(self.server, ThreadingHTTPServer)
                 page = f"""<!doctype html><canvas id="myCanvas" width="32" height="32"></canvas>
 <script>
 const canvas = document.getElementById('myCanvas');
@@ -63,7 +64,11 @@ finish();
 </script>"""
                 self.reply(page.encode())
             elif self.path == "/test-config":
-                self.reply(json.dumps({"waitMs": 0, "intervalMs": 0, "screenshotNames": ["probe.png"]}).encode())
+                self.reply(
+                    json.dumps(
+                        {"waitMs": 0, "intervalMs": 0, "screenshotNames": ["probe.png"]}
+                    ).encode()
+                )
             elif self.path == "/probe-done":
                 self.reply(json.dumps(done.is_set()).encode())
             elif self.path == "/favicon.ico":
@@ -91,7 +96,9 @@ finish();
                 if body != b"0":
                     failures.append(f"capture failed: {body!r}")
                 done.set()
-            elif self.path != "/test-ready" and not self.path.startswith("/test-sleep?ms="):
+            elif self.path != "/test-ready" and not self.path.startswith(
+                "/test-sleep?ms="
+            ):
                 failures.append(f"unexpected POST {self.path}")
             self.reply()
 
@@ -101,7 +108,12 @@ finish();
     thread.start()
     try:
         result = subprocess.run(
-            [str(args.binary.resolve()), "--internal-viewer", f"http://127.0.0.1:{server.server_port}/#fastled-test-token={token}", "--viewer-inject-test-runtime"],
+            [
+                str(args.binary.resolve()),
+                "--internal-viewer",
+                f"http://127.0.0.1:{server.server_port}/#fastled-test-token={token}",
+                "--viewer-inject-test-runtime",
+            ],
             capture_output=True,
             text=True,
             timeout=60,
@@ -120,7 +132,9 @@ finish();
     assert struct.unpack(">II", png[16:24]) == (32, 32)
     assert result.returncode == 1, result
     assert "navigation was rejected" in result.stderr, result.stderr
-    print("native viewer bootstrap, authenticated logs, 32x32 PNG capture and rejection teardown passed")
+    print(
+        "native viewer bootstrap, authenticated logs, 32x32 PNG capture and rejection teardown passed"
+    )
 
 
 if __name__ == "__main__":

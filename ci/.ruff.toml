@@ -1,0 +1,13 @@
+# Stricter-than-default ruff rules for the repository's CI and tooling scripts.
+# Everything else (line-length, etc.) is inherited from the root pyproject.
+# These are the rule families that were unenforced while `lint` only covered
+# src/ and tests/ (see the "Python files under ci/ are unlinted" item in #262).
+extend = "../pyproject.toml"
+
+[lint]
+extend-select = [
+    "SIM102",  # collapsible nested if
+    "PIE810",  # multiple startswith/endswith calls
+    "EXE001",  # shebang on a non-executable file
+    "RUF100",  # unused noqa
+]

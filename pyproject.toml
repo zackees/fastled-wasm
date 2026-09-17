@@ -74,6 +74,9 @@ profile = "black"
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
+# ci/*.py smoke scripts are executed by path, so sibling modules such as
+# `safari_smoke` resolve at runtime; mirror that for the type checker.
+extraPaths = ["ci"]
 
 [tool.mypy]
 ignore_missing_imports = true

@@ -125,7 +125,9 @@ def start_safaridriver() -> tuple[subprocess.Popen, str]:
 def lit_pixels(png: bytes, state: dict) -> tuple[int, int]:
     from io import BytesIO
 
-    from PIL import Image
+    # Pillow is installed ad hoc by ci/smoke_installed_wheel.sh (`--with pillow`),
+    # not by the dev dependency group, so it is not resolvable at type-check time.
+    from PIL import Image  # pyright: ignore[reportMissingImports]
 
     image = Image.open(BytesIO(png)).convert("RGB")
     rect = state.get("canvas")
