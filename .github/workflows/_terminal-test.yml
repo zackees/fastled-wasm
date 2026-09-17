@@ -72,14 +72,23 @@ jobs:
       - name: Install esbuild
         run: |
           npm install --prefix "$RUNNER_TEMP/esbuild" --no-save --no-audit --no-fund "esbuild@$ESBUILD_VERSION"
+          # soldr may build for an explicit host triple, which places the
+          # binary under target/<triple>/debug instead of target/debug.
           if [ "$RUNNER_OS" = "Windows" ]; then
             esbuild="$(cygpath -w "$RUNNER_TEMP/esbuild/node_modules/@esbuild/win32-x64/esbuild.exe")"
-            binary="$(cygpath -w "$GITHUB_WORKSPACE/target/debug/fastled.exe")"
+            found="$(find target -path '*/debug/fastled.exe' -not -path '*/deps/*' | head -n 1)"
+            binary="$(cygpath -w "$GITHUB_WORKSPACE/$found")"
           else
             esbuild="$RUNNER_TEMP/esbuild/node_modules/.bin/esbuild"
-            binary="$GITHUB_WORKSPACE/target/debug/fastled"
+            found="$(find target -path '*/debug/fastled' -type f -not -path '*/deps/*' | head -n 1)"
+            binary="$GITHUB_WORKSPACE/$found"
+          fi
+          if [ -z "$found" ]; then
+            echo "no debug fastled binary under target/" >&2
+            exit 1
           fi
           "$esbuild" --version
+          "$binary" --version
           echo "FASTLED_ESBUILD=$esbuild" >> "$GITHUB_ENV"
           echo "FASTLED_TERMINAL_BINARY=$binary" >> "$GITHUB_ENV"
 
