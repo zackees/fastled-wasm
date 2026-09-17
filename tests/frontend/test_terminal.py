@@ -19,6 +19,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND = ROOT / "src/fastled/frontend"
+# Forward slashes: a Windows path in a JS string literal would read as escapes.
+FRONTEND_IMPORT = FRONTEND.as_posix()
 
 
 @pytest.fixture(scope="module")
@@ -38,22 +40,24 @@ def terminal_server(tmp_path_factory: Any) -> Any:
     served.mkdir()
     launch = root / "launch project"
     launch.mkdir()
-    html = (FRONTEND / "index.html").read_text()
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     controls = html[html.index('    <button id="terminal-open"') :]
     controls = controls[: controls.index('    <script type="module"')]
     (served / "index.html").write_text(
         '<link rel="stylesheet" href="/index.css"><pre id="output"></pre>'
         + controls
-        + '<script type="module" src="/fixture.js"></script>'
+        + '<script type="module" src="/fixture.js"></script>',
+        encoding="utf-8",
     )
     entry = root / "fixture.ts"
     entry.write_text(
-        f"import {{ installTerminal }} from '{FRONTEND}/terminal.ts';\n"
-        f"import {{ state }} from '{FRONTEND}/state.ts';\n"
-        f"import {{ installConsoleOverride, customPrintFunction }} from '{FRONTEND}/logging_setup.ts';\n"
+        f"import {{ installTerminal }} from '{FRONTEND_IMPORT}/terminal.ts';\n"
+        f"import {{ state }} from '{FRONTEND_IMPORT}/state.ts';\n"
+        f"import {{ installConsoleOverride, customPrintFunction }} from '{FRONTEND_IMPORT}/logging_setup.ts';\n"
         "state.containerId = 'fixture'; state.outputId = 'output';\n"
         "state.print = customPrintFunction; installConsoleOverride();\n"
-        "console.log('SEPARATE_SKETCH_LOG'); installTerminal();\n"
+        "console.log('SEPARATE_SKETCH_LOG'); installTerminal();\n",
+        encoding="utf-8",
     )
     subprocess.run(
         [
@@ -118,7 +122,9 @@ def terminal_server(tmp_path_factory: Any) -> Any:
         log_dir = os.environ.get("FASTLED_TERMINAL_LOG_DIR")
         if log_dir:
             Path(log_dir).mkdir(parents=True, exist_ok=True)
-            (Path(log_dir) / "terminal-server.log").write_text("".join(lines))
+            (Path(log_dir) / "terminal-server.log").write_text(
+                "".join(lines), encoding="utf-8"
+            )
 
 
 def _require(module: str) -> Any:
