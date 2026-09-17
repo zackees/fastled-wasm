@@ -24,6 +24,8 @@
 
 /* global postMessage, self, performance, requestAnimationFrame, cancelAnimationFrame */
 
+import { findStripsMissingLayout } from './screenmap_sync.ts';
+
 // CRITICAL FIX: Workers don't support import maps, but Three.js jsm files use bare "three" imports.
 // Solution: Use local vendor files with patched relative imports to three.module.js
 
@@ -99,6 +101,8 @@ async function loadThreeJSModules() {
  * @property {number} frameCaptureInterval - Milliseconds between frame captures
  * @property {number} lastFrameCaptureTime - Timestamp of last frame capture
  * @property {Object} screenMaps - Dictionary of screenmaps (stripId → screenmap, push-based from C++)
+ * @property {Object} screenMapRefreshAttempts - Late screenmap re-fetch counters per strip id
+ * @property {boolean} screenMapRecoveryReported - Whether the late-recovery notice was already emitted
  */
 
 /**
@@ -142,6 +146,13 @@ const workerState = {
   screenMapsDirty: false, // screenMaps changed and the main thread has not been told yet (main-thread rendering)
   renderOnMainThread: false, // frames are posted to the main thread instead of drawn on an OffscreenCanvas
 
+  // Late screenmap recovery (#250): FastLED fills in default layouts lazily on
+  // the first exported frame (jsFillInMissingScreenMaps), which happens after
+  // the single post-setup getScreenMapData() read in handleStart(). Strips seen
+  // in frame data without a layout are re-fetched for a few frames.
+  screenMapRefreshAttempts: {}, // stripId (string) -> late re-fetches performed for that strip
+  screenMapRecoveryReported: false, // stdout notice emitted once per session
+
   // Audio sample queue - samples buffered here from onmessage, flushed to WASM at frame start
   audioSampleQueue: [],
   audioSampleBufferedOnce: false,
@@ -158,6 +169,9 @@ const performanceMonitor = {
   statsReportInterval: 1000 // Report every second
 
 };
+
+/** Maximum late getScreenMapData() re-fetches attempted per strip (#250). */
+const MAX_SCREENMAP_REFRESH_ATTEMPTS = 5;
 
 /**
  * Debug logging in worker context
@@ -609,6 +623,68 @@ async function initializeGraphicsManager() {
 }
 
 /**
+ * Reads the current screenmap dictionary out of the WASM module.
+ * Shared by the post-setup read in handleStart() and the late refresh in
+ * refreshScreenMapsIfIncomplete() (#250).
+ * @returns {Object|null} Parsed screenmap dictionary, or null when unavailable
+ */
+function fetchScreenMapsFromWasm() {
+  const Module = workerState.fastledModule;
+  if (!Module || !Module.cwrap) {
+    return null;
+  }
+
+  // Bind WASM functions if not already bound (same binding set as extractFrameData)
+  if (!workerState.wasmFunctions) {
+    workerState.wasmFunctions = {
+      getFrameData: Module.cwrap('getFrameData', 'number', ['number']),
+      getScreenMapData: Module.cwrap('getScreenMapData', 'number', ['number']),
+      getStripPixelData: Module.cwrap('getStripPixelData', 'number', ['number', 'number']),
+      freeFrameData: Module.cwrap('freeFrameData', null, ['number'])
+    };
+  }
+
+  const screenMapSizePtr = Module._malloc(4);
+  try {
+    const screenMapDataPtr = workerState.wasmFunctions.getScreenMapData(screenMapSizePtr);
+    if (!screenMapDataPtr) {
+      return null;
+    }
+    try {
+      const screenMapSize = Module.getValue(screenMapSizePtr, 'i32');
+      const screenMapJson = Module.UTF8ToString(screenMapDataPtr, screenMapSize);
+      return JSON.parse(screenMapJson);
+    } finally {
+      workerState.wasmFunctions.freeFrameData(screenMapDataPtr);
+    }
+  } catch (error) {
+    workerLog('ERROR', 'BACKGROUND_WORKER', 'Failed to read screenmap data from WASM', error);
+    return null;
+  } finally {
+    Module._free(screenMapSizePtr);
+  }
+}
+
+/**
+ * Caches a screenmap dictionary and pushes it to the graphics manager.
+ * @param {Object} screenMapData - Dictionary stripId -> screenmap
+ * @param {string} reason - Why the update happened (logging only)
+ */
+function applyScreenMaps(screenMapData, reason) {
+  workerState.screenMaps = screenMapData;
+  workerState.screenMapsDirty = true;
+  if (workerState.graphicsManager && workerState.graphicsManager.updateScreenMap) {
+    workerState.graphicsManager.updateScreenMap(screenMapData);
+    workerLog('LOG', 'BACKGROUND_WORKER', 'ScreenMaps sent to graphics manager', {
+      reason,
+      screenMapCount: Object.keys(screenMapData || {}).length
+    });
+  } else {
+    workerLog('WARN', 'BACKGROUND_WORKER', 'Graphics manager not ready, screenMaps cached for initialization', { reason });
+  }
+}
+
+/**
  * Handles animation start request
  * @param {Object} _payload - Start parameters (unused)
  * @returns {Promise<Object>} Start result
@@ -639,47 +715,16 @@ async function handleStart(_payload) {
     workerState.externFunctions.externSetup();
     workerLog('LOG', 'BACKGROUND_WORKER', 'FastLED setup completed');
 
-    // Poll for screenmap data after setup (C++ setup() has registered screenmaps)
-    // EM_JS push mechanism has linking issues, so we use polling instead
+    // Read the screenmaps registered by C++ setup(). Layouts FastLED creates
+    // lazily on the first exported frame are picked up later by
+    // refreshScreenMapsIfIncomplete() (#250).
     try {
-      const Module = workerState.fastledModule;
-
-      // Bind getScreenMapData if not already bound
-      if (!workerState.wasmFunctions) {
-        workerState.wasmFunctions = {
-          getFrameData: Module.cwrap('getFrameData', 'number', ['number']),
-          getScreenMapData: Module.cwrap('getScreenMapData', 'number', ['number']),
-          getStripPixelData: Module.cwrap('getStripPixelData', 'number', ['number', 'number']),
-          freeFrameData: Module.cwrap('freeFrameData', null, ['number'])
-        };
-      }
-
-      // Fetch screenmap data from C++
-      const screenMapSizePtr = Module._malloc(4);
-      const screenMapDataPtr = workerState.wasmFunctions.getScreenMapData(screenMapSizePtr);
-
-      if (screenMapDataPtr !== 0) {
-        const screenMapSize = Module.getValue(screenMapSizePtr, 'i32');
-        const screenMapJson = Module.UTF8ToString(screenMapDataPtr, screenMapSize);
-        const screenMapData = JSON.parse(screenMapJson);
-
-        // Update worker state and notify graphics manager
-        workerState.screenMaps = screenMapData;
-        workerState.screenMapsDirty = true;
-        if (workerState.graphicsManager && workerState.graphicsManager.updateScreenMap) {
-          workerState.graphicsManager.updateScreenMap(screenMapData);
-          workerLog('LOG', 'BACKGROUND_WORKER', 'ScreenMaps fetched and sent to graphics manager', {
-            screenMapCount: Object.keys(screenMapData).length
-          });
-        }
-
-        // Free the allocated memory
-        workerState.wasmFunctions.freeFrameData(screenMapDataPtr);
+      const screenMapData = fetchScreenMapsFromWasm();
+      if (screenMapData) {
+        applyScreenMaps(screenMapData, 'post-setup');
       } else {
         workerLog('WARN', 'BACKGROUND_WORKER', 'No screenmap data available after setup');
       }
-
-      Module._free(screenMapSizePtr);
     } catch (error) {
       workerLog('ERROR', 'BACKGROUND_WORKER', 'Failed to fetch screenmap data', error);
       // Non-fatal - continue with animation
@@ -978,6 +1023,89 @@ function handleScreenMapUpdate(payload) {
 }
 
 /**
+ * Picks up layouts that FastLED creates after setup() (#250).
+ *
+ * FastLED fills in default screenmaps lazily when a frame is exported
+ * (jsFillInMissingScreenMaps in FastLED's src/platforms/wasm/js_bindings.cpp.hpp),
+ * which is after handleStart()'s single post-setup read. Without this, a sketch
+ * that never calls setScreenMap() (stock Blink) renders an empty canvas.
+ *
+ * Only fetches while a strip in the current frame still has no layout, and gives
+ * up on a strip after MAX_SCREENMAP_REFRESH_ATTEMPTS fetches so a genuinely
+ * layout-less strip cannot cost a JSON parse every frame. The push-based
+ * screenmap_update path (handleScreenMapUpdate) is unaffected.
+ *
+ * NOTE: this worker is mirrored in FastLED at
+ * src/platforms/wasm/compiler/modules/core/fastled_background_worker.ts; that
+ * copy needs the same change (out of scope for this repo).
+ *
+ * @param {Array} frameData - Strip data from extractFrameData()
+ * @returns {boolean} True when a refresh fetch was performed
+ */
+function refreshScreenMapsIfIncomplete(frameData) {
+  if (!Array.isArray(frameData) || frameData.length === 0) {
+    return false;
+  }
+
+  const missing = findStripsMissingLayout(frameData, workerState.screenMaps);
+  if (missing.length === 0) {
+    return false; // every strip already has a layout - nothing to do
+  }
+
+  const attempts = workerState.screenMapRefreshAttempts;
+  const retryable = missing.filter((stripId) => (attempts[stripId] || 0) < MAX_SCREENMAP_REFRESH_ATTEMPTS);
+  if (retryable.length === 0) {
+    return false; // already retried these strips; stop polling
+  }
+  for (const stripId of retryable) {
+    attempts[stripId] = (attempts[stripId] || 0) + 1;
+  }
+
+  const screenMapData = fetchScreenMapsFromWasm();
+  if (!screenMapData || typeof screenMapData !== 'object') {
+    return false;
+  }
+
+  // Merge rather than replace: layouts pushed earlier through the
+  // screenmap_update path must survive a late re-read that happens to return
+  // fewer entries (or an empty dictionary).
+  const merged = Object.assign({}, workerState.screenMaps, screenMapData);
+  const stillMissing = findStripsMissingLayout(frameData, merged);
+  const recovered = missing.filter((stripId) => !stillMissing.includes(stripId));
+  if (recovered.length === 0) {
+    // Nothing new arrived; leave the cache (and its dirty flag) untouched so we
+    // do not re-push identical layouts to the graphics manager every frame.
+    if (stillMissing.length > 0) {
+      workerLog('WARN', 'BACKGROUND_WORKER', 'Strips still have no layout after screenmap refresh', {
+        strips: stillMissing
+      });
+    }
+    return true;
+  }
+
+  applyScreenMaps(merged, 'late-screenmap-refresh');
+
+  if (!workerState.screenMapRecoveryReported) {
+    workerState.screenMapRecoveryReported = true;
+    workerLog('LOG', 'BACKGROUND_WORKER', 'Late screenMaps recovered after first frame', {
+      strips: recovered,
+      frameNumber: workerState.frameCount
+    });
+    // Surface it on the viewer's stdout log so `--test` runs can assert it.
+    postMessage({
+      type: 'stdout',
+      payload: { text: `[fastled] late screenmap recovered for strips ${recovered.join(',')}` }
+    });
+  }
+  if (stillMissing.length > 0) {
+    workerLog('WARN', 'BACKGROUND_WORKER', 'Strips still have no layout after screenmap refresh', {
+      strips: stillMissing
+    });
+  }
+  return true;
+}
+
+/**
  * Handles audio samples from main thread and pushes them to C++ WASM ring buffer.
  * AudioManager runs on the main thread (needs window/document), but Module.ccall()
  * is only available here in the worker context.
@@ -1133,6 +1261,11 @@ async function executeFrameLoop(currentTime) {
     const frameData = extractFrameData();
 
     if (frameData) {
+      // Layouts FastLED creates lazily on the first exported frame (#250) only
+      // become visible after getFrameData(); pick them up before rendering so
+      // the dirty screenmaps ride along with this frame.
+      refreshScreenMapsIfIncomplete(frameData);
+
       if (workerState.renderOnMainThread) {
         // No OffscreenCanvas here: hand the frame to the main thread to draw
         postFrameToMainThread(frameData);
