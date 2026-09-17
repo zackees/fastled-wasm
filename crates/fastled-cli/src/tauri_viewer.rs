@@ -230,24 +230,62 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
       manager.worker.removeEventListener('message', onMessage);
     }
   };
+  // Every capture strategy talks to the compositor, the GPU stack or the
+  // worker, and any of them can stall instead of failing: on a runner with no
+  // GPU, captureStream produces no frames and the worker has no OffscreenCanvas
+  // to snapshot. A stalled strategy used to consume the whole
+  // --test-timeout-secs with no output (#247), so each one is bounded and
+  // announces itself in the viewer log.
+  // The page console is the only other channel, and it goes quiet once the
+  // harness takes over, so trace progress straight to the server (#247).
+  const trace = (message) => {
+    try {
+      return testFetch('/viewer-log', { method: 'POST', body: '[fastled-test] ' + message });
+    } catch (error) {
+      return Promise.resolve();
+    }
+  };
+  const CAPTURE_STAGE_TIMEOUT_MS = 15000;
+  const captureStage = async (stage, run) => {
+    await trace('capture stage ' + stage);
+    let timer;
+    try {
+      const result = await Promise.race([
+        run(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('capture stage ' + stage + ' timed out')),
+            CAPTURE_STAGE_TIMEOUT_MS
+          );
+        })
+      ]);
+      await trace('capture stage ' + stage + (result ? ' produced a frame' : ' produced nothing'));
+      return result;
+    } catch (error) {
+      await trace('capture stage ' + stage + ' failed: ' + error);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const capture = async (canvas, name) => {
     // Without WebGL2 on OffscreenCanvas (WebKitGTK) the page canvas draws the
     // frames itself, and preserveDrawingBuffer above keeps them readable.
-    if (window.fastLEDWorkerManager && window.fastLEDWorkerManager.renderOnMainThread) {
-      const blob = await (await fetch(canvas.toDataURL('image/png'))).blob();
-      const response = await testFetch('/viewer-screenshot?name=' + encodeURIComponent(name), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: blob
-      });
-      if (!response.ok) throw new Error('screenshot upload failed: ' + response.status);
-      return;
+    const mainThread = !!(window.fastLEDWorkerManager && window.fastLEDWorkerManager.renderOnMainThread);
+    await trace('capture ' + name + ' mainThread=' + mainThread);
+    let blob = null;
+    if (mainThread) {
+      const dataUrl = await captureStage('page-canvas', async () => canvas.toDataURL('image/png'));
+      if (!dataUrl) throw new Error('the page canvas produced no frame');
+      blob = await (await fetch(dataUrl)).blob();
+    } else {
+      blob = await captureStage('worker-webgl', () => webglFrameBlob());
     }
-    let blob = await webglFrameBlob();
     if (!blob) {
-      const dataUrl = await compositedFrameDataUrl(canvas)
-        || await workerFrameDataUrl()
-        || canvas.toDataURL('image/png');
+      const dataUrl = await captureStage('composited', () => compositedFrameDataUrl(canvas))
+        || await captureStage('worker-bitmap', () => workerFrameDataUrl())
+        || await captureStage('page-canvas', async () => canvas.toDataURL('image/png'));
+      if (!dataUrl) throw new Error('every capture strategy failed for ' + name);
       blob = await (await fetch(dataUrl)).blob();
     }
     const response = await testFetch('/viewer-screenshot?name=' + encodeURIComponent(name), {
@@ -279,9 +317,12 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
         try {
           const ready = await testFetch('/test-ready', { method: 'POST' });
           if (!ready.ok) throw new Error('ready signal failed: ' + ready.status);
+          await trace('ready acknowledged');
           const response = await testFetch('/test-config');
           if (!response.ok) throw new Error('test config failed: ' + response.status);
           const config = await response.json();
+          await trace('config screenshots=' + JSON.stringify(config.screenshotNames)
+            + ' waitMs=' + config.waitMs + ' intervalMs=' + config.intervalMs);
           const firstCaptureAt = performance.now() + config.waitMs;
           const maxInFlightCaptures = 2;
           const inFlightCaptures = new Set();
@@ -295,7 +336,9 @@ const TEST_RUNTIME_SCRIPT: &str = r#"
               () => null,
               (error) => error instanceof Error ? error : new Error(String(error))
             );
+            await trace('waiting for capture ' + index);
             const waitFailure = await Promise.race([scheduledWait, captureFailureSignal]);
+            await trace('wait for capture ' + index + ' finished');
             if (waitFailure && !firstCaptureFailure) firstCaptureFailure = waitFailure;
             if (firstCaptureFailure) break;
             if (inFlightCaptures.size >= maxInFlightCaptures) {
@@ -463,6 +506,11 @@ mod tests {
         assert!(TEST_RUNTIME_SCRIPT.contains("preserveDrawingBuffer: true"));
         assert!(TEST_RUNTIME_SCRIPT.contains("fastLEDWorkerManager.renderOnMainThread"));
         assert!(TEST_RUNTIME_SCRIPT.contains("canvas.toDataURL('image/png')"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("trace('capture stage ' + stage)"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("CAPTURE_STAGE_TIMEOUT_MS = 15000"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("the page canvas produced no frame"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("trace('ready acknowledged')"));
+        assert!(TEST_RUNTIME_SCRIPT.contains("testFetch('/viewer-log'"));
         assert!(TEST_RUNTIME_SCRIPT.contains("type: 'start_recording'"));
         assert!(TEST_RUNTIME_SCRIPT.contains("canvas.captureStream(0)"));
         assert!(TEST_RUNTIME_SCRIPT.contains("new ImageCapture(track).grabFrame()"));
