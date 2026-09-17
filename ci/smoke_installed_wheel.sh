@@ -68,6 +68,11 @@ env -i \
 env -i \
   HOME="$SMOKE_ROOT/home" \
   PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  ${DISPLAY:+DISPLAY="$DISPLAY"} \
+  ${XAUTHORITY:+XAUTHORITY="$XAUTHORITY"} \
+  ${LIBGL_ALWAYS_SOFTWARE:+LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE"} \
+  ${GDK_BACKEND:+GDK_BACKEND="$GDK_BACKEND"} \
+  ${WEBKIT_DISABLE_COMPOSITING_MODE:+WEBKIT_DISABLE_COMPOSITING_MODE="$WEBKIT_DISABLE_COMPOSITING_MODE"} \
   "$SMOKE_ROOT/venv/bin/fastled" "$SMOKE_ROOT/sketch" \
     --check \
     --test-wait-secs=2 \
@@ -77,20 +82,9 @@ env -i \
     --test-log="$SMOKE_ROOT/artifacts/viewer.log"
 grep -F "Asset 'data/probe.txt' sha256 verified" "$SMOKE_ROOT/artifacts/viewer.log"
 grep -F "All 1 filesystem asset(s) loaded completely before setup()." "$SMOKE_ROOT/artifacts/viewer.log"
-"$SMOKE_ROOT/venv/bin/python" - "$SMOKE_ROOT/artifacts/screenmap.png" <<'PY'
-from pathlib import Path
-import sys
-
-image = Path(sys.argv[1]).read_bytes()
-if image[:8] != b"\x89PNG\r\n\x1a\n":
-    raise SystemExit("viewer screenshot is not a PNG")
-if image[12:16] != b"IHDR" or len(image) < 24:
-    raise SystemExit("viewer screenshot is missing its IHDR header")
-width = int.from_bytes(image[16:20], "big")
-height = int.from_bytes(image[20:24], "big")
-if width <= 0 or height <= 0:
-    raise SystemExit(f"viewer screenshot has invalid dimensions: {width}x{height}")
-PY
+# A header check would pass a blank canvas, which is exactly how #247 and
+# #250 failed. Require a real render.
+"$SMOKE_ROOT/venv/bin/python" "$GITHUB_WORKSPACE/ci/check_render.py" "$SMOKE_ROOT/artifacts/screenmap.png"
 
 # Regression check for issue #250: a sketch with no setScreenMap() call in
 # setup() used to render an empty canvas, because the worker only read
@@ -102,6 +96,11 @@ cp -R "$GITHUB_WORKSPACE/tests/fixtures/wasm_no_screenmap/." "$SMOKE_ROOT/no-scr
 env -i \
   HOME="$SMOKE_ROOT/home" \
   PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  ${DISPLAY:+DISPLAY="$DISPLAY"} \
+  ${XAUTHORITY:+XAUTHORITY="$XAUTHORITY"} \
+  ${LIBGL_ALWAYS_SOFTWARE:+LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE"} \
+  ${GDK_BACKEND:+GDK_BACKEND="$GDK_BACKEND"} \
+  ${WEBKIT_DISABLE_COMPOSITING_MODE:+WEBKIT_DISABLE_COMPOSITING_MODE="$WEBKIT_DISABLE_COMPOSITING_MODE"} \
   "$SMOKE_ROOT/venv/bin/fastled" "$SMOKE_ROOT/no-screenmap" \
     --check \
     --test-wait-secs=2 \
@@ -109,21 +108,10 @@ env -i \
     --test-ready-timeout-secs=45 \
     --test-screenshot="$SMOKE_ROOT/artifacts/no-screenmap.png" \
     --test-log="$SMOKE_ROOT/artifacts/viewer-no-screenmap.log"
+# Assert the render first: a blank canvas is the symptom, and the log marker
+# below only explains why it was avoided.
+"$SMOKE_ROOT/venv/bin/python" "$GITHUB_WORKSPACE/ci/check_render.py" "$SMOKE_ROOT/artifacts/no-screenmap.png"
 grep -F "[fastled] late screenmap recovered" "$SMOKE_ROOT/artifacts/viewer-no-screenmap.log"
-"$SMOKE_ROOT/venv/bin/python" - "$SMOKE_ROOT/artifacts/no-screenmap.png" <<'PY'
-from pathlib import Path
-import sys
-
-image = Path(sys.argv[1]).read_bytes()
-if image[:8] != b"\x89PNG\r\n\x1a\n":
-    raise SystemExit("viewer screenshot is not a PNG")
-if image[12:16] != b"IHDR" or len(image) < 24:
-    raise SystemExit("viewer screenshot is missing its IHDR header")
-width = int.from_bytes(image[16:20], "big")
-height = int.from_bytes(image[20:24], "big")
-if width <= 0 or height <= 0:
-    raise SystemExit(f"viewer screenshot has invalid dimensions: {width}x{height}")
-PY
 
 if [ "${FASTLED_SAFARI_SMOKE:-0}" = "1" ]; then
   # The viewer run above left the compiled sketch in sketch/fastled_js; the
