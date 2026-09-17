@@ -99,4 +99,10 @@ if [ "${FASTLED_SAFARI_SMOKE:-0}" = "1" ]; then
     --fastled "$SMOKE_ROOT/venv/bin/fastled" \
     --serve-dir "$SMOKE_ROOT/sketch/fastled_js" \
     --artifacts "$SMOKE_ROOT/artifacts"
+  # The same server binary and page, with the interactive terminal driven from
+  # real Safari (#259).
+  uv run --no-project python "$GITHUB_WORKSPACE/ci/safari_terminal_smoke.py" \
+    --fastled "$SMOKE_ROOT/venv/bin/fastled" \
+    --serve-dir "$SMOKE_ROOT/sketch/fastled_js" \
+    --artifacts "$SMOKE_ROOT/artifacts"
 fi

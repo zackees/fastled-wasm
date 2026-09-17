@@ -1,0 +1,23 @@
+name: Windows x86 Terminal Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One live run per workflow per ref: a new push to a branch or PR cancels the
+# superseded run instead of queuing behind it in the shared account-wide runner
+# pool. Runs on main get a unique group, so they are never cancelled or coalesced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  call:
+    uses: ./.github/workflows/_terminal-test.yml
+    with:
+      runs-on: windows-2025
+      # The interactive test drives a POSIX shell; ConPTY runs the slot-release
+      # regression only, selected here so the job reports no skipped tests.
+      pytest-args: "-k disconnect_with_blocked_stdin"

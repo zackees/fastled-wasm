@@ -1,0 +1,112 @@
+name: Terminal Test
+
+# End-to-end browser coverage for the interactive terminal (#259).
+#
+# `tests/frontend/test_terminal.py` bundles the real vendored xterm frontend and
+# drives the real `fastled` server and PTY from Chromium and WebKit. `bash test`
+# does not run it, and until this workflow nothing did: #255 (every WebSocket
+# session died at its handshake) and #256 (disconnected writers leaked every
+# terminal slot) both shipped with a green board.
+#
+# Under CI the suite fails, rather than skips, when the binary, esbuild,
+# Playwright or psutil is missing, so a misconfigured job cannot report green.
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        required: true
+        type: string
+      pytest-args:
+        description: Extra pytest selection, e.g. a -k filter for a platform.
+        required: false
+        type: string
+        default: ""
+
+env:
+  # Keep in step with ESBUILD_VERSION in crates/fastled-cli/src/install.rs.
+  ESBUILD_VERSION: "0.28.0"
+  PLAYWRIGHT_VERSION: "1.62.0"
+
+jobs:
+  terminal-test:
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      - uses: zackees/setup-soldr@v0.9.62
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          # Same cache namespace as the unit-test job on this runner, which
+          # also builds the debug workspace, so the two share warm caches.
+          cache-preset: foundation
+          cache-key-suffix: ${{ inputs.runs-on }}-native
+          linker: platform-default
+          toolchain-file: rust-toolchain.toml
+          prebuild-deps-flags: ""
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Build the fastled binary
+        run: soldr cargo build --bin fastled
+
+      - name: Install esbuild
+        run: |
+          npm install --prefix "$RUNNER_TEMP/esbuild" --no-save --no-audit --no-fund "esbuild@$ESBUILD_VERSION"
+          # soldr may build for an explicit host triple, which places the
+          # binary under target/<triple>/debug instead of target/debug.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            esbuild="$(cygpath -w "$RUNNER_TEMP/esbuild/node_modules/@esbuild/win32-x64/esbuild.exe")"
+            found="$(find target -path '*/debug/fastled.exe' -not -path '*/deps/*' | head -n 1)"
+            binary="$(cygpath -w "$GITHUB_WORKSPACE/$found")"
+          else
+            esbuild="$RUNNER_TEMP/esbuild/node_modules/.bin/esbuild"
+            found="$(find target -path '*/debug/fastled' -type f -not -path '*/deps/*' | head -n 1)"
+            binary="$GITHUB_WORKSPACE/$found"
+          fi
+          if [ -z "$found" ]; then
+            echo "no debug fastled binary under target/" >&2
+            exit 1
+          fi
+          "$esbuild" --version
+          "$binary" --version
+          echo "FASTLED_ESBUILD=$esbuild" >> "$GITHUB_ENV"
+          echo "FASTLED_TERMINAL_BINARY=$binary" >> "$GITHUB_ENV"
+
+      - name: Install Playwright browsers
+        run: uv run --no-project --with "playwright==$PLAYWRIGHT_VERSION" playwright install --with-deps chromium webkit
+
+      - name: Browser terminal tests
+        env:
+          FASTLED_TERMINAL_LOG_DIR: ${{ github.workspace }}/logs
+          PYTEST_ARGS: ${{ inputs.pytest-args }}
+        run: >-
+          uv run --no-project --with "playwright==$PLAYWRIGHT_VERSION" --with psutil --with pytest
+          pytest tests/frontend/test_terminal.py -v -rs $PYTEST_ARGS
+
+      - name: Upload terminal server logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-test-logs-${{ inputs.runs-on }}
+          path: logs/*
+          if-no-files-found: warn
