@@ -93,6 +93,39 @@ fn exit_frame(status: impl std::fmt::Display) -> String {
     format!(r#"{{"exit":{status}}}"#)
 }
 
+/// How long one slice of client input may wait for room in the terminal queue.
+const INPUT_SLICE_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// Write client input to the terminal, giving up as soon as the client is gone.
+///
+/// Returns `false` when the client has disconnected; the caller stops and lets
+/// the session drop.
+///
+/// A plain blocking write parks in the kernel once the terminal input queue
+/// fills, and nothing releases it: not cancelling the thread, and not ending
+/// the process reading the other end — killing the child leaves the writer
+/// exactly where it was. This worker owns both the session and its semaphore
+/// permit, so parking here holds a terminal slot until the foreground program
+/// decides to read again, which for a program that never reads is forever.
+///
+/// Writing in slices bounded by [`INPUT_SLICE_TIMEOUT`] is what keeps the
+/// disconnect observable. A zero-length result means the queue stayed full for
+/// that slice, so the loop re-checks the flag and waits again — the wait is the
+/// backpressure, not a spin.
+fn write_input(session: &mut PtySession, bytes: &[u8], closed: &AtomicBool) -> io::Result<bool> {
+    let mut written = 0;
+    while written < bytes.len() {
+        if closed.load(Ordering::Relaxed) {
+            return Ok(false);
+        }
+        match session.write_available(&bytes[written..], INPUT_SLICE_TIMEOUT)? {
+            0 => {}
+            accepted => written += accepted,
+        }
+    }
+    Ok(true)
+}
+
 fn parse_text(text: &str) -> io::Result<ClientMessage> {
     let Value::ObjectMembers(fields) =
         json::parse_members(text.as_bytes()).map_err(io::Error::other)?
@@ -181,6 +214,9 @@ pub(crate) async fn connect(
     let input_closed = Arc::new(AtomicBool::new(false));
     let input_pending_writes = Arc::clone(&pending_writes);
     let input_closed_task = Arc::clone(&input_closed);
+    // The worker watches this so a disconnect ends a write it would otherwise
+    // be parked inside.
+    let input_closed_worker = Arc::clone(&input_closed);
     let input_task = async_engine::launch(async move {
         while let Ok(Some(message)) = reader.receive().await {
             let input = match message {
@@ -232,8 +268,16 @@ pub(crate) async fn connect(
                     })?;
                 loop {
                     match input_rx.try_recv() {
-                        Ok(ClientMessage::Input(data)) => session.write(data.as_bytes())?,
-                        Ok(ClientMessage::Binary(data)) => session.write(&data)?,
+                        Ok(ClientMessage::Input(data)) => {
+                            if !write_input(&mut session, data.as_bytes(), &input_closed_worker)? {
+                                break;
+                            }
+                        }
+                        Ok(ClientMessage::Binary(data)) => {
+                            if !write_input(&mut session, &data, &input_closed_worker)? {
+                                break;
+                            }
+                        }
                         Ok(ClientMessage::Resize { cols, rows }) => {
                             session.resize(size(cols, rows)?)?
                         }

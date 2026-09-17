@@ -2024,8 +2024,8 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.10"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.10#f2fd5f5c75c60d1b445ca924fdc8059dce9c52e5"
+version = "0.1.11"
+source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.11#da40ae5c20e86ab40b89ad3b5a665614f40df3cc"
 dependencies = [
  "blake3",
  "bytes",
@@ -2080,8 +2080,8 @@ dependencies = [
 
 [[package]]
 name = "kernal-api-build"
-version = "0.1.10"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.10#f2fd5f5c75c60d1b445ca924fdc8059dce9c52e5"
+version = "0.1.11"
+source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.11#da40ae5c20e86ab40b89ad3b5a665614f40df3cc"
 dependencies = [
  "embed-resource",
 ]
