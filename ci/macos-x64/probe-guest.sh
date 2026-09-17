@@ -1,13 +1,20 @@
-# Feasibility probe for #251, round 2: can WebKit in a Recovery guest give the
-# shipped viewer and Safari a WebGL2 context and animation frames?
+# Runs as root in a docker-mac-x64 Recovery guest (bash 3.2, no python, no
+# `open`, no safaridriver). Loads ci/macos-x64/webgl.html in the shipped viewer
+# (`fastled --internal-viewer`, WKWebView) and in Safari, and records what each
+# reports through the fastled server's /viewer-log route. See
+# .github/workflows/macos-x64-guest-webkit-probe.yml for why this exists.
 mkdir -p /tmp/results /tmp/page /tmp/home
 R=/tmp/results
 # Recovery's /var/root is read-only; fastled needs a writable ~/.fastled.
 export HOME=/tmp/home
 cd /tmp
+{
+  sw_vers
+  uname -m
+} > $R/guest.txt 2>&1
 curl -sS -o /tmp/fastled http://10.0.2.2:8000/fastled && chmod +x /tmp/fastled
 curl -sS -o /tmp/page/index.html http://10.0.2.2:8000/webgl.html
-/tmp/fastled --version 2>&1; echo "fastled --version rc=$?"
+/tmp/fastled --version >> $R/guest.txt 2>&1
 
 /tmp/fastled --internal-serve-dir-headless /tmp/page > $R/server.log 2>&1 &
 URL=
@@ -17,23 +24,17 @@ for i in $(seq 60); do
   sleep 1
 done
 echo "url=$URL"
-cat $R/server.log
 
-echo "--- shipped viewer"
+# The shipped viewer: the same WKWebView window `fastled <sketch>` opens.
 /tmp/fastled --internal-viewer "$URL/?who=viewer" > $R/viewer.log 2>&1 &
-VIEWER=$!
 sleep 45
-echo "viewer alive: $(kill -0 $VIEWER 2>/dev/null && echo yes || echo no)"
-cat $R/viewer.log | tail -40
+kill $! 2>/dev/null
 
-echo "--- safari"
-/Applications/Safari.app/Contents/MacOS/Safari "$URL/?who=safari" > $R/safari.log 2>&1 &
-SAFARI=$!
-sleep 45
-echo "safari alive: $(kill -0 $SAFARI 2>/dev/null && echo yes || echo no)"
-tail -40 $R/safari.log
+# Safari treats a bare argument as a file path, so hand it a local page that
+# redirects to the server; LaunchServices (`open`) is absent in Recovery.
+printf '<meta http-equiv="refresh" content="0;url=%s/?who=safari">\n' "$URL" > /tmp/redirect.html
+/Applications/Safari.app/Contents/MacOS/Safari /tmp/redirect.html > $R/safari.log 2>&1 &
+sleep 60
 
-echo "--- reports"
 grep '\[viewer\]' $R/server.log
-ps axo pid,comm | grep -iE 'safari|webkit|fastled|WebContent|GPU' | head -20
 echo PROBE_DONE
