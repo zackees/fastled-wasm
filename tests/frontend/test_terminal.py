@@ -1,10 +1,12 @@
 """Refs #240: real xterm -> WebSocket -> native PTY, without compiling WASM.
 
 Run with FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD set to local binaries:
-uv run --with playwright pytest tests/frontend/test_terminal.py -v
-Install matching Playwright browsers separately; no npm is used.
+uv run --with playwright --with psutil pytest tests/frontend/test_terminal.py -v
+Install matching Playwright browsers separately. CI runs this file through
+.github/workflows/_terminal-test.yml; see docs/interactive-terminal.md.
 """
 
+import importlib
 import os
 import re
 import subprocess
@@ -24,6 +26,9 @@ def terminal_server(tmp_path_factory: Any) -> Any:
     binary = os.environ.get("FASTLED_TERMINAL_BINARY")
     esbuild = os.environ.get("FASTLED_ESBUILD")
     if not binary or not esbuild:
+        # CI must never report this suite green by skipping it.
+        if os.environ.get("CI"):
+            pytest.fail("CI requires FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
         pytest.skip("set FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
     root = tmp_path_factory.mktemp("terminal-240")
     # The served directory carries a space so the PTY cwd is exercised with one.
@@ -108,16 +113,42 @@ def terminal_server(tmp_path_factory: Any) -> Any:
     finally:
         process.terminate()
         process.wait(timeout=10)
+        log_dir = os.environ.get("FASTLED_TERMINAL_LOG_DIR")
+        if log_dir:
+            Path(log_dir).mkdir(parents=True, exist_ok=True)
+            (Path(log_dir) / "terminal-server.log").write_text("".join(lines))
 
 
+def _require(module: str) -> Any:
+    """Import a test-only dependency; CI fails rather than skipping without it."""
+    if os.environ.get("CI"):
+        return importlib.import_module(module)
+    return pytest.importorskip(module)
+
+
+def _launch(manager: Any, browser_name: str) -> Any:
+    """Launch a browser, or attach to a Playwright server for WebKit.
+
+    Playwright cannot install WebKit on some hosts (NixOS). There, run
+    `playwright run-server` in the Playwright container with host networking and
+    point FASTLED_PLAYWRIGHT_WEBKIT_ENDPOINT at it; see
+    docs/interactive-terminal.md.
+    """
+    endpoint = os.environ.get("FASTLED_PLAYWRIGHT_WEBKIT_ENDPOINT")
+    if browser_name == "webkit" and endpoint:
+        return manager.webkit.connect(endpoint)
+    return getattr(manager, browser_name).launch()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives a POSIX shell (printf, stty, cat)")
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_terminal_240_interactive_browser(
     terminal_server: Any, browser_name: str
 ) -> None:
-    playwright = pytest.importorskip("playwright.sync_api")
+    playwright = _require("playwright.sync_api")
     url, expected_cwd, _ = terminal_server
     with playwright.sync_playwright() as manager:
-        browser = getattr(manager, browser_name).launch()
+        browser = _launch(manager, browser_name)
         page = browser.new_page(viewport={"width": 1200, "height": 900})
         errors: list[str] = []
         output: list[str] = []
@@ -245,106 +276,112 @@ def test_terminal_240_interactive_browser(
         browser.close()
 
 
-def _descendants(pid: int) -> list[int]:
-    found: list[int] = []
-    pending = [pid]
-    while pending:
-        parent = pending.pop()
-        for task in Path(f"/proc/{parent}/task").glob("*"):
-            try:
-                children = (task / "children").read_text().split()
-            except OSError:
-                continue
-            for child in map(int, children):
-                found.append(child)
-                pending.append(child)
-    return found
+# A foreground program that stops reading its terminal, prints a readiness
+# marker, and outlives the test by a wide margin. The marker is split in the
+# typed command so the shell's echo of that command cannot satisfy the wait.
+if os.name == "nt":
+    BLOCKING_COMMAND = "echo BLOCK^READY240 & ping -n 30 127.0.0.1 >NUL\r"
+    BLOCKING_PROGRAM = "ping"
+else:
+    BLOCKING_COMMAND = "stty raw -echo; printf 'BLOCK%s\\n' READY240; sleep 30\r"
+    BLOCKING_PROGRAM = "sleep"
+
+BLOCKED_WRITERS_SCRIPT = """async command => {
+    const url = location.origin.replace('http:', 'ws:') + '/terminal/ws';
+    for (let i = 0; i < 4; i++) {
+        await new Promise((resolve, reject) => {
+            const ws = new WebSocket(url);
+            ws.binaryType = 'arraybuffer';
+            const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 15000);
+            let output = '';
+            let blocked = false;
+            ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
+            ws.onopen = () => ws.send(JSON.stringify({type: 'input', data: command}));
+            ws.onmessage = event => {
+                if (!(event.data instanceof ArrayBuffer)) return;
+                ws.send(JSON.stringify({type: 'ack'}));
+                output += new TextDecoder().decode(event.data);
+                if (!blocked && output.includes('BLOCKREADY240')) {
+                    blocked = true;
+                    ws.send(JSON.stringify({type: 'input', data: 'x'.repeat(60000)}));
+                    setTimeout(() => { clearTimeout(timer); ws.close(); resolve(true); }, 200);
+                }
+            };
+        });
+    }
+    // Every slot must come back promptly, not just one of them, and long
+    // before the blocked foreground programs would exit on their own.
+    const started = performance.now();
+    const deadline = started + 5000;
+    while (performance.now() < deadline) {
+        const sockets = [];
+        const opened = await Promise.all([0, 1, 2, 3].map(() => new Promise(resolve => {
+            const ws = new WebSocket(url);
+            sockets.push(ws);
+            ws.onopen = () => resolve(true);
+            ws.onerror = () => resolve(false);
+        })));
+        sockets.forEach(ws => ws.close());
+        if (opened.every(Boolean)) return performance.now() - started;
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return null;
+}"""
 
 
-def _pty_holders(pid: int) -> list[int]:
+def _pty_holders(processes: list[Any]) -> list[int]:
+    """Processes holding a Unix98 PTY master; Linux exposes this through /proc."""
     holders = []
-    for candidate in [pid, *_descendants(pid)]:
+    for process in processes:
         try:
-            fds = list(Path(f"/proc/{candidate}/fd").iterdir())
+            fds = list(Path(f"/proc/{process.pid}/fd").iterdir())
         except OSError:
             continue
         for fd in fds:
             try:
                 if os.readlink(fd) == "/dev/ptmx":
-                    holders.append(candidate)
+                    holders.append(process.pid)
                     break
             except OSError:
                 continue
     return holders
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Unix stty regression")
+def _leaks(server_pid: int) -> list[str]:
+    psutil = _require("psutil")
+    server = psutil.Process(server_pid)
+    descendants = server.children(recursive=True)
+    leaks = [
+        f"PTY master held by {pid}" for pid in _pty_holders([server, *descendants])
+    ]
+    for process in descendants:
+        try:
+            if process.name().lower().removesuffix(".exe") == BLOCKING_PROGRAM:
+                leaks.append(f"blocked {BLOCKING_PROGRAM} survived as {process.pid}")
+        except psutil.Error:
+            continue
+    return leaks
+
+
 @pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
 def test_terminal_240_disconnect_with_blocked_stdin(
     terminal_server: Any, browser_name: str
 ) -> None:
     """RED: four blocked writers leaked every slot; fifth upgrade was HTTP 429."""
-    playwright = pytest.importorskip("playwright.sync_api")
+    playwright = _require("playwright.sync_api")
     url, _, server_pid = terminal_server
     with playwright.sync_playwright() as manager:
-        browser = getattr(manager, browser_name).launch()
+        browser = _launch(manager, browser_name)
         page = browser.new_page()
         page.goto(url)
-        result = page.evaluate("""async () => {
-            const url = location.origin.replace('http:', 'ws:') + '/terminal/ws';
-            for (let i = 0; i < 4; i++) {
-                await new Promise((resolve, reject) => {
-                    const ws = new WebSocket(url);
-                    ws.binaryType = 'arraybuffer';
-                    const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 10000);
-                    let output = '';
-                    let blocked = false;
-                    ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
-                    ws.onopen = () => ws.send(JSON.stringify({type: 'input', data:
-                        "stty raw -echo; printf 'BLOCK%s\\n' READY240; sleep 30\\r"}));
-                    ws.onmessage = event => {
-                        if (!(event.data instanceof ArrayBuffer)) return;
-                        ws.send(JSON.stringify({type: 'ack'}));
-                        output += new TextDecoder().decode(event.data);
-                        if (!blocked && output.includes('BLOCKREADY240')) {
-                            blocked = true;
-                            ws.send(JSON.stringify({type: 'input', data: 'x'.repeat(60000)}));
-                            setTimeout(() => { clearTimeout(timer); ws.close(); resolve(true); }, 200);
-                        }
-                    };
-                });
-            }
-            // Every slot must come back promptly, not just one of them, and long
-            // before the blocked `sleep 30` foreground programs would exit.
-            const started = performance.now();
-            const deadline = started + 5000;
-            while (performance.now() < deadline) {
-                const sockets = [];
-                const opened = await Promise.all([0, 1, 2, 3].map(() => new Promise(resolve => {
-                    const ws = new WebSocket(url);
-                    sockets.push(ws);
-                    ws.onopen = () => resolve(true);
-                    ws.onerror = () => resolve(false);
-                })));
-                sockets.forEach(ws => ws.close());
-                if (opened.every(Boolean)) return performance.now() - started;
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-            return null;
-        }""")
+        result = page.evaluate(BLOCKED_WRITERS_SCRIPT, BLOCKING_COMMAND)
         assert result is not None, "disconnected blocked writers leaked terminal slots"
         browser.close()
+    # No session may outlive its client: its PTY and its foreground program
+    # must both be gone.
     deadline = time.monotonic() + 10
-    holders = _pty_holders(server_pid)
-    while holders and time.monotonic() < deadline:
+    leaks = _leaks(server_pid)
+    while leaks and time.monotonic() < deadline:
         time.sleep(0.1)
-        holders = _pty_holders(server_pid)
-    assert not holders, f"sessions outlived their clients: {holders}"
-    sleepers = []
-    for pid in _descendants(server_pid):
-        try:
-            if b"sleep" in Path(f"/proc/{pid}/cmdline").read_bytes():
-                sleepers.append(pid)
-        except OSError:
-            continue
-    assert not sleepers, f"blocked foreground programs survived: {sleepers}"
+        leaks = _leaks(server_pid)
+    assert not leaks, f"sessions outlived their clients: {leaks}"
