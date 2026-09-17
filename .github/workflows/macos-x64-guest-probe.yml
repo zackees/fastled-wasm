@@ -1,0 +1,61 @@
+name: macOS x64 Guest Probe
+
+# Temporary feasibility probe for #251. Removed before merge.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage share
+        run: |
+          mkdir -p share
+          cp ci/macos-x64/webgl.html share/
+
+      - name: Generate guest script
+        id: guest_script
+        run: |
+          {
+            echo 'script<<GUEST_EOF'
+            cat ci/macos-x64/probe-guest.sh
+            echo 'GUEST_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Probe the Recovery guest
+        id: macos
+        uses: zackees/docker-mac-x64@f173a047ba7fbe1db7d8162ff3ac8e276f50b153 # main
+        with:
+          share-dir: share
+          collect: /tmp/results
+          ram: "10"
+          cores: "2"
+          threads: "4"
+          boot-timeout: "1200"
+          run-timeout: "1200"
+          run: ${{ steps.guest_script.outputs.script }}
+
+      - name: Show results
+        if: ${{ always() }}
+        run: |
+          echo "exit-code=${{ steps.macos.outputs.exit-code }}"
+          ls -lR "${{ steps.macos.outputs.workdir }}/results" "${{ steps.macos.outputs.workdir }}/collected" 2>/dev/null || true
+          cat "${{ steps.macos.outputs.workdir }}/results/stdout" 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: macos-x64-guest-probe
+          path: |
+            ${{ steps.macos.outputs.workdir }}/results/
+            ${{ steps.macos.outputs.workdir }}/collected/
+          if-no-files-found: warn

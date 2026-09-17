@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebGL2 probe</title>
+<body style="font: 28px monospace; margin: 24px">
+<canvas id="c" width="320" height="160" style="border: 2px solid #000"></canvas>
+<pre id="out">script did not run</pre>
+<script>
+const out = document.getElementById('out');
+const lines = ['UA ' + navigator.userAgent];
+const gl = document.getElementById('c').getContext('webgl2');
+lines.push('WEBGL2 ' + (gl ? 'YES' : 'NO'));
+if (gl) {
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  lines.push('RENDERER ' + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)));
+  gl.clearColor(0, 0.6, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+}
+lines.push('WEBGL1 ' + (document.createElement('canvas').getContext('webgl') ? 'YES' : 'NO'));
+lines.push('OFFSCREEN ' + (typeof OffscreenCanvas));
+lines.push('SAB ' + (typeof SharedArrayBuffer));
+out.textContent = lines.join('\n');
+document.title = lines.join(' | ');
+</script>
