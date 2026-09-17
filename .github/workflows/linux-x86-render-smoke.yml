@@ -1,0 +1,123 @@
+name: Linux x86 Render Smoke
+
+# Proves the real WASM viewer renders on Linux (#247).
+#
+# On Linux the viewer runs under WebKitGTK, where WebGL2 is unavailable on an
+# OffscreenCanvas, so the worker posts frames for the main thread to draw. That
+# path had no CI coverage at all: the wheel smoke that renders a sketch is
+# enabled only in macos-arm-build.yml. #247 therefore reached a release branch
+# and could only be found by hand.
+#
+# This lane compiles a sketch and renders it in the shipped viewer under Xvfb
+# with software GL, then requires the screenshot to contain lit pixels
+# (ci/check_render.py). A viewer that loads and draws nothing fails here, which
+# is exactly how #247 and #250 presented.
+#
+# It renders tests/fixtures/wasm_no_screenmap: a plain strip, which is also the
+# #250 regression (its layout only exists after the first frame). A heavier
+# sketch is deliberately not used — a 16x16 grid through llvmpipe on a 2-core
+# runner starves the page's event loop and the harness times out.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# One live run per workflow per ref: a new push to a branch or PR cancels the
+# superseded run instead of queuing behind it in the shared account-wide runner
+# pool. Runs on main get a unique group, so they are never cancelled or coalesced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  render-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11.9"
+
+      - name: Install Python
+        run: uv python install "$UV_PYTHON"
+
+      # Before setup-soldr, so its dependency cook can find GLib (#262).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+          # The viewer needs a display, and the runner has no GPU.
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri
+
+      - uses: zackees/setup-soldr@v0.9.62
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          # Same cache namespace as the other ubuntu-24.04 debug builds.
+          cache-preset: foundation
+          cache-key-suffix: ubuntu-24.04-native
+          linker: platform-default
+          toolchain-file: rust-toolchain.toml
+          prebuild-deps-flags: ""
+
+      - name: Build the fastled binary
+        run: soldr cargo build --bin fastled
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1280x1024x24 >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          # Wait for the server's socket rather than a probe tool, so this needs
+          # nothing beyond xvfb itself.
+          for _ in $(seq 1 30); do
+            if [ -S /tmp/.X11-unix/X99 ]; then break; fi
+            sleep 1
+          done
+          test -S /tmp/.X11-unix/X99 || { cat "$RUNNER_TEMP/xvfb.log"; exit 1; }
+
+      - name: Render a sketch in the shipped viewer
+        env:
+          DISPLAY: ":99"
+          GDK_BACKEND: x11
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+        run: |
+          mkdir -p "$RUNNER_TEMP/render"
+          cp -R tests/fixtures/wasm_no_screenmap/. "$RUNNER_TEMP/render/"
+          ./target/debug/fastled "$RUNNER_TEMP/render" \
+            --test \
+            --test-wait-secs=2 \
+            --test-timeout-secs=600 \
+            --test-ready-timeout-secs=180 \
+            --test-exit-on-error \
+            --test-screenshot="$RUNNER_TEMP/render.png" \
+            --test-log="$RUNNER_TEMP/viewer.log"
+
+      - name: Require a real render, not just a viewer that loaded
+        run: uv run --no-project python ci/check_render.py "$RUNNER_TEMP/render.png"
+
+      # The late-screenmap recovery is what makes this sketch renderable at all
+      # (#250); assert it took the intended path rather than some other one.
+      - name: Check the late screenmap recovery
+        run: grep -F "[fastled] late screenmap recovered" "$RUNNER_TEMP/viewer.log"
+
+      - name: Upload the render and the viewer log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-render-smoke
+          path: |
+            ${{ runner.temp }}/render.png
+            ${{ runner.temp }}/viewer.log
+            ${{ runner.temp }}/xvfb.log
+          if-no-files-found: warn
+          retention-days: 7
