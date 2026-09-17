@@ -49,25 +49,37 @@ for _attempt in {1..20}; do
 done
 curl --fail --silent http://127.0.0.1:18765/probe.txt >/dev/null
 
-# The installed launcher must supply absolute wheel-venv uv, Python,
-# and frontend paths to the Rust binary. Deliberately omit ambient
-# uv, node, and bare python so this cannot accidentally pass by
-# resolving a developer tool from the runner image.
+# The installed launcher must supply absolute wheel-venv uv, Python, and
+# frontend paths to the Rust binary, so this run must not be able to reach a
+# developer tool from the runner image. Asserting those tools are absent only
+# worked on macOS: an ubuntu-24.04 runner ships /usr/bin/python. Instead, put
+# poisoned shims first on PATH, so any ambient use fails loudly rather than
+# silently succeeding.
 cd "$SMOKE_ROOT"
+mkdir -p "$SMOKE_ROOT/no-ambient"
+for tool in uv uvx node npm python python3; do
+  cat > "$SMOKE_ROOT/no-ambient/$tool" <<'SHIM'
+#!/bin/sh
+echo "ambient $(basename "$0") must not be used by the installed launcher" >&2
+exit 127
+SHIM
+  chmod +x "$SMOKE_ROOT/no-ambient/$tool"
+done
+RESTRICTED_PATH="$SMOKE_ROOT/no-ambient:/usr/bin:/bin:/usr/sbin:/sbin"
 env -i \
   HOME="$SMOKE_ROOT/home" \
-  PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  PATH="$RESTRICTED_PATH" \
   /bin/bash -ceu '
-    for tool in uv node python; do
-      if command -v "$tool" >/dev/null 2>&1; then
-        echo "unexpected ambient $tool on restricted PATH" >&2
+    for tool in uv node python python3; do
+      if "$tool" --version >/dev/null 2>&1; then
+        echo "ambient $tool was usable on the restricted PATH" >&2
         exit 1
       fi
     done
   '
 env -i \
   HOME="$SMOKE_ROOT/home" \
-  PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  PATH="$RESTRICTED_PATH" \
   ${DISPLAY:+DISPLAY="$DISPLAY"} \
   ${XAUTHORITY:+XAUTHORITY="$XAUTHORITY"} \
   ${LIBGL_ALWAYS_SOFTWARE:+LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE"} \
@@ -95,7 +107,7 @@ grep -F "All 1 filesystem asset(s) loaded completely before setup()." "$SMOKE_RO
 cp -R "$GITHUB_WORKSPACE/tests/fixtures/wasm_no_screenmap/." "$SMOKE_ROOT/no-screenmap/"
 env -i \
   HOME="$SMOKE_ROOT/home" \
-  PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  PATH="$RESTRICTED_PATH" \
   ${DISPLAY:+DISPLAY="$DISPLAY"} \
   ${XAUTHORITY:+XAUTHORITY="$XAUTHORITY"} \
   ${LIBGL_ALWAYS_SOFTWARE:+LIBGL_ALWAYS_SOFTWARE="$LIBGL_ALWAYS_SOFTWARE"} \
