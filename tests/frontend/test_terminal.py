@@ -104,7 +104,7 @@ def terminal_server(tmp_path_factory: Any) -> Any:
             assert process.poll() is None, "".join(lines)
             time.sleep(0.05)
         assert url, "server did not announce its URL: " + "".join(lines)
-        yield url, served
+        yield url, served, process.pid
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -115,7 +115,7 @@ def test_terminal_240_interactive_browser(
     terminal_server: Any, browser_name: str
 ) -> None:
     playwright = pytest.importorskip("playwright.sync_api")
-    url, expected_cwd = terminal_server
+    url, expected_cwd, _ = terminal_server
     with playwright.sync_playwright() as manager:
         browser = getattr(manager, browser_name).launch()
         page = browser.new_page(viewport={"width": 1200, "height": 900})
@@ -245,13 +245,49 @@ def test_terminal_240_interactive_browser(
         browser.close()
 
 
+def _descendants(pid: int) -> list[int]:
+    found: list[int] = []
+    pending = [pid]
+    while pending:
+        parent = pending.pop()
+        for task in Path(f"/proc/{parent}/task").glob("*"):
+            try:
+                children = (task / "children").read_text().split()
+            except OSError:
+                continue
+            for child in map(int, children):
+                found.append(child)
+                pending.append(child)
+    return found
+
+
+def _pty_holders(pid: int) -> list[int]:
+    holders = []
+    for candidate in [pid, *_descendants(pid)]:
+        try:
+            fds = list(Path(f"/proc/{candidate}/fd").iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(fd) == "/dev/ptmx":
+                    holders.append(candidate)
+                    break
+            except OSError:
+                continue
+    return holders
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Unix stty regression")
-def test_terminal_240_disconnect_with_blocked_stdin(terminal_server: Any) -> None:
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_terminal_240_disconnect_with_blocked_stdin(
+    terminal_server: Any, browser_name: str
+) -> None:
     """RED: four blocked writers leaked every slot; fifth upgrade was HTTP 429."""
     playwright = pytest.importorskip("playwright.sync_api")
-    url, _ = terminal_server
+    url, _, server_pid = terminal_server
     with playwright.sync_playwright() as manager:
-        browser = manager.chromium.launch()
+        browser = getattr(manager, browser_name).launch()
         page = browser.new_page()
         page.goto(url)
         result = page.evaluate("""async () => {
@@ -277,13 +313,38 @@ def test_terminal_240_disconnect_with_blocked_stdin(terminal_server: Any) -> Non
                         }
                     };
                 });
-                await new Promise(resolve => setTimeout(resolve, 400));
             }
-            return await new Promise(resolve => {
-                const ws = new WebSocket(url);
-                ws.onopen = () => { ws.close(); resolve(true); };
-                ws.onerror = () => resolve(false);
-            });
+            // Every slot must come back promptly, not just one of them, and long
+            // before the blocked `sleep 30` foreground programs would exit.
+            const started = performance.now();
+            const deadline = started + 5000;
+            while (performance.now() < deadline) {
+                const sockets = [];
+                const opened = await Promise.all([0, 1, 2, 3].map(() => new Promise(resolve => {
+                    const ws = new WebSocket(url);
+                    sockets.push(ws);
+                    ws.onopen = () => resolve(true);
+                    ws.onerror = () => resolve(false);
+                })));
+                sockets.forEach(ws => ws.close());
+                if (opened.every(Boolean)) return performance.now() - started;
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return null;
         }""")
-        assert result, "disconnected blocked writers leaked all terminal slots"
+        assert result is not None, "disconnected blocked writers leaked terminal slots"
         browser.close()
+    deadline = time.monotonic() + 10
+    holders = _pty_holders(server_pid)
+    while holders and time.monotonic() < deadline:
+        time.sleep(0.1)
+        holders = _pty_holders(server_pid)
+    assert not holders, f"sessions outlived their clients: {holders}"
+    sleepers = []
+    for pid in _descendants(server_pid):
+        try:
+            if b"sleep" in Path(f"/proc/{pid}/cmdline").read_bytes():
+                sleepers.append(pid)
+        except OSError:
+            continue
+    assert not sleepers, f"blocked foreground programs survived: {sleepers}"

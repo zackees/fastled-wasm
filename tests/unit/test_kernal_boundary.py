@@ -195,7 +195,7 @@ def test_kernal_api_is_the_only_rust_dependency():
         assert not section.get("build-dependencies"), section
     assert set(package["dependencies"]) == {"kernal-api"}
     kernal = workspace["workspace"]["dependencies"]["kernal-api"]
-    assert kernal["tag"] == "v0.1.10"
+    assert kernal["tag"] == "v0.1.11"
     assert "rev" not in kernal and "path" not in kernal
     assert "hash-sha256" in kernal["features"]
     assert "patch" not in workspace
