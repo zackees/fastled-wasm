@@ -138,7 +138,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheel-smoke-log-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
-          path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/viewer.log
+          path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/*.log
           if-no-files-found: warn
 
       - name: Upload wheel

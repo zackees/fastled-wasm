@@ -10,7 +10,7 @@ set -euo pipefail
 
 SMOKE_ROOT="$RUNNER_TEMP/fastled-wheel-smoke"
 rm -rf "$SMOKE_ROOT"
-mkdir -p "$SMOKE_ROOT/home" "$SMOKE_ROOT/sketch/data" "$SMOKE_ROOT/artifacts" "$SMOKE_ROOT/asset-origin"
+mkdir -p "$SMOKE_ROOT/home" "$SMOKE_ROOT/sketch/data" "$SMOKE_ROOT/artifacts" "$SMOKE_ROOT/asset-origin" "$SMOKE_ROOT/no-screenmap"
 uv venv "$SMOKE_ROOT/venv" --python "$UV_PYTHON"
 uv pip install --python "$SMOKE_ROOT/venv/bin/python" dist/*.whl
 test -x "$SMOKE_ROOT/venv/bin/uv"
@@ -78,6 +78,39 @@ env -i \
 grep -F "Asset 'data/probe.txt' sha256 verified" "$SMOKE_ROOT/artifacts/viewer.log"
 grep -F "All 1 filesystem asset(s) loaded completely before setup()." "$SMOKE_ROOT/artifacts/viewer.log"
 "$SMOKE_ROOT/venv/bin/python" - "$SMOKE_ROOT/artifacts/screenmap.png" <<'PY'
+from pathlib import Path
+import sys
+
+image = Path(sys.argv[1]).read_bytes()
+if image[:8] != b"\x89PNG\r\n\x1a\n":
+    raise SystemExit("viewer screenshot is not a PNG")
+if image[12:16] != b"IHDR" or len(image) < 24:
+    raise SystemExit("viewer screenshot is missing its IHDR header")
+width = int.from_bytes(image[16:20], "big")
+height = int.from_bytes(image[20:24], "big")
+if width <= 0 or height <= 0:
+    raise SystemExit(f"viewer screenshot has invalid dimensions: {width}x{height}")
+PY
+
+# Regression check for issue #250: a sketch with no setScreenMap() call in
+# setup() used to render an empty canvas, because the worker only read
+# getScreenMapData() once, immediately after extern_setup() returned, before
+# FastLED had lazily created its default layout on the first exported frame.
+# The worker now re-reads layouts after a frame and logs the recovery marker
+# below when it picks up the late screen map.
+cp -R "$GITHUB_WORKSPACE/tests/fixtures/wasm_no_screenmap/." "$SMOKE_ROOT/no-screenmap/"
+env -i \
+  HOME="$SMOKE_ROOT/home" \
+  PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+  "$SMOKE_ROOT/venv/bin/fastled" "$SMOKE_ROOT/no-screenmap" \
+    --check \
+    --test-wait-secs=2 \
+    --test-timeout-secs=240 \
+    --test-ready-timeout-secs=45 \
+    --test-screenshot="$SMOKE_ROOT/artifacts/no-screenmap.png" \
+    --test-log="$SMOKE_ROOT/artifacts/viewer-no-screenmap.log"
+grep -F "[fastled] late screenmap recovered" "$SMOKE_ROOT/artifacts/viewer-no-screenmap.log"
+"$SMOKE_ROOT/venv/bin/python" - "$SMOKE_ROOT/artifacts/no-screenmap.png" <<'PY'
 from pathlib import Path
 import sys
 
