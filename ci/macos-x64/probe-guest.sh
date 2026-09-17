@@ -30,10 +30,37 @@ echo "url=$URL"
 sleep 45
 kill $! 2>/dev/null
 
-# Safari: LaunchServices opens the URL, as `open` would. Recovery has no
-# `open`, and Safari reads a command-line argument as a sandboxed file path.
 curl -sS -o /tmp/open-url http://10.0.2.2:8000/open-url && chmod +x /tmp/open-url
-/tmp/open-url "$URL/?who=safari" > $R/safari.log 2>&1
+stop_safari() {
+  for pid in $(ps axo pid,comm | awk '/Safari.app\/Contents\/MacOS\/Safari$/ {print $1}'); do
+    kill "$pid" 2>/dev/null
+  done
+  sleep 3
+}
+
+# Safari, attempt 1: a home page preference, set before Safari first runs so no
+# cached preferences override it, then a plain launch opens a window on it.
+for prefs in /var/root/Library/Preferences \
+    /var/root/Library/Containers/com.apple.Safari/Data/Library/Preferences; do
+  mkdir -p "$prefs"
+  cat > "$prefs/com.apple.Safari.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>HomePage</key><string>$URL/?who=safari-homepage</string>
+<key>NewWindowBehavior</key><integer>0</integer>
+<key>NewTabBehavior</key><integer>0</integer>
+</dict></plist>
+PLIST
+done
+/Applications/Safari.app/Contents/MacOS/Safari > $R/safari-homepage.log 2>&1 &
+sleep 45
+stop_safari
+
+# Safari, attempt 2: LaunchServices with Safari named as the app for the URL,
+# as `open -a Safari <url>` would.
+/tmp/open-url -a /Applications/Safari.app/ "$URL/?who=safari-lsopen" > $R/safari-lsopen.log 2>&1
+cat $R/safari-lsopen.log
 sleep 60
 
 grep '\[viewer\]' $R/server.log
