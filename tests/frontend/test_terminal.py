@@ -300,15 +300,25 @@ BLOCKED_WRITERS_SCRIPT = """async command => {
         await new Promise((resolve, reject) => {
             const ws = new WebSocket(url);
             ws.binaryType = 'arraybuffer';
-            const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 15000);
             let output = '';
+            let answered = 0;
             let blocked = false;
+            const timer = setTimeout(() => {
+                ws.close();
+                reject(new Error('PTY ready timeout: ' + JSON.stringify(output.slice(-2000))));
+            }, 15000);
             ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
             ws.onopen = () => ws.send(JSON.stringify({type: 'input', data: command}));
             ws.onmessage = event => {
                 if (!(event.data instanceof ArrayBuffer)) return;
                 ws.send(JSON.stringify({type: 'ack'}));
                 output += new TextDecoder().decode(event.data);
+                // Answer cursor position queries as xterm would; ConPTY waits
+                // for the answer before it runs the shell.
+                const queries = output.split('\\x1b[6n').length - 1;
+                for (; answered < queries; answered++) {
+                    ws.send(JSON.stringify({type: 'input', data: '\\x1b[1;1R'}));
+                }
                 if (!blocked && output.includes('BLOCKREADY240')) {
                     blocked = true;
                     ws.send(JSON.stringify({type: 'input', data: 'x'.repeat(60000)}));

@@ -59,77 +59,92 @@ Client JSON messages:
 Server binary frames preserve raw bytes, including split UTF-8. Text frames
 report `{"exit":0}` or `{"error":"..."}`. Maximum message size is 64 KiB;
 pastes are split at Unicode codepoint boundaries and paced through a bounded
-client queue. Backend queues hold at most 32 items each, and at most 16 chunks await rendering
-acknowledgements. Protocol errors or full input queues disconnect instead of
-dropping keystrokes. PTY reads and writes use dedicated threads. A separate
-supervisor observes disconnect even if a foreground program stops reading stdin,
-then kills/reaps the shell. Unix cleanup terminates the PTY foreground job and
+client queue. Backend queues hold at most 32 items each, and at most 16 chunks
+await rendering acknowledgements. Protocol errors or full input queues disconnect
+instead of dropping keystrokes. PTY reads and writes use dedicated threads.
+
+Client input reaches the PTY through bounded writes: each attempt waits at most
+50 ms for room in the terminal's input queue, and the worker checks for a
+disconnected client between attempts. A foreground program that stops reading
+stdin therefore holds its session only while its client is connected; on
+disconnect the worker stops, the shell and its foreground job are killed and
+reaped, and the terminal slot is released promptly; the regression tests
+require all four slots back within 5 s while the blocked program still runs. This
+matters because a plain blocking write on a full queue cannot be released by
+anything on the server side — not by cancelling the thread, and not by killing
+the process tree, which leaves the writer parked (#256). Unix cleanup also
 hangs up the shell so it can notify its background jobs. Deliberately daemonized
 or disowned programs are outside the terminal lifecycle, as in a normal shell.
 
-## Verification without WASM compilation
+### Input design decisions (#259)
+
+- **No per-message input cap beyond the 64 KiB WebSocket limit.** A message
+  larger than the free space in the terminal's input queue is written in the
+  pieces the queue accepts, with the disconnect check between them, so a single
+  message can wait on a program that is not reading but can never pin a slot
+  past its client. A smaller cap would only split pastes that the client
+  already paces.
+- **Only the bounded write is non-blocking.** `kernal-api` switches the PTY
+  input to non-blocking mode for the duration of `write_available` and restores
+  it before returning (`O_NONBLOCK` on Unix, `PIPE_NOWAIT` on the Windows ConPTY
+  input pipe). The reader keeps blocking reads on its own thread, which already
+  ends when the session is dropped; a non-blocking reader would need its own
+  wait loop and gain nothing.
+
+## Verification
+
+CI runs the browser suite on every pull request:
+
+- `linux-x86-terminal-test.yml`: `tests/frontend/test_terminal.py` in Chromium
+  and WebKit, all tests, none skipped.
+- `windows-x86-terminal-test.yml`: the slot-release regression against ConPTY.
+- `macos-arm-live-test.yml`: `ci/safari_terminal_smoke.py` in real Safari
+  through safaridriver — the slot-release regression from Safari's own
+  WebSocket, then a typed command rendered in xterm, with a screenshot artifact.
+
+Under `CI`, the suite fails instead of skipping when its binary, esbuild,
+Playwright or psutil is missing. No WASM compilation is involved.
+
+Local run:
 
 ```sh
-soldr cargo test --workspace terminal_240
-bash lint
-bash test
-FASTLED_TERMINAL_BINARY=/absolute/path/to/target/debug/fastled \
+soldr cargo build --bin fastled
+FASTLED_TERMINAL_BINARY="$PWD/target/debug/fastled" \
 FASTLED_ESBUILD=/absolute/path/to/esbuild \
-uv run --with playwright pytest tests/frontend/test_terminal.py -v -s
+uv run --with playwright==1.62.0 --with psutil pytest tests/frontend/test_terminal.py -v
 ```
 
+Install the browsers with
+`uv run --with playwright==1.62.0 playwright install chromium webkit`. esbuild
+0.28.0 is the version `fastled` installs under
+`~/.fastled/toolchains/esbuild/`. Set `FASTLED_TEST_REAL_CLUD=1` to additionally
+verify the host's `~/.local/bin/clud` resolution and `clud --help` under a
+stripped parent PATH; this invokes help only, not an agent task.
+
+Hosts that cannot install Playwright's WebKit (NixOS fails its host dependency
+check) can run WebKit in the Playwright container and attach to it. Client and
+server Playwright versions must match:
+
+```sh
+docker run -d --rm --name playwright-webkit --network host --init \
+  mcr.microsoft.com/playwright:v1.62.0-noble \
+  /bin/sh -c "cd /tmp && npx -y playwright@1.62.0 run-server --port 39123 --host 127.0.0.1"
+FASTLED_PLAYWRIGHT_WEBKIT_ENDPOINT=ws://127.0.0.1:39123/ \
+FASTLED_TERMINAL_BINARY=... FASTLED_ESBUILD=... \
+uv run --with playwright==1.62.0 --with psutil pytest tests/frontend/test_terminal.py -v
+docker stop playwright-webkit
+```
+
+Host networking keeps the page on the server's exact loopback origin, which the
+terminal's Origin/Host check requires. On NixOS, Chromium may also need
+`libgbm` on `LD_LIBRARY_PATH`.
+
 The fixture bundles the real vendored terminal and CSS with esbuild, then starts
-the real server/PTY from a temporary directory different from its served path.
-It tests Chromium and WebKit. Install matching Playwright browsers separately;
-NixOS needs its Nix-provided browser bundle and matching Playwright version.
-Set `FASTLED_TEST_REAL_CLUD=1` to additionally verify the host's
-`~/.local/bin/clud` resolution and `clud --help` under a stripped parent PATH.
-This invokes help only, not an agent task. Native macOS Safari remains a separate
-platform check. This feature changes no Emscripten/linker defaults or JSPI flags.
+the real server and PTY from a temporary directory different from its served
+path.
 
 xterm 5.5.0 and fit-addon 0.10.0 are downloaded directly from published tarballs
 into `src/fastled/frontend/vendor/xterm/`. Upstream MIT licenses, source maps,
 URLs and SHA-256 checksums are included. Relative imports and esbuild bundle
 these assets; no npm, node_modules, CDN or runtime package resolution is used.
-
-## Validation record (2026-09-12)
-
-Work ran in `/home/niteris/dev/fastled-wasm-wt-terminal-240`, branched from
-`origin/main` at `3ef4a57`. The original unpushed migration branch was preserved.
-The Nix shell supplies the Linux native build dependencies; its local definition
-at `/tmp/fastled-terminal-shell.nix` uses `mkShell`, `pkg-config` and an
-`LD_LIBRARY_PATH` built from openssl, gtk3, webkitgtk_4_1, libsoup_3, bzip2, zlib,
-xz, stdenv.cc.cc.lib, glib, gdk-pixbuf, pango, cairo, atk and harfbuzz.
-
-Exact local gate commands:
-
-```sh
-nix-shell /tmp/fastled-terminal-shell.nix --run 'soldr cargo test --workspace terminal_240'
-nix-shell /tmp/fastled-terminal-shell.nix --run 'PATH=/home/niteris/.soldr/cargo/bin:$PATH bash lint'
-nix-shell /tmp/fastled-terminal-shell.nix --run 'bash test'
-nix-shell /tmp/fastled-terminal-shell.nix --run 'FASTLED_TERMINAL_BINARY=/home/niteris/dev/fastled-wasm-wt-terminal-240/target/debug/fastled FASTLED_ESBUILD=/home/niteris/.fastled/toolchains/esbuild/linux/x64/0.28.0/esbuild FASTLED_TEST_REAL_CLUD=1 PLAYWRIGHT_BROWSERS_PATH=/nix/store/f0rap655j6wmqbfvqdw445kwcxkxwf7n-playwright-browsers uv run --with playwright==1.59.0 pytest tests/frontend/test_terminal.py -x -v -s'
-```
-
-Results: focused Rust tests 3 passed; full Rust suite 255 library tests, 2 binary
-tests, 1 integration test and 1 doctest passed; Python 23 passed, 1 skipped (existing
-Windows-only test); lint passed including clippy, dylint and Python checks.
-Browser suite: 3 passed in 8.63 seconds, using Chromium and WebKit. Both passed
-cwd (including a space in its name), ANSI/UTF-8 rendering, resizing, log isolation,
-copy, hide/reopen state, fresh restart, actual `clud --help` with exit status 0,
-and a byte-exact 120,400-byte Unicode paste. The third test verifies disconnect
-cleanup when stdin blocks, including reuse after four disconnected sessions.
-
-RED -> GREEN evidence: before the endpoint existed the foreign-origin test
-failed with 404 instead of 403. Review reproduced four blocked writers leaking
-all four slots (fifth connection got 429); separating writes from supervision
-made that exact browser regression pass. A stripped-PATH browser check exposed
-missing NixOS system paths, which are now included. Initial build attempts
-failed on missing native library search paths; all gates passed after supplying
-the Nix environment. No unrelated repository code was changed for those setup
-failures. The pre-push review ended clean with one reviewer.
-
-The full production app JS and CSS also bundled successfully with the existing
-esbuild 0.28.0, using browser/ES2021/ESM flags and the local Three alias; CSS
-bundling preserves external `./assets/*` URLs for the existing asset copier.
-Native macOS Safari and Windows ConPTY were not run locally. No WASM compile was
-needed, and no JSPI flags or WebAssembly JSPI APIs were introduced.
+This feature changes no Emscripten/linker defaults or JSPI flags.
