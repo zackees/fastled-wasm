@@ -506,7 +506,7 @@ mod tests {
         assert!(TEST_RUNTIME_SCRIPT.contains("preserveDrawingBuffer: true"));
         assert!(TEST_RUNTIME_SCRIPT.contains("fastLEDWorkerManager.renderOnMainThread"));
         assert!(TEST_RUNTIME_SCRIPT.contains("canvas.toDataURL('image/png')"));
-        assert!(TEST_RUNTIME_SCRIPT.contains("[fastled-test] capture stage "));
+        assert!(TEST_RUNTIME_SCRIPT.contains("trace('capture stage ' + stage)"));
         assert!(TEST_RUNTIME_SCRIPT.contains("CAPTURE_STAGE_TIMEOUT_MS = 15000"));
         assert!(TEST_RUNTIME_SCRIPT.contains("the page canvas produced no frame"));
         assert!(TEST_RUNTIME_SCRIPT.contains("trace('ready acknowledged')"));
