@@ -1,7 +1,9 @@
 # Feasibility probe for #251, round 2: can WebKit in a Recovery guest give the
 # shipped viewer and Safari a WebGL2 context and animation frames?
-mkdir -p /tmp/results /tmp/page
+mkdir -p /tmp/results /tmp/page /tmp/home
 R=/tmp/results
+# Recovery's /var/root is read-only; fastled needs a writable ~/.fastled.
+export HOME=/tmp/home
 cd /tmp
 curl -sS -o /tmp/fastled http://10.0.2.2:8000/fastled && chmod +x /tmp/fastled
 curl -sS -o /tmp/page/index.html http://10.0.2.2:8000/webgl.html
