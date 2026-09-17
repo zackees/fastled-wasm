@@ -61,11 +61,13 @@ jobs:
         if: runner.os == 'Linux' && inputs.wheel-smoke
         run: |
           Xvfb :99 -screen 0 1280x1024x24 >"$RUNNER_TEMP/xvfb.log" 2>&1 &
+          # Wait for the server's socket rather than a probe tool, so the step
+          # needs nothing beyond xvfb itself.
           for _ in $(seq 1 30); do
-            if xdpyinfo -display :99 >/dev/null 2>&1; then break; fi
+            if [ -S /tmp/.X11-unix/X99 ]; then break; fi
             sleep 1
           done
-          xdpyinfo -display :99 >/dev/null
+          test -S /tmp/.X11-unix/X99 || { cat "$RUNNER_TEMP/xvfb.log"; exit 1; }
           {
             echo "DISPLAY=:99"
             echo "GDK_BACKEND=x11"
