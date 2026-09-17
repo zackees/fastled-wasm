@@ -41,16 +41,22 @@ const done = arguments[arguments.length - 1];
     await new Promise((resolve, reject) => {
       const ws = new WebSocket(url);
       ws.binaryType = 'arraybuffer';
-      const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 15000);
+      const timer = setTimeout(() => { ws.close(); reject(new Error('PTY ready timeout')); }, 30000);
       let output = '';
       let blocked = false;
       ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
-      ws.onopen = () => ws.send(JSON.stringify({type: 'input', data:
-        "stty raw -echo; printf 'BLOCK%s\\\\n' READY240; sleep 30\\r"}));
+      let sent = false;
       ws.onmessage = event => {
         if (!(event.data instanceof ArrayBuffer)) return;
         ws.send(JSON.stringify({type: 'ack'}));
         output += new TextDecoder().decode(event.data);
+        // Type only once the shell has written something; a command sent on
+        // open can land before a slow login shell starts reading.
+        if (!sent) {
+          sent = true;
+          ws.send(JSON.stringify({type: 'input', data:
+            "stty raw -echo; printf 'BLOCK%s\\\\n' READY240; sleep 30\\r"}));
+        }
         if (!blocked && output.includes('BLOCKREADY240')) {
           blocked = true;
           ws.send(JSON.stringify({type: 'input', data: 'x'.repeat(60000)}));

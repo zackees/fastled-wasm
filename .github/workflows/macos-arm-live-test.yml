@@ -15,7 +15,9 @@ name: macOS ARM Live Test
 #
 # The native macOS build/lint/test workflows no longer run on pull requests;
 # they still run on main pushes and manual dispatch.
-# #251 tracks moving the execution into a docker-mac-x64 guest on Linux.
+# The execution stays on a hosted runner: in a docker-mac-x64 guest on a Linux
+# runner there is no GPU, and both the viewer's WebKit and Safari report no
+# WebGL, so a sketch cannot render (#251, macos-x64-guest-webkit-probe.yml).
 
 on:
   push:

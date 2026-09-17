@@ -1,0 +1,132 @@
+name: macOS x64 Guest WebKit Probe
+
+# Can a docker-mac-x64 guest on a Linux runner replace the hosted macOS runner
+# for the live viewer render and the Safari smoke (#251)? This probe measures
+# it, and the answer so far is no:
+#
+# The guest boots zackees/docker-mac-x64's macOS 13.0.1 Recovery system under
+# QEMU/KVM with a plain VGA adapter and no GPU acceleration. There, both the
+# shipped viewer's WKWebView and Safari 16.1 report neither WebGL2 nor WebGL1,
+# while requestAnimationFrame runs normally (~30 fps) and pages load; that
+# WebKit also has no OffscreenCanvas. The FastLED frontend requires WebGL2
+# (bootstrap.ts), so a sketch cannot render in this guest. A newer macOS image
+# would not supply a GPU: GitHub's Linux runners offer none that a macOS guest
+# has a driver for.
+#
+# Recovery also lacks python3, `open`, `screencapture` and `safaridriver`.
+# Safari is opened on a home page preference instead (ci/macos-x64/probe-guest.sh),
+# and the page reports through the fastled server's /viewer-log route.
+#
+# macos-arm-live-test.yml therefore keeps the hosted runner for rendering and
+# Safari. This workflow stays as the way to re-measure when the guest image or
+# the GPU situation changes: it runs on demand, and on pull requests that touch
+# the probe itself. The job summary reports what each WebKit client saw.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/macos-x64-guest-webkit-probe.yml
+      - ci/macos-x64/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same pin as macos-arm-live-test.yml: a Soldr with cross targets and the
+      # managed macOS SDK.
+      - uses: zackees/setup-soldr@bb28e96d2dc32c058242f56722297caf1efcbd90
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          cache-key-suffix: macos-x64-guest-cross
+          cross-targets: x86_64-apple-darwin
+          toolchain-file: rust-toolchain.toml
+          prebuild-deps-flags: ""
+
+      - name: Cross-build the Intel fastled binary
+        run: |
+          soldr cargo build --release --bin fastled --target x86_64-apple-darwin
+          # Must be an x86_64 Mach-O, not a host binary.
+          test "$(od -A n -t x1 -N 8 target/x86_64-apple-darwin/release/fastled | tr -d ' \n')" = "cffaedfe07000001"
+
+      - name: Stage the guest share directory
+        run: |
+          mkdir -p share
+          cp ci/macos-x64/webgl.html target/x86_64-apple-darwin/release/fastled share/
+
+      # Recovery boots one script and offers no per-command execution, so the
+      # guest half travels as a single string.
+      - name: Generate the guest script
+        id: guest_script
+        run: |
+          {
+            echo 'script<<GUEST_EOF'
+            cat ci/macos-x64/probe-guest.sh
+            echo 'GUEST_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Probe WebKit in a macOS Recovery guest
+        id: macos
+        uses: zackees/docker-mac-x64@f173a047ba7fbe1db7d8162ff3ac8e276f50b153 # main
+        with:
+          share-dir: share
+          collect: /tmp/results
+          ram: "10"
+          cores: "2"
+          threads: "4"
+          boot-timeout: "1200"
+          run-timeout: "1200"
+          run: ${{ steps.guest_script.outputs.script }}
+
+      # The guest never exits non-zero, so the reports are the gate: each
+      # WebKit client must have answered, or the probe measured nothing.
+      - name: Summarize what each WebKit client reported
+        if: ${{ !cancelled() }}
+        env:
+          COLLECTED: ${{ steps.macos.outputs.workdir }}/collected
+          STARTED: ${{ steps.guest_script.outputs.started }}
+        run: |
+          set -euo pipefail
+          log="$COLLECTED/server.log"
+          test -f "$log" || { echo "::error::the guest returned no server log"; exit 1; }
+          {
+            echo "## macOS x64 guest WebKit probe"
+            echo
+            echo "Guest boot plus probe: $(( $(date +%s) - STARTED )) s"
+            echo
+            echo '```'
+            cat "$COLLECTED/guest.txt"
+            echo '```'
+            echo
+            echo "| client | report |"
+            echo "|---|---|"
+            sed -n 's/^\[viewer\] \([a-z-]*\) \(.*\)$/| \1 | \2 |/p' "$log"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
+          for client in viewer safari; do
+            grep -q "^\[viewer\] $client WEBGL2 " "$log" \
+              || { echo "::error::$client never reported; the probe measured nothing"; exit 1; }
+          done
+
+      - name: Upload the guest results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-guest-webkit-probe
+          path: |
+            ${{ steps.macos.outputs.workdir }}/results/
+            ${{ steps.macos.outputs.workdir }}/collected/
+          if-no-files-found: warn
+          retention-days: 7
