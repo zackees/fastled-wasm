@@ -88,7 +88,9 @@ def terminal_server(tmp_path_factory: Any) -> Any:
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        # The server logs UTF-8; the Windows locale codec cannot decode it.
+        encoding="utf-8",
+        errors="replace",
     )
     lines: list[str] = []
 
