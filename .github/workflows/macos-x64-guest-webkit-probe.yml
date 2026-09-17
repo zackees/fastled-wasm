@@ -9,9 +9,10 @@ name: macOS x64 Guest WebKit Probe
 # macOS WebKit implements WebGL only on Metal, so the shipped viewer's WKWebView
 # reports neither WebGL2 nor WebGL1 (and Safari 16.1's WebKit has no
 # OffscreenCanvas). The FastLED frontend requires WebGL2 (bootstrap.ts), so a
-# sketch cannot render there. A newer macOS image would not change that: no
-# GitHub-hosted Linux runner offers a GPU a macOS guest can drive. Recovery also
-# lacks python3, `open`, `screencapture` and `safaridriver`.
+# sketch cannot render there. A newer macOS image would not change that: the
+# guest would still have no GPU with a macOS Metal driver. Recovery also
+# lacks python3, `open`, `screencapture` and `safaridriver`, so Safari is
+# opened through LaunchServices by ci/macos-x64/open-url.
 #
 # macos-arm-live-test.yml therefore keeps the hosted runner for rendering and
 # Safari. This workflow stays as the way to re-measure when the guest image or
@@ -56,10 +57,15 @@ jobs:
           # Must be an x86_64 Mach-O, not a host binary.
           test "$(od -A n -t x1 -N 8 target/x86_64-apple-darwin/release/fastled | tr -d ' \n')" = "cffaedfe07000001"
 
+      - name: Cross-build the guest URL opener
+        run: |
+          soldr cargo build --release --locked --manifest-path ci/macos-x64/open-url/Cargo.toml --target x86_64-apple-darwin --target-dir target/open-url
+          test "$(od -A n -t x1 -N 8 target/open-url/x86_64-apple-darwin/release/open-url | tr -d ' \n')" = "cffaedfe07000001"
+
       - name: Stage the guest share directory
         run: |
           mkdir -p share
-          cp ci/macos-x64/webgl.html target/x86_64-apple-darwin/release/fastled share/
+          cp ci/macos-x64/webgl.html target/x86_64-apple-darwin/release/fastled target/open-url/x86_64-apple-darwin/release/open-url share/
 
       # Recovery boots one script and offers no per-command execution, so the
       # guest half travels as a single string.

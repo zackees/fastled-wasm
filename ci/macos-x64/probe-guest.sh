@@ -30,10 +30,10 @@ echo "url=$URL"
 sleep 45
 kill $! 2>/dev/null
 
-# Safari treats a bare argument as a file path, so hand it a local page that
-# redirects to the server; LaunchServices (`open`) is absent in Recovery.
-printf '<meta http-equiv="refresh" content="0;url=%s/?who=safari">\n' "$URL" > /tmp/redirect.html
-/Applications/Safari.app/Contents/MacOS/Safari /tmp/redirect.html > $R/safari.log 2>&1 &
+# Safari: LaunchServices opens the URL, as `open` would. Recovery has no
+# `open`, and Safari reads a command-line argument as a sandboxed file path.
+curl -sS -o /tmp/open-url http://10.0.2.2:8000/open-url && chmod +x /tmp/open-url
+/tmp/open-url "$URL/?who=safari" > $R/safari.log 2>&1
 sleep 60
 
 grep '\[viewer\]' $R/server.log
