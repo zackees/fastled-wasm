@@ -1504,6 +1504,20 @@ fn fetch_latest_release_tag() -> Option<String> {
 }
 
 fn head_check(url: &str) -> bool {
+    // The freshness check runs inside the server's async runtime on the serve
+    // path, and a runtime cannot be dropped from an async context: tokio
+    // panics with "Cannot drop a runtime in a context where blocking is not
+    // allowed". Own the runtime on a thread of our own so its drop is never
+    // inside someone else's runtime.
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| head_check_blocking(url))
+            .join()
+            .unwrap_or(false)
+    })
+}
+
+fn head_check_blocking(url: &str) -> bool {
     let Ok(runtime) = kernal_api::async_engine::RuntimeBuilder::current_thread()
         .enable_all()
         .build()
@@ -2179,6 +2193,21 @@ pub fn run_install(options: InstallOptions) -> Result<InstallOutcome> {
 
 #[cfg(test)]
 mod tests {
+    /// `fastled <sketch>` crashed right after "Serving at ...": the build runs
+    /// inside the server's async runtime, and head_check built its own runtime
+    /// and dropped it there, which tokio refuses with "Cannot drop a runtime in
+    /// a context where blocking is not allowed". Port 1 refuses immediately, so
+    /// this exercises the drop without depending on the network.
+    #[test]
+    fn head_check_survives_being_called_from_an_async_context() {
+        let runtime = kernal_api::async_engine::RuntimeBuilder::multi_thread()
+            .enable_all()
+            .build()
+            .expect("build an outer runtime");
+        let reachable = runtime.run(async { super::head_check("http://127.0.0.1:1/") });
+        assert!(!reachable, "nothing listens on port 1");
+    }
+
     #[test]
     fn published_toolchain_config_does_not_retain_staging_paths() {
         let temp = kernal_api::platform::fs::TemporaryDirectory::new().unwrap();
