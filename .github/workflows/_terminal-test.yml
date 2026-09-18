@@ -104,7 +104,7 @@ jobs:
           PYTEST_ARGS: ${{ inputs.pytest-args }}
         run: >-
           uv run --no-project --with "playwright==$PLAYWRIGHT_VERSION" --with psutil --with pytest
-          pytest tests/frontend/test_terminal.py -v -rs $PYTEST_ARGS
+          pytest tests/frontend -v -rs $PYTEST_ARGS
 
       - name: Upload terminal server logs
         if: failure()
