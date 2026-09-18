@@ -97,6 +97,20 @@ pub fn run() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    // Install the terminal configuration before any serving path starts, so
+    // --serve, --serve-dir and --internal-serve-dir-headless all honour it
+    // (#254).
+    match terminal::TerminalConfig::resolve(
+        cli.terminal_cmd.as_deref(),
+        cli.terminal_keep_alive_secs.as_deref(),
+    ) {
+        Ok(config) => config.install(),
+        Err(error) => {
+            eprintln!("fastled: {error}");
+            return ExitCode::FAILURE;
+        }
+    }
+
     if let Some(command) = cli.command.clone() {
         return run_management_command(command);
     }
@@ -289,6 +303,8 @@ mod tests {
             command: None,
             directory: None,
             serve_dir: None,
+            terminal_cmd: None,
+            terminal_keep_alive_secs: None,
             init: None,
             just_compile: false,
             no_app: false,

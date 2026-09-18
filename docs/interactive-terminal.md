@@ -16,8 +16,9 @@ by FastLED; terminal access rejects hostname aliases.
 the session and bounded 5,000-line scrollback. **Copy** copies selected text or
 the buffer. Escape and Ctrl+C belong to shell applications. After shell exit or
 disconnection, **Restart** starts a new shell in that same sketch directory.
-Reloading or closing the page disconnects its shell; there is no reattachment
-across reloads. The dialog fits desktop/mobile viewports and forwards resizing.
+Reloading or closing the page disconnects its shell. An unconfigured shell is
+gone at that point; a configured agent session survives and is rejoined through
+its reattach token (see below). The dialog fits desktop/mobile viewports and forwards resizing.
 
 Sketch stdout and console log/warn stay in the existing canvas-click output
 popup. They never enter the shell stream: mixing logs with a full-screen agent
@@ -41,6 +42,60 @@ FastLED does not rewrite them. Custom PATH configuration should retain
 `~/.local/bin`. Missing `clud` remains a normal shell error; no tool is installed
 automatically. Production code never embeds the motivating user's home path.
 
+## Agent sessions (#254)
+
+`--terminal-cmd "<command>"` (or `FASTLED_TERMINAL_CMD`) runs that command in
+the terminal instead of an interactive shell, which is how an agent is launched:
+
+```sh
+fastled <sketch> --terminal-cmd "clud --dangerously-skip-permissions"
+```
+
+The string becomes argv directly: quotes group arguments, and nothing else is
+interpreted — no shell, no expansion, no operators. The command inherits the
+same environment and launch directory the shell would have received. `--serve`,
+`--serve-dir` and `--internal-serve-dir-headless` all honour it, because the
+configuration is resolved once at startup.
+
+**The page never chooses the command.** `GET /terminal/ws` still accepts no
+command, cwd or environment. The only thing a client may present is a reattach
+token, and the server minted it.
+
+### Session survival and reattach
+
+A configured session keeps running when its client disappears, so a page reload
+does not kill an agent mid-task:
+
+- On every attach the server sends `{"session":"<id>","reattach":"<token>"}`.
+  The page keeps the token in `sessionStorage` and reconnects with
+  `?reattach=<token>`, which replays the recent scrollback and rejoins the same
+  process, with its shell state intact.
+- Tokens are 256-bit, single-use, and compared in constant time. A spent,
+  unknown or expired token does not attach; the client gets a fresh session
+  instead.
+- A detached session lives for `--terminal-keep-alive-secs`
+  (`FASTLED_TERMINAL_KEEP_ALIVE_SECS`), 120 s by default. After that a sweeper
+  ends it, so an abandoned agent cannot linger indefinitely.
+- **Restart** is the deliberate "new session" control: it discards the token.
+- A detached session keeps its terminal slot, because it is still running. Four
+  simultaneous sessions remains the limit.
+
+**Survival is opt-in.** Without a configured command the terminal keeps the
+#240 lifecycle exactly: a disconnect ends the session and returns its slot at
+once, which is the property #256's regression test measures. `--terminal-keep-alive-secs 0`
+turns survival off for a configured command too.
+
+### Renderer throughput (#254 phase 3)
+
+Measured before proposing any renderer change, with the shipped DOM renderer and
+`FASTLED_TERMINAL_MEASURE=1 pytest tests/frontend/test_terminal.py -k measurement`:
+404,000 bytes of line-oriented output rendered in 0.31 s (about 1.26 MiB/s) on
+Chromium and 0.31 s (about 1.28 MiB/s) on WebKit, with a worst frame interval of
+29 ms and 59 ms respectively. That is comfortably above agent output rates, so
+the renderer stays DOM-only and phase 3 closes with no code change. WebGL is not
+added: it mangles box-drawing glyphs on WebKit, which would be a Safari
+regression.
+
 ## Transport and lifecycle
 
 `GET /terminal/ws` requires Origin and Host to match the exact bound loopback
@@ -48,6 +103,9 @@ HTTP address. Missing/null/foreign origins and hostname aliases are rejected,
 even though static server routes permit CORS. Each connection owns a PTY;
 four simultaneous sessions are allowed. No command, cwd or environment is
 accepted in the handshake.
+
+Server text frames are `{"session":...,"reattach":...}` (a configured session's
+reattach token), `{"exit":0}` or `{"error":"..."}`.
 
 Client JSON messages:
 

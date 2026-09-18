@@ -23,8 +23,7 @@ FRONTEND = ROOT / "src/fastled/frontend"
 FRONTEND_IMPORT = FRONTEND.as_posix()
 
 
-@pytest.fixture(scope="module")
-def terminal_server(tmp_path_factory: Any) -> Any:
+def _binaries() -> tuple[str, str]:
     binary = os.environ.get("FASTLED_TERMINAL_BINARY")
     esbuild = os.environ.get("FASTLED_ESBUILD")
     if not binary or not esbuild:
@@ -32,7 +31,13 @@ def terminal_server(tmp_path_factory: Any) -> Any:
         if os.environ.get("CI"):
             pytest.fail("CI requires FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
         pytest.skip("set FASTLED_TERMINAL_BINARY and FASTLED_ESBUILD")
-    root = tmp_path_factory.mktemp("terminal-240")
+    return binary, esbuild
+
+
+def _serve(root: Path, extra_env: dict[str, str] | None = None) -> Any:
+    """Bundle the real frontend and start the real server/PTY from `root`."""
+    binary, esbuild = _binaries()
+    log_suffix = "-agent" if extra_env else ""
     # The served directory carries a space so the PTY cwd is exercised with one.
     # It must stay distinct from `launch`: the terminal must start in the
     # directory named on the command line, not the process's launch directory.
@@ -83,6 +88,7 @@ def terminal_server(tmp_path_factory: Any) -> Any:
         check=True,
     )
     env = dict(os.environ, FASTLED_MANAGED_RUNTIME="1")
+    env.update(extra_env or {})
     # Desktop-like stripped parent PATH; the PTY must restore uv tool access.
     if os.name != "nt":
         env["PATH"] = "/usr/bin:/bin"
@@ -122,9 +128,43 @@ def terminal_server(tmp_path_factory: Any) -> Any:
         log_dir = os.environ.get("FASTLED_TERMINAL_LOG_DIR")
         if log_dir:
             Path(log_dir).mkdir(parents=True, exist_ok=True)
-            (Path(log_dir) / "terminal-server.log").write_text(
+            (Path(log_dir) / f"terminal-server{log_suffix}.log").write_text(
                 "".join(lines), encoding="utf-8"
             )
+
+
+@pytest.fixture(scope="module")
+def terminal_server(tmp_path_factory: Any) -> Any:
+    yield from _serve(tmp_path_factory.mktemp("terminal-240"))
+
+
+# A stub, not a real agent: #254 keeps automated coverage host-independent, and
+# FASTLED_TEST_REAL_CLUD still covers the real binary. It prints a sentinel and
+# then becomes an ordinary interactive shell, so the session stays alive and can
+# be driven exactly like the shell fixture.
+AGENT_SENTINEL = "AGENT_STUB_254_READY"
+AGENT_STUB = f"""#!/bin/sh
+printf '{AGENT_SENTINEL}\\n'
+exec /bin/sh -i
+"""
+
+
+@pytest.fixture(scope="module")
+def agent_terminal_server(tmp_path_factory: Any) -> Any:
+    """A server whose terminal runs a configured command instead of $SHELL."""
+    root = tmp_path_factory.mktemp("terminal-254")
+    stub = root / "agent-stub.sh"
+    stub.write_text(AGENT_STUB, encoding="utf-8")
+    stub.chmod(0o755)
+    yield from _serve(
+        root,
+        {
+            "FASTLED_TERMINAL_CMD": str(stub),
+            # Long enough that a reattach in the test is never a race, short
+            # enough that the reap assertion does not dominate the run.
+            "FASTLED_TERMINAL_KEEP_ALIVE_SECS": "15",
+        },
+    )
 
 
 def _require(module: str) -> Any:
@@ -410,3 +450,211 @@ def test_terminal_240_disconnect_with_blocked_stdin(
         time.sleep(0.1)
         leaks = _leaks(server_pid)
     assert not leaks, f"sessions outlived their clients: {leaks}"
+
+
+# A raw client: the phase 1 and 2 scenarios are about the transport and the
+# session, and driving them through xterm would only add rendering noise.
+AGENT_CLIENT_SCRIPT = """async ({command, reattach, settleMs}) => {
+    const url = new URL('/terminal/ws', location.href);
+    url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (reattach) url.searchParams.set('reattach', reattach);
+    return await new Promise((resolve, reject) => {
+        const ws = new WebSocket(url);
+        ws.binaryType = 'arraybuffer';
+        let output = '';
+        let token = null;
+        let sessionId = null;
+        let sent = false;
+        const timer = setTimeout(() => {
+            ws.close();
+            reject(new Error('terminal timeout: ' + JSON.stringify(output.slice(-2000))));
+        }, 30000);
+        ws.onerror = () => { clearTimeout(timer); reject(new Error('upgrade rejected')); };
+        ws.onmessage = event => {
+            if (typeof event.data === 'string') {
+                const message = JSON.parse(event.data);
+                if (typeof message.reattach === 'string') {
+                    token = message.reattach;
+                    sessionId = message.session;
+                }
+                return;
+            }
+            ws.send(JSON.stringify({type: 'ack'}));
+            output += new TextDecoder().decode(event.data);
+            if (!sent) {
+                sent = true;
+                ws.send(JSON.stringify({type: 'input', data: command}));
+                // Let the shell answer, then hand the transcript back.
+                setTimeout(() => {
+                    clearTimeout(timer);
+                    ws.close();
+                    resolve({output, token, sessionId});
+                }, settleMs);
+            }
+        };
+    });
+}"""
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives a POSIX shell stub")
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_terminal_254_runs_the_configured_command(
+    agent_terminal_server: Any, browser_name: str
+) -> None:
+    """RED: the PTY ran $SHELL, so a configured command never started."""
+    playwright = _require("playwright.sync_api")
+    url, _, _ = agent_terminal_server
+    with playwright.sync_playwright() as manager:
+        browser = _launch(manager, browser_name)
+        page = browser.new_page()
+        page.goto(url)
+        result = page.evaluate(
+            AGENT_CLIENT_SCRIPT,
+            {
+                "command": "printf 'AGENT_PID=%s\\n' $$\r",
+                "reattach": None,
+                "settleMs": 1500,
+            },
+        )
+        browser.close()
+    assert AGENT_SENTINEL in result["output"], result["output"][-2000:]
+    # The stub execs a shell, so the session stays usable rather than exiting.
+    assert re.search(r"AGENT_PID=\d+", result["output"]), result["output"][-2000:]
+    # A configured session is reattachable, so the server hands out a token.
+    assert result["token"], "a configured session must be given a reattach token"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="drives a POSIX shell stub")
+def test_terminal_254_survives_a_disconnect_and_reattaches(
+    agent_terminal_server: Any,
+) -> None:
+    """RED: a reload got a new shell, losing both the process and its scrollback."""
+    playwright = _require("playwright.sync_api")
+    url, _, server_pid = agent_terminal_server
+    with playwright.sync_playwright() as manager:
+        browser = _launch(manager, "chromium")
+        page = browser.new_page()
+        page.goto(url)
+        first = page.evaluate(
+            AGENT_CLIENT_SCRIPT,
+            {
+                "command": "MARKER=MARKER_254; printf 'PID=%s MARK=%s\\n' $$ \"$MARKER\"\r",
+                "reattach": None,
+                "settleMs": 1500,
+            },
+        )
+        assert AGENT_SENTINEL in first["output"], first["output"][-2000:]
+        pids = re.findall(r"PID=(\d+) MARK=MARKER_254", first["output"])
+        assert pids, first["output"][-2000:]
+        token = first["token"]
+        assert token
+
+        # The client is gone; the configured session must still be running.
+        second = page.evaluate(
+            AGENT_CLIENT_SCRIPT,
+            {
+                # A shell variable set before the disconnect proves this is the
+                # same process, not a fresh spawn that merely reports a pid.
+                "command": "printf 'PID=%s MARK=%s\\n' $$ \"$MARKER\"\r",
+                "reattach": token,
+                "settleMs": 1500,
+            },
+        )
+        # (a) the scrollback from before the disconnect is replayed,
+        assert "MARK=MARKER_254" in second["output"], second["output"][-2000:]
+        assert f"PID={pids[0]}" in second["output"], second["output"][-2000:]
+        # (b) and it is the same process, with its shell state intact.
+        after = re.findall(r"PID=(\d+) MARK=MARKER_254", second["output"])
+        assert (
+            after and after[-1] == pids[0]
+        ), f"expected the same shell pid {pids[0]}, saw {after}"
+        assert second["sessionId"] == first["sessionId"]
+
+        # The spent token cannot attach again: a replay gets a fresh session.
+        third = page.evaluate(
+            AGENT_CLIENT_SCRIPT,
+            {
+                "command": "printf 'PID=%s MARK=%s\\n' $$ \"$MARKER\"\r",
+                "reattach": token,
+                "settleMs": 1500,
+            },
+        )
+        assert AGENT_SENTINEL in third["output"], third["output"][-2000:]
+        fresh = re.findall(r"PID=(\d+) MARK=", third["output"])
+        assert fresh and fresh[-1] != pids[0], "a spent token must not reattach"
+        assert "MARK=MARKER_254" not in third["output"].split(AGENT_SENTINEL)[-1]
+        browser.close()
+
+    # No session outlives the test: the fresh ones end with their clients, and
+    # the reattachable one is reaped once its keep-alive window passes.
+    deadline = time.monotonic() + 60
+    leaks = _leaks(server_pid)
+    while leaks and time.monotonic() < deadline:
+        time.sleep(1)
+        leaks = _leaks(server_pid)
+    assert not leaks, f"sessions outlived the test: {leaks}"
+
+
+# Phase 3 of #254 is a measurement, not a change: the DOM renderer stays unless
+# it cannot keep up with agent-like output. WebGL is deliberately not added —
+# it mangles box-drawing glyphs on WebKit, which is a Safari regression.
+FRAME_SAMPLER = """() => {
+    const state = {frames: [], last: performance.now()};
+    window.__frameSampler = state;
+    const tick = () => {
+        const now = performance.now();
+        state.frames.push(now - state.last);
+        state.last = now;
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+}"""
+
+
+@pytest.mark.skipif(
+    os.environ.get("FASTLED_TERMINAL_MEASURE") != "1",
+    reason="set FASTLED_TERMINAL_MEASURE=1 to record the #254 phase 3 measurement",
+)
+@pytest.mark.parametrize("browser_name", ["chromium", "webkit"])
+def test_terminal_254_renderer_throughput_measurement(
+    terminal_server: Any, browser_name: str
+) -> None:
+    """Record DOM-renderer frame cost under an agent-sized output burst."""
+    playwright = _require("playwright.sync_api")
+    url, _, _ = terminal_server
+    lines, width = 4000, 100
+    with playwright.sync_playwright() as manager:
+        browser = _launch(manager, browser_name)
+        page = browser.new_page(viewport={"width": 1200, "height": 900})
+        page.goto(url)
+        page.locator("#terminal-open").click()
+        playwright.expect(page.locator("#terminal-status")).to_contain_text("Connected")
+        page.evaluate(FRAME_SAMPLER)
+        page.locator(".xterm-helper-textarea").focus()
+        # The markers are split so the shell's echo of this command cannot
+        # satisfy the wait; only the burst's own output can.
+        page.keyboard.insert_text(
+            f"awk 'BEGIN {{ for (i = 0; i < {lines}; i++) "
+            f"printf \"%0{width}d\\n\", i }}'; printf 'BURST_%s\\n' DONE"
+        )
+        started = time.monotonic()
+        page.keyboard.press("Enter")
+        playwright.expect(page.locator(".xterm-rows")).to_contain_text(
+            "BURST_DONE", timeout=120000
+        )
+        elapsed = time.monotonic() - started
+        frames = page.evaluate("window.__frameSampler.frames")
+        browser.close()
+
+    rendered = lines * (width + 1)
+    samples = sorted(frame for frame in frames if frame > 0)
+    worst = samples[-1] if samples else 0.0
+    p95 = samples[int(len(samples) * 0.95)] if samples else 0.0
+    print(
+        f"\n[#254 phase 3] {browser_name}: {rendered} bytes in {elapsed:.2f}s "
+        f"({rendered / elapsed / 1024:.0f} KiB/s); frame interval "
+        f"p95 {p95:.1f}ms, worst {worst:.1f}ms, {len(samples)} frames"
+    )
+    # A burst must not wedge the page: the renderer keeps animating throughout.
+    assert samples, "the page stopped producing frames during the burst"
+    assert worst < 2000, f"the renderer stalled for {worst:.0f}ms"
