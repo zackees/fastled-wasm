@@ -13,7 +13,7 @@ repository = "https://github.com/zackees/fastled-wasm"
 homepage = "https://github.com/zackees/fastled-wasm"
 
 [workspace.dependencies]
-kernal-api = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.11", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "websocket", "event-stream", "secure-random", "text-similarity", "pty", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json", "error-context"] }
+kernal-api = { version = "=0.1.18", features = ["fs", "fs-watch", "hash-sha256", "archive", "http-client", "http-server", "websocket", "event-stream", "secure-random", "text-similarity", "pty", "terminal-input", "terminal-style", "command-arguments", "command-schema", "config-toml", "source-cpp", "json", "error-context"] }
 
 [profile.release]
 debug = "line-tables-only"
@@ -25,3 +25,4 @@ codegen-units = 1
 
 [profile.test.package.kernal-api]
 codegen-units = 1
+

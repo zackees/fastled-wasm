@@ -10,7 +10,11 @@ description = "FastLED WASM compilation CLI"
 
 [features]
 default = ["viewer"]
-viewer = ["kernal-api/tauri-webview"]
+# Gates only this crate's viewer code. Tauri itself is enabled on the
+# kernal-api dependency below: a `kernal-api/tauri-webview` entry here would
+# also apply to the same-named build-dependency and compile Tauri, GTK and
+# glib for the host build script.
+viewer = []
 
 [lib]
 name = "fastled_cli"
@@ -21,16 +25,14 @@ name = "fastled"
 path = "src/main.rs"
 
 [dependencies]
-kernal-api = { workspace = true }
+kernal-api = { workspace = true, features = ["tauri-webview"] }
 
 # build.rs embeds the Windows icon, version information and manifest through
-# kernal-api's build-script companion package, released from the same
-# repository under the same tag. It is a separate package, not a kernal-api
-# feature: `viewer`'s `kernal-api/tauri-webview` would apply to a
-# same-named build-dependency too and compile Tauri, GTK and glib for the
-# host build script.
+# kernal-api's `build-resources` feature. Only that feature: every runtime
+# feature stays on the normal dependency, so the build script compiles
+# kernal-api's native base plus the resource compiler and nothing else.
 [build-dependencies]
-kernal-api-build = { git = "https://github.com/zackees/kernal-api.git", tag = "v0.1.11" }
+kernal-api = { version = "=0.1.18", default-features = false, features = ["build-resources"] }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"
