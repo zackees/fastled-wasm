@@ -195,24 +195,52 @@ def test_kernal_api_is_the_only_rust_dependency():
         assert not section.get("build-dependencies"), section
     assert set(package["dependencies"]) == {"kernal-api"}
     kernal = workspace["workspace"]["dependencies"]["kernal-api"]
-    assert kernal["tag"] == "v0.1.11"
-    assert "rev" not in kernal and "path" not in kernal
+    # An exact crates.io release, as kernal-api's COMPATIBILITY.md asks of
+    # first-party clients: no git source, tag, branch, rev or path override.
+    assert kernal["version"] == "=0.1.19"
+    for override in ("git", "tag", "branch", "rev", "path"):
+        assert override not in kernal, kernal
     assert "hash-sha256" in kernal["features"]
     assert "patch" not in workspace
     assert not (root / "crates/fastled-cli/gen").exists()
 
     # The one build script embeds Windows executable resources through
-    # kernal-api's build companion: that package, from the same repository and
-    # release tag, is its only build dependency, and it names no other crate.
+    # kernal-api's `build-resources` feature: the same release, with no
+    # default and no runtime feature, is its only build dependency.
     build = package["build-dependencies"]
-    assert set(build) == {"kernal-api-build"}, build
-    assert build["kernal-api-build"] == {"git": kernal["git"], "tag": kernal["tag"]}
+    assert set(build) == {"kernal-api"}, build
+    assert build["kernal-api"] == {
+        "version": kernal["version"],
+        "default-features": False,
+        "features": ["build-resources"],
+    }, build
+    # A `kernal-api/<feature>` entry in [features] would reach the
+    # build-dependency too, so runtime features are named on the dependency.
+    for name, enables in package["features"].items():
+        assert not any(entry.startswith("kernal-api/") for entry in enables), (name, enables)
     build_rs = (root / "crates/fastled-cli/build.rs").read_text()
-    # Leading path segments only: `kernal_api::windows_resources::...` names
-    # the crate `kernal_api`, not a crate called `windows_resources`.
+    # Leading path segments only: `kernal_api::build_resources::...` names
+    # the crate `kernal_api`, not a crate called `build_resources`.
     crates_used = set(re.findall(r"(?<![:\w])([a-z_][a-z0-9_]*)::", build_rs)) - {"std"}
-    assert crates_used == {"kernal_api_build"}, crates_used
+    assert crates_used == {"kernal_api"}, crates_used
     assert "extern crate" not in build_rs
+
+
+def test_kernal_api_resolves_from_crates_io():
+    """The manifest pin is not enough: Cargo.lock must record the registry.
+
+    A `[patch]`, a git source or a path override would still satisfy a
+    manifest check; the lockfile says where the bytes actually came from.
+    """
+    root = Path(__file__).resolve().parents[2]
+    lock = tomllib.loads((root / "Cargo.lock").read_text())
+    sources = {
+        package["name"]: (package["version"], package.get("source"))
+        for package in lock["package"]
+        if package["name"].startswith("kernal-api")
+    }
+    registry = "registry+https://github.com/rust-lang/crates.io-index"
+    assert sources == {"kernal-api": ("0.1.19", registry)}, sources
 
 
 def test_obsolete_manifest_dependencies_are_removed():

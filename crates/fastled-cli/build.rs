@@ -1,9 +1,9 @@
 //! Embeds the Windows executable's icon, version information and application
 //! manifest. Only the binary's own build script can link these resources, so
-//! the mechanics live in kernal-api's build companion and this file only
-//! declares the product.
+//! the mechanics live in kernal-api's `build-resources` feature and this
+//! file only declares the product.
 
-use kernal_api_build::{embed_windows_app_resources, WindowsAppResources};
+use kernal_api::build_resources::{embed_windows_app_resources, WindowsAppResources};
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");

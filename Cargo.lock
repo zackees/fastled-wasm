@@ -1008,7 +1008,6 @@ name = "fastled-cli"
 version = "2.0.21"
 dependencies = [
  "kernal-api",
- "kernal-api-build",
 ]
 
 [[package]]
@@ -2024,17 +2023,22 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.11"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.11#da40ae5c20e86ab40b89ad3b5a665614f40df3cc"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "923f849a2e9062b4b87ce44fbbca85b2885627b0a507b7440ff8db71591251a5"
 dependencies = [
  "blake3",
+ "block2",
  "bytes",
+ "cairo-rs",
  "clap",
  "dirs 6.0.0",
+ "embed-resource",
  "flate2",
  "futures-core",
  "futures-util",
  "getrandom 0.4.3",
+ "gio",
  "globset",
  "gtk",
  "http-body-util",
@@ -2045,6 +2049,12 @@ dependencies = [
  "mach2",
  "memmap2",
  "notify",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation",
+ "objc2-image-io",
+ "objc2-web-kit",
  "portable-pty",
  "reflink-copy",
  "reqwest 0.12.28",
@@ -2070,20 +2080,15 @@ dependencies = [
  "tree-sitter-cpp",
  "url",
  "webkit2gtk",
+ "webview2-com 0.39.1",
  "widestring",
  "winapi",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "windows-sys 0.61.2",
  "wry 0.57.0",
  "zip",
  "zstd",
-]
-
-[[package]]
-name = "kernal-api-build"
-version = "0.1.11"
-source = "git+https://github.com/zackees/kernal-api.git?tag=v0.1.11#da40ae5c20e86ab40b89ad3b5a665614f40df3cc"
-dependencies = [
- "embed-resource",
 ]
 
 [[package]]
@@ -2446,6 +2451,7 @@ dependencies = [
  "block2",
  "objc2",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation",
 ]
 
@@ -2551,6 +2557,16 @@ dependencies = [
  "block2",
  "objc2",
  "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-image-io"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32b0446e98cf4a784cc7a0177715ff317eeaa8463841c616cfc78aa4f953c4ea"
+dependencies = [
+ "objc2-core-foundation",
+ "objc2-core-graphics",
 ]
 
 [[package]]
@@ -3216,9 +3232,9 @@ dependencies = [
 
 [[package]]
 name = "running-process"
-version = "4.10.12"
+version = "4.10.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "492c9f25a9a886d7e4281eae987e2d90732ee07f01a35860899618b3b3484cc3"
+checksum = "02f0ff903e7b61396a074648fc6301668492de90aea4b5d09cc914eee9389e9b"
 dependencies = [
  "libc",
  "running-process-platform-internal",
@@ -3231,9 +3247,9 @@ dependencies = [
 
 [[package]]
 name = "running-process-platform-internal"
-version = "4.10.12"
+version = "4.10.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce466bd3d8c281e4f3f409bf0931011306172fbd74032787958eaf5272505391"
+checksum = "c6e5db04a966dfead09ff660b704c2461a05e8477249b8f10532b41a22219348"
 dependencies = [
  "libc",
  "sysinfo",
