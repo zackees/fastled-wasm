@@ -2023,9 +2023,9 @@ dependencies = [
 
 [[package]]
 name = "kernal-api"
-version = "0.1.18"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e87ccc9b6e5d5856a35d4a1b76027f7adfcf4c8a20d6a5a8fa84090958e0edd8"
+checksum = "923f849a2e9062b4b87ce44fbbca85b2885627b0a507b7440ff8db71591251a5"
 dependencies = [
  "blake3",
  "block2",

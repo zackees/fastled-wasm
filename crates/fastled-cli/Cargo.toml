@@ -32,7 +32,7 @@ kernal-api = { workspace = true, features = ["tauri-webview"] }
 # feature stays on the normal dependency, so the build script compiles
 # kernal-api's native base plus the resource compiler and nothing else.
 [build-dependencies]
-kernal-api = { version = "=0.1.18", default-features = false, features = ["build-resources"] }
+kernal-api = { version = "=0.1.19", default-features = false, features = ["build-resources"] }
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/fastled-{ target }{ archive-suffix }"

@@ -197,7 +197,7 @@ def test_kernal_api_is_the_only_rust_dependency():
     kernal = workspace["workspace"]["dependencies"]["kernal-api"]
     # An exact crates.io release, as kernal-api's COMPATIBILITY.md asks of
     # first-party clients: no git source, tag, branch, rev or path override.
-    assert kernal["version"] == "=0.1.18"
+    assert kernal["version"] == "=0.1.19"
     for override in ("git", "tag", "branch", "rev", "path"):
         assert override not in kernal, kernal
     assert "hash-sha256" in kernal["features"]
@@ -240,7 +240,7 @@ def test_kernal_api_resolves_from_crates_io():
         if package["name"].startswith("kernal-api")
     }
     registry = "registry+https://github.com/rust-lang/crates.io-index"
-    assert sources == {"kernal-api": ("0.1.18", registry)}, sources
+    assert sources == {"kernal-api": ("0.1.19", registry)}, sources
 
 
 def test_obsolete_manifest_dependencies_are_removed():
