@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       release_build:
-        description: Build VSIX artifacts for the tag-triggered release caller
+        description: Build VSIX artifacts for the exact-SHA release caller
         required: false
         type: boolean
         default: false
