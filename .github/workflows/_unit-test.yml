@@ -55,10 +55,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          # Windows ARM needs 0.7.53's adaptive daemon-spawn wait; the 0.7.51
-          # default times out before its slow listener starts. Keep other test
-          # runners and cross-builds on 0.7.51 (see #158).
-          version: ${{ inputs.runs-on == 'windows-11-arm' && '0.7.53' || '0.7.51' }}
+          # Windows ARM native tests hit 0.7.51's listener timeout and
+          # 0.7.53's pre-lock timeout. Try 0.9.21's embedded daemon; keep
+          # other runners and cross-builds on 0.7.51 (see #158).
+          version: ${{ inputs.runs-on == 'windows-11-arm' && '0.9.21' || '0.7.51' }}
           # cache-preset: foundation expands to build-cache: true +
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).

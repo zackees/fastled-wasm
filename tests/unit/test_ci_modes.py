@@ -127,9 +127,9 @@ def test_windows_arm_test_failures_capture_soldr_diagnostics():
         assert "soldr-failure-diagnostics/**" in workflow
 
 
-def test_windows_arm_tests_select_soldr_with_adaptive_daemon_wait():
+def test_windows_arm_tests_select_soldr_with_embedded_daemon():
     version_selector = (
-        "version: ${{ inputs.runs-on == 'windows-11-arm' && '0.7.53' || '0.7.51' }}"
+        "version: ${{ inputs.runs-on == 'windows-11-arm' && '0.9.21' || '0.7.51' }}"
     )
     for name in ("_unit-test.yml", "_integration-test.yml"):
         workflow = (WORKFLOWS / name).read_text()
