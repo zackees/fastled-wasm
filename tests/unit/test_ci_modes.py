@@ -127,6 +127,23 @@ def test_windows_arm_test_failures_capture_soldr_diagnostics():
         assert "soldr-failure-diagnostics/**" in workflow
 
 
+def test_windows_arm_tests_select_soldr_with_adaptive_daemon_wait():
+    version_selector = (
+        "version: ${{ inputs.runs-on == 'windows-11-arm' && '0.7.53' || '0.7.51' }}"
+    )
+    for name in ("_unit-test.yml", "_integration-test.yml"):
+        workflow = (WORKFLOWS / name).read_text()
+        setup = workflow.split("- uses: zackees/setup-soldr@v0.9.62", 1)[1]
+        setup = setup.split("      - name: Sync Python deps", 1)[0]
+        assert version_selector in setup, name
+        assert setup.count("version:") == 1, name
+
+    build = (WORKFLOWS / "_build.yml").read_text()
+    setup = build.split("- uses: zackees/setup-soldr@v0.9.62", 1)[1]
+    setup = setup.split("      - name: Build fastled CLI binary", 1)[0]
+    assert "version:" not in setup
+
+
 def test_windows_arm_targeted_label_runs_only_its_two_test_workflows():
     selected = {"windows-arm-unit-test.yml", "windows-arm-integration-test.yml"}
     for path in WORKFLOWS.glob("*.yml"):

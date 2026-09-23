@@ -55,9 +55,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          # No soldr version pin: keep in lockstep with _build.yml so all jobs
-          # resolve the same soldr/zccache version and share warm caches
-          # (see the pin rationale comment in _build.yml and #158).
+          # Windows ARM needs 0.7.53's adaptive daemon-spawn wait; the 0.7.51
+          # default times out before its slow listener starts. Keep other test
+          # runners and cross-builds on 0.7.51 (see #158).
+          version: ${{ inputs.runs-on == 'windows-11-arm' && '0.7.53' || '0.7.51' }}
           # cache-preset: foundation expands to build-cache: true +
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).
