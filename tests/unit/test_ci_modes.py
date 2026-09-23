@@ -100,6 +100,47 @@ def test_platform_jobs_checkout_exact_requested_sha():
         assert "git rev-parse HEAD" in workflow, path.name
 
 
+def test_windows_arm_test_failures_capture_soldr_diagnostics():
+    diagnostic = ROOT / "ci" / "capture_soldr_failure.ps1"
+    assert diagnostic.exists()
+    script = diagnostic.read_text()
+    for command in ("doctor", "status", "logs paths"):
+        assert command in script
+    assert "WriteAllBytes" in script
+    assert "logs-paths.txt" in script
+    assert "RUNNER_TEMP" in script
+    assert ".soldr" in script
+    assert "cache\\zccache" in script
+    assert "private" in script
+    assert "-Recurse" not in script
+    assert "$ProbeTimeoutMs = 15000" in script
+    assert "$MaxLogFiles = 24" in script
+    assert "$MaxLogBytes = 65536" in script
+    assert "$MaxPrivateDirs = 8" in script
+    assert "WaitForExit($ProbeTimeoutMs)" in script
+    assert "Seek(-$bytesToRead, 'End')" in script
+    for name in ("_unit-test.yml", "_integration-test.yml"):
+        workflow = (WORKFLOWS / name).read_text()
+        assert "if: failure() && inputs.runs-on == 'windows-11-arm'" in workflow
+        assert "continue-on-error: true" in workflow
+        assert "./ci/capture_soldr_failure.ps1" in workflow
+        assert "soldr-failure-diagnostics/**" in workflow
+
+
+def test_windows_arm_targeted_label_runs_only_its_two_test_workflows():
+    selected = {"windows-arm-unit-test.yml", "windows-arm-integration-test.yml"}
+    for path in WORKFLOWS.glob("*.yml"):
+        workflow = path.read_text()
+        if path.name in selected:
+            assert "'ci-test:windows-arm'" in workflow, path.name
+            assert "'ci-full'" in workflow, path.name
+            assert (
+                "types: [opened, synchronize, reopened, labeled, unlabeled]" in workflow
+            )
+        else:
+            assert "'ci-test:windows-arm'" not in workflow, path.name
+
+
 def test_full_coverage_manifest_and_fail_closed_results():
     manifest = json.loads((ROOT / "ci" / "full_coverage.json").read_text())
     actual = sorted(

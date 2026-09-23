@@ -79,6 +79,20 @@ jobs:
       - name: Unit Tests
         run: ./test
 
+      - name: Capture Soldr failure diagnostics
+        if: failure() && inputs.runs-on == 'windows-11-arm'
+        continue-on-error: true
+        shell: pwsh
+        run: ./ci/capture_soldr_failure.ps1
+
+      - name: Upload Soldr failure diagnostics
+        if: failure() && inputs.runs-on == 'windows-11-arm'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soldr-failure-diagnostics-unit-test-${{ inputs.runs-on }}-${{ github.run_attempt }}
+          path: soldr-failure-diagnostics/**
+          if-no-files-found: error
+
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4

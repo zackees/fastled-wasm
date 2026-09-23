@@ -4,6 +4,8 @@ Ordinary pull requests and `main` updates run the Linux x86 lint gate. The
 literal `ci-test` PR label adds Linux x86 unit and integration tests. The
 `ci-full` label runs every declared platform workflow. Adding or removing a
 label retriggers the workflows; `ci-full` includes the `ci-test` cells.
+The `ci-test:windows-arm` label runs only Windows ARM unit and integration
+tests for a targeted diagnosis. It does not satisfy the full-coverage gate.
 
 The versioned platform manifest is [`ci/full_coverage.json`](../ci/full_coverage.json).
 [`full-coverage.yml`](../.github/workflows/full-coverage.yml) polls the real
