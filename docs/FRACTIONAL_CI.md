@@ -29,8 +29,13 @@ candidate_sha=<40-hex-sha> -f dry_run=true`. The branch tip must be that SHA.
 The preflight rejects missing/corrupt wheels, missing binaries, and wheels at
 or above 100 MB; it cannot reserve a PyPI upload or verify the project's
 remaining storage quota. A conflicting tag is rejected before the six builds.
-The VS Code tag-push publication workflow checks the same report before
-building or publishing.
+The VS Code extension release is also manual-only. Dispatch
+`vscode-extension-release.yml` at the candidate branch with the same
+`candidate_sha`; `dry_run=true` exercises its seven-platform VSIX build and
+artifact preflight without creating `vscode-v<version>` or publishing. A real
+attempt checks the exact-SHA full-coverage report, builds and validates all
+seven version-matched VSIX files, and only then creates the VS Code tag and
+publishes. Pushing a `vscode-v*` tag does not start a release workflow.
 
 The normalized issue-driven release front door and automated dispatch of the
 29 full workflows are still pending. A candidate must currently be the tip of

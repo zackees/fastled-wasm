@@ -66,6 +66,53 @@ def test_vscode_matrix_only_runs_for_full_pr_or_tag_release():
     assert "release_build: true" in release
 
 
+def test_vscode_release_cannot_create_tag_before_full_coverage_and_preflight():
+    release = (WORKFLOWS / "vscode-extension-release.yml").read_text()
+    assert "  push:\n    tags:" not in release
+    assert "  workflow_dispatch:" in release
+    assert "candidate_sha:" in release
+    assert "dry_run:" in release
+    assert "verify_full_coverage.py" in release
+    assert "vscode_release_artifact_lint.py" in release
+    assert "  create-tag:" in release
+    tag = release.split("  create-tag:\n", 1)[1].split("  publish:\n", 1)[0]
+    assert "needs.full-coverage.result == 'success'" in tag
+    assert "needs.artifact-preflight.result == 'success'" in tag
+    assert "inputs.dry_run != true" in tag
+    assert 'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"' in tag
+    assert "git push origin" in tag
+    publish = release.split("  publish:\n", 1)[1]
+    assert "needs.create-tag.result == 'success'" in publish
+
+
+def test_vscode_release_artifact_lint_rejects_missing_corrupt_and_wrong_version(
+    tmp_path,
+):
+    spec = importlib.util.spec_from_file_location(
+        "vscode_release_artifact_lint", ROOT / "ci" / "vscode_release_artifact_lint.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    targets = {
+        "win32-x64", "win32-arm64", "linux-x64", "linux-arm64",
+        "darwin-x64", "darwin-arm64", "universal",
+    }
+    for target in targets:
+        with zipfile.ZipFile(
+            tmp_path / f"fastled-wasm-1.0.1-{target}.vsix", "w"
+        ) as archive:
+            archive.writestr(
+                "extension/package.json", json.dumps({"name": "fastled-wasm", "version": "1.0.1"})
+            )
+    assert len(module.check(tmp_path, "1.0.1")) == 7
+    with pytest.raises(ValueError):
+        module.check(tmp_path, "1.0.2")
+    (tmp_path / "fastled-wasm-1.0.1-universal.vsix").write_bytes(b"corrupt")
+    with pytest.raises(ValueError):
+        module.check(tmp_path, "1.0.1")
+
+
 def test_release_does_not_wait_for_removed_routine_build_artifacts():
     workflow = (WORKFLOWS / "auto-release.yml").read_text()
     assert "collect-artifacts:" not in workflow

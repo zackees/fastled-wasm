@@ -1,55 +1,156 @@
 name: Release VS Code extension
 
 on:
-  push:
-    tags: ["vscode-v*"]
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character branch-head commit SHA to release
+        required: true
+        type: string
+      dry_run:
+        description: Validate full CI and VSIX artifacts without tagging or publishing
+        required: false
+        default: false
+        type: boolean
 
-# Never cancelled and never coalesced: every publish runs to completion.
 concurrency:
   group: ${{ github.workflow }}-${{ github.run_id }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   full-coverage:
     runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-      contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Require exact-SHA full release CI before publication
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - name: Require exact-SHA full release CI before tagging
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python ci/verify_full_coverage.py --sha "$GITHUB_SHA"
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_REF" == refs/heads/* ]]
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python ci/verify_full_coverage.py --sha "$EXPECTED_SHA"
 
-  validate-tag:
+  validate-version:
+    needs: [full-coverage]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
       - id: version
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
         run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           VERSION=$(node -p "require('./vscode-plugin/package.json').version")
-          test "${GITHUB_REF_NAME}" = "vscode-v${VERSION}"
+          TAG="vscode-v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            test "$(git rev-parse "${TAG}^{commit}")" = "$EXPECTED_SHA" || {
+              echo "Existing tag ${TAG} points to another commit" >&2
+              exit 1
+            }
+          fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
   build:
-    needs: [validate-tag, full-coverage]
-    if: needs.full-coverage.result == 'success'
+    needs: [full-coverage, validate-version]
+    if: needs.full-coverage.result == 'success' && needs.validate-version.result == 'success'
     uses: ./.github/workflows/vscode-extension.yml
     with:
       release_build: true
+
+  artifact-preflight:
+    needs: [full-coverage, validate-version, build]
+    if: needs.full-coverage.result == 'success' && needs.validate-version.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@v4
+        with: { pattern: vscode-*, path: artifacts, merge-multiple: true }
+      - name: Validate the seven VSIX packages before tagging
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python ci/vscode_release_artifact_lint.py --artifacts artifacts --version "$VERSION"
+
+  create-tag:
+    needs: [full-coverage, validate-version, artifact-preflight]
+    if: >-
+      !cancelled() &&
+      inputs.dry_run != true &&
+      needs.full-coverage.result == 'success' &&
+      needs.validate-version.result == 'success' &&
+      needs.artifact-preflight.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - name: Create release tag from the verified commit
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          TAG: ${{ needs.validate-version.outputs.tag }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            test "$(git rev-parse "${TAG}^{commit}")" = "$EXPECTED_SHA" || {
+              echo "Existing tag ${TAG} points to another commit" >&2
+              exit 1
+            }
+          else
+            git tag -a "$TAG" -m "Release VS Code ${{ needs.validate-version.outputs.version }}"
+            git push origin "refs/tags/${TAG}"
+          fi
+
   publish:
-    needs: [validate-tag, full-coverage, build]
-    if: needs.full-coverage.result == 'success' && needs.build.result == 'success'
+    needs: [full-coverage, validate-version, artifact-preflight, create-tag]
+    if: >-
+      !cancelled() &&
+      inputs.dry_run != true &&
+      needs.full-coverage.result == 'success' &&
+      needs.artifact-preflight.result == 'success' &&
+      needs.create-tag.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.candidate_sha }}
       - uses: actions/download-artifact@v4
-        with: { path: artifacts, merge-multiple: true }
+        with: { pattern: vscode-*, path: artifacts, merge-multiple: true }
+      - name: Verify release artifacts again
+        env:
+          VERSION: ${{ needs.validate-version.outputs.version }}
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python ci/vscode_release_artifact_lint.py --artifacts artifacts --version "$VERSION"
       - name: Produce checksums
         run: |
           cd artifacts
@@ -60,7 +161,9 @@ jobs:
       - name: Create GitHub release from the verified package bytes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/* --title "FastLED VS Code ${{ needs.validate-tag.outputs.version }}" --generate-notes
+          TAG: ${{ needs.validate-version.outputs.tag }}
+          VERSION: ${{ needs.validate-version.outputs.version }}
+        run: gh release create "$TAG" artifacts/* --title "FastLED VS Code $VERSION" --generate-notes
       - name: Publish those same prebuilt VSIX files to Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
