@@ -3,6 +3,10 @@ name: Integration Test
 on:
   workflow_call:
     inputs:
+      source-sha:
+        required: false
+        type: string
+        default: ""
       runs-on:
         required: true
         type: string
@@ -18,6 +22,17 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source-sha || github.sha }}
+      - name: Verify checkout SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.source-sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - uses: astral-sh/setup-uv@v5
         with:

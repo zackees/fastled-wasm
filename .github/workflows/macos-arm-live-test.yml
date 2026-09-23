@@ -23,8 +23,13 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
-
+    inputs:
+      candidate_sha:
+        description: Exact 40-character commit SHA to validate
+        required: true
+        type: string
 # One live run per workflow per ref: a new push to a branch or PR cancels the
 # superseded run instead of queuing behind it in the shared account-wide runner
 # pool. Runs on main get a unique group, so they are never cancelled or coalesced.
@@ -38,6 +43,7 @@ env:
 
 jobs:
   cross-build:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci-full'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     defaults:
@@ -45,6 +51,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checkout SHA
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -108,6 +125,17 @@ jobs:
       # The checkout provides the test fixtures and smoke scripts, and the
       # workspace the test archive is remapped onto. Nothing is compiled.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      - name: Verify checkout SHA
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - uses: astral-sh/setup-uv@v5
         with:

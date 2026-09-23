@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "workflows": [
+    "linux-arm-build.yml",
+    "linux-arm-integration-test.yml",
+    "linux-arm-lint.yml",
+    "linux-arm-unit-test.yml",
+    "linux-x86-build.yml",
+    "linux-x86-dwarf-smoke.yml",
+    "linux-x86-integration-test.yml",
+    "linux-x86-lint.yml",
+    "linux-x86-render-smoke.yml",
+    "linux-x86-terminal-test.yml",
+    "linux-x86-unit-test.yml",
+    "macos-arm-build.yml",
+    "macos-arm-integration-test.yml",
+    "macos-arm-lint.yml",
+    "macos-arm-live-test.yml",
+    "macos-arm-unit-test.yml",
+    "macos-x64-guest-webkit-probe.yml",
+    "macos-x86-build.yml",
+    "macos-x86-integration-test.yml",
+    "macos-x86-lint.yml",
+    "macos-x86-unit-test.yml",
+    "windows-arm-build.yml",
+    "windows-arm-integration-test.yml",
+    "windows-arm-unit-test.yml",
+    "windows-x86-build.yml",
+    "windows-x86-integration-test.yml",
+    "windows-x86-lint.yml",
+    "windows-x86-terminal-test.yml",
+    "windows-x86-unit-test.yml"
+  ],
+  "platform_tests": {
+    "linux-x86": [
+      {"workflow": "linux-x86-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "linux-x86-integration-test.yml", "step": "Native Test Suite"}
+    ],
+    "linux-arm": [
+      {"workflow": "linux-arm-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "linux-arm-integration-test.yml", "step": "Native Test Suite"}
+    ],
+    "windows-x86": [
+      {"workflow": "windows-x86-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "windows-x86-integration-test.yml", "step": "Native Test Suite"}
+    ],
+    "windows-arm": [
+      {"workflow": "windows-arm-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "windows-arm-integration-test.yml", "step": "Native Test Suite"}
+    ],
+    "macos-x86": [
+      {"workflow": "macos-x86-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "macos-x86-integration-test.yml", "step": "Native Test Suite"}
+    ],
+    "macos-arm": [
+      {"workflow": "macos-arm-unit-test.yml", "step": "Unit Tests"},
+      {"workflow": "macos-arm-integration-test.yml", "step": "Native Test Suite"},
+      {"workflow": "macos-arm-live-test.yml", "step": "Run the cross-built Rust tests"}
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-name: macOS ARM Integration Test
+name: Windows ARM Integration Test
 
 on:
   push:
@@ -24,4 +24,4 @@ jobs:
     uses: ./.github/workflows/_integration-test.yml
     with:
       source-sha: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      runs-on: macos-15
+      runs-on: windows-11-arm

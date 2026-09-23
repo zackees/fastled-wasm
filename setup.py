@@ -42,8 +42,8 @@ def _workspace_package_version() -> str:
 
 def _candidate_binaries(root: Path) -> list[Path]:
     candidates: list[Path] = []
-    target = os.environ.get("CARGO_BUILD_TARGET") or os.environ.get(
-        "FASTLED_RUST_TARGET"
+    target = os.environ.get("FASTLED_RUST_TARGET") or os.environ.get(
+        "CARGO_BUILD_TARGET"
     )
     if target:
         candidates.append(root / "target" / target / "release" / EXE_NAME)

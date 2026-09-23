@@ -3,6 +3,10 @@ name: Build
 on:
   workflow_call:
     inputs:
+      source-sha:
+        required: false
+        type: string
+        default: ""
       runs-on:
         required: true
         type: string
@@ -24,6 +28,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source-sha || github.sha }}
+      - name: Verify checkout SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.source-sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -102,6 +117,10 @@ jobs:
           ls -lh src/fastled/bin/
 
       - name: Build wheel
+        env:
+          # setup.py rebuilds the bundled binary; keep that rebuild on the
+          # requested target, especially Windows ARM on an x64 runner.
+          FASTLED_RUST_TARGET: ${{ inputs.rust-target }}
         run: |
           PLAT_NAME=""
           case "${{ inputs.rust-target }}" in
@@ -129,7 +148,7 @@ jobs:
         if: always() && inputs.wheel-smoke
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-smoke-screenshot-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          name: smoke-wheel-screenshot-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/*.png
           if-no-files-found: error
 
@@ -137,7 +156,7 @@ jobs:
         if: always() && inputs.wheel-smoke
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-smoke-log-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
+          name: smoke-wheel-log-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           path: ${{ runner.temp }}/fastled-wheel-smoke/artifacts/*.log
           if-no-files-found: warn
 
@@ -146,12 +165,14 @@ jobs:
         with:
           name: wheel-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           path: dist/*.whl
+          if-no-files-found: error
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ inputs.runs-on }}-${{ inputs.rust-target || 'native' }}
           path: src/fastled/bin/fastled*
+          if-no-files-found: error
 
       - name: Upload failure logs
         if: failure()

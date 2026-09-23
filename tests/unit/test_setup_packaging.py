@@ -86,6 +86,21 @@ def test_candidate_binaries_never_harvest_cargo_home(
         ), f"candidate {candidate} escapes the workspace"
 
 
+def test_explicit_release_target_beats_ambient_cargo_default(
+    setup_module, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("CARGO_BUILD_TARGET", "x86_64-pc-windows-msvc")
+    monkeypatch.setenv("FASTLED_RUST_TARGET", "aarch64-pc-windows-msvc")
+    candidates = setup_module._candidate_binaries(tmp_path)
+    assert candidates[0] == (
+        tmp_path
+        / "target"
+        / "aarch64-pc-windows-msvc"
+        / "release"
+        / setup_module.EXE_NAME
+    )
+
+
 def test_fails_loud_without_cargo_toml_or_binary(setup_module, tmp_path):
     with pytest.raises(RuntimeError, match="Cargo.toml"):
         setup_module.ensure_bundled_fastled_binary(tmp_path)

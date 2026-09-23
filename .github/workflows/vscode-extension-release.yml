@@ -10,6 +10,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  full-coverage:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require exact-SHA full release CI before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python ci/verify_full_coverage.py --sha "$GITHUB_SHA"
+
   validate-tag:
     runs-on: ubuntu-24.04
     outputs:
@@ -22,10 +34,14 @@ jobs:
           test "${GITHUB_REF_NAME}" = "vscode-v${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
   build:
-    needs: validate-tag
+    needs: [validate-tag, full-coverage]
+    if: needs.full-coverage.result == 'success'
     uses: ./.github/workflows/vscode-extension.yml
+    with:
+      release_build: true
   publish:
-    needs: [validate-tag, build]
+    needs: [validate-tag, full-coverage, build]
+    if: needs.full-coverage.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
