@@ -125,7 +125,7 @@ jobs:
     if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
-      runs-on: macos-14
+      runs-on: macos-15-intel
       rust-target: x86_64-apple-darwin
 
   build-macos-arm:

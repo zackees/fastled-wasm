@@ -1,5 +1,6 @@
 """Guard the event-to-CI-tier wiring across every platform workflow."""
 
+import hashlib
 import importlib.util
 import json
 import zipfile
@@ -95,22 +96,72 @@ def test_vscode_release_artifact_lint_rejects_missing_corrupt_and_wrong_version(
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     targets = {
-        "win32-x64", "win32-arm64", "linux-x64", "linux-arm64",
-        "darwin-x64", "darwin-arm64", "universal",
+        "win32-x64",
+        "win32-arm64",
+        "linux-x64",
+        "linux-arm64",
+        "darwin-x64",
+        "darwin-arm64",
+        "universal",
     }
     for target in targets:
-        with zipfile.ZipFile(
-            tmp_path / f"fastled-wasm-1.0.1-{target}.vsix", "w"
-        ) as archive:
+        package = tmp_path / f"fastled-wasm-1.0.1-{target}.vsix"
+        with zipfile.ZipFile(package, "w") as archive:
             archive.writestr(
-                "extension/package.json", json.dumps({"name": "fastled-wasm", "version": "1.0.1"})
+                "extension/package.json",
+                json.dumps({"name": "fastled-wasm", "version": "1.0.1"}),
             )
+            if target != "universal":
+                archive.writestr(
+                    "extension/resources/clangd/manifest.json", b"native manifest"
+                )
+        if target != "universal":
+            (tmp_path / f"{target}.manifest.json").write_bytes(b"native manifest")
+            (tmp_path / f"{target}.sha256").write_text(
+                f"{hashlib.sha256(package.read_bytes()).hexdigest()}  {package.name}\n"
+            )
+            (tmp_path / f"{target}.size").write_text(f"{package.stat().st_size}\n")
     assert len(module.check(tmp_path, "1.0.1")) == 7
     with pytest.raises(ValueError):
         module.check(tmp_path, "1.0.2")
     (tmp_path / "fastled-wasm-1.0.1-universal.vsix").write_bytes(b"corrupt")
     with pytest.raises(ValueError):
         module.check(tmp_path, "1.0.1")
+
+
+def test_vscode_release_artifact_lint_accepts_native_sidecars_only(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "vscode_release_artifact_lint", ROOT / "ci" / "vscode_release_artifact_lint.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    version = "1.0.1"
+    for target in module.TARGETS:
+        package = tmp_path / f"fastled-wasm-{version}-{target}.vsix"
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr(
+                "extension/package.json",
+                json.dumps({"name": "fastled-wasm", "version": version}),
+            )
+            if target != "universal":
+                archive.writestr(
+                    "extension/resources/clangd/manifest.json", b"native manifest"
+                )
+        if target != "universal":
+            (tmp_path / f"{target}.manifest.json").write_bytes(b"native manifest")
+            (tmp_path / f"{target}.sha256").write_text(
+                f"{hashlib.sha256(package.read_bytes()).hexdigest()}  {package.name}\n"
+            )
+            (tmp_path / f"{target}.size").write_text(f"{package.stat().st_size}\n")
+    assert len(module.check(tmp_path, version)) == 7
+    (tmp_path / "unexpected.txt").write_text("extra")
+    with pytest.raises(ValueError, match="unexpected"):
+        module.check(tmp_path, version)
+    (tmp_path / "unexpected.txt").unlink()
+    (tmp_path / "linux-x64.sha256").write_text("incorrect digest\n")
+    with pytest.raises(ValueError, match="SHA-256 sidecar mismatch"):
+        module.check(tmp_path, version)
 
 
 def test_release_does_not_wait_for_removed_routine_build_artifacts():

@@ -10,7 +10,14 @@ import zipfile
 from pathlib import Path
 
 MANIFEST = Path(__file__).with_name("full_coverage.json")
-PLATFORMS = {"linux-x86", "linux-arm", "windows-x86", "windows-arm", "macos-x86", "macos-arm"}
+PLATFORMS = {
+    "linux-x86",
+    "linux-arm",
+    "windows-x86",
+    "windows-arm",
+    "macos-x86",
+    "macos-arm",
+}
 
 
 def get_json(path):
@@ -48,12 +55,19 @@ def validate_report(report, manifest, sha):
         return False
     if any(not checks for checks in tests.values()):
         return False
-    if any(not check["workflow"].startswith(platform + "-") for platform, checks in tests.items() for check in checks):
+    if any(
+        not check["workflow"].startswith(platform + "-")
+        for platform, checks in tests.items()
+        for check in checks
+    ):
         return False
     cells = report.get("cells", {})
     if set(cells) != set(names):
         return False
-    if not all(cell.get("result") == "passed" and isinstance(cell.get("run_id"), int) for cell in cells.values()):
+    if not all(
+        cell.get("result") == "passed" and isinstance(cell.get("run_id"), int)
+        for cell in cells.values()
+    ):
         return False
     if report.get("test_execution_gaps") != []:
         return False
@@ -62,7 +76,13 @@ def validate_report(report, manifest, sha):
             if check["workflow"] not in cells:
                 return False
             jobs = cells[check["workflow"]].get("jobs", [])
-            if not any(step.get("name") == check["step"] and step.get("conclusion") == "success" for job in jobs if job.get("conclusion") == "success" for step in job.get("steps", [])):
+            if not any(
+                step.get("name") == check["step"]
+                and step.get("conclusion") == "success"
+                for job in jobs
+                if job.get("conclusion") == "success"
+                for step in job.get("steps", [])
+            ):
                 return False
     return True
 
@@ -77,18 +97,26 @@ def main():
     if manifest.get("schema_version") != 2:
         parser.error("unsupported coverage manifest")
     repo = os.environ["GITHUB_REPOSITORY"]
-    runs = get_json(f"repos/{repo}/actions/workflows/full-coverage.yml/runs?head_sha={args.sha}&event=workflow_dispatch&per_page=100")["workflow_runs"]
+    runs = get_json(
+        f"repos/{repo}/actions/workflows/full-coverage.yml/runs?head_sha={args.sha}&event=workflow_dispatch&per_page=100"
+    )["workflow_runs"]
     for run in runs:
         if run["head_sha"] != args.sha or run["conclusion"] != "success":
             continue
-        artifacts = get_json(f"repos/{repo}/actions/runs/{run['id']}/artifacts?per_page=100")["artifacts"]
+        artifacts = get_json(
+            f"repos/{repo}/actions/runs/{run['id']}/artifacts?per_page=100"
+        )["artifacts"]
         for artifact in artifacts:
             if artifact["name"] != f"full-coverage-{run['id']}" or artifact["expired"]:
                 continue
-            with zipfile.ZipFile(io.BytesIO(download(artifact["archive_download_url"]))) as archive:
+            with zipfile.ZipFile(
+                io.BytesIO(download(artifact["archive_download_url"]))
+            ) as archive:
                 report = json.loads(archive.read("full-coverage.json"))
             if validate_report(report, manifest, args.sha):
-                print(f"Verified all {len(manifest['workflows'])} platform workflows: {run['html_url']}")
+                print(
+                    f"Verified all {len(manifest['workflows'])} platform workflows: {run['html_url']}"
+                )
                 return 0
     print("No passing exact-SHA release full-coverage report found", file=sys.stderr)
     return 1

@@ -217,7 +217,10 @@ def test_kernal_api_is_the_only_rust_dependency():
     # A `kernal-api/<feature>` entry in [features] would reach the
     # build-dependency too, so runtime features are named on the dependency.
     for name, enables in package["features"].items():
-        assert not any(entry.startswith("kernal-api/") for entry in enables), (name, enables)
+        assert not any(entry.startswith("kernal-api/") for entry in enables), (
+            name,
+            enables,
+        )
     build_rs = (root / "crates/fastled-cli/build.rs").read_text()
     # Leading path segments only: `kernal_api::build_resources::...` names
     # the crate `kernal_api`, not a crate called `build_resources`.
