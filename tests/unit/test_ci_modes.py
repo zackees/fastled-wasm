@@ -96,17 +96,25 @@ def test_vscode_release_artifact_lint_rejects_missing_corrupt_and_wrong_version(
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     targets = {
-        "win32-x64", "win32-arm64", "linux-x64", "linux-arm64",
-        "darwin-x64", "darwin-arm64", "universal",
+        "win32-x64",
+        "win32-arm64",
+        "linux-x64",
+        "linux-arm64",
+        "darwin-x64",
+        "darwin-arm64",
+        "universal",
     }
     for target in targets:
         package = tmp_path / f"fastled-wasm-1.0.1-{target}.vsix"
         with zipfile.ZipFile(package, "w") as archive:
             archive.writestr(
-                "extension/package.json", json.dumps({"name": "fastled-wasm", "version": "1.0.1"})
+                "extension/package.json",
+                json.dumps({"name": "fastled-wasm", "version": "1.0.1"}),
             )
             if target != "universal":
-                archive.writestr("extension/resources/clangd/manifest.json", b"native manifest")
+                archive.writestr(
+                    "extension/resources/clangd/manifest.json", b"native manifest"
+                )
         if target != "universal":
             (tmp_path / f"{target}.manifest.json").write_bytes(b"native manifest")
             (tmp_path / f"{target}.sha256").write_text(
@@ -137,7 +145,9 @@ def test_vscode_release_artifact_lint_accepts_native_sidecars_only(tmp_path):
                 json.dumps({"name": "fastled-wasm", "version": version}),
             )
             if target != "universal":
-                archive.writestr("extension/resources/clangd/manifest.json", b"native manifest")
+                archive.writestr(
+                    "extension/resources/clangd/manifest.json", b"native manifest"
+                )
         if target != "universal":
             (tmp_path / f"{target}.manifest.json").write_bytes(b"native manifest")
             (tmp_path / f"{target}.sha256").write_text(

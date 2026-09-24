@@ -37,13 +37,16 @@ def check(artifacts: Path, version: str) -> list[Path]:
     for package in packages:
         if package.stat().st_size == 0:
             raise ValueError(f"empty VSIX: {package.name}")
+        embedded_manifest: bytes | None = None
         try:
             with zipfile.ZipFile(package) as archive:
                 if archive.testzip() is not None:
                     raise ValueError(f"corrupt VSIX: {package.name}")
                 manifest = json.loads(archive.read("extension/package.json"))
                 target = next(
-                    target for target in TARGETS if package.name.endswith(f"-{target}.vsix")
+                    target
+                    for target in TARGETS
+                    if package.name.endswith(f"-{target}.vsix")
                 )
                 if target in NATIVE_TARGETS:
                     embedded_manifest = archive.read(
@@ -54,9 +57,15 @@ def check(artifacts: Path, version: str) -> list[Path]:
         if manifest.get("name") != "fastled-wasm" or manifest.get("version") != version:
             raise ValueError(f"VSIX manifest mismatch: {package.name}")
         if target in NATIVE_TARGETS:
-            expected_hash = f"{hashlib.sha256(package.read_bytes()).hexdigest()}  {package.name}\n"
+            if embedded_manifest is None:
+                raise ValueError(f"missing native manifest: {package.name}")
+            expected_hash = (
+                f"{hashlib.sha256(package.read_bytes()).hexdigest()}  {package.name}\n"
+            )
             expected_size = f"{package.stat().st_size}\n"
-            if (artifacts / f"{target}.manifest.json").read_bytes() != embedded_manifest:
+            if (
+                artifacts / f"{target}.manifest.json"
+            ).read_bytes() != embedded_manifest:
                 raise ValueError(f"native manifest sidecar mismatch: {package.name}")
             if (artifacts / f"{target}.sha256").read_text() != expected_hash:
                 raise ValueError(f"SHA-256 sidecar mismatch: {package.name}")
