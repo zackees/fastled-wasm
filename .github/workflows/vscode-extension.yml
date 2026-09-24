@@ -2,14 +2,20 @@ name: VS Code extension
 
 on:
   workflow_call:
+    inputs:
+      release_build:
+        description: Build VSIX artifacts for the exact-SHA release caller
+        required: false
+        type: boolean
+        default: false
   pull_request:
-    paths: ["vscode-plugin/**", ".github/workflows/vscode-extension.yml"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [main]
-    paths: ["vscode-plugin/**", ".github/workflows/vscode-extension.yml"]
 
 jobs:
   native:
+    if: inputs.release_build || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci-full'))
     name: ${{ matrix.target }}
     strategy:
       fail-fast: false
@@ -54,6 +60,7 @@ jobs:
           if-no-files-found: error
 
   universal:
+    if: inputs.release_build || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci-full'))
     runs-on: ubuntu-24.04
     defaults:
       run:

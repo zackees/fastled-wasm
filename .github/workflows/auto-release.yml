@@ -1,10 +1,17 @@
 name: Auto Release
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character branch-head commit SHA to release
+        required: true
+        type: string
+      dry_run:
+        description: Validate full CI and build artifacts without tagging or publishing
+        required: false
+        default: false
+        type: boolean
 
 # Never cancelled and never coalesced: every publish runs to completion.
 concurrency:
@@ -17,232 +24,119 @@ permissions:
   actions: read
 
 jobs:
+  full-coverage:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - name: Verify candidate and full release CI
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python ci/verify_full_coverage.py --sha "$EXPECTED_SHA"
+
   detect-version:
+    needs: [full-coverage]
+    if: needs.full-coverage.result == 'success'
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version_check.outputs.current }}
       should_release: ${{ steps.version_check.outputs.should_release }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
 
       - name: Check if version needs release
         id: version_check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           VERSION=$(python -c 'import tomllib; from pathlib import Path; manifest = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8")); print(manifest["workspace"]["package"]["version"])')
           echo "current=$VERSION" >> $GITHUB_OUTPUT
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/fastled/$VERSION/json")
+          TAG="v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            test "$(git rev-parse "${TAG}^{commit}")" = "$GITHUB_SHA" || {
+              echo "Existing tag ${TAG} points to another commit" >&2
+              exit 1
+            }
+          fi
+          STATUS=$(curl --silent --show-error -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/fastled/$VERSION/json")
           if [ "$STATUS" = "200" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "Cannot prove publish readiness: version $VERSION already exists on PyPI" >&2
+              exit 1
+            fi
             echo "should_release=false" >> $GITHUB_OUTPUT
             echo "Version $VERSION already on PyPI, skipping release"
-          else
+          elif [ "$STATUS" = "404" ]; then
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "Version $VERSION not on PyPI, will release"
+          else
+            echo "PyPI version lookup failed with HTTP $STATUS" >&2
+            exit 1
           fi
 
-  # The per-platform CI build workflows already produce release-identical
-  # wheel/binary artifacts for this same SHA (same rust targets, plat-name
-  # tags, and soldr cache keys — see the build wrappers). Wait for those runs
-  # and reuse their artifacts instead of rebuilding all 6 platforms (#170).
-  # Any platform whose CI run is missing, failed, or timed out falls back to
-  # a build-* job below. Runs only on push: a workflow_dispatch SHA may have
-  # no CI runs, so dispatch always builds.
-  collect-artifacts:
-    needs: [detect-version]
-    if: needs.detect-version.outputs.should_release == 'true' && github.event_name == 'push'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    outputs:
-      reused_linux_x86: ${{ steps.collect.outputs.reused_linux_x86 }}
-      reused_linux_arm: ${{ steps.collect.outputs.reused_linux_arm }}
-      reused_windows_x86: ${{ steps.collect.outputs.reused_windows_x86 }}
-      reused_windows_arm: ${{ steps.collect.outputs.reused_windows_arm }}
-      reused_macos_x86: ${{ steps.collect.outputs.reused_macos_x86 }}
-      reused_macos_arm: ${{ steps.collect.outputs.reused_macos_arm }}
-    steps:
-      - name: Wait for CI build runs and download artifacts
-        id: collect
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -uo pipefail
-          mkdir -p artifacts
-          declare -A WF_SUFFIX=(
-            ["linux-x86-build.yml"]="ubuntu-24.04-x86_64-unknown-linux-gnu"
-            ["linux-arm-build.yml"]="ubuntu-24.04-arm-aarch64-unknown-linux-gnu"
-            ["windows-x86-build.yml"]="windows-2025-x86_64-pc-windows-msvc"
-            ["windows-arm-build.yml"]="windows-2025-aarch64-pc-windows-msvc"
-            ["macos-x86-build.yml"]="macos-14-x86_64-apple-darwin"
-            ["macos-arm-build.yml"]="macos-15-aarch64-apple-darwin"
-          )
-          deadline=$(( $(date +%s) + 2100 ))
-          for wf in linux-x86-build.yml linux-arm-build.yml windows-x86-build.yml windows-arm-build.yml macos-x86-build.yml macos-arm-build.yml; do
-            suffix="${WF_SUFFIX[$wf]}"
-            key="reused_$(echo "$wf" | sed 's/-build\.yml$//; s/-/_/g')"
-            reused=false
-            while :; do
-              run_json=$(gh api "repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" --jq '.workflow_runs[0] // empty' 2>/dev/null || true)
-              if [ -n "$run_json" ]; then
-                status=$(jq -r .status <<<"$run_json")
-                if [ "$status" = "completed" ]; then
-                  conclusion=$(jq -r .conclusion <<<"$run_json")
-                  run_id=$(jq -r .id <<<"$run_json")
-                  if [ "$conclusion" = "success" ] && \
-                     gh run download "$run_id" -R "$REPO" --dir artifacts -n "wheel-$suffix" -n "binary-$suffix"; then
-                    reused=true
-                  else
-                    echo "$wf run $run_id concluded '$conclusion' or artifact download failed; falling back to build."
-                  fi
-                  break
-                fi
-              fi
-              if [ "$(date +%s)" -ge "$deadline" ]; then
-                echo "Timed out waiting for $wf; falling back to build."
-                break
-              fi
-              sleep 30
-            done
-            echo "$wf -> $key=$reused"
-            echo "$key=$reused" >> "$GITHUB_OUTPUT"
-          done
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_linux_x86 == 'true'
-        with:
-          name: wheel-ubuntu-24.04-x86_64-unknown-linux-gnu
-          path: artifacts/wheel-ubuntu-24.04-x86_64-unknown-linux-gnu/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_linux_x86 == 'true'
-        with:
-          name: binary-ubuntu-24.04-x86_64-unknown-linux-gnu
-          path: artifacts/binary-ubuntu-24.04-x86_64-unknown-linux-gnu/*
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_linux_arm == 'true'
-        with:
-          name: wheel-ubuntu-24.04-arm-aarch64-unknown-linux-gnu
-          path: artifacts/wheel-ubuntu-24.04-arm-aarch64-unknown-linux-gnu/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_linux_arm == 'true'
-        with:
-          name: binary-ubuntu-24.04-arm-aarch64-unknown-linux-gnu
-          path: artifacts/binary-ubuntu-24.04-arm-aarch64-unknown-linux-gnu/*
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_windows_x86 == 'true'
-        with:
-          name: wheel-windows-2025-x86_64-pc-windows-msvc
-          path: artifacts/wheel-windows-2025-x86_64-pc-windows-msvc/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_windows_x86 == 'true'
-        with:
-          name: binary-windows-2025-x86_64-pc-windows-msvc
-          path: artifacts/binary-windows-2025-x86_64-pc-windows-msvc/*
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_windows_arm == 'true'
-        with:
-          name: wheel-windows-2025-aarch64-pc-windows-msvc
-          path: artifacts/wheel-windows-2025-aarch64-pc-windows-msvc/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_windows_arm == 'true'
-        with:
-          name: binary-windows-2025-aarch64-pc-windows-msvc
-          path: artifacts/binary-windows-2025-aarch64-pc-windows-msvc/*
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_macos_x86 == 'true'
-        with:
-          name: wheel-macos-14-x86_64-apple-darwin
-          path: artifacts/wheel-macos-14-x86_64-apple-darwin/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_macos_x86 == 'true'
-        with:
-          name: binary-macos-14-x86_64-apple-darwin
-          path: artifacts/binary-macos-14-x86_64-apple-darwin/*
-
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_macos_arm == 'true'
-        with:
-          name: wheel-macos-15-aarch64-apple-darwin
-          path: artifacts/wheel-macos-15-aarch64-apple-darwin/*
-      - uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.reused_macos_arm == 'true'
-        with:
-          name: binary-macos-15-aarch64-apple-darwin
-          path: artifacts/binary-macos-15-aarch64-apple-darwin/*
-
-  # Fallback builds: each runs only when the matching CI artifact could not
-  # be reused (collect skipped on workflow_dispatch, CI run failed/missing,
-  # or download failed).
+  # Release builds produce all six artifact pairs at this workflow's SHA.
+  # Ordinary main CI no longer provides per-platform release artifacts.
   build-linux-x86:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_linux_x86 == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: ubuntu-24.04
       rust-target: x86_64-unknown-linux-gnu
 
   build-linux-arm:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_linux_arm == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: ubuntu-24.04-arm
       rust-target: aarch64-unknown-linux-gnu
 
   build-windows-x86:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_windows_x86 == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: windows-2025
       rust-target: x86_64-pc-windows-msvc
 
   build-windows-arm:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_windows_arm == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: windows-2025
       rust-target: aarch64-pc-windows-msvc
 
   build-macos-x86:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_macos_x86 == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: macos-14
       rust-target: x86_64-apple-darwin
 
   build-macos-arm:
-    needs: [detect-version, collect-artifacts]
-    if: >-
-      !cancelled() &&
-      needs.detect-version.outputs.should_release == 'true' &&
-      !(needs.collect-artifacts.result == 'success' && needs.collect-artifacts.outputs.reused_macos_arm == 'true')
+    needs: [detect-version]
+    if: needs.detect-version.outputs.should_release == 'true'
     uses: ./.github/workflows/_build.yml
     with:
       runs-on: macos-15
       rust-target: aarch64-apple-darwin
 
-  create-tag:
+  artifact-preflight:
     needs:
       - detect-version
       - build-linux-x86
@@ -251,22 +145,75 @@ jobs:
       - build-windows-arm
       - build-macos-x86
       - build-macos-arm
-    # A skipped build means its artifact was reused from CI by
-    # collect-artifacts; any failed or cancelled build blocks the release.
     if: >-
       !cancelled() &&
       needs.detect-version.outputs.should_release == 'true' &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-linux-x86.result) &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-linux-arm.result) &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-windows-x86.result) &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-windows-arm.result) &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-macos-x86.result) &&
-      contains(fromJSON('["success", "skipped"]'), needs.build-macos-arm.result)
+      needs.build-linux-x86.result == 'success' &&
+      needs.build-linux-arm.result == 'success' &&
+      needs.build-windows-x86.result == 'success' &&
+      needs.build-windows-arm.result == 'success' &&
+      needs.build-macos-x86.result == 'success' &&
+      needs.build-macos-arm.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: binaries
+      - name: Check wheel and binary artifacts before tagging
+        env:
+          VERSION: ${{ needs.detect-version.outputs.version }}
+        run: |
+          python ci/release_artifact_lint.py --wheels dist --binaries binaries --version "$VERSION"
+          echo "Artifact preflight passed for ${{ inputs.candidate_sha }}. PyPI project quota and registry availability remain unverified." >> "$GITHUB_STEP_SUMMARY"
+
+  create-tag:
+    needs:
+      - full-coverage
+      - detect-version
+      - artifact-preflight
+      - build-linux-x86
+      - build-linux-arm
+      - build-windows-x86
+      - build-windows-arm
+      - build-macos-x86
+      - build-macos-arm
+    # Every build must succeed before tagging. No ordinary CI artifact is reused.
+    if: >-
+      !cancelled() &&
+      needs.full-coverage.result == 'success' &&
+      needs.detect-version.outputs.should_release == 'true' &&
+      needs.artifact-preflight.result == 'success' &&
+      inputs.dry_run != true &&
+      needs.build-linux-x86.result == 'success' &&
+      needs.build-linux-arm.result == 'success' &&
+      needs.build-windows-x86.result == 'success' &&
+      needs.build-windows-arm.result == 'success' &&
+      needs.build-macos-x86.result == 'success' &&
+      needs.build-macos-arm.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha }}
+
+      - name: Verify tag source SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.candidate_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Create tag if not present
         env:
@@ -276,7 +223,12 @@ jobs:
           git config --local user.name "GitHub Action"
           TAG="v${{ needs.detect-version.outputs.version }}"
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists; continuing release workflow."
+            git fetch --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            test "$(git rev-parse "${TAG}^{commit}")" = "$GITHUB_SHA" || {
+              echo "Existing tag ${TAG} points to another commit" >&2
+              exit 1
+            }
+            echo "Tag ${TAG} already points to the verified SHA."
           else
             git tag -a "${TAG}" -m "Release ${{ needs.detect-version.outputs.version }}"
             git push origin "${TAG}"
@@ -284,12 +236,10 @@ jobs:
 
   publish-pypi:
     needs: [detect-version, create-tag]
-    # Job-level success() (implied by a plain `if`) evaluates false when any
-    # transitive ancestor was skipped — and the build-* jobs are skipped
-    # whenever collect-artifacts reused CI artifacts, which silently skipped
-    # publishing on the v2.0.12 release. Gate explicitly on create-tag instead.
+    # Gate explicitly on the tag job result.
     if: >-
       !cancelled() &&
+      inputs.dry_run != true &&
       needs.detect-version.outputs.should_release == 'true' &&
       needs.create-tag.result == 'success'
     runs-on: ubuntu-24.04
@@ -314,9 +264,10 @@ jobs:
 
   create-release:
     needs: [detect-version, create-tag]
-    # Same skipped-ancestor gotcha as publish-pypi above.
+    # Gate explicitly on the tag job result.
     if: >-
       !cancelled() &&
+      inputs.dry_run != true &&
       needs.detect-version.outputs.should_release == 'true' &&
       needs.create-tag.result == 'success'
     runs-on: ubuntu-24.04
@@ -326,8 +277,7 @@ jobs:
     steps:
       # With merge-multiple unset, each artifact lands in its own
       # binaries/<artifact-name>/ directory, so the case match below on the
-      # target-suffixed artifact name works for both reused and rebuilt
-      # artifacts.
+      # target-suffixed artifact name identifies each release build.
       - name: Download all binaries
         uses: actions/download-artifact@v4
         with:

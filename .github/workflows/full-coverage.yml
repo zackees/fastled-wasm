@@ -1,0 +1,52 @@
+name: Full CI Coverage
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character branch-head commit SHA to validate
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  full-coverage:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 95
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event.pull_request.head.sha }}
+      - name: Verify requested SHA
+        env:
+          EXPECTED_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event.pull_request.head.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Require every full platform job on this SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COVERAGE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.candidate_sha || github.event.pull_request.head.sha }}
+          COVERAGE_EVENT: ${{ github.event_name }}
+        run: |
+          python ci/check_full_coverage.py \
+            --sha "$COVERAGE_SHA" \
+            --event "$COVERAGE_EVENT" \
+            --coverage-run-id "$GITHUB_RUN_ID" \
+            --report full-coverage.json
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-coverage-${{ github.run_id }}
+          path: full-coverage.json
+          if-no-files-found: error

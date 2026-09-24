@@ -3,6 +3,10 @@ name: Unit Test
 on:
   workflow_call:
     inputs:
+      source-sha:
+        required: false
+        type: string
+        default: ""
       runs-on:
         required: true
         type: string
@@ -18,6 +22,17 @@ jobs:
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source-sha || github.sha }}
+      - name: Verify checkout SHA
+        env:
+          EXPECTED_SHA: ${{ inputs.source-sha || github.sha }}
+        run: |
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$EXPECTED_SHA" = "$GITHUB_SHA"
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -40,9 +55,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          # No soldr version pin: keep in lockstep with _build.yml so all jobs
-          # resolve the same soldr/zccache version and share warm caches
-          # (see the pin rationale comment in _build.yml and #158).
+          # Windows ARM native tests hit 0.7.51's listener timeout and
+          # 0.7.53's pre-lock timeout. Try 0.9.21's embedded daemon; keep
+          # other runners and cross-builds on 0.7.51 (see #158).
+          version: ${{ inputs.runs-on == 'windows-11-arm' && '0.9.21' || '0.7.51' }}
           # cache-preset: foundation expands to build-cache: true +
           # target-cache: false + cargo-registry-cache: false +
           # prebuild-deps: soldr-cook (setup-soldr v0.9.17+, #251).
@@ -63,6 +79,20 @@ jobs:
 
       - name: Unit Tests
         run: ./test
+
+      - name: Capture Soldr failure diagnostics
+        if: failure() && inputs.runs-on == 'windows-11-arm'
+        continue-on-error: true
+        shell: pwsh
+        run: ./ci/capture_soldr_failure.ps1
+
+      - name: Upload Soldr failure diagnostics
+        if: failure() && inputs.runs-on == 'windows-11-arm'
+        uses: actions/upload-artifact@v4
+        with:
+          name: soldr-failure-diagnostics-unit-test-${{ inputs.runs-on }}-${{ github.run_attempt }}
+          path: soldr-failure-diagnostics/**
+          if-no-files-found: error
 
       - name: Upload failure logs
         if: failure()

@@ -18,6 +18,13 @@ If `soldr` is not on PATH, install it with `uv tool install soldr`.
 
 ## Tests
 
+Ordinary PR/main CI is minimal. The literal `ci-test` PR label adds Linux x86
+unit and integration tests; `ci-full` runs the platform matrix. Full validation
+must pass on the exact release SHA before tagging or publishing. A version bump
+on `main` or a pushed VS Code tag no longer starts a release. Both CLI and
+VS Code releases require manual exact-SHA dispatch and artifact preflight.
+See [fractional CI and release gates](docs/FRACTIONAL_CI.md).
+
 `bash test` runs the Python API smoke tests plus the Rust workspace tests. End-to-end WASM compiles should be run only when the change touches the native build backend.
 
 For iterative work:
